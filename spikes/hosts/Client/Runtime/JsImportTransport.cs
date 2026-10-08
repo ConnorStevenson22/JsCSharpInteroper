@@ -3,9 +3,12 @@ using System.Runtime.Versioning;
 
 namespace HostsSpike.Client.Runtime;
 
-/// <summary>WebAssembly: synchronous [JSImport] calls wrapped in already-completed ValueTasks.</summary>
+/// <summary>
+/// WebAssembly: synchronous [JSImport] calls. Serves sync-mode code directly, and async-mode code
+/// through already-completed Tasks.
+/// </summary>
 [SupportedOSPlatform("browser")]
-public sealed partial class JsImportTransport : IJsTransport
+public sealed partial class JsImportTransport : IJsTransport, IJsSyncTransport
 {
     private JsImportTransport() { }
 
@@ -18,32 +21,42 @@ public sealed partial class JsImportTransport : IJsTransport
         return new JsImportTransport();
     }
 
-    public ValueTask<int> CreateAsync(string jsClass, string propertiesJson) => new(Native.Create(jsClass, propertiesJson));
-    public ValueTask<double> GetNumberAsync(int handle, string property) => new(Native.GetNumber(handle, property));
-    public ValueTask<string> SnapshotAsync(int handle, string properties) => new(Native.Snapshot(handle, properties));
+    // sync mode
+    public int Create(string jsClass, string propertiesJson) => Native.Create(jsClass, propertiesJson);
+    public double GetNumber(int handle, string property) => Native.GetNumber(handle, property);
+    public void SetNumber(int handle, string property, double value) => Native.SetNumber(handle, property, value);
+    public string Snapshot(int handle, string properties) => Native.Snapshot(handle, properties);
+    public void Subscribe(int handle, string eventName, int callbackId) => Native.Subscribe(handle, eventName, callbackId);
+    public void Release(int handle) => Native.Release(handle);
+    public void Raise(int handle, string eventName, string payloadJson) => Native.Raise(handle, eventName, payloadJson);
 
-    public ValueTask SetNumberAsync(int handle, string property, double value)
+    // async mode
+    public Task<int> CreateAsync(string jsClass, string propertiesJson) => Task.FromResult(Create(jsClass, propertiesJson));
+    public Task<double> GetNumberAsync(int handle, string property) => Task.FromResult(GetNumber(handle, property));
+    public Task<string> SnapshotAsync(int handle, string properties) => Task.FromResult(Snapshot(handle, properties));
+
+    public Task SetNumberAsync(int handle, string property, double value)
     {
-        Native.SetNumber(handle, property, value);
-        return ValueTask.CompletedTask;
+        SetNumber(handle, property, value);
+        return Task.CompletedTask;
     }
 
-    public ValueTask SubscribeAsync(int handle, string eventName, int callbackId)
+    public Task SubscribeAsync(int handle, string eventName, int callbackId)
     {
-        Native.Subscribe(handle, eventName, callbackId);
-        return ValueTask.CompletedTask;
+        Subscribe(handle, eventName, callbackId);
+        return Task.CompletedTask;
     }
 
-    public ValueTask ReleaseAsync(int handle)
+    public Task ReleaseAsync(int handle)
     {
-        Native.Release(handle);
-        return ValueTask.CompletedTask;
+        Release(handle);
+        return Task.CompletedTask;
     }
 
-    public ValueTask RaiseAsync(int handle, string eventName, string payloadJson)
+    public Task RaiseAsync(int handle, string eventName, string payloadJson)
     {
-        Native.Raise(handle, eventName, payloadJson);
-        return ValueTask.CompletedTask;
+        Raise(handle, eventName, payloadJson);
+        return Task.CompletedTask;
     }
 
     private static partial class Native

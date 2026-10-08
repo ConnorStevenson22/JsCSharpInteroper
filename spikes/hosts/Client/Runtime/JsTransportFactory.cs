@@ -42,4 +42,14 @@ public static class JsTransportFactory
 
         return await JsRuntimeTransport.CreateAsync(js);
     }
+
+    /// <summary>For code generated in sync mode. Only WebAssembly can run it.</summary>
+    public static async Task<IJsSyncTransport> CreateSyncAsync()
+    {
+        if (!OperatingSystem.IsBrowser())
+            throw new PlatformNotSupportedException(
+                "These bindings were generated in sync mode, which only runs on Blazor WebAssembly. " +
+                "Server and Hybrid run .NET outside the browser; regenerate with --api async.");
+        return await JsImportTransport.CreateAsync();
+    }
 }

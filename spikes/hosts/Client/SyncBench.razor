@@ -1,0 +1,60 @@
+@using System.Diagnostics
+@using System.Text
+@using HostsSpike.Client.Generated
+@using HostsSpike.Client.Generated.Sync
+@using HostsSpike.Client.Runtime
+
+<pre id="results">@results</pre>
+
+@code {
+    // Sync-mode bindings: plain properties, WebAssembly only.
+    string results = "running";
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        var sb = new StringBuilder();
+        try
+        {
+            sb.AppendLine($"running in: {(OperatingSystem.IsBrowser() ? "WebAssembly" : "server process")}, generated API: sync");
+            var js = await JsTransportFactory.CreateSyncAsync();
+            sb.AppendLine($"transport: {js.Name}");
+
+            using var view = MapView.Create(js, new() { Zoom = 4, Rotation = 0 });
+            view.Zoom = 7;
+            sb.AppendLine($"view.Zoom after view.Zoom = 7: {view.Zoom}");
+
+            double sum = 0;
+            for (int i = 0; i < 1_000; i++) sum += view.Zoom; // warm-up
+            var sw = Stopwatch.StartNew();
+            for (int i = 0; i < 100_000; i++) sum += view.Zoom;
+            sb.AppendLine($"read view.Zoom:                    {Per(sw, 100_000)}");
+
+            sw.Restart();
+            for (int i = 0; i < 100_000; i++) view.Zoom = i;
+            sb.AppendLine($"write view.Zoom:                   {Per(sw, 100_000)}");
+
+            long allocated = GC.GetAllocatedBytesForCurrentThread();
+            for (int i = 0; i < 1_000; i++) sum += view.Zoom;
+            allocated = GC.GetAllocatedBytesForCurrentThread() - allocated;
+            sb.AppendLine($"managed bytes allocated per read: {allocated / 1_000.0:F0}");
+
+            sb.AppendLine($"snapshot: {view.Snapshot()}");
+
+            ClickEvent? clicked = null;
+            using (view.OnClick(e => clicked = e))
+            {
+                js.Raise(view.Handle, "click", """{"x":10,"y":20}""");
+                sb.AppendLine($"event via [JSExport], delivered before Raise() returned: {clicked}");
+            }
+        }
+        catch (Exception ex)
+        {
+            sb.AppendLine($"ERROR {ex.GetType().Name}: {ex.Message}");
+        }
+        results = sb.ToString();
+        StateHasChanged();
+    }
+
+    static string Per(Stopwatch sw, int n) => $"{sw.Elapsed.TotalMilliseconds * 1e6 / n:F0} ns/op";
+}

@@ -1,6 +1,7 @@
 @using System.Diagnostics
 @using System.Text
 @using HostsSpike.Client.Generated
+@using HostsSpike.Client.Generated.Async
 @using HostsSpike.Client.Runtime
 @using Microsoft.Extensions.Options
 @inject IJSRuntime JS
@@ -10,7 +11,7 @@
 <pre id="results">@results</pre>
 
 @code {
-    // Runs the same generated-style code on whichever host renders it, and reports what it observed.
+    // Async-mode bindings: runs the same generated code on whichever host renders it, and reports what it observed.
     string results = "running";
     IJsTransport? transport;
 
@@ -45,7 +46,7 @@
             for (int i = 0; i < reads; i++) sum += await view.GetZoomAsync();
             sb.AppendLine($"await GetZoomAsync(), sequential:  {Per(sw, reads)}");
 
-            if (browser) // on Server, continuations hop threads, so per-thread counters mean nothing
+            if (OperatingSystem.IsBrowser()) // on Server, continuations hop threads, so per-thread counters mean nothing
             {
                 long allocated = GC.GetAllocatedBytesForCurrentThread();
                 for (int i = 0; i < 1_000; i++) sum += await view.GetZoomAsync();
@@ -60,7 +61,7 @@
 
             sw.Restart();
             var inFlight = new Task[writes];
-            for (int i = 0; i < writes; i++) inFlight[i] = view.SetZoomAsync(i).AsTask();
+            for (int i = 0; i < writes; i++) inFlight[i] = view.SetZoomAsync(i);
             await Task.WhenAll(inFlight);
             sb.AppendLine($"SetZoomAsync() pipelined (WhenAll): {Per(sw, writes)}");
             sb.AppendLine($"zoom after pipelined writes: {await view.GetZoomAsync()} (last write was {writes - 1}; order preserved)");
