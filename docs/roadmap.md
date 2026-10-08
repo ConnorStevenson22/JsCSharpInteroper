@@ -1,6 +1,6 @@
 # Implementation roadmap
 
-*Draft 2, October 2026. Builds on the [feasibility report](report.md). Claims marked **verified** come from the runnable [spikes](../spikes) (.NET 11 RC1, Mono WebAssembly, headless Chromium).*
+*Draft 3, October 2026. Builds on the [feasibility report](report.md). Claims marked **verified** come from the runnable [spikes](../spikes) (.NET 11 RC1, Mono WebAssembly, headless Chromium).*
 
 "Interoper" is a working name taken from the repo, and `@acme/maps` is a stand-in for whatever JS library a consumer binds.
 
@@ -13,12 +13,14 @@
 | # | Decision |
 |---|---|
 | D1 | **.NET 11+ only.** C# 15 unions, `closed` hierarchies and other new features are fair game. |
-| D2 | **Every Blazor host is first-class:** Server, WebAssembly and Hybrid (MAUI/WPF/WinForms `BlazorWebView`). |
-| D3 | **Live objects use async get/set methods that mirror the JS names:** `zoom` → `GetZoomAsync()` / `SetZoomAsync(value)`. One API on every host; no synchronous properties. |
+| D2 | **Every Blazor host is first-class:** Server, WebAssembly and Hybrid (MAUI/WPF/WinForms `BlazorWebView`). Hybrid takes the `IJSRuntime` path, like Server: .NET runs natively beside the WebView, not inside it (verified, §3.1). |
+| D3 | **Live objects use async get/set methods that mirror the JS names, with the `Async` suffix:** `zoom` → `GetZoomAsync()` / `SetZoomAsync(value)`, `goTo()` → `GoToAsync()`. One API on every host; no synchronous properties. |
 | D4 | **Mono only on WebAssembly.** CoreCLR is off the table while it is slower; revisit when .NET 12 ships. |
 | D5 | **We publish only the generator and runtime.** No bindings for any third-party library ship from this repo. Consumers `npm install` their JS library and generate the C# themselves. |
 | D6 | **ArcGIS is our private validation target and never enters the repo.** No typings, generated output, profiles or samples. |
 | D7 | **Unorthodox is allowed:** we own the wire protocol, the handle table and the value model. |
+| D8 | **The transport is chosen automatically per component, with a config override** (`"Interop": { "Transport": "Auto" \| "JsRuntime" \| "JsImport" }`); see §3.1. |
+| D9 | **ArcGIS validation lives in a separate private GitHub repo** next to this one (§6). That's the least friction for development: it's durable across ephemeral cloud sessions, versioned, and CI can run it. |
 
 ### Proposed (please confirm or veto)
 
@@ -186,6 +188,21 @@ There is no per-member generated JS.
 - `services.AddInteroper()` registers a scoped `IJsRealm` that picks the transport for the host.
 - Generated code only ever sees `IJsTransport`, through the realm and its scopes.
 
+**Choosing the transport (verified in `spikes/hosts`).** The mode comes from configuration, `"Interop": { "Transport": "Auto" }`, and is resolved **per component at runtime**:
+
+| Mode | WebAssembly | Server | Hybrid |
+|---|---|---|---|
+| `Auto` (default) | `[JSImport]` | `IJSRuntime` | `IJSRuntime` |
+| `JsRuntime` | `IJSRuntime`: reproduces Server/Hybrid behaviour in the browser, useful for parity tests (~165 µs per call vs ~2 µs) | `IJSRuntime` | `IJSRuntime` |
+| `JsImport` | `[JSImport]` | fails fast with guidance | fails fast with guidance |
+
+- **Why Hybrid can't use `[JSImport]`:** in a `BlazorWebView`, .NET runs natively in the app process and JS runs in the WebView, with no shared WebAssembly runtime.
+  - Calling `[JSImport]` there throws `PlatformNotSupportedException: System.Runtime.InteropServices.JavaScript is not supported on this platform`.
+  - Hybrid's `WebViewJSRuntime` is an async `JSRuntime`, not an `IJSInProcessRuntime`.
+
+  Both were verified.
+- **Why per component, not per app:** under `InteractiveAuto`, the same component ran on the server on its first visit and in WebAssembly on the next, and `Auto` picked the matching transport each time (verified). A single app-wide switch would be wrong for one of those visits.
+
 ### 3.2 Batching (the Server lever)
 
 ```csharp
@@ -290,7 +307,22 @@ dotnet interoper generate @acme/maps --namespace Acme.Maps --profile interop/acm
 
 All committed tests run against it: unit (in-memory), golden IR and golden C#, and browser end-to-end on WebAssembly and Server.
 
-**ArcGIS stays outside the repo.** It lives in a private workspace that installs `@arcgis/core` and `@arcgis/map-components` from npm, keeps our private profile, generates bindings exactly as a consumer would, and runs ported Esri samples. At each milestone we track:
+**ArcGIS stays outside the repo, in a private companion repo** (suggested name: `JsCSharpInteroper-validation`, private). Layout:
+
+```
+JsCSharpInteroper-validation/        (private)
+  bootstrap.sh                       npm install of pinned @arcgis/core + @arcgis/map-components (node_modules gitignored)
+  profiles/arcgis.json               our private profile
+  samples/ArcGisSamples/             Blazor Web App with ported Esri samples, referencing ../JsCSharpInteroper/src/*
+  tests/                             Playwright runs on WebAssembly + Server (+ Hybrid on Windows)
+  .github/workflows/validate.yml     checks out both repos side by side and runs everything
+```
+
+- **Why a repo and not a local folder:** cloud sessions start in a fresh container, so a folder outside git disappears together with the hand-written profile and samples.
+- **How it consumes this repo:** project references to a sibling clone during development, and the published NuGet packages once they exist. That also tests the real consumer path.
+- **In a cloud session,** both repos are attached and cloned side by side, and a SessionStart hook in each repo installs the .NET 11 SDK. That removes the manual SDK install every new container needed so far.
+
+It installs `@arcgis/core` and `@arcgis/map-components` from npm, keeps our private profile, generates bindings exactly as a consumer would, and runs ported Esri samples. At each milestone we track:
 - generation time;
 - warning count;
 - trimmed app size;
@@ -304,8 +336,9 @@ All committed tests run against it: unit (in-memory), golden IR and golden C#, a
 - Repo layout (§8).
 - CI: build, unit tests, and a headless Chromium harness (from `spikes/hosts`) running WebAssembly *and* Server pages.
 - `fixtures/demo-maps` v0.
-- Private ArcGIS workspace bootstrapped.
-- *Exit:* CI is green with one end-to-end smoke test per host.
+- A SessionStart hook (`.claude/`) that installs the .NET 11 SDK, so every cloud session can build and test immediately.
+- The private companion repo (§6): you create it, then I set it up.
+- *Exit:* CI is green with one end-to-end smoke test per host, including an `InteractiveAuto` page that switches transport between visits.
 
 **M1 · Runtime core and golden slice (no generator yet)**
 - Value model; `IJsRealm`/`JsScope`/handles with identity and polymorphism; the three transports.
@@ -391,9 +424,8 @@ Nothing under any of these paths contains or is generated from ArcGIS.
 
 ## 10. Questions to confirm
 
-1. **`ValueTask` vs `Task`:** OK to return `ValueTask` (verified: zero allocations on WebAssembly), even though you said "Task"? The call sites are identical; the only rule is "await it once".
-2. **Naming:** `GetZoomAsync()`/`SetZoomAsync()` with the `Async` suffix (the .NET convention), or `GetZoom()`/`SetZoom()`? And `MapViewProperties` vs `MapViewSnapshot` for the record type?
-3. **Private ArcGIS workspace:** a local folder outside this repo, or a separate private GitHub repo (lets CI run the private checks)?
-4. **Consumer integration priority:** MSBuild-at-build (into `obj/`) first, or the CLI that writes reviewable files first? Both share an engine; this is only ordering.
-5. **Hybrid CI:** do you have, or want, a Windows runner for `BlazorWebView` tests?
-6. **Git history:** earlier commits on this branch contain an ArcGIS-derived prototype file and survey output that quoted Esri typings. They're gone from the current tree. Should I rewrite the branch history and force-push so they're gone from history too?
+1. **`ValueTask` vs `Task`:** I'm proceeding with `ValueTask` (verified: zero allocations on WebAssembly) unless you object. Call sites are identical; the only rule is "await it once".
+2. **Record naming:** `MapViewProperties` (the JS library's own vocabulary for constructor bags) or `MapViewSnapshot`?
+3. **Consumer integration priority:** MSBuild-at-build (into `obj/`) first, or the CLI that writes reviewable files first? Both share an engine; this is only ordering.
+4. **Hybrid CI:** do you have, or want, a Windows runner for `BlazorWebView` tests?
+5. **Private repo:** please create a private repo (e.g. `JsCSharpInteroper-validation`) and give the Claude GitHub app access to it. I'll set it up as described in §6.

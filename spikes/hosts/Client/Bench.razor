@@ -2,7 +2,9 @@
 @using System.Text
 @using HostsSpike.Client.Generated
 @using HostsSpike.Client.Runtime
+@using Microsoft.Extensions.Options
 @inject IJSRuntime JS
+@inject IOptions<InteropOptions> Options
 @implements IAsyncDisposable
 
 <pre id="results">@results</pre>
@@ -12,6 +14,9 @@
     string results = "running";
     IJsTransport? transport;
 
+    /// <summary>Overrides the configured transport mode (the test pages use this to try every combination).</summary>
+    [Parameter] public JsTransportMode? Transport { get; set; }
+
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (!firstRender) return;
@@ -19,8 +24,11 @@
         try
         {
             var browser = OperatingSystem.IsBrowser();
-            transport = browser ? await JsImportTransport.CreateAsync() : await JsRuntimeTransport.CreateAsync(JS);
+            var mode = Transport ?? Options.Value.Transport;
+            sb.AppendLine($"running in: {(browser ? "WebAssembly" : "server process")}, requested mode: {mode}");
+            transport = await JsTransportFactory.CreateAsync(JS, mode);
             sb.AppendLine($"transport: {transport.Name}");
+            browser = transport is JsImportTransport; // benchmark sizes follow the transport, not the host
 
             await using var view = await MapView.CreateAsync(transport, new() { Zoom = 4, Rotation = 0 });
             await view.SetZoomAsync(7);
@@ -70,7 +78,7 @@
         }
         catch (Exception ex)
         {
-            sb.AppendLine("ERROR " + ex);
+            sb.AppendLine($"ERROR {ex.GetType().Name}: {ex.Message}");
         }
         results = sb.ToString();
         StateHasChanged();
