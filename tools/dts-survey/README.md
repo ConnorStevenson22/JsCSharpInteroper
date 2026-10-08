@@ -20,6 +20,6 @@ node survey.mjs /path/to/node_modules --libs /path/to/my-libraries.json --json o
 Notes:
 
 - TypeScript **6.x** is used deliberately: TypeScript 7.0 ships no stable programmatic API yet.
-- "Discriminated" means every member of an object union has a shared property with a distinct literal type. The checker finds it, so a generator can emit the classifier attributes mechanically.
+- "Discriminated" means every member of an object union has a shared property with a distinct literal type. The checker finds it, so the generator can emit a value-based classification switch ([mapping R19](../../docs/mapping.md#4-reading-union-values-back-classification)).
 - "Distinct" union counts treat `T | null` and `T | undefined` as the same shape as `T`, so they approximate how many C# union types a generator would emit.
-- Results aren't committed, because `survey.json` quotes snippets of third-party typings. The October 2026 numbers are summarized in [`docs/report.md`](../../docs/report.md).
+- Results aren't committed, because `survey.json` quotes snippets of third-party typings. The October 2026 numbers are summarized in [`docs/mapping.md` §9](../../docs/mapping.md#9-where-these-rules-come-from).

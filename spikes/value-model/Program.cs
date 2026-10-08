@@ -56,8 +56,11 @@ Check("closed proxy hierarchy is exhaustive", Kind(new Polyline(7)) == "polyline
 // Exhaustiveness flows through Opt<T> into the closed hierarchy (omit Polygon -> CS8509).
 static string GeometryKind(Opt<Geometry> g) => g switch
 {
-    Point => "point", Polyline => "polyline", Polygon => "polygon",
-    Undefined => "undefined", null => "null",
+    Point => "point",
+    Polyline => "polyline",
+    Polygon => "polygon",
+    Undefined => "undefined",
+    null => "null",
 };
 Check("Opt<closed base>: subclass patterns + undefined + null, exhaustive",
     GeometryKind(new Polygon(3)) == "polygon" && GeometryKind(default) == "undefined" && GeometryKind(null) == "null",

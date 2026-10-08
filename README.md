@@ -1,11 +1,27 @@
 # JsCSharpInteroper
 
-Research into a **generic** generator and runtime library for calling JavaScript libraries from .NET (Blazor and beyond), now that C# 15 / .NET 11 has union types.
+**Interoper** (working name) generates C# bindings for JavaScript libraries from their TypeScript typings, plus the runtime that drives them on Blazor **Server**, **WebAssembly** and **Hybrid**. It targets .NET 11 and C# 15.
 
-- **[docs/roadmap.md](docs/roadmap.md)**: the implementation roadmap (.NET 11+, Blazor Server, WebAssembly and Hybrid). It covers the value model with `undefined` as a union case, sync/async live objects, snapshots, components, transports, the generator CLI, milestones, and open questions.
-- **[docs/report.md](docs/report.md)**: the feasibility report. It covers pain points, measured data from 12 real libraries, what C# 15 unions do and don't solve, a proposed architecture, and a roadmap.
-- **[tools/dts-survey](tools/dts-survey)**: a TypeScript-checker-based survey of `.d.ts` libraries; which libraries is a config file.
-- **[prototype/UnionInterop](prototype/README.md)**: a C# 15 prototype of the proposed mappings, checked through Blazor's real interop serializer.
-- **[spikes](spikes/README.md)**: runnable experiments backing the roadmap (the value model; sync vs async live objects on WebAssembly and Server).
+```bash
+npm install @acme/maps
+dotnet interoper generate @acme/maps --api async --namespace Acme.Maps --out Generated/AcmeMaps
+```
 
-This repo publishes a generator and runtime only. It contains no code, typings or generated bindings from any third-party JS library: consumers install their library from npm and generate bindings in their own build.
+```csharp
+await view.SetZoomAsync(7);                       // --api async: every host
+view.Zoom = 7;                                    // --api sync: WebAssembly only, plain properties
+if (await feature.GetShapeAsync() is Point p) { } // unions, undefined/null and the most-derived type, all typed
+```
+
+**Status:** design complete, implementation starting at milestone M0.
+
+| Read | For |
+|---|---|
+| [docs/roadmap.md](docs/roadmap.md) | Decisions, architecture, milestones |
+| [docs/mapping.md](docs/mapping.md) | TypeScript → C# mapping rules and diagnostics |
+| [docs/work-packages.md](docs/work-packages.md) | Delegable tasks with acceptance criteria |
+| [CLAUDE.md](CLAUDE.md) | Rules and commands for anyone (human or agent) working in the repo |
+| [spikes/](spikes/README.md) | Runnable experiments behind the key decisions |
+| [tools/dts-survey/](tools/dts-survey) | Measures which type shapes real typings use; seed for the extractor |
+
+This repo publishes a generator and runtime only. It contains no code, typings or generated bindings from any third-party JS library: consumers install their library from npm and generate bindings themselves.
