@@ -1,0 +1,54 @@
+@using System.Diagnostics
+@using System.Reflection
+@using System.Runtime.InteropServices.JavaScript
+@inject IJSRuntime JS
+
+<pre id="results">@results</pre>
+
+@code {
+    // Compares the cost of one live-property read across interop paths, and checks [JSExport] callbacks.
+    string results = "running";
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        var sb = new System.Text.StringBuilder();
+        try
+        {
+            var mono = typeof(Bench).Assembly.GetCustomAttributes<AssemblyMetadataAttribute>()
+                .First(a => a.Key == "UseMonoRuntime").Value == "true";
+            sb.AppendLine($"runtime: {System.Runtime.InteropServices.RuntimeInformation.FrameworkDescription} | {(mono ? "Mono" : "CoreCLR")}");
+            await JSHost.ImportAsync("jsbind", "../jsbind.js");
+            int h = JsBind.Create("esri.views.MapView", """{"zoom":4,"rotation":0}""");
+            var view = new LiveMapView(h);
+            view.Zoom = 7;
+            sb.AppendLine($"live sync property: zoom={view.Zoom} (set 7)");
+
+            double sum = 0;
+            for (int i = 0; i < 1_000; i++) sum += view.Zoom; // warm-up
+            var sw = Stopwatch.StartNew();
+            for (int i = 0; i < 100_000; i++) sum += view.Zoom;
+            sb.AppendLine($"JSImport sync get:            {sw.Elapsed.TotalMilliseconds * 1e6 / 100_000:F0} ns/op");
+
+            var inproc = (IJSInProcessRuntime)JS;
+            for (int i = 0; i < 100; i++) sum += inproc.Invoke<double>("jsbindGlobal.getNumber", h, "zoom");
+            sw.Restart();
+            for (int i = 0; i < 10_000; i++) sum += inproc.Invoke<double>("jsbindGlobal.getNumber", h, "zoom");
+            sb.AppendLine($"IJSInProcessRuntime.Invoke:   {sw.Elapsed.TotalMilliseconds * 1e6 / 10_000:F0} ns/op");
+
+            sw.Restart();
+            for (int i = 0; i < 2_000; i++) sum += await JS.InvokeAsync<double>("jsbindGlobal.getNumber", h, "zoom");
+            sb.AppendLine($"IJSRuntime.InvokeAsync:       {sw.Elapsed.TotalMilliseconds * 1e6 / 2_000:F0} ns/op");
+
+            sw.Restart();
+            for (int i = 0; i < 10_000; i++) _ = JsBind.GetJson(h, "zoom,rotation");
+            sb.AppendLine($"JSImport snapshot (2 props):  {sw.Elapsed.TotalMilliseconds * 1e6 / 10_000:F0} ns/op  {JsBind.GetJson(h, "zoom,rotation")}");
+
+            var ack = await JsBind.FireEvent(h, "click");
+            sb.AppendLine($"JSExport callback: {JsCallbacks.Last} -> {ack}");
+        }
+        catch (Exception ex) { sb.AppendLine("ERROR " + ex); }
+        results = sb.ToString();
+        StateHasChanged();
+    }
+}
