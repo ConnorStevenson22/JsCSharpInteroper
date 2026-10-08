@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-Interoper (working name) generates C# bindings for JavaScript libraries from their TypeScript typings, plus the runtime that drives them on Blazor Server, WebAssembly and Hybrid.
+Interoper generates C# bindings for JavaScript libraries from their TypeScript typings, plus the runtime that drives them on Blazor Server, WebAssembly and Hybrid.
 
 Read before changing anything:
 - [docs/roadmap.md](docs/roadmap.md): decisions (D1–D13), architecture, milestones.

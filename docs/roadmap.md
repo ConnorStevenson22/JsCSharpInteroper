@@ -1,6 +1,6 @@
 # Roadmap
 
-This is the plan for **Interoper** (working name), a generator and runtime that turn a JavaScript library's TypeScript typings into C# for Blazor. The type-mapping rules are in [mapping.md](mapping.md); the delegable tasks are in [work-packages.md](work-packages.md).
+This is the plan for **Interoper**, a generator and runtime that turn a JavaScript library's TypeScript typings into C# for Blazor. The type-mapping rules are in [mapping.md](mapping.md); the delegable tasks are in [work-packages.md](work-packages.md).
 
 Claims marked **verified** come from the runnable [spikes](../spikes) (.NET 11 RC1, Mono WebAssembly, headless Chromium). `@acme/maps` stands in for whatever JS library a consumer binds.
 

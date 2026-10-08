@@ -5,7 +5,8 @@ Delegable tasks for the [roadmap](roadmap.md) milestones. M0 and M1 are broken d
 ## How to work a package
 
 - **Read first:** [roadmap.md](roadmap.md), [mapping.md](mapping.md), [`CLAUDE.md`](../CLAUDE.md), plus the package's own inputs.
-- **Branch and review:** one branch per package, `wp/<id>-<slug>` (e.g. `wp/1.1-value-model`). Open a PR into `main`; CI must be green.
+- **Track it:** each package has a GitHub issue, a sub-issue of [#1 M0](https://github.com/ConnorStevenson22/JsCSharpInteroper/issues/1) or [#2 M1](https://github.com/ConnorStevenson22/JsCSharpInteroper/issues/2). Assign yourself before starting.
+- **Branch and review:** one branch per package, `wp/<id>-<slug>` (e.g. `wp/1.1-value-model`). Open a PR into `main` with `Closes #<issue>`; CI must be green.
 - **Done means:** the acceptance criteria pass, with tests. Tests that exercise a mapping rule name it in the test name or a comment (`R2`, `R19`, …).
 - **Spikes are reference material, not dependencies.** Port what you need into `src/`; never reference `spikes/` from product code.
 - **If a package forces a decision change,** update `roadmap.md` / `mapping.md` in the same PR and call it out in the PR description.
@@ -14,26 +15,26 @@ Sizes: **S** ≈ a focused session, **M** ≈ a few sessions, **L** ≈ a week o
 
 ## Dependency map
 
-| Package | Depends on | Can start in parallel with |
-|---|---|---|
-| 0.1 Solution scaffold | none | 0.4 |
-| 0.2 CI | 0.1 (browser job also needs 0.3) | 0.3, 0.4, 1.1, 1.2 |
-| 0.3 Browser test harness | 0.1 | 0.2, 0.4, 1.1, 1.2 |
-| 0.4 Fixture library | none | everything in M0 |
-| 0.5 Validation repo | GitHub access to the private repo | everything |
-| 1.1 Value model | 0.1 | 0.2, 0.3, 0.4, 1.2 |
-| 1.2 `interoper.js` | 0.1 | 0.2, 0.3, 0.4, 1.1 |
-| 1.3 Seams and transports | 1.1, 1.2 | |
-| 1.4 Realm, scopes, identity | 1.3 | |
-| 1.5 Batching | 1.4 | 1.6 |
-| 1.6 Golden slice | 1.1, 1.4, 0.4 | 1.5 |
-| 1.7 M1 test suites | 1.5, 1.6, 0.3 | |
+| Package | Issue | Depends on | Can start in parallel with |
+|---|---|---|---|
+| 0.1 Solution scaffold | [#3](https://github.com/ConnorStevenson22/JsCSharpInteroper/issues/3) | none | 0.4 |
+| 0.2 CI | [#6](https://github.com/ConnorStevenson22/JsCSharpInteroper/issues/6) | 0.1 (browser job also needs 0.3) | 0.3, 0.4, 1.1, 1.2 |
+| 0.3 Browser test harness | [#4](https://github.com/ConnorStevenson22/JsCSharpInteroper/issues/4) | 0.1 | 0.2, 0.4, 1.1, 1.2 |
+| 0.4 Fixture library | [#5](https://github.com/ConnorStevenson22/JsCSharpInteroper/issues/5) | none | everything in M0 |
+| 0.5 Validation repo | [#7](https://github.com/ConnorStevenson22/JsCSharpInteroper/issues/7) | GitHub access to the private repo | everything |
+| 1.1 Value model | [#8](https://github.com/ConnorStevenson22/JsCSharpInteroper/issues/8) | 0.1 | 0.2, 0.3, 0.4, 1.2 |
+| 1.2 `interoper.js` | [#9](https://github.com/ConnorStevenson22/JsCSharpInteroper/issues/9) | 0.1 | 0.2, 0.3, 0.4, 1.1 |
+| 1.3 Seams and transports | [#10](https://github.com/ConnorStevenson22/JsCSharpInteroper/issues/10) | 1.1, 1.2 | |
+| 1.4 Realm, scopes, identity | [#11](https://github.com/ConnorStevenson22/JsCSharpInteroper/issues/11) | 1.3 | |
+| 1.5 Batching | [#12](https://github.com/ConnorStevenson22/JsCSharpInteroper/issues/12) | 1.4 | 1.6 |
+| 1.6 Golden slice | [#13](https://github.com/ConnorStevenson22/JsCSharpInteroper/issues/13) | 1.1, 1.4, 0.4 | 1.5 |
+| 1.7 M1 test suites | [#14](https://github.com/ConnorStevenson22/JsCSharpInteroper/issues/14) | 1.5, 1.6, 0.3 | |
 
 ---
 
 ## M0 · Groundwork
 
-### WP-0.1 Solution scaffold · S · depends on: none
+### WP-0.1 Solution scaffold · S · depends on: none · [#3](https://github.com/ConnorStevenson22/JsCSharpInteroper/issues/3)
 - **Deliverables:**
   - `Interoper.slnx`.
   - `Directory.Build.props`: `net11.0`, nullable, implicit usings, `TreatWarningsAsErrors`.
@@ -47,7 +48,7 @@ Sizes: **S** ≈ a focused session, **M** ≈ a few sessions, **L** ≈ a week o
   - `dotnet format Interoper.slnx --verify-no-changes` passes.
   - The session hook restores the solution.
 
-### WP-0.2 CI · S · depends on: 0.1 (and 0.3 for the browser job)
+### WP-0.2 CI · S · depends on: 0.1 (and 0.3 for the browser job) · [#6](https://github.com/ConnorStevenson22/JsCSharpInteroper/issues/6)
 - **Deliverables:** `.github/workflows/ci.yml` on `ubuntu-latest`:
   - setup-dotnet from `global.json`;
   - Node 22;
@@ -56,7 +57,7 @@ Sizes: **S** ≈ a focused session, **M** ≈ a few sessions, **L** ≈ a week o
   - the browser job (Playwright Chromium installed by the workflow).
 - **Acceptance:** green on a PR. A deliberate formatting error fails it.
 
-### WP-0.3 Browser test harness · M · depends on: 0.1
+### WP-0.3 Browser test harness · M · depends on: 0.1 · [#4](https://github.com/ConnorStevenson22/JsCSharpInteroper/issues/4)
 - **Inputs:** [`spikes/hosts`](../spikes/hosts): pages per mode/host, the transport switch, `run.mjs`.
 - **Deliverables:**
   - In `tests/Interoper.E2E`: a test host Blazor Web App with Server and WebAssembly render modes, plus an xUnit fixture that starts it on a free port and drives it with Microsoft.Playwright.
@@ -64,7 +65,7 @@ Sizes: **S** ≈ a focused session, **M** ≈ a few sessions, **L** ≈ a week o
   - One smoke test per page: WASM sync, WASM async, WASM async with `Transport=JsRuntime`, Server async, and Server with sync bindings (must fail fast).
 - **Acceptance:** `dotnet test tests/Interoper.E2E` passes locally and in CI.
 
-### WP-0.4 Fixture library v0 · M · depends on: none (lands after 0.1 for CI)
+### WP-0.4 Fixture library v0 · M · depends on: none (lands after 0.1 for CI) · [#5](https://github.com/ConnorStevenson22/JsCSharpInteroper/issues/5)
 - **Inputs:** [roadmap §6](roadmap.md#6-validation) pattern list; [mapping.md](mapping.md).
 - **Deliverables:** `fixtures/demo-maps/`:
   - **A small working JS library** (ES modules, ~10 classes): an abstract `Shape` with `Point`/`Line`/`Polygon`, a `MapView`, a `Layer` + `Collection`, a `Marker` with a getter ≠ setter `shape` property, and a module of functions.
@@ -83,7 +84,7 @@ Sizes: **S** ≈ a focused session, **M** ≈ a few sessions, **L** ≈ a week o
   - `node --test "fixtures/demo-maps/test/*.test.mjs"` covers the library's runtime behaviour.
   - Every roadmap §6 pattern is listed in `PATTERNS.md`.
 
-### WP-0.5 Validation repo bootstrap · S · depends on: GitHub access to `JsCSharpInteroper-validation`
+### WP-0.5 Validation repo bootstrap · S · depends on: GitHub access to `JsCSharpInteroper-validation` · [#7](https://github.com/ConnorStevenson22/JsCSharpInteroper/issues/7)
 - **Deliverables (in the private repo, never here):**
   - `README.md`;
   - `package.json` pinning `@arcgis/core` + `@arcgis/map-components`;
@@ -98,14 +99,14 @@ Sizes: **S** ≈ a focused session, **M** ≈ a few sessions, **L** ≈ a week o
 
 ## M1 · Runtime core
 
-### WP-1.1 Value model · S · depends on: 0.1
+### WP-1.1 Value model · S · depends on: 0.1 · [#8](https://github.com/ConnorStevenson22/JsCSharpInteroper/issues/8)
 - **Inputs:** [`spikes/value-model`](../spikes/value-model); mapping R1–R6.
 - **Deliverables:**
   - In `Interoper.Runtime`: `Undefined`, `Opt<T>`, and the union authoring pattern as a documented template (one hand-written reference union in the tests).
   - `Utf8JsonWriter`/`Utf8JsonReader` helpers for the three states: undefined → omit the property; `null` → `null`; absent on read → undefined.
 - **Acceptance:** the seven spike checks ported as unit tests (including the CS8509/CS8655 expectations as compile-time test cases), plus JSON round-trip tests for all three states.
 
-### WP-1.2 `interoper.js` · M · depends on: 0.1
+### WP-1.2 `interoper.js` · M · depends on: 0.1 · [#9](https://github.com/ConnorStevenson22/JsCSharpInteroper/issues/9)
 - **Inputs:** [`spikes/hosts/Client/wwwroot/interoper.js`](../spikes/hosts/Client/wwwroot/interoper.js); [roadmap §3](roadmap.md#3-runtime-architecture).
 - **Deliverables:** `src/Interoper.Runtime/wwwroot/interoper.js` (ES module):
   - **Handle table:** `Map` + `WeakMap` identity; class ids from a registered metadata table, falling back to `constructor.name`.
@@ -114,7 +115,7 @@ Sizes: **S** ≈ a focused session, **M** ≈ a few sessions, **L** ≈ a week o
   - **Entry points for both seams:** typed fast paths for `[JSImport]`, and a JSON `dispatch` for `IJSRuntime`.
 - **Acceptance:** a `node --test` suite in `tests/interoper-js/` (outside `wwwroot`, so tests don't ship as static assets) runs against the fixture library. It covers every op, identity (same object → same id), release, batch ordering and error collection.
 
-### WP-1.3 Seams and transports · M · depends on: 1.1, 1.2
+### WP-1.3 Seams and transports · M · depends on: 1.1, 1.2 · [#10](https://github.com/ConnorStevenson22/JsCSharpInteroper/issues/10)
 - **Inputs:** [`spikes/hosts/Client/Runtime`](../spikes/hosts/Client/Runtime).
 - **Deliverables:**
   - `IJsSyncTransport` and `IJsTransport` (`Task`-based).
@@ -124,7 +125,7 @@ Sizes: **S** ≈ a focused session, **M** ≈ a few sessions, **L** ≈ a week o
   - `InMemoryTransport`, implementing both seams: it emulates handles and properties, records ops, and lets tests stub calls.
 - **Acceptance:** contract tests run the same scenarios against `InMemoryTransport` (unit) and the browser transports (via the 0.3 harness).
 
-### WP-1.4 Realm, scopes, identity, polymorphism · M · depends on: 1.3
+### WP-1.4 Realm, scopes, identity, polymorphism · M · depends on: 1.3 · [#11](https://github.com/ConnorStevenson22/JsCSharpInteroper/issues/11)
 - **Deliverables:**
   - `IJsRealm` and `services.AddInteroper()`.
   - `InteropOptions.Transport` (`Auto`/`JsRuntime`/`JsImport`), resolved per component. Sync mode fails fast off-browser.
@@ -137,7 +138,7 @@ Sizes: **S** ≈ a focused session, **M** ≈ a few sessions, **L** ≈ a week o
   - The handle census returns to baseline after scope disposal, in-memory and in-browser.
   - `InteractiveAuto` picks the right transport on each visit.
 
-### WP-1.5 Batching · S · depends on: 1.4
+### WP-1.5 Batching · S · depends on: 1.4 · [#12](https://github.com/ConnorStevenson22/JsCSharpInteroper/issues/12)
 - **Deliverables:**
   - `scope.BeginBatch()`: queued writes and void calls; a read flushes first; one `batch` op per flush; `JsBatchException` listing failures.
   - A round-trip counter exposed for tests.
@@ -145,7 +146,7 @@ Sizes: **S** ≈ a focused session, **M** ≈ a few sessions, **L** ≈ a week o
   - N writes inside a batch = exactly 1 round trip (counted on Server and in-memory).
   - Program order is preserved across interleaved reads.
 
-### WP-1.6 Golden slice (hand-written bindings) · L · depends on: 1.1, 1.4, 0.4
+### WP-1.6 Golden slice (hand-written bindings) · L · depends on: 1.1, 1.4, 0.4 · [#13](https://github.com/ConnorStevenson22/JsCSharpInteroper/issues/13)
 - **Inputs:** the fixture library; [mapping.md](mapping.md) (cite R-numbers in comments).
 - **Deliverables:** `tests/GoldenSlice/` with **sync and async** hand-written bindings for:
   - `Shape` (`closed`) with `Point`/`Line`/`Polygon`;
@@ -159,7 +160,7 @@ Sizes: **S** ≈ a focused session, **M** ≈ a few sessions, **L** ≈ a week o
   Write each binding exactly as the generator should emit it: this is the generator's target in M3.
 - **Acceptance:** compiles warning-free in both modes; reviewed against mapping.md (every rule it relies on is cited).
 
-### WP-1.7 M1 test suites · M · depends on: 1.5, 1.6, 0.3
+### WP-1.7 M1 test suites · M · depends on: 1.5, 1.6, 0.3 · [#14](https://github.com/ConnorStevenson22/JsCSharpInteroper/issues/14)
 - **Deliverables:** one behavioural suite per mode over the golden slice, run on:
   - in-memory;
   - WASM (sync and async);
