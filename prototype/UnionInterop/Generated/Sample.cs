@@ -1,31 +1,29 @@
-// Hand-written stand-in for what a generator would emit from @arcgis/core 5.x typings.
-// The TypeScript source for each declaration is quoted above it.
+// Hand-written stand-in for what a generator would emit for a small, made-up JS library ("demo").
+// The illustrative TypeScript for each declaration is quoted above it.
 using System.Text.Json.Serialization;
 using Microsoft.JSInterop;
 using UnionInterop.Runtime;
 
-namespace UnionInterop.Generated.ArcGis;
+namespace UnionInterop.Generated.Sample;
 
 // ---------------------------------------------------------------------------
 // 1. String-literal union -> enum. No C# union needed (the most common union kind).
-//    accessor style: "circle" | "square" | "cross" | "x" | "diamond" | "triangle" | "path";
+//    style: "circle" | "square" | "diamond" | "triangle" | "star";
 // ---------------------------------------------------------------------------
-[JsonConverter(typeof(JsonStringEnumConverter<SimpleMarkerStyle>))]
-public enum SimpleMarkerStyle
+[JsonConverter(typeof(JsonStringEnumConverter<MarkerStyle>))]
+public enum MarkerStyle
 {
     [JsonStringEnumMemberName("circle")] Circle,
     [JsonStringEnumMemberName("square")] Square,
-    [JsonStringEnumMemberName("cross")] Cross,
-    [JsonStringEnumMemberName("x")] X,
     [JsonStringEnumMemberName("diamond")] Diamond,
     [JsonStringEnumMemberName("triangle")] Triangle,
-    [JsonStringEnumMemberName("path")] Path,
+    [JsonStringEnumMemberName("star")] Star,
 }
 
 // ---------------------------------------------------------------------------
-// 2. Primitive union.   code: string | number;   (CodedValue.code)
+// 2. Primitive union.   id: string | number;
 // ---------------------------------------------------------------------------
-public union CodedValueCode(string, double);
+public union IdOrName(string, double);
 
 // The compiler-generated union above boxes the double. Primitive unions are rare (0-3% of
 // positions) but sit on hot paths (ids, sizes), so a generator can emit the non-boxing
@@ -47,9 +45,9 @@ public readonly struct StringOrNumber : System.Runtime.CompilerServices.IUnion
 }
 
 // ---------------------------------------------------------------------------
-// 3. Mixed union.   type ColorLike = string | readonly number[] | ColorJSON | RGBA;
-//    ColorJSON is a number tuple, so it collapses into double[] with readonly number[]:
-//    the generator has to de-duplicate *after* mapping, not before.
+// 3. Mixed union.   type ColorInput = string | number[] | [number, number, number] | RGBA;
+//    The tuple and number[] both map to double[], so the generator de-duplicates
+//    *after* mapping, not before.
 // ---------------------------------------------------------------------------
 public sealed record Rgba
 {
@@ -59,16 +57,15 @@ public sealed record Rgba
     public double? A { get; init; }
 }
 
-public union ColorLike(string, double[], Rgba);
+public union ColorInput(string, double[], Rgba);
 
 // ---------------------------------------------------------------------------
-// 4. Discriminated union of property bags (ArcGIS "autocasting").
-//    geometry?: (PointProperties & { type: "point" }) | (PolylineProperties & { type: "polyline" })
-//             | (ExtentProperties & { type: "extent" }) | ... | null;
+// 4. Discriminated union of plain-data bags.
+//    shape?: (PointData & { type: "point" }) | (LineData & { type: "line" }) | (BoxData & { type: "box" }) | null;
 //    The tag is a real, constant property, so it is serialized like any other.
 // ---------------------------------------------------------------------------
 [JsDiscriminator("type", "point")]
-public sealed record PointProperties
+public sealed record PointData
 {
     public string Type => "point";
     public double? X { get; init; }
@@ -76,17 +73,17 @@ public sealed record PointProperties
     public double? Z { get; init; }
 }
 
-[JsDiscriminator("type", "polyline")]
-public sealed record PolylineProperties
+[JsDiscriminator("type", "line")]
+public sealed record LineData
 {
-    public string Type => "polyline";
-    public double[][][]? Paths { get; init; }
+    public string Type => "line";
+    public double[][]? Points { get; init; }
 }
 
-[JsDiscriminator("type", "extent")]
-public sealed record ExtentProperties
+[JsDiscriminator("type", "box")]
+public sealed record BoxData
 {
-    public string Type => "extent";
+    public string Type => "box";
     public double Xmin { get; init; }
     public double Ymin { get; init; }
     public double Xmax { get; init; }
@@ -94,10 +91,10 @@ public sealed record ExtentProperties
 }
 
 [JsonUnion(TypeClassifier = typeof(JsUnionClassifier))]
-public union GeometryProperties(PointProperties, PolylineProperties, ExtentProperties);
+public union ShapeData(PointData, LineData, BoxData);
 
 // ---------------------------------------------------------------------------
-// 5. Untagged object union.  fetchPopupFeatures(hitTarget: ScreenPoint | ScreenRect)
+// 5. Untagged object union.  hitTest(target: ScreenPoint | ScreenRect)
 //    No discriminator: only property names tell them apart -> built-in structural classifier.
 // ---------------------------------------------------------------------------
 public sealed record ScreenPoint
@@ -131,56 +128,55 @@ public union LooseHitTarget(ScreenPoint, LooseScreenRect);
 
 // ---------------------------------------------------------------------------
 // 6. Class instances -> proxies over IJSObjectReference.
-//    get geometry(): GeometryUnion | null | undefined;   (GeometryUnion = Extent | Point | Polyline | ...)
-//    set geometry(value: (PointProperties & {type:"point"}) | ... | null | undefined);
-//    The getter and setter have different types (1,553 such accessors in @arcgis/core).
+//    get shape(): Point | Line | null;
+//    set shape(value: Point | Line | PointData | LineData | BoxData | null);   // getter and setter differ
 // ---------------------------------------------------------------------------
-[JsProxyType("esri.geometry.Point"), JsonConverter(typeof(JsProxyConverter<Point>))]
+[JsProxyType("demo.Point"), JsonConverter(typeof(JsProxyConverter<Point>))]
 public sealed class Point(IJSObjectReference reference) : JsProxy(reference), IJsProxy<Point>
 {
     public static Point Wrap(IJSObjectReference reference) => new(reference);
     public ValueTask<double> GetXAsync() => Reference.GetValueAsync<double>("x");
 }
 
-[JsProxyType("esri.geometry.Polyline"), JsonConverter(typeof(JsProxyConverter<Polyline>))]
-public sealed class Polyline(IJSObjectReference reference) : JsProxy(reference), IJsProxy<Polyline>
+[JsProxyType("demo.Line"), JsonConverter(typeof(JsProxyConverter<Line>))]
+public sealed class Line(IJSObjectReference reference) : JsProxy(reference), IJsProxy<Line>
 {
-    public static Polyline Wrap(IJSObjectReference reference) => new(reference);
+    public static Line Wrap(IJSObjectReference reference) => new(reference);
 }
 
 [JsonUnion(TypeClassifier = typeof(JsUnionClassifier))]
-public union Geometry(Point, Polyline);
+public union Shape(Point, Line);
 
-// What the setter accepts: an existing instance or a property bag. Flattened, because a
-// nested union (Geometry inside GeometryOrProperties) would need two conversions.
+// What the setter accepts: an existing instance or a data bag. Flattened, because a
+// nested union (Shape inside ShapeOrData) would need two conversions.
 [JsonUnion(TypeClassifier = typeof(JsUnionClassifier))]
-public union GeometryOrProperties(Point, Polyline, PointProperties, PolylineProperties, ExtentProperties);
+public union ShapeOrData(Point, Line, PointData, LineData, BoxData);
 
-[JsProxyType("esri.Graphic"), JsonConverter(typeof(JsProxyConverter<Graphic>))]
-public sealed class Graphic(IJSObjectReference reference) : JsProxy(reference), IJsProxy<Graphic>
+[JsProxyType("demo.Feature"), JsonConverter(typeof(JsProxyConverter<Feature>))]
+public sealed class Feature(IJSObjectReference reference) : JsProxy(reference), IJsProxy<Feature>
 {
-    public static Graphic Wrap(IJSObjectReference reference) => new(reference);
+    public static Feature Wrap(IJSObjectReference reference) => new(reference);
 
     // A generated JS shim marshals the value: class instances come back as handles tagged with
-    // __jsType (ArcGIS exposes `declaredClass`), plain objects come back as JSON.
-    public ValueTask<Geometry?> GetGeometryAsync() =>
-        Reference.InvokeAsync<Geometry?>("__interop.get", "geometry");
+    // __jsType (the JS runtime class), plain objects come back as JSON.
+    public ValueTask<Shape?> GetShapeAsync() =>
+        Reference.InvokeAsync<Shape?>("__interop.get", "shape");
 
-    public ValueTask SetGeometryAsync(GeometryOrProperties? value) =>
-        Reference.InvokeVoidAsync("__interop.set", "geometry", value);
+    public ValueTask SetShapeAsync(ShapeOrData? value) =>
+        Reference.InvokeVoidAsync("__interop.set", "shape", value);
 }
 
 // ---------------------------------------------------------------------------
-// 7. Optional + nullable property bag:  symbol?: SymbolProperties | null;
+// 7. Optional + nullable data bag:  color?: ColorInput | null;
 // ---------------------------------------------------------------------------
-public sealed record GraphicProperties
+public sealed record FeatureData
 {
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
-    public JsOptional<GeometryProperties> Geometry { get; init; }
+    public JsOptional<ShapeData> Shape { get; init; }
 
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
-    public JsOptional<ColorLike> Color { get; init; }
+    public JsOptional<ColorInput> Color { get; init; }
 
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
-    public JsOptional<string> PopupTitle { get; init; }
+    public JsOptional<string> Title { get; init; }
 }

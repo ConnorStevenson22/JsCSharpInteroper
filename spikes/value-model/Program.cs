@@ -10,7 +10,7 @@ void Check(string name, bool ok, string observed)
 }
 
 // The three JS states, with no initializers anywhere.
-var bag = new SimpleMarkerSymbolProperties { Color = "red", Size = null };
+var bag = new MarkerProperties { Color = "red", Size = null };
 Check("unset member is undefined, `null` literal is JS null, value is value",
     bag.Style.IsUndefined && bag.Size.IsNull && bag.Color.Value is "red",
     $"color={bag.Color} size={bag.Size} style={bag.Style}");
@@ -21,7 +21,7 @@ Check("explicit undefined via the singleton",
 
 // Exhaustive pattern matching over all JS states. Removing the `null` arm gives CS8655,
 // removing `Undefined` gives CS8509 (checked when building this file by hand).
-static string Describe(ColorLike c) => c switch
+static string Describe(ColorInput c) => c switch
 {
     string s => $"css {s}",
     double[] rgba => $"array[{rgba.Length}]",
@@ -44,7 +44,7 @@ var options = new JsonSerializerOptions
     PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingDefault,
 };
-var json = JsonSerializer.Serialize(new SimpleMarkerSymbolProperties { Color = new double[] { 255, 0, 0, 1 }, Size = null }, options);
+var json = JsonSerializer.Serialize(new MarkerProperties { Color = new double[] { 255, 0, 0, 1 }, Size = null }, options);
 Check("serialization: undefined omitted, null kept",
     json == """{"color":[255,0,0,1],"size":null}""", json);
 

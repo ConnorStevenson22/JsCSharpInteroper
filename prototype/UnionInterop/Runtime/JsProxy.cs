@@ -4,7 +4,7 @@ using Microsoft.JSInterop;
 
 namespace UnionInterop.Runtime;
 
-/// <summary>A generated wrapper around a live JS object (class instances such as ArcGIS <c>Graphic</c>).</summary>
+/// <summary>A generated wrapper around a live JS object (a class instance, as opposed to plain data).</summary>
 public interface IJsProxy<TSelf> where TSelf : IJsProxy<TSelf>
 {
     IJSObjectReference Reference { get; }

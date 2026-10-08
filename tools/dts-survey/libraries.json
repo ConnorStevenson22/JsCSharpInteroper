@@ -1,0 +1,12 @@
+[
+  { "name": "@types/google.maps", "dir": "@types/google.maps" },
+  { "name": "@types/leaflet", "dir": "@types/leaflet" },
+  { "name": "ol (OpenLayers)", "dir": "ol" },
+  { "name": "maplibre-gl", "dir": "maplibre-gl/dist" },
+  { "name": "cesium", "dir": "cesium/Source" },
+  { "name": "chart.js", "dir": "chart.js/dist" },
+  { "name": "echarts", "dir": "echarts/types/dist" },
+  { "name": "@types/three", "dir": "@types/three" },
+  { "name": "monaco-editor", "dir": "monaco-editor/esm/vs/editor", "only": ["editor.api.d.ts"] },
+  { "name": "lib.dom.d.ts (WebIDL-derived)", "dir": "typescript/lib", "only": ["lib.dom.d.ts"] }
+]

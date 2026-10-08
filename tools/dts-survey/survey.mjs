@@ -2,7 +2,10 @@
 // actually has to deal with, per library.
 //
 // Usage:
-//   node survey.mjs <node_modules dir> [--json out.json] [--md out.md]
+//   node survey.mjs <node_modules dir> [--libs libraries.json] [--json out.json] [--md out.md]
+//
+// --libs lists the libraries to survey (default: libraries.json next to this script):
+//   [{ "name": "...", "dir": "<path under node_modules>", "only": ["file.d.ts"], "skip": ["/substr/"] }]
 //
 // Every "API position" (property, accessor, parameter, return type, type alias,
 // index signature) in each library's own .d.ts files is resolved with the
@@ -23,21 +26,9 @@ const opt = (name) => {
 const require = createRequire(path.join(modulesDir, "noop.js"));
 const ts = require("typescript");
 
-/** name, root .d.ts files, and the directory that counts as "the library". */
-const libraries = [
-  { name: "@arcgis/core", dir: "@arcgis/core" },
-  { name: "@arcgis/map-components", dir: "@arcgis/map-components/dist", skip: ["/cdn/", "/chunks/"] },
-  { name: "@types/google.maps", dir: "@types/google.maps" },
-  { name: "@types/leaflet", dir: "@types/leaflet" },
-  { name: "ol (OpenLayers)", dir: "ol" },
-  { name: "maplibre-gl", dir: "maplibre-gl/dist" },
-  { name: "cesium", dir: "cesium/Source" },
-  { name: "chart.js", dir: "chart.js/dist" },
-  { name: "echarts", dir: "echarts/types/dist" },
-  { name: "@types/three", dir: "@types/three" },
-  { name: "monaco-editor", dir: "monaco-editor/esm/vs/editor", only: ["editor.api.d.ts"] },
-  { name: "lib.dom.d.ts (WebIDL-derived)", dir: "typescript/lib", only: ["lib.dom.d.ts"] },
-];
+/** name, the directory under node_modules that counts as "the library", optional file filters. */
+const libsFile = path.resolve(opt("--libs") ?? new URL("libraries.json", import.meta.url).pathname);
+const libraries = JSON.parse(fs.readFileSync(libsFile, "utf8"));
 
 function listDts(dir, lib) {
   const out = [];
@@ -120,7 +111,7 @@ function surveyLibrary(lib) {
     promiseReturns: 0,
     callbackParams: 0,
     overloadedMethods: 0,
-    asymmetricAccessors: 0, // get/set pairs with different types (ArcGIS autocast)
+    asymmetricAccessors: 0, // get/set pairs with different types (e.g. setters that accept a plain-data bag)
     genericDeclarations: 0,
     indexSignatures: 0,
     syntax: Object.fromEntries([...Object.values(SYNTAX), "keyofOperator", "utilityTypeRef"].map((k) => [k, 0])),
@@ -318,6 +309,8 @@ for (const lib of libraries) {
   console.error(`${lib.name}: ${r.positions} positions in ${r.files} files (${Date.now() - t0} ms)`);
   results.push(r);
 }
+
+for (const out of [opt("--json"), opt("--md")]) if (out) fs.mkdirSync(path.dirname(path.resolve(out)), { recursive: true });
 
 if (opt("--json")) {
   const slim = results.map((r) => ({ ...r, unionWidth: { max: r.unionWidth.max, maxWhere: r.unionWidth.maxWhere, count: r.unionWidth.widths.length } }));

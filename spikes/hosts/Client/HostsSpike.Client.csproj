@@ -5,14 +5,11 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <OverrideHtmlAssetPlaceholders>true</OverrideHtmlAssetPlaceholders>
-    <!-- CoreCLR on WebAssembly is an opt-in preview in .NET 11. The SDK defaults this to true before
-         the project is evaluated, so set it unconditionally; -p:UseMonoRuntime=true still overrides it. -->
-    <UseMonoRuntime>false</UseMonoRuntime>
+    <NoDefaultLaunchSettingsFile>true</NoDefaultLaunchSettingsFile>
+    <StaticWebAssetProjectMode>Default</StaticWebAssetProjectMode>
   </PropertyGroup>
 
   <ItemGroup>
-    <AssemblyMetadata Include="UseMonoRuntime" Value="$(UseMonoRuntime)" />
     <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly" Version="11.0.0-rc.1.26425.128" />
   </ItemGroup>
 

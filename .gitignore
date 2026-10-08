@@ -6,3 +6,6 @@ package-lock.json
 .vs/
 out/
 out-*/
+
+# survey output: regenerate locally; it quotes snippets of third-party typings
+tools/dts-survey/results/
