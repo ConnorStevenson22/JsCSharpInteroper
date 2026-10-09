@@ -21,13 +21,14 @@ Verified ([design §8](design.md#8-evidence)).
 - The struct's cases are the mapped union members plus a nullable bottom case, `Undefined?`.
 - `default` is `undefined`: tag 0, and `Value` returns `Undefined.Value`.
 - The `null` literal compiles through a generated `implicit operator X(Undefined? value)` and means JS `null`.
-- Each case has `TryGetValue(out T)`, plus `HasValue`.
+- Each case has `TryGetValue(out T)`, plus `HasValue`, `IsUndefined` and `IsNull`.
+- The struct implements the runtime's `IJsUnion<TSelf>`, which requires the `null` conversion and static `WriteValue`/`ReadValue` for the cases. The runtime's `JsJson` helpers handle undefined and null once for every union and `Opt<T>`. Everything else (tag, constructors, `TryGetValue`, equality) is generated per union.
 
 Why not the `union` keyword: its `default` is `null`, and it boxes value types.
 
 ```csharp
 // type ColorInput = string | number[] | RGBA;   used as  color?: ColorInput | null
-[Union] public readonly struct ColorInput : IUnion
+[Union] public readonly struct ColorInput : IJsUnion<ColorInput>
 {
     public ColorInput(string value) ...
     public ColorInput(double[] value) ...
@@ -35,7 +36,8 @@ Why not the `union` keyword: its `default` is `null`, and it boxes value types.
     public ColorInput(Undefined? value) ...               // null ref = JS null, singleton = undefined
     public static implicit operator ColorInput(Undefined? value) => new(value);
     public object? Value => _tag switch { 0 => Undefined.Value, 1 => null, _ => _ref };
-    // HasValue, TryGetValue(out string), TryGetValue(out double[]), TryGetValue(out Rgba), TryGetValue(out Undefined)
+    // HasValue, IsUndefined, IsNull, TryGetValue(out string), TryGetValue(out double[]), TryGetValue(out Rgba), TryGetValue(out Undefined)
+    // static WriteValue(Utf8JsonWriter, ColorInput), static ReadValue(ref Utf8JsonReader)   (R19, R20)
 }
 ```
 
@@ -45,6 +47,8 @@ Why not the `union` keyword: its `default` is `null`, and it boxes value types.
 | `= null` | JS `null` | `null` |
 | `= "red"` / `= new double[] {…}` / `= new Rgba {…}` | value | value |
 | `= Undefined.Value` | explicit `undefined` | omitted |
+
+Where a value can't be omitted (array elements, arguments), undefined is `{"$u":1}` ([design §3.4](design.md#34-protocol)), in both directions: the `JsJson` readers accept it too.
 
 The compiler enforces exhaustiveness. A `switch` that misses `Undefined` warns CS8509; one that misses `null` warns CS8655.
 

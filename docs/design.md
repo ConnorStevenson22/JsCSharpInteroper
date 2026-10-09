@@ -82,7 +82,7 @@ await using (scope.BeginBatch())
   - `{"$h":12,"$t":7}` is a handle with its class id;
   - `{"$c":3, …}` is a value-like class instance (R16): writers tag every `XSnapshot` of a value-like class with its concrete class id, and the reviver builds `new Class(rest)`, so libraries don't need to autocast;
   - `{"$f":3}` is a .NET callback;
-  - `{"$u":1}` is undefined inside arrays and arguments; the `JSON.parse` reviver restores it.
+  - `{"$u":1}` is undefined inside arrays and arguments, in both directions; the `JSON.parse` reviver and the .NET readers restore it.
 - **Batches** travel as one op array.
 - **Errors** become `JsException` with the JS name, message and stack. The profile can map library error classes to typed subclasses.
 
@@ -131,6 +131,7 @@ dotnet interoper generate @acme/maps --api async --namespace Acme.Maps --out Gen
 | `Interoper.Tool` | the `dotnet interoper` CLI: bundled extractor + generator |
 
 - The output is plain files plus a report.
+- The runtime's public types live in the `Interoper` namespace (`Undefined`, `Opt<T>`, `JsJson`), whatever the assembly.
 - The IR cache is keyed by package version, profile hash and generator version.
 - JSDoc becomes XML docs in the consumer's output; we never redistribute a library's docs.
 - Fallbacks are reported with codes ([mapping.md §8](mapping.md#8-diagnostics)), and `--warnings-as-errors` fails the run on them.
@@ -174,7 +175,7 @@ The private validation repo generates bindings for ArcGIS exactly as a consumer 
 
 Two experiments settled the riskiest decisions before phase 1. Their code was deleted once its results were captured here; it is still in history at [`7d48a23/spikes`](https://github.com/ConnorStevenson22/JsCSharpInteroper/tree/7d48a23/spikes) for porting.
 
-**Value model** (.NET 11 RC1). All seven checks passed, and they passed again on the pinned SDK before the code was deleted. The checks covered `undefined` as a union case and the `default`, the `null` literal as JS null, exhaustive switches, `Opt<T>`, the wire format (`{"color":[255,0,0,1],"size":null}` with STJ `WhenWritingDefault`) and `closed` proxy hierarchies. Two compiler facts shaped [mapping.md §1](mapping.md#1-the-value-model):
+**Value model** (.NET 11 RC1). All seven checks passed, and they passed again on the pinned SDK before the code was deleted; they now run as tests in `tests/Interoper.Runtime.Tests`. The checks covered `undefined` as a union case and the `default`, the `null` literal as JS null, exhaustive switches, `Opt<T>`, the wire format (`{"color":[255,0,0,1],"size":null}` with STJ `WhenWritingDefault`) and `closed` proxy hierarchies. Two compiler facts shaped [mapping.md §1](mapping.md#1-the-value-model):
 - `null` never takes a union conversion (`ColorInput c = null;` is CS0037), so the generated `implicit operator X(Undefined? value)` is what makes the literal compile.
 - The bottom case must be the nullable `Undefined?`. With a non-nullable `Undefined`, a switch that misses `null` compiles silently.
 
