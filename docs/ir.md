@@ -6,7 +6,7 @@ The extractor's output and the generator's input ([design §4](design.md#4-gener
 node src/interoper-extractor/extract.mjs fixtures/demo-maps --profile fixtures/demo-maps/profile.json --out ir.json
 ```
 
-The profile is read only for its event-map property (`events.mapProperty`). The fixture's IR is committed as a golden file, [`src/interoper-extractor/test/demo-maps.ir.json`](../src/interoper-extractor/test/demo-maps.ir.json); after an intended change, regenerate it with `UPDATE_GOLDEN=1 node --test src/interoper-extractor/test/extract.test.mjs` and review the diff.
+The profile is read only for its event-map property (`events.mapProperty`). The fixture's IR is committed as a golden file, [`fixtures/demo-maps/demo-maps.ir.json`](../fixtures/demo-maps/demo-maps.ir.json), which is the generator's test input; after an intended change, regenerate it with `UPDATE_GOLDEN=1 node --test src/interoper-extractor/test/extract.test.mjs` and review the diff.
 
 ## Conventions
 
@@ -57,7 +57,7 @@ The custom elements of the package's Custom Elements Manifest (`customElements` 
 
 - An element's tag is its declaration's `tagName`, or the name of a `custom-element-definition` export of it.
 - **Attributes** are `{ name, property?, type?, doc? }`. `property` names the class member the attribute reflects, which has the type; `type` is given only when there's no `property`.
-- **Events** are `{ name, detail?, type?, doc? }`. A `CustomEvent<T>` gives `detail` (T); any other event type is `type`. Neither means a plain `Event`.
+- **Events** are `{ name, detail?, type?, doc? }`. A `CustomEvent<T>` gives `detail` (T), and so does a type that isn't an `Event`, because some manifests give the detail's type; any other event type is `type`. Neither means a plain `Event`.
 - **Slots** are `{ name, doc? }`; the default slot's name is `""`.
 - **Docs** come from the manifest: `summary` is its `description` (or `summary`), `default` an attribute's default (a JS expression), `deprecated` as for JSDoc.
 - **Types** are the manifest's type texts, resolved by the checker in the scope of the names their `references` point at, so they're the same IR types as the typings'. A text that doesn't resolve is `unresolved`. `class` is resolved the same way, from the declaration's name and module.

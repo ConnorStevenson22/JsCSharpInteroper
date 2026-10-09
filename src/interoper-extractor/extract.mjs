@@ -306,24 +306,32 @@ export function extract(packageDir, { eventMap } = {}) {
       tag,
       class: manifestType(type),
       doc: manifestDoc(decl),
-      attributes: decl.attributes?.map((a) => compact({ name: a.name, property: a.fieldName, type: a.fieldName ? undefined : manifestType(a.type), doc: manifestDoc(a) })),
+      attributes: decl.attributes?.map((a) => compact({ name: a.name, property: a.fieldName, type: manifestType(a.type), doc: manifestDoc(a) })),
       events: decl.events?.map((e) => {
         const type = manifestType(e.type);
-        const custom = type?.kind === "ref" && type.name === "CustomEvent" && !type.module; // the platform's
-        return compact({ name: e.name, detail: custom ? type.args[0] : undefined, type: custom ? undefined : type, doc: manifestDoc(e) });
+        const node = manifestNode(e.type);
+        // A CustomEvent<T> gives T; a type that isn't an Event is the detail's own (some manifests write it that way).
+        const detail = type?.kind === "ref" && type.name === "CustomEvent" && !type.module ? type.args[0]
+          : node && !checker.isTypeAssignableTo(checker.getTypeFromTypeNode(node), eventType) ? type : undefined;
+        return compact({ name: e.name, detail, type: detail ? undefined : type, doc: manifestDoc(e) });
       }),
       slots: decl.slots?.map((s) => compact({ name: s.name, doc: manifestDoc(s) })),
     });
   }
+  const eventType = checker.getDeclaredTypeOfSymbol(checker.resolveName("Event", undefined, F.Type, false));
 
-  /** A manifest type text, resolved by the checker in its virtual module, or `unresolved` when that module has errors. */
+  /** A manifest type text's node in its virtual module: undefined when it has none, null when the module has errors. */
+  function manifestNode(type) {
+    const sf = manifest.types.has(type) && program.getSourceFile(manifest.types.get(type).file);
+    if (!sf) return undefined;
+    if (program.getSyntacticDiagnostics(sf).length || program.getSemanticDiagnostics(sf).length) return null;
+    return sf.statements.find(ts.isTypeAliasDeclaration).type;
+  }
+
+  /** A manifest type text as an IR type, or `unresolved` when the checker can't resolve it. */
   function manifestType(type) {
-    const source = manifest.types.get(type);
-    if (!source) return undefined;
-    const sf = program.getSourceFile(source.file);
-    if (program.getSyntacticDiagnostics(sf).length || program.getSemanticDiagnostics(sf).length) return { kind: "unresolved", text: type.text };
-    const node = sf.statements.find(ts.isTypeAliasDeclaration).type;
-    return typeRef(checker.getTypeFromTypeNode(node), node);
+    const node = manifestNode(type);
+    return node ? typeRef(checker.getTypeFromTypeNode(node), node) : node === null ? { kind: "unresolved", text: type.text } : undefined;
   }
 
   // --- Modules ---

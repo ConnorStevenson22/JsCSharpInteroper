@@ -166,7 +166,7 @@ test("design §2: custom elements come from the manifest, linked to the typings"
   assert.deepEqual(element.slots.map((s) => s.name), ["", "toolbar"]);
 });
 
-test("design §2: manifest types the typings don't give, and ones that don't resolve", () => {
+test("design §2: manifest types the typings don't give, ones that don't resolve, and detail-typed events", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "extract-"));
   const write = (name, value) => fs.writeFileSync(path.join(dir, name), typeof value === "string" ? value : JSON.stringify(value));
   write("package.json", { name: "@acme/extra", version: "1.0.0", type: "module", customElements: "cem.json" });
@@ -179,7 +179,8 @@ test("design §2: manifest types the typings don't give, and ones that don't res
         { name: "kind", type: { text: "Kind | null", references: [{ name: "Kind", module: "kinds.js" }] }, description: "No property." },
         { name: "size", type: { text: "Size" } },
       ],
-      events: [{ name: "x-pin-press", type: { text: "MouseEvent" } }, { name: "x-pin-done" }],
+      // Some manifests give an event's detail type rather than its event type.
+      events: [{ name: "x-pin-press", type: { text: "MouseEvent" } }, { name: "x-pin-move", type: { text: "{ kind: Kind }", references: [{ name: "Kind", module: "kinds.js" }] } }, { name: "x-pin-done" }],
     }] },
     // The definition can live in another module.
     { path: "define.js", exports: [{ kind: "custom-element-definition", name: "x-pin", declaration: { name: "PinElement", module: "x-pin.js" } }] },
@@ -194,7 +195,11 @@ test("design §2: manifest types the typings don't give, and ones that don't res
       { name: "kind", type: { kind: "union", types: [{ kind: "ref", name: "Kind", module: "@acme/extra/kinds.js" }, { kind: "primitive", name: "null" }] }, doc: { summary: "No property." } },
       { name: "size", type: { kind: "unresolved", text: "Size" } },
     ],
-    events: [{ name: "x-pin-press", type: { kind: "ref", name: "MouseEvent" } }, { name: "x-pin-done" }],
+    events: [
+      { name: "x-pin-press", type: { kind: "ref", name: "MouseEvent" } },
+      { name: "x-pin-move", detail: { kind: "object", members: [{ kind: "property", name: "kind", type: { kind: "ref", name: "Kind", module: "@acme/extra/kinds.js" } }] } },
+      { name: "x-pin-done" },
+    ],
   }]);
 });
 
@@ -208,13 +213,13 @@ test("a package without a manifest has no elements", () => {
 });
 
 // The golden IR is the generator's input for the fixture. It's also the "byte-identical across runs" check.
-const golden = fileURLToPath(new URL("demo-maps.ir.json", import.meta.url));
+const golden = path.join(fixture, "demo-maps.ir.json");
 
 test("the CLI writes the golden IR for the fixture, byte for byte", () => {
   const json = execFileSync(process.execPath, [fileURLToPath(new URL("../extract.mjs", import.meta.url)), fixture, "--profile", `${fixture}/profile.json`], { encoding: "utf8" });
   if (process.env.UPDATE_GOLDEN) fs.writeFileSync(golden, json);
   assert.ok(json === fs.readFileSync(golden, "utf8"),
-    "The IR differs from src/interoper-extractor/test/demo-maps.ir.json. If the change is intended, run\n" +
+    "The IR differs from fixtures/demo-maps/demo-maps.ir.json. If the change is intended, run\n" +
     "  UPDATE_GOLDEN=1 node --test src/interoper-extractor/test/extract.test.mjs\nand review the diff.");
   assert.deepEqual(JSON.parse(json), ir);
 });

@@ -36,8 +36,7 @@ export function createProgram(ts, files, virtual = {}) {
     strict: true,
   };
   const host = ts.createCompilerHost(options);
-  const { getSourceFile, fileExists } = host;
-  host.fileExists = (f) => Object.hasOwn(virtual, f) || fileExists(f);
+  const { getSourceFile } = host;
   host.getSourceFile = (f, language, ...rest) => (Object.hasOwn(virtual, f) ? ts.createSourceFile(f, virtual[f], language) : getSourceFile(f, language, ...rest));
   return ts.createProgram([...files, ...Object.keys(virtual)], options, host);
 }
