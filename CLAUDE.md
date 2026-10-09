@@ -22,7 +22,7 @@ There is no CI. Run these before merging; all of them must pass.
 ```bash
 dotnet build Interoper.slnx
 dotnet test Interoper.slnx                      # unit + golden tests
-dotnet test tests/Interoper.E2E                 # browser tests (Playwright, Chromium), once the harness lands
+dotnet test tests/Interoper.E2E                 # browser tests (Playwright, Chromium); the slnx builds them but doesn't run them
 dotnet format Interoper.slnx --verify-no-changes
 node --test "tests/interoper-js/*.test.mjs" "fixtures/demo-maps/test/*.test.mjs"   # JS tests (glob form; a bare folder fails on Node 22)
 ```

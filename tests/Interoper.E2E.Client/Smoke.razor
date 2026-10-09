@@ -1,0 +1,61 @@
+@using System.Text.Json.Nodes
+@inject IJSRuntime JS
+
+<pre id="result" data-done="@done">@string.Join("\n", lines)</pre>
+
+@code {
+    // Plays one protocol scenario (design §3.4) against fixtures/demo-maps through one seam, and prints each
+    // response so the test can assert on it.
+    public const string InteroperUrl = "/_content/Interoper.Runtime/interoper.js";
+    const string Metadata = "/demo-maps.meta.js";
+
+    readonly List<string> lines = [];
+    bool done;
+
+    [Parameter, EditorRequired] public SmokeSeam Seam { get; set; }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        try
+        {
+            Func<string, Task<string>> invoke, send;
+            Func<Task<int>> census;
+            if (Seam == SmokeSeam.JsRuntime)
+            {
+                var glue = await JsRuntimeGlue.ImportAsync(JS);
+                await glue.Start(Metadata);
+                invoke = send = glue.Invoke;
+                census = glue.Census;
+            }
+            else
+            {
+                // On Server this throws: [JSImport] needs .NET running in the browser.
+#pragma warning disable CA1416
+                await JsImportGlue.ImportAsync();
+                await JsImportGlue.Start(Metadata);
+                invoke = JsImportGlue.Invoke;
+                send = Seam == SmokeSeam.JsImportSync ? json => Task.FromResult(JsImportGlue.InvokeSync(json)) : invoke;
+                census = () => Task.FromResult(JsImportGlue.Census());
+#pragma warning restore CA1416
+            }
+
+            // Sync mode loads entity modules up front, through the async entry point.
+            lines.Add(await invoke("""{"op":"load","modules":["@acme/demo-maps/MapView.js"]}"""));
+            var created = await send("""{"op":"create","t":5,"args":[{"zoom":3,"center":{"$c":2,"type":"point","x":1,"y":2}}]}""");
+            lines.Add(created);
+            var h = (int)JsonNode.Parse(created)!["v"]!["$h"]!;
+            lines.Add(await send($$"""{"op":"set","h":{{h}},"name":"zoom","value":7}"""));
+            lines.Add(await send($$"""{"op":"get","h":{{h}},"name":"zoom"}"""));
+            lines.Add(await send($$"""{"op":"get","h":{{h}},"name":"center","byValue":true}"""));
+            lines.Add(await send($$"""{"op":"release","ids":[{{h}}]}"""));
+            lines.Add($"census {await census()}");
+        }
+        catch (Exception e)
+        {
+            lines.Add($"{e.GetType().Name}: {e.Message}");
+        }
+        done = true;
+        StateHasChanged();
+    }
+}
