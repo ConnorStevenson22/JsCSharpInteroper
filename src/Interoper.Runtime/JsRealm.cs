@@ -124,7 +124,7 @@ public sealed class JsRealm(Func<Task<IJsTransport>> start, JsClassRegistry clas
         }
         catch (JSDisconnectedException)
         {
-            // The circuit is gone, and the handle with it.
+            // The circuit is gone, and the handle with it. Other failures are lost: nobody awaits a background release.
         }
     }
 
