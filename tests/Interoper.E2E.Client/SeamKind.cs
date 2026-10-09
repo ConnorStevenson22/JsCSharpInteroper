@@ -10,4 +10,7 @@ public enum SeamKind
 
     /// <summary>JsRuntimeTransport: async mode on Server and Hybrid, or forced on WebAssembly.</summary>
     JsRuntime,
+
+    /// <summary>A JsImportTransport and a JsRuntimeTransport side by side on one WebAssembly page.</summary>
+    TwoTransports,
 }

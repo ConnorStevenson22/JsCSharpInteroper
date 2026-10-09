@@ -17,7 +17,8 @@ internal static class InMemoryDemoMaps
         {
             Members = ["center", "zoom", "rotation", "basemap", "cursor", "title", "selected", "markers"],
         })
-        .Define(new(TransportContract.Marker, "Marker", args => new FakeMarker(Bag(args))) { Members = ["position", "label", "style"] });
+        .Define(new(TransportContract.Marker, "Marker", args => new FakeMarker(Bag(args))) { Members = ["position", "label", "style"] })
+        .DefineModule(TransportContract.Measure, new FakeMeasure());
 
     // The constructor bag: `new X({ … } = {})`.
     private static Dictionary<string, object?> Bag(object?[] args) => args.FirstOrDefault() as Dictionary<string, object?> ?? [];
@@ -112,4 +113,17 @@ internal sealed class FakeMarker : InMemoryObject
     // Calls the formatter synchronously and uses its return value (R21).
     public override object? Get(string name) =>
         name == "displayLabel" ? (base.Get("labelFormatter") is JsFunction format ? format(this) : base.Get("label")) : base.Get(name);
+}
+
+/// <summary>The <c>measure.js</c> module.</summary>
+internal sealed class FakeMeasure : InMemoryObject
+{
+    public override string ClassName => "measure";
+
+    public override object? Call(string name, object?[] args)
+    {
+        if (name != "distance") return base.Call(name, args);
+        var (a, b) = ((Dictionary<string, object?>)args[0]!, (Dictionary<string, object?>)args[1]!);
+        return Math.Sqrt(Math.Pow((double)b["x"]! - (double)a["x"]!, 2) + Math.Pow((double)b["y"]! - (double)a["y"]!, 2));
+    }
 }

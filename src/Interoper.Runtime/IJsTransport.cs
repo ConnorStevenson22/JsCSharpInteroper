@@ -17,10 +17,10 @@ public interface IJsSyncTransport
 
     // Typed fast paths for primitive properties; errors throw JsException.
     double GetNumber(int handle, string name);
-    string? GetString(int handle, string name);
+    string GetString(int handle, string name);
     bool GetBoolean(int handle, string name);
     void SetNumber(int handle, string name, double value);
-    void SetString(int handle, string name, string? value);
+    void SetString(int handle, string name, string value);
     void SetBoolean(int handle, string name, bool value);
 
     /// <summary>The number of live JS handles, for leak checks.</summary>
@@ -41,10 +41,10 @@ public interface IJsTransport
     Task<string> InvokeAsync(string opJson);
 
     Task<double> GetNumberAsync(int handle, string name);
-    Task<string?> GetStringAsync(int handle, string name);
+    Task<string> GetStringAsync(int handle, string name);
     Task<bool> GetBooleanAsync(int handle, string name);
     Task SetNumberAsync(int handle, string name, double value);
-    Task SetStringAsync(int handle, string name, string? value);
+    Task SetStringAsync(int handle, string name, string value);
     Task SetBooleanAsync(int handle, string name, bool value);
 
     /// <inheritdoc cref="IJsSyncTransport.Census"/>

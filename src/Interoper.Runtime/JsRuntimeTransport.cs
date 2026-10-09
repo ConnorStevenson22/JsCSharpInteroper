@@ -19,15 +19,25 @@ public sealed class JsRuntimeTransport : IJsTransport, IAsyncDisposable
     public JsCallbacks Callbacks => sink.Value;
 
     /// <summary>
-    /// Imports interoper.js and starts it with the generated metadata module. One transport per page: JS has
-    /// one callback sink.
+    /// Imports its own instance of interoper.js and starts it with the generated metadata module. Each transport
+    /// has its own handles, callbacks and census, even next to other transports on the same page.
     /// </summary>
     public static async Task<JsRuntimeTransport> StartAsync(IJSRuntime js, string metadataSpecifier)
     {
-        var module = await Call(js.InvokeAsync<IJSObjectReference>("import", ModuleUrl));
+        // A unique query makes a separate module instance (Server circuits and WebAssembly can share a page).
+        var module = await Call(js.InvokeAsync<IJSObjectReference>("import", $"{ModuleUrl}?t={Guid.NewGuid():N}"));
         var sink = DotNetObjectReference.Create(new JsCallbacks());
-        await Call(module.InvokeVoidAsync("startWithDotNetObject", metadataSpecifier, sink));
-        return new JsRuntimeTransport(module, sink);
+        var transport = new JsRuntimeTransport(module, sink);
+        try
+        {
+            await Call(module.InvokeVoidAsync("startWithDotNetObject", metadataSpecifier, sink));
+            return transport;
+        }
+        catch
+        {
+            await transport.DisposeAsync();
+            throw;
+        }
     }
 
     public Task<string> InvokeAsync(string opJson) => Call(module.InvokeAsync<string>("invoke", opJson));
@@ -35,23 +45,27 @@ public sealed class JsRuntimeTransport : IJsTransport, IAsyncDisposable
     public Task<int> CensusAsync() => Call(module.InvokeAsync<int>("census"));
 
     public async Task<double> GetNumberAsync(int handle, string name) =>
-        JsEnvelope.Read(await InvokeAsync(JsOp.Get(handle, name)), JsOp.ReadNumber);
+        JsOp.Primitive(await InvokeAsync(JsOp.Get(handle, name)), name, JsJson.ReadNumber);
 
-    public async Task<string?> GetStringAsync(int handle, string name) =>
-        JsEnvelope.Read(await InvokeAsync(JsOp.Get(handle, name)), JsOp.ReadString);
+    public async Task<string> GetStringAsync(int handle, string name) =>
+        JsOp.Primitive(await InvokeAsync(JsOp.Get(handle, name)), name, JsJson.ReadString);
 
     public async Task<bool> GetBooleanAsync(int handle, string name) =>
-        JsEnvelope.Read(await InvokeAsync(JsOp.Get(handle, name)), JsOp.ReadBoolean);
+        JsOp.Primitive(await InvokeAsync(JsOp.Get(handle, name)), name, JsJson.ReadBoolean);
 
     public async Task SetNumberAsync(int handle, string name, double value) =>
         JsEnvelope.Check(await InvokeAsync(JsOp.Set(handle, name, value)));
 
-    public async Task SetStringAsync(int handle, string name, string? value) =>
+    public async Task SetStringAsync(int handle, string name, string value) =>
         JsEnvelope.Check(await InvokeAsync(JsOp.Set(handle, name, value)));
 
     public async Task SetBooleanAsync(int handle, string name, bool value) =>
         JsEnvelope.Check(await InvokeAsync(JsOp.Set(handle, name, value)));
 
+    /// <summary>
+    /// Releases the sink and the module. Events that JS raises afterwards fail on the JS side, so release
+    /// subscriptions first.
+    /// </summary>
     public async ValueTask DisposeAsync()
     {
         sink.Dispose();

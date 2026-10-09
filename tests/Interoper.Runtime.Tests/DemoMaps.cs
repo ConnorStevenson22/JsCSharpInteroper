@@ -35,7 +35,7 @@ public sealed record Rgba
                 case "r": r = reader.GetDouble(); break;
                 case "g": g = reader.GetDouble(); break;
                 case "b": b = reader.GetDouble(); break;
-                case "a": a = JsJson.ReadOpt(ref reader, Json.ReadDouble); break;
+                case "a": a = JsJson.ReadOpt(ref reader, JsJson.ReadNumber); break;
                 default: reader.Skip(); break;
             }
         });
@@ -123,7 +123,7 @@ public sealed record StrokeStyle
             switch (name)
             {
                 case "color": result = result with { Color = JsJson.ReadUnion<ColorInput>(ref reader) }; break;
-                case "width": result = result with { Width = JsJson.ReadOpt(ref reader, Json.ReadDouble) }; break;
+                case "width": result = result with { Width = JsJson.ReadOpt(ref reader, JsJson.ReadNumber) }; break;
                 default: reader.Skip(); break;
             }
         });

@@ -1,3 +1,5 @@
+using Microsoft.JSInterop;
+
 namespace Interoper.Runtime.Tests;
 
 /// <summary>What the transport contract doesn't reach: envelope edge cases, the registry, the rarer in-memory ops.</summary>
@@ -6,9 +8,9 @@ public sealed class TransportTests
     [Fact]
     public void EnvelopeReadsAValueUndefinedAndAnError()
     {
-        Assert.Equal(5, JsEnvelope.Read("""{"v":5}""", Json.ReadDouble));
-        Assert.Equal(0, JsEnvelope.Read("{}", Json.ReadDouble)); // undefined is default
-        Assert.Equal(default, JsEnvelope.Read("{}", (ref reader) => JsJson.ReadOpt(ref reader, Json.ReadDouble))); // R3
+        Assert.Equal(5, JsEnvelope.Read("""{"v":5}""", JsJson.ReadNumber));
+        Assert.Equal(0, JsEnvelope.Read("{}", JsJson.ReadNumber)); // undefined is default
+        Assert.Equal(default, JsEnvelope.Read("{}", (ref reader) => JsJson.ReadOpt(ref reader, JsJson.ReadNumber))); // R3
 
         // A batch error's per-op list is left for JsBatchException.
         var e = Assert.Throws<JsException>(() =>
@@ -53,6 +55,61 @@ public sealed class TransportTests
         var e = Assert.Throws<JsException>(() => JsEnvelope.Check(transport.Invoke("""{"op":"release","ids":[2,1,3]}""")));
         Assert.Equal(("AggregateError", "2 dispose() calls failed"), (e.Name, e.Message));
         Assert.Equal(0, transport.Census());
+    }
+
+    [Fact]
+    public void InMemoryRejectsBatchesAndForeignValues()
+    {
+        var transport = InMemoryDemoMaps.Create();
+        var e = Assert.Throws<JsException>(() => JsEnvelope.Check(transport.Invoke("""{"op":"batch","ops":[]}""")));
+        Assert.Equal(("InteroperError", "batch is not emulated yet"), (e.Name, e.Message));
+
+        transport = new InMemoryTransport().Define(new(1, "Odd", _ => new Odd()));
+        JsEnvelope.Check(transport.Invoke("""{"op":"create","t":1}"""));
+        e = Assert.Throws<JsException>(() => JsEnvelope.Check(transport.Invoke("""{"op":"get","h":1,"name":"when"}""")));
+        Assert.Equal(("Error", $"A {typeof(DateTime)} is not an in-memory JS value; see InMemoryObject."), (e.Name, e.Message));
+    }
+
+    [Fact]
+    public async Task JsRuntimeTransportMapsJSExceptionAndPassesDisconnectsThrough()
+    {
+        var js = new StubRuntime { FailOn = "invoke", Error = new JSException("boom") };
+        var transport = await JsRuntimeTransport.StartAsync(js, "/meta.js");
+        var e = await Assert.ThrowsAsync<JsException>(() => transport.InvokeAsync("{}"));
+        Assert.Equal(("Error", "boom"), (e.Name, e.Message));
+
+        js = new StubRuntime { FailOn = "startWithDotNetObject", Error = new JSDisconnectedException("gone") };
+        await Assert.ThrowsAsync<JSDisconnectedException>(() => JsRuntimeTransport.StartAsync(js, "/meta.js"));
+        Assert.True(js.Disposed); // a failed start disposes the module
+    }
+
+    // Serves as the runtime and as the imported module; fails one identifier.
+    private sealed class StubRuntime : IJSRuntime, IJSObjectReference
+    {
+        public string FailOn { get; init; } = "";
+        public Exception Error { get; init; } = null!;
+        public bool Disposed { get; private set; }
+
+        public ValueTask<TValue> InvokeAsync<TValue>(string identifier, object?[]? args) =>
+            identifier == FailOn ? ValueTask.FromException<TValue>(Error)
+            : identifier == "import" ? new((TValue)(object)this)
+            : new(default(TValue)!);
+
+        public ValueTask<TValue> InvokeAsync<TValue>(string identifier, CancellationToken cancellationToken, object?[]? args) =>
+            InvokeAsync<TValue>(identifier, args);
+
+        public ValueTask DisposeAsync()
+        {
+            Disposed = true;
+            return default;
+        }
+    }
+
+    private sealed class Odd : InMemoryObject
+    {
+        public override string ClassName => "Odd";
+
+        public override object? Get(string name) => name == "when" ? DateTime.UnixEpoch : base.Get(name);
     }
 
     private sealed class Faulty : InMemoryObject

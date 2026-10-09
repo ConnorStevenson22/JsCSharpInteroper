@@ -24,4 +24,8 @@ public sealed class InMemoryContractTests
         var seam = sync ? Seam.Sync(transport) : Seam.Async(transport, callbacksReturn: true);
         return TransportContract.Cases.Single(c => c.Name == name).Run(seam);
     }
+
+    [Fact]
+    public Task TwoTransportsAreIndependent() =>
+        TransportContract.Independent(Seam.Sync(InMemoryDemoMaps.Create()), Seam.Async(InMemoryDemoMaps.Create(), callbacksReturn: true));
 }

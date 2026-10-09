@@ -60,10 +60,15 @@ export async function invoke(opJson) {
   return respondWith(false, opJson);
 }
 
-// Typed fast paths for [JSImport]: one JS function serves number, string and bool signatures. They throw;
-// .NET then reads the error with takeError, since [JSImport] keeps only its message.
+// Typed fast paths for [JSImport]: one JS function serves number, string and bool signatures, for members
+// declared as non-null primitives, so null or undefined is an error. Errors are thrown; .NET then reads them
+// with takeError, since [JSImport] keeps only the message.
 export function getValue(handle, name) {
-  return fastPath(() => target(handle)[name]);
+  return fastPath(() => {
+    const value = target(handle)[name];
+    if (value == null) throw new InteroperError(`${name} is ${value}; a typed fast path needs a value`);
+    return value;
+  });
 }
 
 export function setValue(handle, name, value) {

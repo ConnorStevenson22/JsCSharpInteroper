@@ -7,7 +7,7 @@
     // Runs the transport contract (tests/Interoper.Runtime.Tests/TransportContract.cs) against fixtures/demo-maps
     // through one seam, and prints one line per case for the test to assert on.
     const string Metadata = "/demo-maps.meta.js";
-    const string Load = """{"op":"load","modules":["@acme/demo-maps/MapView.js","@acme/demo-maps/Marker.js"]}""";
+    const string Load = """{"op":"load","modules":["@acme/demo-maps/MapView.js","@acme/demo-maps/Marker.js","@acme/demo-maps/measure.js"]}""";
 
     readonly List<string> lines = [];
     bool done;
@@ -19,39 +19,54 @@
         if (!firstRender) return;
         try
         {
+            if (Kind == SeamKind.TwoTransports)
+            {
+                await RunAsync("two transports on one page", async () =>
+                    await TransportContract.Independent(await StartJsImportAsync(sync: true), await StartJsRuntimeAsync()));
+                return;
+            }
             var seam = await StartAsync();
             foreach (var (name, run) in TransportContract.Cases)
             {
-                try
-                {
-                    await run(seam);
-                    lines.Add($"PASS {name}");
-                }
-                catch (Exception e)
-                {
-                    lines.Add($"FAIL {name}: {e.GetType().Name}: {e.Message}");
-                }
+                await RunAsync(name, () => run(seam));
             }
         }
         catch (Exception e)
         {
             lines.Add($"{e.GetType().Name}: {e.Message}");
         }
-        done = true;
-        StateHasChanged();
+        finally
+        {
+            done = true;
+            StateHasChanged();
+        }
     }
 
-    async Task<Seam> StartAsync()
+    async Task RunAsync(string name, Func<Task> run)
     {
-        if (Kind == SeamKind.JsRuntime)
+        try
         {
-            return Seam.Async(await JsRuntimeTransport.StartAsync(JS, Metadata), callbacksReturn: false);
+            await run();
+            lines.Add($"PASS {name}");
         }
+        catch (Exception e)
+        {
+            lines.Add($"FAIL {name}: {e.GetType().Name}: {e.Message}");
+        }
+    }
+
+    Task<Seam> StartAsync() =>
+        Kind == SeamKind.JsRuntime ? StartJsRuntimeAsync() : StartJsImportAsync(sync: Kind == SeamKind.JsImportSync);
+
+    async Task<Seam> StartJsRuntimeAsync() => Seam.Async(await JsRuntimeTransport.StartAsync(JS, Metadata), callbacksReturn: false);
+
+    async Task<Seam> StartJsImportAsync(bool sync)
+    {
         // On Server this fails fast: sync bindings need WebAssembly.
 #pragma warning disable CA1416
         var transport = await JsImportTransport.StartAsync(Metadata);
 #pragma warning restore CA1416
         JsEnvelope.Check(await transport.InvokeAsync(Load)); // sync mode loads modules up front
-        return Kind == SeamKind.JsImportSync ? Seam.Sync(transport) : Seam.Async(transport, callbacksReturn: true);
+        return sync ? Seam.Sync(transport) : Seam.Async(transport, callbacksReturn: true);
     }
 }

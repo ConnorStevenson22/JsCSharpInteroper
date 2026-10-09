@@ -80,6 +80,13 @@ public static class JsJson
         : ReadUndefined(ref reader) ? default
         : TUnion.ReadValue(ref reader);
 
+    // Readers for required primitives.
+    public static double ReadNumber(ref Utf8JsonReader reader) => reader.GetDouble();
+
+    public static string ReadString(ref Utf8JsonReader reader) => reader.GetString()!;
+
+    public static bool ReadBoolean(ref Utf8JsonReader reader) => reader.GetBoolean();
+
     /// <summary>On <c>{"$u":1}</c>, skips it and returns true; otherwise leaves the reader where it was.</summary>
     private static bool ReadUndefined(ref Utf8JsonReader reader)
     {

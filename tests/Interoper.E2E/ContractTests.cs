@@ -20,6 +20,12 @@ public sealed class ContractTests(BrowserHost host)
     }
 
     [Fact]
+    public async Task TwoTransportsOnOnePageAreIndependent()
+    {
+        Assert.Equal("PASS two transports on one page", await RunAsync("wasm-two-transports"));
+    }
+
+    [Fact]
     public async Task SyncModeFailsFastOnServer()
     {
         var output = await RunAsync("server-sync");

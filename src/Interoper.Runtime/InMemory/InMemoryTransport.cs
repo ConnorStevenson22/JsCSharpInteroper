@@ -6,7 +6,7 @@ namespace Interoper;
 /// <summary>
 /// Both seams without a browser: a small C# copy of interoper.js over fake JS classes (<see cref="InMemoryObject"/>).
 /// It speaks the same JSON protocol (design §3.4), so the same contract tests run against it and in the browser.
-/// Modules are always loaded; module ops and batches aren't emulated. Single-threaded, like JS.
+/// Modules are always loaded; batches aren't emulated yet. Single-threaded, like JS.
 /// </summary>
 public sealed class InMemoryTransport : IJsSyncTransport, IJsTransport
 {
@@ -17,6 +17,7 @@ public sealed class InMemoryTransport : IJsSyncTransport, IJsTransport
     private readonly HashSet<int> subscriptions = [];
     private readonly Dictionary<int, InMemoryClass> classes = [];
     private readonly Dictionary<string, int> classIds = [];
+    private readonly Dictionary<string, InMemoryObject> modules = [];
     private int lastId;
 
     public JsCallbacks Callbacks { get; } = new();
@@ -26,6 +27,13 @@ public sealed class InMemoryTransport : IJsSyncTransport, IJsTransport
     {
         classes.Add(entry.Id, entry);
         classIds.Add(entry.Name, entry.Id);
+        return this;
+    }
+
+    /// <summary>Registers a fake module: <paramref name="exports"/> serves ops sent with <c>module</c>.</summary>
+    public InMemoryTransport DefineModule(string specifier, InMemoryObject exports)
+    {
+        modules.Add(specifier, exports);
         return this;
     }
 
@@ -60,18 +68,18 @@ public sealed class InMemoryTransport : IJsSyncTransport, IJsTransport
 
     public Task<int> CensusAsync() => Task.FromResult(Census());
 
-    public double GetNumber(int handle, string name) => JsEnvelope.Read(Invoke(JsOp.Get(handle, name)), JsOp.ReadNumber);
-    public string? GetString(int handle, string name) => JsEnvelope.Read(Invoke(JsOp.Get(handle, name)), JsOp.ReadString);
-    public bool GetBoolean(int handle, string name) => JsEnvelope.Read(Invoke(JsOp.Get(handle, name)), JsOp.ReadBoolean);
+    public double GetNumber(int handle, string name) => JsOp.Primitive(Invoke(JsOp.Get(handle, name)), name, JsJson.ReadNumber);
+    public string GetString(int handle, string name) => JsOp.Primitive(Invoke(JsOp.Get(handle, name)), name, JsJson.ReadString);
+    public bool GetBoolean(int handle, string name) => JsOp.Primitive(Invoke(JsOp.Get(handle, name)), name, JsJson.ReadBoolean);
     public void SetNumber(int handle, string name, double value) => JsEnvelope.Check(Invoke(JsOp.Set(handle, name, value)));
-    public void SetString(int handle, string name, string? value) => JsEnvelope.Check(Invoke(JsOp.Set(handle, name, value)));
+    public void SetString(int handle, string name, string value) => JsEnvelope.Check(Invoke(JsOp.Set(handle, name, value)));
     public void SetBoolean(int handle, string name, bool value) => JsEnvelope.Check(Invoke(JsOp.Set(handle, name, value)));
 
     public Task<double> GetNumberAsync(int handle, string name) => Async(() => GetNumber(handle, name));
-    public Task<string?> GetStringAsync(int handle, string name) => Async(() => GetString(handle, name));
+    public Task<string> GetStringAsync(int handle, string name) => Async(() => GetString(handle, name));
     public Task<bool> GetBooleanAsync(int handle, string name) => Async(() => GetBoolean(handle, name));
     public Task SetNumberAsync(int handle, string name, double value) => Async(() => { SetNumber(handle, name, value); return 0; });
-    public Task SetStringAsync(int handle, string name, string? value) => Async(() => { SetString(handle, name, value); return 0; });
+    public Task SetStringAsync(int handle, string name, string value) => Async(() => { SetString(handle, name, value); return 0; });
     public Task SetBooleanAsync(int handle, string name, bool value) => Async(() => { SetBoolean(handle, name, value); return 0; });
 
     private static Task<T> Async<T>(Func<T> run)
@@ -95,7 +103,10 @@ public sealed class InMemoryTransport : IJsSyncTransport, IJsTransport
         string Name() => (string)op["name"]!;
         bool ByValue() => op.GetValueOrDefault("byValue") is true;
         object?[] Args() => op.GetValueOrDefault("args") is List<object?> args ? [.. args] : [];
-        InMemoryObject Target() => Instance(op.GetValueOrDefault("h"));
+        // An op targets a handle (`h`) or a module's exports (`module`).
+        InMemoryObject Target() => op.GetValueOrDefault("module") is string module
+            ? modules.GetValueOrDefault(module) ?? throw InteroperError($"Unknown module: {module}")
+            : Instance(op.GetValueOrDefault("h"));
 
         switch (op.GetValueOrDefault("op"))
         {
@@ -125,6 +136,8 @@ public sealed class InMemoryTransport : IJsSyncTransport, IJsTransport
                 return Undefined.Value;
             case "load":
                 return Undefined.Value;
+            case "batch":
+                throw InteroperError("batch is not emulated yet");
             default:
                 throw InteroperError($"Unknown op: {op.GetValueOrDefault("op")}");
         }
@@ -266,7 +279,8 @@ public sealed class InMemoryTransport : IJsSyncTransport, IJsTransport
         Dictionary<string, object?> bag => WireObject(bag.Select(p => (p.Key, Wire(p.Value, byValue)))),
         InMemoryObject o when byValue && classes.TryGetValue(ClassIdOf(o), out var entry) && entry.Value => ToData(o),
         InMemoryObject o => new JsonObject { ["$h"] = HandleOf(o), ["$t"] = ClassIdOf(o) },
-        _ => new JsonObject { ["$h"] = HandleOf(value), ["$t"] = 0 },
+        JsFunction or Task => new JsonObject { ["$h"] = HandleOf(value), ["$t"] = 0 },
+        _ => throw new InvalidOperationException($"A {value.GetType()} is not an in-memory JS value; see InMemoryObject."),
     };
 
     // Array items can't be omitted, so undefined is `$u`.

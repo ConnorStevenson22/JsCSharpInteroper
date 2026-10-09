@@ -103,6 +103,8 @@ test("typed fast paths read and write primitives", () => {
   assert.equal(interoper.getValue(view.$h, "zoom"), 4);
   assert.equal(interoper.getValue(view.$h, "basemap"), "satellite");
   assert.throws(() => interoper.getValue(-1, "zoom"), { name: "InteroperError" });
+  assert.throws(() => interoper.getValue(view.$h, "title"), { message: "title is undefined; a typed fast path needs a value" });
+  assert.throws(() => interoper.getValue(view.$h, "selected"), { message: "selected is null; a typed fast path needs a value" });
   release(view);
 });
 

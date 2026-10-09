@@ -9,8 +9,6 @@ internal static class Json
 
     public static void WriteDouble(Utf8JsonWriter writer, double value) => writer.WriteNumberValue(value);
 
-    public static double ReadDouble(ref Utf8JsonReader reader) => reader.GetDouble();
-
     public static void WriteDoubles(Utf8JsonWriter writer, double[] values)
     {
         writer.WriteStartArray();

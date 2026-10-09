@@ -35,7 +35,7 @@ public sealed class Seam
 
     public Task<double> GetNumber(int h, string name) => sync is null ? async!.GetNumberAsync(h, name) : Task.FromResult(sync.GetNumber(h, name));
 
-    public Task<string?> GetString(int h, string name) => sync is null ? async!.GetStringAsync(h, name) : Task.FromResult(sync.GetString(h, name));
+    public Task<string> GetString(int h, string name) => sync is null ? async!.GetStringAsync(h, name) : Task.FromResult(sync.GetString(h, name));
 
     public Task<bool> GetBoolean(int h, string name) => sync is null ? async!.GetBooleanAsync(h, name) : Task.FromResult(sync.GetBoolean(h, name));
 
@@ -46,7 +46,7 @@ public sealed class Seam
         return Task.CompletedTask;
     }
 
-    public Task SetString(int h, string name, string? value)
+    public Task SetString(int h, string name, string value)
     {
         if (sync is null) return async!.SetStringAsync(h, name, value);
         sync.SetString(h, name, value);
@@ -66,6 +66,7 @@ public static class TransportContract
 {
     // Class ids from the demo-maps metadata (tests/Interoper.E2E.Host/wwwroot/demo-maps.meta.js).
     public const int Shape = 1, Point = 2, MapView = 5, Marker = 6;
+    public const string Measure = "@acme/demo-maps/measure.js";
 
     public static readonly IReadOnlyList<(string Name, Func<Seam, Task> Run)> Cases =
     [
@@ -74,6 +75,9 @@ public static class TransportContract
         ("$c value arguments (R16)", ValueArguments),
         ("Promise calls", Promises),
         ("$f callback with a synchronous return value (R21)", SyncReturnCallback),
+        ("$f callback that re-enters the seam (R21)", ReentrantCallback),
+        ("$f callback whose handler throws (R21)", ThrowingCallback),
+        ("module function call", ModuleCall),
         ("subscribe and release (R24)", Subscribe),
         ("errors become JsException", Errors),
     ];
@@ -97,15 +101,23 @@ public static class TransportContract
 
     private static async Task FastPaths(Seam seam)
     {
+        var baseline = (await seam.Census(), seam.Callbacks.Count);
         var h = await Create(seam, MapView);
         await seam.SetNumber(h, "zoom", 7);
         Equal(7.0, await seam.GetNumber(h, "zoom"));
         await seam.SetString(h, "basemap", "satellite");
         Equal("satellite", await seam.GetString(h, "basemap"));
-        Equal(null, await seam.GetString(h, "title"));
         await seam.SetBoolean(h, "pinned", true);
         Equal(true, await seam.GetBoolean(h, "pinned"));
+
+        // Fast paths serve members declared as non-null primitives; null or undefined is an error.
+        var e = await Throws(() => seam.GetString(h, "title"));
+        Equal(("InteroperError", "title is undefined; a typed fast path needs a value"), (e.Name, e.Message));
+        e = await Throws(() => seam.GetBoolean(h, "selected"));
+        Equal(("InteroperError", "selected is null; a typed fast path needs a value"), (e.Name, e.Message));
+
         await Release(seam, h);
+        Equal(baseline, (await seam.Census(), seam.Callbacks.Count));
     }
 
     private static async Task ValueArguments(Seam seam)
@@ -166,6 +178,35 @@ public static class TransportContract
         Equal(baseline, (await seam.Census(), seam.Callbacks.Count));
     }
 
+    private static async Task ReentrantCallback(Seam seam)
+    {
+        if (!seam.IsSync) return; // only a sync seam can call back into JS from inside a callback
+        var h = 0;
+        var formatter = seam.Callbacks.Register(_ => JsonValue.Create("#" + seam.GetString(h, "label").Result).ToJsonString());
+        h = await Create(seam, Marker, $$$"""{"label":"a","labelFormatter":{"$f":{{{formatter}}}}}""");
+        Equal("\"#a\"", await Value(seam, $$"""{"op":"get","h":{{h}},"name":"displayLabel"}"""));
+        await Release(seam, h);
+        seam.Callbacks.Release(formatter);
+    }
+
+    private static async Task ThrowingCallback(Seam seam)
+    {
+        // Across IJSRuntime the failure is a rejected Promise in JS instead, which nothing here observes.
+        if (!seam.CallbacksReturn) return;
+        var formatter = seam.Callbacks.Register(_ => throw new InvalidOperationException("formatter failed"));
+        var h = await Create(seam, Marker, $$$"""{"labelFormatter":{"$f":{{{formatter}}}}}""");
+        var e = await Throws(async () => JsEnvelope.Check(await seam.Send($$"""{"op":"get","h":{{h}},"name":"displayLabel"}""")));
+        Expect(e.Message.Contains("formatter failed", StringComparison.Ordinal), $"the handler's message, got {e.Name}: {e.Message}");
+        await Release(seam, h);
+        seam.Callbacks.Release(formatter);
+    }
+
+    private static async Task ModuleCall(Seam seam)
+    {
+        var distance = $$"""{"op":"call","module":"{{Measure}}","name":"distance","args":[{"x":0,"y":0},{"x":3,"y":4}]}""";
+        Equal("""{"v":5}""", await seam.Send(distance));
+    }
+
     private static async Task Subscribe(Seam seam)
     {
         var baseline = (await seam.Census(), seam.Callbacks.Count);
@@ -206,6 +247,32 @@ public static class TransportContract
         e = await Throws(() => seam.SetString(999999, "basemap", "x"));
         Equal(("InteroperError", "Unknown handle: 999999"), (e.Name, e.Message));
         Equal(baseline, await seam.Census());
+    }
+
+    /// <summary>
+    /// Two transports on one page: each has its own interoper.js instance, so its own handles, census and
+    /// callback ids.
+    /// </summary>
+    public static async Task Independent(Seam a, Seam b)
+    {
+        var baseline = (await a.Census(), await b.Census());
+        var (ha, hb) = (await Create(a, MapView), await Create(b, MapView));
+        Equal((baseline.Item1 + 1, baseline.Item2 + 1), (await a.Census(), await b.Census()));
+
+        var (gotA, gotB) = (new TaskCompletionSource<string>(), new TaskCompletionSource<string>());
+        var (la, lb) = (a.Callbacks.Register(args => { gotA.TrySetResult(args); return null; }), b.Callbacks.Register(args => { gotB.TrySetResult(args); return null; }));
+        var sa = await Value(a, $$$"""{"op":"subscribe","h":{{{ha}}},"method":"on","name":"click","callback":{"$f":{{{la}}}}}""");
+        var sb = await Value(b, $$$"""{"op":"subscribe","h":{{{hb}}},"method":"on","name":"click","callback":{"$f":{{{lb}}}}}""");
+        await a.Send($$"""{"op":"call","h":{{ha}},"name":"emit","args":["click",{"from":"a"}]}""");
+        await b.Send($$"""{"op":"call","h":{{hb}},"name":"emit","args":["click",{"from":"b"}]}""");
+        Equal("""[{"from":"a"}]""", await gotA.Task.WaitAsync(TimeSpan.FromSeconds(10)));
+        Equal("""[{"from":"b"}]""", await gotB.Task.WaitAsync(TimeSpan.FromSeconds(10)));
+
+        await Release(a, ha, (int)sa!);
+        await Release(b, hb, (int)sb!);
+        a.Callbacks.Release(la);
+        b.Callbacks.Release(lb);
+        Equal(baseline, (await a.Census(), await b.Census()));
     }
 
     // --- Helpers ---
