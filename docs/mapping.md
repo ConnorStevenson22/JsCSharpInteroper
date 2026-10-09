@@ -2,12 +2,12 @@
 
 What the generator emits for each TypeScript construct.
 
-- The extractor (M2) and generator (M3) implement these rules.
+- The extractor and generator ([plan](plan.md) phase 2) implement these rules.
 - The fixture library (`fixtures/demo-maps`) exercises each one.
 - Rules are numbered (**R1**, **R2**, …) so tests, issues and diagnostics can cite them.
 - Where a rule is backed by an experiment, it links the spike.
 
-Two generator inputs change the output everywhere: the **mode** (`--api sync|async`, see the [roadmap](roadmap.md)) and the consumer's optional **profile**.
+Two generator inputs change the output everywhere: the **mode** (`--api sync|async`, see the [design](design.md)) and the consumer's optional **profile**.
 
 ---
 
@@ -90,7 +90,7 @@ The nullable bottom case is what makes the compiler demand the `null` arm. With 
 | `keyof`, indexed access, mapped, conditional, `typeof` | the type the checker resolves | **R12.** Unresolvable → `JsAny` + diagnostic IOP2002 |
 | `any`, `unknown`, `object` | `JsAny`: an opaque handle with untyped get/set/call | Diagnostic IOP2001 |
 | DOM element types (`HTMLElement`, `HTMLDivElement`) | `ElementReference` | **R13.** So Blazor `@ref`s can be passed directly |
-| other DOM types (`MouseEvent`, `ImageData`) | `JsAny` until a DOM binding exists (WebIDL front end, M8) | |
+| other DOM types (`MouseEvent`, `ImageData`) | `JsAny` until a DOM binding exists (WebIDL front end, see [plan](plan.md) "Later") | |
 | `AbortSignal` (parameter) | `CancellationToken` | **R14.** Bridged by the runtime |
 | `ArrayBuffer`, typed arrays | `byte[]` / `T[]` | Binary transfer is a later optimisation |
 | function type | delegate (`Action<…>` / `Func<…>`) | §5, R21 |

@@ -1,6 +1,6 @@
 # Spikes
 
-Small, throwaway experiments that settle design questions for the [roadmap](../docs/roadmap.md). Each one is runnable, and the roadmap quotes its results. They use only made-up example code; no third-party library code lives here.
+Small, throwaway experiments that settle design questions for the [design](../docs/design.md). Each one is runnable, and the design quotes its results. They use only made-up example code; no third-party library code lives here.
 
 | Spike | Question it answers | Result |
 |---|---|---|
