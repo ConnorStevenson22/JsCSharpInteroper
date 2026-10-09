@@ -99,7 +99,9 @@ public class ValueModelTests
     [Fact] // R4
     public async Task Closed_live_hierarchy_is_exhaustive()
     {
-        Assert.Equal("line", Kind(await Line.CreateAsync(await Scope(), new LineSnapshot())));
+        await using var realm = await Realm();
+        await using var scope = new JsScope(realm);
+        Assert.Equal("line", Kind(await Line.CreateAsync(scope, new LineSnapshot())));
     }
 
     // A nullable getter such as `get shape(): Point | Line | Polygon | null | undefined` maps to Opt<Shape> (R3, R4).
@@ -115,15 +117,17 @@ public class ValueModelTests
     [Fact] // R3, R4
     public async Task Opt_of_closed_base_is_exhaustive_over_subclasses_undefined_and_null()
     {
-        Assert.Equal("polygon", ShapeKind(await Polygon.CreateAsync(await Scope(), new PolygonSnapshot())));
+        await using var realm = await Realm();
+        await using var scope = new JsScope(realm);
+        Assert.Equal("polygon", ShapeKind(await Polygon.CreateAsync(scope, new PolygonSnapshot())));
         Assert.Equal("undefined", ShapeKind(default));
         Assert.Equal("null", ShapeKind(null));
     }
 
-    private static async Task<JsScope> Scope()
+    private static async Task<JsRealm> Realm()
     {
         var realm = new JsRealm(() => Task.FromResult<IJsTransport>(InMemoryDemoMaps.Create()), DemoMaps.Classes);
         await realm.StartAsync();
-        return new JsScope(realm);
+        return realm;
     }
 }

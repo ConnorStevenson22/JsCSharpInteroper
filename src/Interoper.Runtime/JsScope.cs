@@ -52,23 +52,22 @@ public sealed class JsScope(JsRealm realm) : IDisposable, IAsyncDisposable
     {
         if (reader.TokenType != JsonTokenType.StartObject)
         {
-            throw new JsonException($"Expected a handle, got {reader.TokenType}");
+            throw new JsonException($"Expected a handle {{\"$h\",\"$t\"}}, got {reader.TokenType}");
         }
-        int handle = 0, classId = 0;
+        int? handle = null;
+        var classId = 0;
         while (reader.Read() && reader.TokenType == JsonTokenType.PropertyName)
         {
-            var isHandle = reader.ValueTextEquals("$h"u8);
+            var property = reader.ValueTextEquals("$h"u8) ? 'h' : reader.ValueTextEquals("$t"u8) ? 't' : ' ';
             reader.Read();
-            if (isHandle)
+            switch (property)
             {
-                handle = reader.GetInt32();
-            }
-            else
-            {
-                classId = reader.GetInt32();
+                case 'h': handle = reader.GetInt32(); break;
+                case 't': classId = reader.GetInt32(); break;
+                default: reader.Skip(); break;
             }
         }
-        return Wrap<T>(handle, classId);
+        return handle is { } h ? Wrap<T>(h, classId) : throw new JsonException("Expected a handle: the object has no \"$h\"");
     }
 
     /// <summary>Owns a handle that has no live object, such as a subscription.</summary>
@@ -144,7 +143,16 @@ public sealed class JsScope(JsRealm realm) : IDisposable, IAsyncDisposable
     public IDisposable Subscribe<T>(int handle, string method, string name, JsonRead<T> read, Action<T> handler)
     {
         var listener = Register(Listener(read, handler));
-        var subscription = (int)Realm.Call(JsOp.Subscribe(handle, method, name, listener), JsJson.ReadNumber);
+        int subscription;
+        try
+        {
+            subscription = (int)Realm.Call(JsOp.Subscribe(handle, method, name, listener), JsJson.ReadNumber);
+        }
+        catch
+        {
+            ReleaseListener(listener);
+            throw;
+        }
         Own(subscription);
         return new Subscription(this, subscription, listener);
     }
@@ -153,7 +161,16 @@ public sealed class JsScope(JsRealm realm) : IDisposable, IAsyncDisposable
     public async Task<IAsyncDisposable> SubscribeAsync<T>(int handle, string method, string name, JsonRead<T> read, Action<T> handler)
     {
         var listener = Register(Listener(read, handler));
-        var subscription = (int)await Realm.CallAsync(JsOp.Subscribe(handle, method, name, listener), JsJson.ReadNumber);
+        int subscription;
+        try
+        {
+            subscription = (int)await Realm.CallAsync(JsOp.Subscribe(handle, method, name, listener), JsJson.ReadNumber);
+        }
+        catch
+        {
+            ReleaseListener(listener);
+            throw;
+        }
         Own(subscription);
         return new Subscription(this, subscription, listener);
     }
@@ -260,49 +277,59 @@ public sealed class JsScope(JsRealm realm) : IDisposable, IAsyncDisposable
         }
     }
 
-    // A subscription disposed before its scope: its handle (unless another scope owns it too), then its listener.
-    // Nothing to do once the scope has released them.
-    private bool Unsubscribe(int handle, int listener, out string? release)
+    private void ReleaseListener(int listener)
     {
         lock (gate)
         {
-            release = null;
-            if (disposed || !callbacks.Remove(listener))
-            {
-                return false;
-            }
-            if (Realm.Disown(this, handle))
-            {
-                release = JsOp.Release([handle]);
-            }
-            return true;
+            callbacks.Remove(listener);
         }
+        Transport.Callbacks.Release(listener);
+    }
+
+    // A subscription disposed before its scope: whether it is still this scope's, and the op that releases its handle
+    // (null when another scope owns it too). Nothing to do once the scope has released it.
+    private bool Holds(int handle, int listener, out string? release)
+    {
+        lock (gate)
+        {
+            release = !disposed && Realm.OwnsAlone(this, handle) ? JsOp.Release([handle]) : null;
+            return !disposed && callbacks.Contains(listener);
+        }
+    }
+
+    // After the release went out: the scope forgets the handle and the listener. If the release failed, both stay
+    // with the scope, which releases them when it is disposed.
+    private void Forget(int handle, int listener)
+    {
+        lock (gate)
+        {
+            if (disposed)
+            {
+                return;
+            }
+            Realm.Disown(this, handle);
+        }
+        ReleaseListener(listener);
     }
 
     private sealed class Subscription(JsScope scope, int handle, int listener) : IDisposable, IAsyncDisposable
     {
         public void Dispose()
         {
-            if (!scope.Unsubscribe(handle, listener, out var release))
+            if (!scope.Holds(handle, listener, out var release))
             {
                 return;
             }
-            try
+            if (release is not null)
             {
-                if (release is not null)
-                {
-                    scope.Realm.Send(release);
-                }
+                scope.Realm.Send(release);
             }
-            finally
-            {
-                scope.Transport.Callbacks.Release(listener);
-            }
+            scope.Forget(handle, listener);
         }
 
         public async ValueTask DisposeAsync()
         {
-            if (!scope.Unsubscribe(handle, listener, out var release))
+            if (!scope.Holds(handle, listener, out var release))
             {
                 return;
             }
@@ -317,10 +344,7 @@ public sealed class JsScope(JsRealm realm) : IDisposable, IAsyncDisposable
             {
                 // The circuit is gone, and the subscription with it.
             }
-            finally
-            {
-                scope.Transport.Callbacks.Release(listener);
-            }
+            scope.Forget(handle, listener);
         }
     }
 

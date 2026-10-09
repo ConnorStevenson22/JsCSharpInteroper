@@ -53,7 +53,10 @@ public sealed class RealmTests
         await scope.DisposeAsync();
         var release = JsonNode.Parse(Assert.Single(transport.Ops))!;
         Assert.Equal("release", (string?)release["op"]);
-        Assert.Equal(3, release["ids"]!.AsArray().Count);
+        var ids = release["ids"]!.AsArray().Select(id => (int)id!).ToList();
+        Assert.Equal(3, ids.Count); // the view, the marker and the subscription
+        Assert.Contains(view.Handle, ids);
+        Assert.Contains(marker.Handle, ids);
         Assert.Equal(baseline, (transport.Census(), transport.Callbacks.Count));
 
         await scope.DisposeAsync(); // once only
@@ -83,6 +86,29 @@ public sealed class RealmTests
         await click.DisposeAsync();
         await scope.DisposeAsync();
         Assert.Equal(3, transport.Ops.Count); // the scope's own release
+    }
+
+    [Fact]
+    public async Task AFailedSubscribeReleasesItsListener() // R24
+    {
+        var realm = await StartedRealm();
+        var scope = new JsScope(realm);
+        var view = await MapView.CreateAsync(scope, new());
+        var baseline = (transport.Census(), transport.Callbacks.Count);
+        Assert.ThrowsAny<Exception>(() => scope.Subscribe(view.Handle, "noSuchMethod", "zoom", JsJson.ReadNumber, _ => { }));
+        await Assert.ThrowsAnyAsync<Exception>(() => scope.SubscribeAsync(view.Handle, "noSuchMethod", "click", ClickEvent.Read, _ => { }));
+        Assert.Equal(baseline, (transport.Census(), transport.Callbacks.Count));
+    }
+
+    [Fact]
+    public async Task ReadMatchesTheHandleAndClassAndSkipsOtherProperties()
+    {
+        var scope = new JsScope(await StartedRealm());
+        var view = await MapView.CreateAsync(scope, new());
+        var json = $$"""{"x":{"y":[1]},"$t":{{DemoMaps.MapViewId}},"$h":{{view.Handle}}}""";
+        Assert.Same(view, Json.Read(json, scope.Read<MapView>));
+        var error = Assert.Throws<System.Text.Json.JsonException>(() => Json.Read("""{"$t":1}""", scope.Read<MapView>));
+        Assert.Contains("\"$h\"", error.Message, StringComparison.Ordinal);
     }
 
     [Fact]

@@ -32,7 +32,7 @@ public sealed class Marker : JsObject
     }
 
     /// <summary><c>readonly displayLabel: string</c>.</summary>
-    public string DisplayLabel => Realm.SyncTransport.GetString(Handle, "displayLabel");
+    public string DisplayLabel => Realm.GetString(Handle, "displayLabel");
 
     public MarkerSnapshot Snapshot() => Realm.Call(JsOp.Snapshot(Handle), MarkerSnapshot.Read)!;
 

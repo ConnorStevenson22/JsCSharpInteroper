@@ -87,7 +87,7 @@ public static class GoldenSyncSuite
     {
         var view = MapView.Create(scope, new MapViewSnapshot { Basemap = Basemap._3dRelief });
         Equal(Basemap._3dRelief, view.Basemap);
-        Equal("3d-relief", scope.SyncTransport.GetString(view.Handle, "basemap"));
+        Equal("3d-relief", scope.Realm.GetString(view.Handle, "basemap"));
         foreach (var basemap in Enum.GetValues<Basemap>())
         {
             view.Basemap = basemap;
@@ -110,10 +110,10 @@ public static class GoldenSyncSuite
         Equal((new PointSnapshot { X = 7, Y = 8 }, 9.0), (view.Center, view.Zoom));
     }
 
-    private static void EventAndWatch(JsScope scope)
+    private static async Task EventAndWatch(JsScope scope)
     {
         var view = MapView.Create(scope, new MapViewSnapshot());
-        var baseline = Count(scope.Realm);
+        var baseline = await Count(scope.Realm);
         var (clicks, zooms) = (new List<ClickEvent>(), new List<double>());
         using (view.OnClick(scope, clicks.Add))
         using (view.WatchZoom(scope, zooms.Add))
@@ -121,7 +121,7 @@ public static class GoldenSyncSuite
             Expect(Click(scope, view), "the click to reach a listener");
             view.Zoom = 5;
         }
-        Equal(baseline, Count(scope.Realm)); // released before the scope
+        Equal(baseline, await Count(scope.Realm)); // released before the scope
         Expect(!Click(scope, view), "no listener after release");
         view.Zoom = 6;
 
@@ -141,17 +141,27 @@ public static class GoldenSyncSuite
         return Task.CompletedTask;
     });
 
+    // The census goes through the async seam, so on Server only the bindings fail fast. A failed case reports its own
+    // exception: the scope is then released through the async seam, which every host has.
     private static Func<JsRealm, Task> InScope(Func<JsScope, Task> body) => async realm =>
     {
-        var baseline = Count(realm);
-        using (var scope = new JsScope(realm))
+        var baseline = await Count(realm);
+        var scope = new JsScope(realm);
+        try
         {
             await body(scope);
         }
-        Equal(baseline, Count(realm));
+        catch
+        {
+            await scope.DisposeAsync();
+            throw;
+        }
+        scope.Dispose();
+        Equal(baseline, await Count(realm));
     };
 
-    private static (int Handles, int Callbacks) Count(JsRealm realm) => (realm.SyncTransport.Census(), realm.SyncTransport.Callbacks.Count);
+    private static async Task<(int Handles, int Callbacks)> Count(JsRealm realm) =>
+        (await realm.Transport.CensusAsync(), realm.Transport.Callbacks.Count);
 
     private static string Kind(Shape shape) => shape switch
     {

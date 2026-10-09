@@ -40,7 +40,7 @@
                 }
                 catch (Exception e)
                 {
-                    lines.Add($"FAIL {name}: {e.GetType().Name}: {e.Message}");
+                    lines.Add($"FAIL {name}: {e.GetType().Name}: {e.Message} [at {Binding(e)}]");
                 }
             }
         }
@@ -54,4 +54,8 @@
             StateHasChanged();
         }
     }
+
+    // The innermost golden-slice frame of a failure: which binding threw.
+    static string? Binding(Exception e) =>
+        e.StackTrace?.Split('\n').Select(line => line.Trim()).FirstOrDefault(line => line.StartsWith("at GoldenSlice.", StringComparison.Ordinal));
 }

@@ -71,6 +71,18 @@ public sealed class JsRealm(Func<Task<IJsTransport>> start, JsClassRegistry clas
     /// <summary>Runs an op and reads its result (<c>default</c> for undefined).</summary>
     public T? Call<T>(string opJson, JsonRead<T> read) => JsEnvelope.Read(SyncTransport.Invoke(opJson), read);
 
+    public double GetNumber(int handle, string name) => SyncTransport.GetNumber(handle, name);
+
+    public string GetString(int handle, string name) => SyncTransport.GetString(handle, name);
+
+    public bool GetBoolean(int handle, string name) => SyncTransport.GetBoolean(handle, name);
+
+    public void Set(int handle, string name, double value) => SyncTransport.SetNumber(handle, name, value);
+
+    public void Set(int handle, string name, string value) => SyncTransport.SetString(handle, name, value);
+
+    public void Set(int handle, string name, bool value) => SyncTransport.SetBoolean(handle, name, value);
+
     // --- Calls (async mode) ---
     // Generated code sends ops that return nothing through SendAsync and SetAsync, which a batch queues, and
     // everything else through CallAsync and the Get*Async fast paths, which send the queue first (design §3.3).
@@ -191,17 +203,24 @@ public sealed class JsRealm(Func<Task<IJsTransport>> start, JsClassRegistry clas
         }
     }
 
-    /// <summary>Removes <paramref name="scope"/> from the owners of a handle; true when no scope owns it any more.</summary>
-    internal bool Disown(JsScope scope, int handle)
+    /// <summary>Whether <paramref name="scope"/> is the only owner of a handle.</summary>
+    internal bool OwnsAlone(JsScope scope, int handle)
     {
         lock (objects)
         {
-            if (!objects.TryGetValue(handle, out var entry) || !entry.Owners.Remove(scope) || entry.Owners.Count > 0)
+            return objects.TryGetValue(handle, out var entry) && entry.Owners.Count == 1 && entry.Owners.Contains(scope);
+        }
+    }
+
+    /// <summary>Removes <paramref name="scope"/> from the owners of a handle, once its release has gone out.</summary>
+    internal void Disown(JsScope scope, int handle)
+    {
+        lock (objects)
+        {
+            if (objects.TryGetValue(handle, out var entry) && entry.Owners.Remove(scope) && entry.Owners.Count == 0)
             {
-                return false;
+                objects.Remove(handle);
             }
-            objects.Remove(handle);
-            return true;
         }
     }
 

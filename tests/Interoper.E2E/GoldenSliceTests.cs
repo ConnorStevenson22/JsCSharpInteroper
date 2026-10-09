@@ -26,5 +26,8 @@ public sealed class GoldenSliceTests(BrowserHost host)
         Assert.Equal(GoldenSyncSuite.Cases.Count, lines.Length);
         Assert.All(lines, line => Assert.Contains(": InvalidOperationException: Bindings generated in sync mode", line, StringComparison.Ordinal));
         Assert.All(lines, line => Assert.Contains("regenerate with `--api async`", line, StringComparison.Ordinal));
+        // From the bindings themselves: the suite counts handles through the async seam.
+        Assert.Contains("[at at GoldenSlice.Sync.MapView.Create(", lines[0], StringComparison.Ordinal);
+        Assert.All(lines, line => Assert.Contains("[at at GoldenSlice.Sync.", line, StringComparison.Ordinal));
     }
 }

@@ -117,7 +117,7 @@ The profile overrides either way. Getting this wrong is the classic failure mode
 
 Sent to JS, a snapshot record of a value-like class arrives as an instance: the writer adds its concrete class id (`$c`, [design §3.4](design.md#34-protocol)) and the runtime calls `new Point(bag)`. The bag keeps its discriminant (R20). Data records stay plain objects. The snapshots of an abstract value-like base form a `closed record` hierarchy (`ShapeSnapshot`), read by the discriminant (R19 step 2).
 
-**R17. Snapshot depth.** Snapshot records copy value-like members deeply, as their snapshot records. Entity members appear as live objects inside the snapshot.
+**R17. Snapshot depth.** Snapshot records carry data members only, copying value-like members deeply as their snapshot records. Entity members are not in snapshots, because reading one needs a scope: read them with their scoped getter (`GetSelected(scope)`).
 
 **R18. Every live class has an `XSnapshot` record.** It carries the class's data members, all optional. One type serves as:
 - what `Snapshot()`/`SnapshotAsync()` returns;
@@ -152,21 +152,21 @@ When JS returns a value for a union position, the runtime must pick the case.
 | read-only property | `T X { get; }` | `Task<T> GetXAsync()` |
 | getter type ≠ setter type | `TGet X { get; }` + `void SetX(TSet value)` | `Task<TGet> GetXAsync()`, `Task SetXAsync(TSet value)` |
 | method `foo(a): R` | `R Foo(A a)` | `Task<R> FooAsync(A a)` |
-| property or method returning an entity | `R GetX(JsScope scope)` (+ `void SetX(T value)`), `R Foo(JsScope scope, A a)` | `Task<R> GetXAsync(JsScope scope)`, `Task<R> FooAsync(JsScope scope, A a)` |
+| property or method returning an entity, or taking a callback (R21) | `R GetX(JsScope scope)` (+ `void SetX(T value)`), `R Foo(JsScope scope, A a)` | `Task<R> GetXAsync(JsScope scope)`, `Task<R> FooAsync(JsScope scope, A a)` |
 | method returning `Promise<R>` | `Task<R> FooAsync(A a)` | `Task<R> FooAsync(A a)` |
 | constructor `new X(props)` | `static X Create(JsScope scope, XSnapshot props)` | `static Task<X> CreateAsync(JsScope scope, XSnapshot props)` |
-| event (from an event map) | `IDisposable OnClick(JsScope scope, Action<ClickEvent>, EventOptions?)` | `Task<IAsyncDisposable> OnClickAsync(JsScope scope, Action<ClickEvent>, EventOptions?)` |
+| event (from an event map) | `IDisposable OnClick(JsScope scope, Action<ClickEvent>)` | `Task<IAsyncDisposable> OnClickAsync(JsScope scope, Action<ClickEvent>)` (`EventOptions` parameter comes in phase 3, R24) |
 | property watch | `IDisposable WatchZoom(JsScope scope, Action<double>)` | `Task<IAsyncDisposable> WatchZoomAsync(JsScope scope, Action<double>)` |
 | snapshot / patch | `XSnapshot Snapshot()`, `void Apply(XSnapshot)` | `Task<XSnapshot> SnapshotAsync()`, `Task ApplyAsync(XSnapshot)` |
-| module function | static method on a static class per module, same per-mode shape, with a leading `JsRealm realm` | |
+| module function | static method on a static class per module, same per-mode shape, with a leading `JsRealm realm`, or `JsScope scope` when it returns an entity or takes a callback | |
 
-- **A live result belongs to the scope the caller passes** ([design §3.2](design.md#32-handles-identity-and-lifetime)), so members that return an entity take that `JsScope` first; in sync mode such a property is `GetX(scope)` plus `SetX(value)`. Value-like classes are values (R16), so `PointSnapshot Center { get; set; }` needs no scope.
+- **A live result belongs to the scope the caller passes** ([design §3.2](design.md#32-handles-identity-and-lifetime)), so members that return an entity, or take a callback the scope will own (R21), take that `JsScope` first; in sync mode such a property is `GetX(scope)` plus `SetX(value)`. Value-like classes are values (R16), so `PointSnapshot Center { get; set; }` needs no scope.
 - **Events and watches** belong to the scope too: it owns the subscription and the listener, and disposing the result releases both sooner (R24).
 - **Discriminants** (`type: "point"`) aren't members of live classes: the live type already says it.
 
 Sync mode needs .NET and JS on one thread, so it runs on WebAssembly only and fails fast elsewhere (verified, [design §8](design.md#8-evidence)).
 
-**R21. Callbacks** (function-typed parameters) become delegates registered in the runtime's callback registry, owned by the scope.
+**R21. Callbacks** (function-typed parameters) become delegates registered in the runtime's callback registry, owned by the scope, so the member takes a `JsScope` first (§5).
 - A callback whose *return value* JS uses synchronously (e.g. a formatter `(v) => string`) works in sync mode.
 - It *can't* work in async mode on Server or Hybrid. The generator emits IOP2005, and the profile can supply a JS-side implementation instead.
 

@@ -13,14 +13,14 @@ public sealed class Point : Shape
 
     public double X
     {
-        get => Realm.SyncTransport.GetNumber(Handle, "x");
-        set => Realm.SyncTransport.SetNumber(Handle, "x", value);
+        get => Realm.GetNumber(Handle, "x");
+        set => Realm.Set(Handle, "x", value);
     }
 
     public double Y
     {
-        get => Realm.SyncTransport.GetNumber(Handle, "y");
-        set => Realm.SyncTransport.SetNumber(Handle, "y", value);
+        get => Realm.GetNumber(Handle, "y");
+        set => Realm.Set(Handle, "y", value);
     }
 
     public new PointSnapshot Snapshot() => Realm.Call(JsOp.Snapshot(Handle), PointSnapshot.Read)!;

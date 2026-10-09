@@ -20,21 +20,21 @@ public sealed class MapView : JsObject
 
     public double Zoom
     {
-        get => Realm.SyncTransport.GetNumber(Handle, "zoom");
-        set => Realm.SyncTransport.SetNumber(Handle, "zoom", value);
+        get => Realm.GetNumber(Handle, "zoom");
+        set => Realm.Set(Handle, "zoom", value);
     }
 
     public double Rotation
     {
-        get => Realm.SyncTransport.GetNumber(Handle, "rotation");
-        set => Realm.SyncTransport.SetNumber(Handle, "rotation", value);
+        get => Realm.GetNumber(Handle, "rotation");
+        set => Realm.Set(Handle, "rotation", value);
     }
 
     /// <summary><c>basemap: Basemap</c>: an enum through the string fast path (R9).</summary>
     public Basemap Basemap
     {
-        get => BasemapNames.FromJs(Realm.SyncTransport.GetString(Handle, "basemap"));
-        set => Realm.SyncTransport.SetString(Handle, "basemap", BasemapNames.ToJs(value));
+        get => BasemapNames.FromJs(Realm.GetString(Handle, "basemap"));
+        set => Realm.Set(Handle, "basemap", BasemapNames.ToJs(value));
     }
 
     /// <summary><c>title?: string | null</c> (R3).</summary>
