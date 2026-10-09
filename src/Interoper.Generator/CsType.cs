@@ -87,7 +87,28 @@ internal sealed class CsType
     public static CsType Array(CsType element) =>
         new($"{element.Name}[]", JsonKind.Array, isValueType: false, null, null,
             (w, v, d) => $"JsJson.WriteArray({w}, {v}, {element.Writer(d)})", (r, d) => $"JsJson.ReadArray(ref {r}, {element.Reader(d)})",
-            scoped: element.Scoped);
+            scoped: element.Scoped)
+        { Element = element };
+
+    private CsType? Element { get; init; }
+
+    /// <summary>
+    /// This type, calling its static methods through <c>global::{ns}</c> where a member of the type's name hides it
+    /// (<paramref name="hidden"/>): in a record with <c>Opt&lt;Cursor&gt; Cursor</c>, <c>Cursor.Read</c> is that property (CS0120).
+    /// </summary>
+    public CsType Unhidden(IReadOnlySet<string> hidden, string ns)
+    {
+        if (Element is not null)
+        {
+            return Array(Element.Unhidden(hidden, ns));
+        }
+        if (!hidden.Contains(Name))
+        {
+            return this;
+        }
+        string? Qualify(string? method) => method?.StartsWith(Name + ".", StringComparison.Ordinal) == true ? $"global::{ns}.{method}" : method;
+        return new(Name, Json, IsValueType, Qualify(writeMethod), Qualify(readMethod), write, read, IsUnion, Scoped, Fast, Names);
+    }
 
     /// <summary>An expression that writes <paramref name="value"/> with <paramref name="writer"/>.</summary>
     public string WriteCall(string writer, string value, int depth) =>

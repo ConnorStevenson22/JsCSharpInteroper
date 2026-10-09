@@ -203,6 +203,11 @@ public sealed class Selection
         var events = new List<Event>();
         foreach (var e in c.Events.Where(e => listed?.Events.Contains(e.Name) ?? true))
         {
+            if (profile.Events?.Subscribe is null)
+            {
+                Report(new(Diagnostic.NotSupported, $"{c.Name}.on:{e.Name}", "skipped: the profile names no subscribe method"));
+                continue;
+            }
             if (Problem(e.Type) is { } problem)
             {
                 Skip($"{c.Name}.on:{e.Name}", problem);
@@ -214,6 +219,11 @@ public sealed class Selection
         var watches = new List<PropertyMember>();
         foreach (var p in c.Members.OfType<PropertyMember>().Where(p => listed?.Watches.Contains(p.Name) ?? false))
         {
+            if (profile.Watch is null)
+            {
+                Report(new(Diagnostic.NotSupported, $"{c.Name}.watch:{p.Name}", "skipped: the profile names no watch method"));
+                continue;
+            }
             if (Problem(p.Type) is { } problem)
             {
                 Skip($"{c.Name}.watch:{p.Name}", problem);
@@ -241,7 +251,7 @@ public sealed class Selection
             sub.Extends is RefType r && ReferenceEquals(Find(r), c) &&
             sub.Members.Any(m => m is PropertyMember { Type: LiteralType } && m.Name == property.Name));
 
-    /// <summary>The signatures that can be mapped, without trailing optional parameters that can't (R22).</summary>
+    /// <summary>The signatures that can be mapped, without a rest parameter or trailing optional ones that can't (R22).</summary>
     private List<Signature> Signatures(string subject, IEnumerable<Signature> signatures)
     {
         var result = new List<Signature>();
@@ -252,11 +262,12 @@ public sealed class Selection
                 Skip(subject, problem);
                 continue;
             }
-            var kept = signature.Params.TakeWhile(p => Problem(p.Type) is null).ToList();
+            var kept = signature.Params.TakeWhile(p => !p.Rest && Problem(p.Type) is null).ToList();
             if (kept.Count < signature.Params.Count)
             {
                 var dropped = signature.Params[kept.Count];
-                Report(new(Diagnostic.NotSupported, $"{subject}({dropped.Name})", $"optional parameter dropped (R22): uses {Problem(dropped.Type)}"));
+                Report(new(Diagnostic.NotSupported, $"{subject}({dropped.Name})",
+                    dropped.Rest ? "rest parameter dropped (R22)" : $"optional parameter dropped (R22): uses {Problem(dropped.Type)}"));
             }
             var trimmed = signature with { Params = kept };
             foreach (var type in trimmed.Params.Select(p => p.Type).Append(trimmed.Returns).OfType<IrType>())
@@ -272,7 +283,7 @@ public sealed class Selection
     private string? Problem(Signature signature) =>
         signature.TypeParameters.Count > 0 ? $"type parameter `{signature.TypeParameters[0].Name}`"
         : signature.Returns is { } returns && Problem(returns) is { } problem ? problem
-        : signature.Params.FirstOrDefault(p => Problem(p.Type) is not null) is { Optional: false } required ? Problem(required.Type)
+        : signature.Params.FirstOrDefault(p => Problem(p.Type) is not null) is { Optional: false, Rest: false } required ? Problem(required.Type)
         : null;
 
     private void Skip(string subject, string problem) => Report(new(Diagnostic.NotSupported, subject, $"skipped: uses {problem}"));

@@ -27,7 +27,14 @@ public static class Generator
         var types = new TypeMap(ir, profile, selection, diagnostics);
         var ns = options.Namespace;
         var files = new List<GeneratedFile>();
-        void Add(string type, string text) => files.Add(new($"{type}.cs", text));
+        void Add(string type, string text)
+        {
+            if (files.Any(f => f.Path == $"{type}.cs"))
+            {
+                throw new NotSupportedException($"{type}: two generated types have this name (R27).");
+            }
+            files.Add(new($"{type}.cs", text));
+        }
 
         foreach (var selected in selection.Declarations)
         {

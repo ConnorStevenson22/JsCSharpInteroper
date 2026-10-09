@@ -10,7 +10,7 @@ internal static class RecordEmitter
     public static string Data(TypeMap types, string ns, Declaration declaration)
     {
         var name = Naming.Type(declaration.Name);
-        var fields = types.Fields(declaration);
+        var fields = Unhidden(types.Fields(declaration), ns);
         var w = CodeWriter.CSharp(ns, "System.Text.Json", "Interoper");
         using (w.Block($"public sealed partial record {name}"))
         {
@@ -35,7 +35,7 @@ internal static class RecordEmitter
     public static string Snapshot(TypeMap types, string ns, ClassDeclaration c)
     {
         var name = TypeMap.SnapshotName(c);
-        var fields = types.Fields(c);
+        var fields = Unhidden(types.Fields(c), ns);
         var b = types.SnapshotBase(c);
         var w = CodeWriter.CSharp(ns, "System.Text.Json", "Interoper");
         using (w.Block($"public {(types.IsClosed(c) ? "closed" : "sealed")} partial record {name}{(b is null ? "" : " : " + TypeMap.SnapshotName(b))}"))
@@ -110,6 +110,13 @@ internal static class RecordEmitter
             }
             w.Line($"var {local} => throw new JsonException($\"{type}: unexpected {discriminant} {{{local}}}\"),");
         }
+    }
+
+    /// <summary>A property hides a type of its name unless it has that type: <c>Opt&lt;Cursor&gt; Cursor</c> (CS0120).</summary>
+    private static List<Field> Unhidden(IReadOnlyList<Field> fields, string ns)
+    {
+        var hidden = fields.Where(f => f.Type is not null && f.TypeName != f.Name).Select(f => f.Name).ToHashSet();
+        return [.. fields.Select(f => f with { Type = f.Type?.Unhidden(hidden, ns) })];
     }
 
     private static void Properties(CodeWriter w, IReadOnlyList<Field> fields, bool required)

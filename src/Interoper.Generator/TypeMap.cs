@@ -336,6 +336,7 @@ internal sealed class TypeMap
         return result;
     }
 
+    /// <summary>A closed base's snapshot declares its members; any other emitted base's are repeated (R18).</summary>
     private List<Field> SnapshotFields(ClassDeclaration c)
     {
         var type = Naming.Type(c.Name);
@@ -353,6 +354,10 @@ internal sealed class TypeMap
                 var name = Naming.Member(taken, Naming.Pascal(p.Name), $"{SnapshotName(c)}.{p.Name}", diagnostics);
                 result.Add(new(p.Name, name, mapped, Required: false, Opt: !mapped.IsUnion));
             }
+        }
+        if (SnapshotBase(c) is null && LiveBase(c) is { } live)
+        {
+            result.AddRange(Fields(live).Where(f => result.All(own => own.JsName != f.JsName)).Select(f => f with { Inherited = false }));
         }
         return result;
     }
