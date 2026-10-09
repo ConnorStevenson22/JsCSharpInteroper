@@ -185,6 +185,8 @@ All committed tests use it.
 | Server | Playwright, async mode |
 | Hybrid | Its code path (`JsRuntimeTransport` over an async bridge) is exercised by the Server tests, and by WebAssembly tests with `Transport=JsRuntime`. A short manual smoke check on a real `BlazorWebView` runs before releases. |
 
+**Browser harness** (`tests/Interoper.E2E`). The tests start `tests/Interoper.E2E.Host` (one app with Server and WebAssembly interactivity; its pages live in `tests/Interoper.E2E.Client`) as a separate process on a free port, in Development so static web assets come from the build output, and drive one headless Chromium through Microsoft.Playwright. The package version is pinned to the Chromium revision preinstalled in cloud sessions. Pages are fixed to the `en-US` locale, because .NET on WebAssembly rejects the POSIX locale that headless Chromium reports on Linux. The host serves `fixtures/demo-maps` at `/demo-maps/`, mapped to `@acme/demo-maps/` in its import map, plus a hand-written metadata module. The E2E projects are in `Interoper.slnx`, so the solution builds and formats them, but the test project turns off `IsTestProject` when built through the solution, so `dotnet test Interoper.slnx` stays browser-free.
+
 The private validation repo generates bindings for ArcGIS exactly as a consumer would, against a sibling clone of this repo.
 
 ---

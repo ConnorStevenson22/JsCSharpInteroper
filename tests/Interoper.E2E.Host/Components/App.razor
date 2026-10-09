@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <link rel="icon" href="data:," />
+    <base href="/" />
+    <ImportMap ImportMapDefinition="importMap" />
+    <HeadOutlet />
+</head>
+<body>
+    <Router AppAssembly="typeof(Interoper.E2E.Client.Smoke).Assembly">
+        <Found Context="routeData"><RouteView RouteData="routeData" /></Found>
+    </Router>
+    <script src="@Assets["_framework/blazor.web.js"]"></script>
+</body>
+</html>
+
+@code {
+    // The app's assets plus the fixture under its package name, the way a consumer maps node_modules (design §3.5).
+    ImportMapDefinition importMap => ImportMapDefinition.Combine(
+        ImportMapDefinition.FromResourceCollection(Assets),
+        new ImportMapDefinition(new Dictionary<string, string> { ["@acme/demo-maps/"] = "/demo-maps/" }, null, null));
+}

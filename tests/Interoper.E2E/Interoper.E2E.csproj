@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+    <!-- Built and formatted with the solution, but run only by `dotnet test tests/Interoper.E2E`: it needs a browser. -->
+    <IsTestProject Condition="'$(SolutionName)' == 'Interoper'">false</IsTestProject>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="Microsoft.Playwright" />
+    <PackageReference Include="xunit.v3" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+    <!-- Only for the build order: the tests start the host as its own process. -->
+    <ProjectReference Include="..\Interoper.E2E.Host\Interoper.E2E.Host.csproj" ReferenceOutputAssembly="false" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+    <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
+      <_Parameter1>HostDirectory</_Parameter1>
+      <_Parameter2>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)../Interoper.E2E.Host'))</_Parameter2>
+    </AssemblyAttribute>
+    <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
+      <_Parameter1>HostAssembly</_Parameter1>
+      <_Parameter2>bin/$(Configuration)/$(TargetFramework)/Interoper.E2E.Host.dll</_Parameter2>
+    </AssemblyAttribute>
+  </ItemGroup>
+
+</Project>
