@@ -103,6 +103,20 @@ test("typed fast paths read and write primitives", () => {
   assert.equal(interoper.getValue(view.$h, "zoom"), 4);
   assert.equal(interoper.getValue(view.$h, "basemap"), "satellite");
   assert.throws(() => interoper.getValue(-1, "zoom"), { name: "InteroperError" });
+  assert.throws(() => interoper.getValue(view.$h, "title"), { message: "title is undefined; a typed fast path needs a value" });
+  assert.throws(() => interoper.getValue(view.$h, "selected"), { message: "selected is null; a typed fast path needs a value" });
+  release(view);
+});
+
+test("takeError returns what the last fast path call threw, once", () => {
+  const view = create(ids.MapView);
+  assert.throws(() => interoper.getValue(-1, "zoom"));
+  interoper.getValue(view.$h, "zoom");
+  assert.equal(interoper.takeError(), null);
+  assert.throws(() => interoper.setValue(-1, "zoom", 1));
+  const { e } = JSON.parse(interoper.takeError());
+  assert.deepEqual([e.name, e.message, typeof e.stack], ["InteroperError", "Unknown handle: -1", "string"]);
+  assert.equal(interoper.takeError(), null);
   release(view);
 });
 

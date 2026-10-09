@@ -15,5 +15,5 @@ app.MapStaticAssets();
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode()
     .AddInteractiveWebAssemblyRenderMode()
-    .AddAdditionalAssemblies(typeof(Smoke).Assembly);
+    .AddAdditionalAssemblies(typeof(ContractSuite).Assembly);
 app.Run();
