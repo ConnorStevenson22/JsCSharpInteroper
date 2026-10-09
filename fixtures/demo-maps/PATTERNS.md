@@ -43,7 +43,7 @@ node --test "fixtures/demo-maps/test/*.test.mjs"
 | Module functions | §5 | `distance` (`measure`); `toRgba` (`styles`) |
 | Custom element: attributes, properties, events, slots | design §2 | `<demo-map>` (`demo-map`, `custom-elements.json`): attributes `basemap`, `zoom`; properties `view`, `center`; events `demo-map-click`, `demo-map-zoom-change` (pairs with `zoom` for `@bind`), `demo-map-ready`; slots default and `toolbar` |
 
-The golden slice (`tests/GoldenSlice`) binds `Shape`/`Point`/`Line`/`Polygon`, `MapView` (`center`, `zoom`, `rotation`, `basemap`, `title`, `selected`, `flyTo`, `click`, `watch("zoom")`), `Marker` (`position`, `label`, `style`, `displayLabel`), `Style` with `ColorInput` and `IconName`, `FlyToTarget`, `Basemap`, `ClickEvent` and `distance`.
+The golden slice (`tests/GoldenSlice`) is the profile's `include`.
 
 ## Node and the browser
 
@@ -63,3 +63,4 @@ Provisional; the generator (plan phase 2) fixes the schema.
 | `events` | Event convention: `mapProperty` is the phantom event-map property (`$events`), `subscribe` the method that takes `(type, listener)` and returns a `Subscription` with `dispose()`. |
 | `watch` | Method that takes `(propertyName, callback)` and returns a `Subscription` with `dispose()`. |
 | `collections` | Generic classes treated as collections of their type argument. |
+| `include` | What to emit: a whole declaration (`"Point"`, `"distance"`), or a class's member (`"MapView.zoom"`), event (`"MapView.on:click"`) or watch (`"MapView.watch:zoom"`). Data types they use come in whole. Absent, everything is emitted. |

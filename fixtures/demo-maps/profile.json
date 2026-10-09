@@ -7,5 +7,12 @@
     "subscribe": "on"
   },
   "watch": "watch",
-  "collections": ["Collection"]
+  "collections": ["Collection"],
+  "include": [
+    "Shape", "Point", "Line", "Polygon",
+    "MapView.center", "MapView.zoom", "MapView.rotation", "MapView.basemap", "MapView.title", "MapView.selected",
+    "MapView.flyTo", "MapView.on:click", "MapView.watch:zoom",
+    "Marker.position", "Marker.label", "Marker.style", "Marker.displayLabel",
+    "distance"
+  ]
 }

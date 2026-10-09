@@ -170,7 +170,7 @@ Sync mode needs .NET and JS on one thread, so it runs on WebAssembly only and fa
 - A callback whose *return value* JS uses synchronously (e.g. a formatter `(v) => string`) works in sync mode.
 - It *can't* work in async mode on Server or Hybrid. The generator emits IOP2005, and the profile can supply a JS-side implementation instead.
 
-**R22. Optional parameters** use the value model: `Opt<T> p = default` (or a union `= default`), and `default` is undefined. Omitted trailing arguments are omitted on the JS side too. Rest parameters become `params T[]`.
+**R22. Optional parameters** use the value model: `Opt<T> p = default` (or a union `= default`), and `default` is undefined. Omitted trailing arguments are omitted on the JS side too. Rest parameters become `params T[]`. An optional trailing parameter whose type isn't supported yet is dropped, with IOP2007; a required one skips the member.
 
 **R23. Overloads** map one to one. If two TypeScript overloads collapse to the same C# signature after mapping, they merge into one method with a union or enum parameter (IOP2004).
 
@@ -215,6 +215,7 @@ Every fallback is reported with a code so consumers can see and tune what didn't
 | IOP2004 | Overloads merged after mapping |
 | IOP2005 | Synchronous-result callback not supported in async mode |
 | IOP2006 | Name changed to avoid a collision |
+| IOP2007 | Not supported yet: declaration, member or optional parameter skipped |
 
 ---
 
