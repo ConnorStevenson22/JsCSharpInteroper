@@ -121,6 +121,79 @@ public sealed class BatchTests
         await batch.DisposeAsync();
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task AScopeDisposedInsideAnotherScopesBatchReleasesAfterTheQueue(bool joined)
+    {
+        var other = new JsScope(realm);
+        await using (scope.BeginBatch())
+        {
+            await using (joined ? other.BeginBatch() : null)
+            {
+                var view = await realm.CallAsync("""{"op":"create","t":5,"args":[]}""", static (ref reader) => JsonNode.Parse(ref reader));
+                var h = (int)view!["$h"]!;
+                other.Own(h);
+                transport.Ops.Clear();
+                await realm.SetAsync(h, "zoom", 2);
+                await other.DisposeAsync();
+            }
+        }
+        Assert.Equal(["batch", "release"], transport.Ops.Select(op => (string?)JsonNode.Parse(op)!["op"]));
+        Assert.Equal(0, transport.Census());
+    }
+
+    [Fact]
+    public async Task EachOpenBatchIsFlushedAndTheFirstErrorThrown()
+    {
+        var h = await CreateView();
+        var second = await BeginElsewhere(); // first, or it would join this flow's batch
+        var first = scope.BeginBatch();
+        await realm.SendAsync($$"""{"op":"call","h":{{h}},"name":"first"}""");
+        await second.Queue($$"""{"op":"call","h":{{h}},"name":"second"}""");
+        var e = await Assert.ThrowsAsync<JsBatchException>(() => scope.DisposeAsync().AsTask());
+        Assert.Contains("second", e.Errors.Single().Error.Message, StringComparison.Ordinal); // begun first, flushed first
+        Assert.Equal(["batch", "batch", "release"], transport.Ops.Select(op => (string?)JsonNode.Parse(op)!["op"]));
+        await first.DisposeAsync();
+        await second.Batch.DisposeAsync();
+    }
+
+    // A batch begun on another async flow, with a way to queue on that flow.
+    private async Task<(IAsyncDisposable Batch, Func<string, Task> Queue)> BeginElsewhere()
+    {
+        var queue = new TaskCompletionSource<(string Op, TaskCompletionSource Done)>();
+        var begun = new TaskCompletionSource<IAsyncDisposable>();
+        _ = Flow();
+        return (await begun.Task, async op =>
+        {
+            var done = new TaskCompletionSource();
+            queue.SetResult((op, done));
+            await done.Task;
+        }
+        );
+
+        async Task Flow()
+        {
+            await Task.Yield();
+            begun.SetResult(scope.BeginBatch());
+            var (op, done) = await queue.Task;
+            await realm.SendAsync(op);
+            done.SetResult();
+        }
+    }
+
+    [Fact]
+    public async Task SyncDisposalOfAScopeWithAnOpenBatchThrows()
+    {
+        await CreateView();
+        var batch = scope.BeginBatch();
+        var e = Assert.Throws<InvalidOperationException>(scope.Dispose);
+        Assert.Equal("A scope with an open batch must be disposed with DisposeAsync.", e.Message);
+        await batch.DisposeAsync();
+        scope.Dispose(); // closed now
+        Assert.Equal(0, transport.Census());
+    }
+
     [Fact]
     public void BeginBatchNeedsAStartedRealm()
     {

@@ -6,6 +6,7 @@ namespace Interoper;
 /// </summary>
 internal sealed class JsBatch(JsRealm realm, JsScope scope) : IAsyncDisposable
 {
+    private readonly Lock gate = new();
     private readonly List<string> ops = [];
     private bool closed;
 
@@ -13,7 +14,7 @@ internal sealed class JsBatch(JsRealm realm, JsScope scope) : IAsyncDisposable
     {
         get
         {
-            lock (ops)
+            lock (gate)
             {
                 return !closed;
             }
@@ -23,7 +24,7 @@ internal sealed class JsBatch(JsRealm realm, JsScope scope) : IAsyncDisposable
     /// <summary>Queues an op, unless the batch is over (a call that outlived it, on another flow, sends at once).</summary>
     public bool TryAdd(string opJson)
     {
-        lock (ops)
+        lock (gate)
         {
             if (!closed)
             {
@@ -36,7 +37,7 @@ internal sealed class JsBatch(JsRealm realm, JsScope scope) : IAsyncDisposable
     public Task FlushAsync()
     {
         string batch;
-        lock (ops)
+        lock (gate)
         {
             if (ops.Count == 0)
             {
@@ -51,7 +52,7 @@ internal sealed class JsBatch(JsRealm realm, JsScope scope) : IAsyncDisposable
     // Not async: the async-local batch is cleared on the caller's flow, which an async method can't do.
     public ValueTask DisposeAsync()
     {
-        lock (ops)
+        lock (gate)
         {
             closed = true;
         }

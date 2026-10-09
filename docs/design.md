@@ -82,8 +82,11 @@ await using (scope.BeginBatch())
 - JS errors surface at the flush as `JsBatchException` (a `JsException`), listing each failed op with its index; the other ops still ran. An unknown `$h` fails the whole batch as a plain `JsException` (§3.4).
 - **Generated code says which ops can queue** by its entry point on `JsRealm`: `SendAsync(op)` and the `SetAsync` fast paths for ops that return nothing, `CallAsync(op, read)` and the `Get*Async` fast paths for everything else (they flush first). Live objects hold only their realm, so these are the realm's.
 - **A batch belongs to the async flow that began it**, not to the whole realm: `BeginBatch` sets an async-local, so another component's calls on the same circuit (or WebAssembly app) go out at once. Calls from a flow that outlives the batch (a task it started) go out at once too.
+- **Begin and dispose a batch in the same async method** (`await using`). The async-local covers that method's flow, so a batch begun in a helper method doesn't cover the helper's caller.
 - **A nested `BeginBatch` joins** the batch the flow is already in; only the outer one flushes.
-- **A scope disposed with a batch open** flushes the queue before its `release`, and still releases if the flush fails (then throws). The batch stays open; disposing it later sends whatever was queued since.
+- **Inside a batch, a void call that returns a Promise completes when it is queued**; JS still awaits the Promise before the batch's next op.
+- **A scope disposed with a batch open** flushes the queue before its `release`, and still releases if the flush fails (then throws the first error). The batch stays open; disposing it later sends whatever was queued since. Sync `Dispose` throws for such a scope: it must use `DisposeAsync`.
+- **Every `release` flushes the current flow's batch first**, so a scope disposed inside another scope's batch (or a joined one) doesn't release handles that queued ops still use.
 - `JsRealm.RoundTrips` counts the realm's calls through the async seam (ops, batches, fast paths), so tests can assert that N writes are one round trip.
 - **Sync mode doesn't batch**: each call is already a sub-microsecond call on JS's thread. The `batch` op itself works through `invokeSync` too.
 

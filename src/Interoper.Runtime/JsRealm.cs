@@ -105,6 +105,22 @@ public sealed class JsRealm(Func<Task<IJsTransport>> start, JsClassRegistry clas
 
     internal async Task CheckAsync(string opJson) => JsEnvelope.Check(await InvokeAsync(opJson));
 
+    /// <summary>
+    /// Sends a <c>release</c> after the current flow's queue, which may use those handles (a scope disposed inside
+    /// another scope's batch). Releases even if the flush fails, then throws.
+    /// </summary>
+    internal async Task ReleaseAsync(string releaseOp)
+    {
+        try
+        {
+            await FlushAsync();
+        }
+        finally
+        {
+            await CheckAsync(releaseOp);
+        }
+    }
+
     /// <summary>Starts a batch on the caller's async flow, or joins the one it is already in (null).</summary>
     internal JsBatch? BeginBatch(JsScope scope)
     {
@@ -192,14 +208,14 @@ public sealed class JsRealm(Func<Task<IJsTransport>> start, JsClassRegistry clas
                 return;
             }
         }
-        _ = ReleaseAsync(handle);
+        _ = AbandonAsync(handle);
     }
 
-    private async Task ReleaseAsync(int handle)
+    private async Task AbandonAsync(int handle)
     {
         try
         {
-            await InvokeAsync(JsOp.Release([handle]));
+            await ReleaseAsync(JsOp.Release([handle]));
         }
         catch (JSDisconnectedException)
         {

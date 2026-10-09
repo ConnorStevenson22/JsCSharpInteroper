@@ -1,3 +1,4 @@
+using System.Runtime.ExceptionServices;
 using Microsoft.JSInterop;
 
 namespace Interoper;
@@ -65,8 +66,13 @@ public sealed class JsScope(JsRealm realm) : IDisposable, IAsyncDisposable
     /// Starts a batch (async mode, design §3.3): until it is disposed, writes and void calls on this async flow are
     /// queued and their Tasks complete at once; a read sends the queue first, and disposal sends the rest, each in
     /// one round trip. Failed ops surface there as <see cref="JsBatchException"/>; the others still ran. Inside a
-    /// batch, a nested one joins it. Sync mode doesn't batch.
+    /// batch, a nested one joins it. Sync mode doesn't batch; a scope with an open batch must be disposed with
+    /// <see cref="DisposeAsync"/>.
     /// </summary>
+    /// <remarks>
+    /// Begin and dispose it in the same async method (<c>await using</c>): the batch covers that method's flow,
+    /// so one begun in a helper method doesn't cover the helper's caller.
+    /// </remarks>
     public IAsyncDisposable BeginBatch()
     {
         lock (gate)
@@ -119,6 +125,13 @@ public sealed class JsScope(JsRealm realm) : IDisposable, IAsyncDisposable
     {
         // Before anything is forgotten: without a sync seam this throws, and DisposeAsync still releases everything.
         var sync = Realm.IsStarted ? SyncTransport : null;
+        lock (gate)
+        {
+            if (batches.Count > 0)
+            {
+                throw new InvalidOperationException("A scope with an open batch must be disposed with DisposeAsync.");
+            }
+        }
         var (release, owned, _) = Take();
         try
         {
@@ -139,20 +152,23 @@ public sealed class JsScope(JsRealm realm) : IDisposable, IAsyncDisposable
         try
         {
             // Queued ops go first: they may use handles this releases. Their errors surface after the release.
-            try
+            ExceptionDispatchInfo? failed = null;
+            foreach (var batch in pending)
             {
-                foreach (var batch in pending)
+                try
                 {
                     await batch.FlushAsync();
                 }
-            }
-            finally
-            {
-                if (release is not null)
+                catch (Exception e)
                 {
-                    JsEnvelope.Check(await Realm.InvokeAsync(release));
+                    failed ??= ExceptionDispatchInfo.Capture(e);
                 }
             }
+            if (release is not null)
+            {
+                await Realm.ReleaseAsync(release);
+            }
+            failed?.Throw();
         }
         catch (JSDisconnectedException)
         {
