@@ -39,6 +39,27 @@ public sealed partial class BrowserHost : IAsyncLifetime
         Browser = await playwright.Chromium.LaunchAsync();
     }
 
+    // Opens the page in a fresh context, waits for it to finish, and returns what it printed. The first browser
+    // error fails the test at once.
+    public async Task<string> RunPageAsync(string path)
+    {
+        // A fixed locale: .NET on WebAssembly rejects the POSIX one headless Chromium reports on Linux.
+        await using var context = await Browser.NewContextAsync(new() { BaseURL = BaseUrl.ToString(), Locale = "en-US" });
+        var page = await context.NewPageAsync();
+        var error = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+        page.Console += (_, m) => { if (m.Type == "error") error.TrySetResult(m.Text); };
+        page.PageError += (_, e) => error.TrySetResult(e);
+
+        await page.GotoAsync(path);
+        var done = page.Locator("#result[data-done]").WaitForAsync(new() { Timeout = 60_000 }); // WebAssembly boots first
+        if (await Task.WhenAny(done, error.Task) == error.Task) Assert.Fail($"{path}: {await error.Task}");
+        await done;
+        var result = await page.Locator("#result").TextContentAsync() ?? "";
+
+        if (error.Task.IsCompleted) Assert.Fail($"{path}: {await error.Task}");
+        return result;
+    }
+
     public async ValueTask DisposeAsync()
     {
         if (Browser is not null) await Browser.DisposeAsync();

@@ -29,7 +29,7 @@ public sealed class JsCallbacks
     /// <summary>
     /// The sink JS calls: directly on WebAssembly, through a <see cref="DotNetObjectReference"/> elsewhere.
     /// It runs where the host delivers it: on JS's thread on WebAssembly, on the circuit's dispatcher on Server.
-    /// Posting to a component's own dispatcher hooks in here.
+    /// <see cref="JsScope.Register"/> wraps handlers to run on a component's dispatcher.
     /// </summary>
     [JSInvokable]
     public string? InvokeCallback(int id, string argsJson) =>

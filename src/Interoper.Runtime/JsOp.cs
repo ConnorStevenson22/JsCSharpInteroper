@@ -3,7 +3,10 @@ using System.Text.Json;
 
 namespace Interoper;
 
-/// <summary>The few ops the runtime writes itself: the typed fast paths as plain <c>get</c>/<c>set</c> ops.</summary>
+/// <summary>
+/// The few ops the runtime writes itself: the typed fast paths as plain <c>get</c>/<c>set</c> ops, and a scope's
+/// <c>release</c>.
+/// </summary>
 internal static class JsOp
 {
     public static string Get(int handle, string name) => Write("get", handle, name, static _ => { });
@@ -13,6 +16,9 @@ internal static class JsOp
     public static string Set(int handle, string name, string value) => Write("set", handle, name, w => w.WriteString("value"u8, value));
 
     public static string Set(int handle, string name, bool value) => Write("set", handle, name, w => w.WriteBoolean("value"u8, value));
+
+    public static string Release(IEnumerable<int> handles) =>
+        $$"""{"op":"release","ids":[{{string.Join(",", handles)}}]}""";
 
     /// <summary>
     /// A fast path's result read from a <c>get</c> envelope. Fast paths serve members declared as non-null
