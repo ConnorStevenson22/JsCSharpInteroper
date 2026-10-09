@@ -293,6 +293,6 @@ public sealed class RealmTests
 
     private static T Wrap<T>(JsScope scope, JsonNode? handle) where T : JsObject => scope.Wrap<T>((int)handle!["$h"]!, (int)handle["$t"]!);
 
-    private static async Task<JsonNode?> Send(JsScope scope, string op) =>
-        JsEnvelope.Read(await scope.Transport.InvokeAsync(op), static (ref reader) => JsonNode.Parse(ref reader));
+    private static Task<JsonNode?> Send(JsScope scope, string op) =>
+        scope.Realm.CallAsync(op, static (ref reader) => JsonNode.Parse(ref reader));
 }

@@ -36,11 +36,15 @@ public static class JsEnvelope
         return ReadError(ref reader);
     }
 
-    // Batch errors also carry "errors"; JsBatchException will read them.
-    private static JsException ReadError(ref Utf8JsonReader reader)
+    // A batch's error also carries "errors": one entry per failed op, with its index.
+    private static JsException ReadError(ref Utf8JsonReader reader) => ReadError(ref reader, out _);
+
+    private static JsException ReadError(ref Utf8JsonReader reader, out int index)
     {
         string name = "Error", message = "";
         string? stack = null;
+        List<(int, JsException)>? errors = null;
+        index = -1;
         while (reader.Read() && reader.TokenType != JsonTokenType.EndObject)
         {
             var property = reader.GetString();
@@ -50,9 +54,18 @@ public static class JsEnvelope
                 case "name": name = reader.GetString() ?? name; break;
                 case "message": message = reader.GetString() ?? ""; break;
                 case "stack": stack = reader.GetString(); break;
+                case "index": index = reader.GetInt32(); break;
+                case "errors":
+                    errors = [];
+                    while (reader.Read() && reader.TokenType != JsonTokenType.EndArray)
+                    {
+                        var error = ReadError(ref reader, out var i);
+                        errors.Add((i, error));
+                    }
+                    break;
                 default: reader.Skip(); break;
             }
         }
-        return new JsException(name, message, stack);
+        return errors is null ? new JsException(name, message, stack) : new JsBatchException(message, stack, errors);
     }
 }

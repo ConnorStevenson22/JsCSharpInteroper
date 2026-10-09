@@ -1,3 +1,4 @@
+using System.Runtime.ExceptionServices;
 using Microsoft.JSInterop;
 
 namespace Interoper;
@@ -12,6 +13,7 @@ public sealed class JsScope(JsRealm realm) : IDisposable, IAsyncDisposable
 {
     private readonly Lock gate = new(); // covers disposed, callbacks and this scope's ownership in the realm
     private readonly List<int> callbacks = [];
+    private readonly List<JsBatch> batches = []; // open batches this scope began, flushed before its release
     private bool disposed;
 
     public JsRealm Realm { get; } = realm;
@@ -60,6 +62,39 @@ public sealed class JsScope(JsRealm realm) : IDisposable, IAsyncDisposable
         }
     }
 
+    /// <summary>
+    /// Starts a batch (async mode, design §3.3): until it is disposed, writes and void calls on this async flow are
+    /// queued and their Tasks complete at once; a read sends the queue first, and disposal sends the rest, each in
+    /// one round trip. Failed ops surface there as <see cref="JsBatchException"/>; the others still ran. Inside a
+    /// batch, a nested one joins it. Sync mode doesn't batch; a scope with an open batch must be disposed with
+    /// <see cref="DisposeAsync"/>.
+    /// </summary>
+    /// <remarks>
+    /// Begin and dispose it in the same async method (<c>await using</c>): the batch covers that method's flow,
+    /// so one begun in a helper method doesn't cover the helper's caller.
+    /// </remarks>
+    public IAsyncDisposable BeginBatch()
+    {
+        lock (gate)
+        {
+            ObjectDisposedException.ThrowIf(disposed, this);
+            if (Realm.BeginBatch(this) is not { } batch)
+            {
+                return Joined.Instance;
+            }
+            batches.Add(batch);
+            return batch;
+        }
+    }
+
+    internal void EndBatch(JsBatch batch)
+    {
+        lock (gate)
+        {
+            batches.Remove(batch);
+        }
+    }
+
     /// <summary>Registers a callback (R21) that this scope releases; send it as <c>{"$f":id}</c>.</summary>
     public int Register(Func<string, string?> handler)
     {
@@ -90,7 +125,14 @@ public sealed class JsScope(JsRealm realm) : IDisposable, IAsyncDisposable
     {
         // Before anything is forgotten: without a sync seam this throws, and DisposeAsync still releases everything.
         var sync = Realm.IsStarted ? SyncTransport : null;
-        var (release, owned) = Take();
+        lock (gate)
+        {
+            if (batches.Count > 0)
+            {
+                throw new InvalidOperationException("A scope with an open batch must be disposed with DisposeAsync.");
+            }
+        }
+        var (release, owned, _) = Take();
         try
         {
             if (release is not null)
@@ -106,13 +148,27 @@ public sealed class JsScope(JsRealm realm) : IDisposable, IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
-        var (release, owned) = Take();
+        var (release, owned, pending) = Take();
         try
         {
+            // Queued ops go first: they may use handles this releases. Their errors surface after the release.
+            ExceptionDispatchInfo? failed = null;
+            foreach (var batch in pending)
+            {
+                try
+                {
+                    await batch.FlushAsync();
+                }
+                catch (Exception e)
+                {
+                    failed ??= ExceptionDispatchInfo.Capture(e);
+                }
+            }
             if (release is not null)
             {
-                JsEnvelope.Check(await Transport.InvokeAsync(release));
+                await Realm.ReleaseAsync(release);
             }
+            failed?.Throw();
         }
         catch (JSDisconnectedException)
         {
@@ -124,22 +180,30 @@ public sealed class JsScope(JsRealm realm) : IDisposable, IAsyncDisposable
         }
     }
 
-    // Marks the scope disposed and returns the op that releases its handles (null if none) and its callbacks.
+    // Marks the scope disposed and returns the op that releases its handles (null if none), its callbacks and its
+    // open batches.
     // A scope that never reached JS (prerendering) has neither, and touches no transport.
-    private (string? Release, int[] Callbacks) Take()
+    private (string? Release, int[] Callbacks, JsBatch[] Batches) Take()
     {
         lock (gate)
         {
             if (disposed)
             {
-                return (null, []);
+                return (null, [], []);
             }
             disposed = true;
             var handles = Realm.Forget(this);
             int[] owned = [.. callbacks];
             callbacks.Clear();
-            return (handles.Count == 0 ? null : JsOp.Release(handles), owned);
+            return (handles.Count == 0 ? null : JsOp.Release(handles), owned, [.. batches]);
         }
+    }
+
+    private sealed class Joined : IAsyncDisposable
+    {
+        public static readonly Joined Instance = new();
+
+        public ValueTask DisposeAsync() => default;
     }
 
     // After the release op: subscriptions are gone first, so JS raises no events into released callbacks (§3.1).

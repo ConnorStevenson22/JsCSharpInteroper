@@ -21,8 +21,8 @@ public static class DemoMaps
 
     private static DemoObject Wrap(JsScope scope, JsonNode? handle) => scope.Wrap<DemoObject>((int)handle!["$h"]!, (int)handle["$t"]!);
 
-    private static async Task<JsonNode?> SendAsync(JsScope scope, string op) =>
-        JsEnvelope.Read(await scope.Transport.InvokeAsync(op), static (ref reader) => JsonNode.Parse(ref reader));
+    private static Task<JsonNode?> SendAsync(JsScope scope, string op) =>
+        scope.Realm.CallAsync(op, static (ref reader) => JsonNode.Parse(ref reader));
 }
 
 public sealed class DemoObject(JsRealm realm, int handle) : JsObject(realm, handle);

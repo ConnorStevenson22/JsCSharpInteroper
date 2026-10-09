@@ -12,10 +12,13 @@ public sealed class TransportTests
         Assert.Equal(0, JsEnvelope.Read("{}", JsJson.ReadNumber)); // undefined is default
         Assert.Equal(default, JsEnvelope.Read("{}", (ref reader) => JsJson.ReadOpt(ref reader, JsJson.ReadNumber))); // R3
 
-        // A batch error's per-op list is left for JsBatchException.
-        var e = Assert.Throws<JsException>(() =>
-            JsEnvelope.Check("""{"e":{"name":"BatchError","errors":[{"index":0,"name":"Error","message":"x"}],"message":"1 of 2 batched ops failed"}}"""));
-        Assert.Equal(("BatchError", "1 of 2 batched ops failed", null), (e.Name, e.Message, e.JsStack));
+        // A batch error lists each failed op with its index.
+        var e = Assert.Throws<JsBatchException>(() => JsEnvelope.Check(
+            """{"e":{"name":"BatchError","errors":[{"index":0,"name":"Error","message":"x"},{"name":"TypeError","index":3,"message":"y","stack":"s"}],"message":"2 of 4 batched ops failed"}}"""));
+        Assert.Equal(("BatchError", "2 of 4 batched ops failed", null), (e.Name, e.Message, e.JsStack));
+        Assert.Equal(
+            [(0, "Error", "x", null), (3, "TypeError", "y", "s")],
+            e.Errors.Select(x => (x.Index, x.Error.Name, x.Error.Message, x.Error.JsStack)));
     }
 
     [Fact]
@@ -58,15 +61,11 @@ public sealed class TransportTests
     }
 
     [Fact]
-    public void InMemoryRejectsBatchesAndForeignValues()
+    public void InMemoryRejectsForeignValues()
     {
-        var transport = InMemoryDemoMaps.Create();
-        var e = Assert.Throws<JsException>(() => JsEnvelope.Check(transport.Invoke("""{"op":"batch","ops":[]}""")));
-        Assert.Equal(("InteroperError", "batch is not emulated yet"), (e.Name, e.Message));
-
-        transport = new InMemoryTransport().Define(new(1, "Odd", _ => new Odd()));
+        var transport = new InMemoryTransport().Define(new(1, "Odd", _ => new Odd()));
         JsEnvelope.Check(transport.Invoke("""{"op":"create","t":1}"""));
-        e = Assert.Throws<JsException>(() => JsEnvelope.Check(transport.Invoke("""{"op":"get","h":1,"name":"when"}""")));
+        var e = Assert.Throws<JsException>(() => JsEnvelope.Check(transport.Invoke("""{"op":"get","h":1,"name":"when"}""")));
         Assert.Equal(("Error", $"A {typeof(DateTime)} is not an in-memory JS value; see InMemoryObject."), (e.Name, e.Message));
     }
 

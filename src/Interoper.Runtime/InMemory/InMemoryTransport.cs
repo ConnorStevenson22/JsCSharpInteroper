@@ -6,7 +6,7 @@ namespace Interoper;
 /// <summary>
 /// Both seams without a browser: a small C# copy of interoper.js over fake JS classes (<see cref="InMemoryObject"/>).
 /// It speaks the same JSON protocol (design §3.4), so the same contract tests run against it and in the browser.
-/// Modules are always loaded; batches aren't emulated yet. Single-threaded, like JS.
+/// Modules are always loaded. Single-threaded, like JS.
 /// </summary>
 public sealed class InMemoryTransport : IJsSyncTransport, IJsTransport
 {
@@ -19,6 +19,7 @@ public sealed class InMemoryTransport : IJsSyncTransport, IJsTransport
     private readonly Dictionary<string, int> classIds = [];
     private readonly Dictionary<string, InMemoryObject> modules = [];
     private int lastId;
+    private bool syncOnly; // set while Invoke runs, as invokeSync sets it
 
     public JsCallbacks Callbacks { get; } = new();
 
@@ -39,27 +40,38 @@ public sealed class InMemoryTransport : IJsSyncTransport, IJsTransport
 
     public string Invoke(string opJson)
     {
+        // Restored afterwards: a callback into .NET can re-enter either entry point.
+        var outer = syncOnly;
+        syncOnly = true;
         try
         {
             // Like invokeSync, a Promise is reported after the op has run.
-            var result = Run(opJson);
+            var result = Run(Parse(opJson));
             return result is Task ? Failure(InteroperError(PromiseInSync)) : Success(result);
         }
         catch (Exception e)
         {
             return Failure(e);
         }
+        finally
+        {
+            syncOnly = outer;
+        }
     }
 
     public async Task<string> InvokeAsync(string opJson)
     {
+        var outer = syncOnly;
+        syncOnly = false;
         try
         {
-            var result = Run(opJson);
+            var result = Run(Parse(opJson));
+            syncOnly = outer;
             return Success(result is Task<object?> promise ? await promise : result);
         }
         catch (Exception e)
         {
+            syncOnly = outer;
             return Failure(e);
         }
     }
@@ -97,9 +109,10 @@ public sealed class InMemoryTransport : IJsSyncTransport, IJsTransport
     // --- Ops ---
     // Each returns its result in wire form (a JsonNode, or Undefined.Value), or a Task<object?> of it.
 
-    private object? Run(string opJson)
+    private Dictionary<string, object?> Parse(string opJson) => (Dictionary<string, object?>)Revive(JsonNode.Parse(opJson))!;
+
+    private object? Run(Dictionary<string, object?> op)
     {
-        var op = (Dictionary<string, object?>)Revive(JsonNode.Parse(opJson))!;
         string Name() => (string)op["name"]!;
         bool ByValue() => op.GetValueOrDefault("byValue") is true;
         object?[] Args() => op.GetValueOrDefault("args") is List<object?> args ? [.. args] : [];
@@ -137,7 +150,7 @@ public sealed class InMemoryTransport : IJsSyncTransport, IJsTransport
             case "load":
                 return Undefined.Value;
             case "batch":
-                throw InteroperError("batch is not emulated yet");
+                return Batch((List<object?>)op["ops"]!, 0, []);
             default:
                 throw InteroperError($"Unknown op: {op.GetValueOrDefault("op")}");
         }
@@ -147,6 +160,50 @@ public sealed class InMemoryTransport : IJsSyncTransport, IJsTransport
     {
         await promise;
         return Wire(promise is Task<object?> withResult ? withResult.Result : Undefined.Value, byValue);
+    }
+
+    // Runs ops that return nothing, in order, as runBatch does: a Promise is awaited before the next op, or under
+    // Invoke is that op's failure; a failed op doesn't stop the batch, which then fails listing each of them.
+    private object? Batch(List<object?> list, int start, List<(int, JsException)> errors)
+    {
+        for (var i = start; i < list.Count; i++)
+        {
+            object? result;
+            try
+            {
+                result = Run((Dictionary<string, object?>)list[i]!);
+            }
+            catch (Exception e)
+            {
+                errors.Add((i, AsJs(e)));
+                continue;
+            }
+            if (result is not Task promise)
+            {
+                continue;
+            }
+            if (syncOnly)
+            {
+                errors.Add((i, InteroperError(PromiseInSync)));
+                continue;
+            }
+            return ContinueBatch(promise, list, i, errors);
+        }
+        return errors.Count == 0 ? Undefined.Value : throw new JsBatchException($"{errors.Count} of {list.Count} batched ops failed", null, errors);
+    }
+
+    private async Task<object?> ContinueBatch(Task promise, List<object?> list, int index, List<(int, JsException)> errors)
+    {
+        try
+        {
+            await promise;
+        }
+        catch (Exception e)
+        {
+            errors.Add((index, AsJs(e)));
+        }
+        var rest = Batch(list, index + 1, errors);
+        return rest is Task<object?> next ? await next : rest;
     }
 
     private JsonNode Subscribe(InMemoryObject target, string method, string name, object? callback)
@@ -314,14 +371,27 @@ public sealed class InMemoryTransport : IJsSyncTransport, IJsTransport
     private static string Success(object? result) =>
         result is Undefined ? "{}" : new JsonObject { ["v"] = (JsonNode?)result }.ToJsonString();
 
-    private static string Failure(Exception e)
+    private static string Failure(Exception e) => new JsonObject { ["e"] = Error(AsJs(e)) }.ToJsonString();
+
+    private static JsException AsJs(Exception e) => e as JsException ?? new JsException("Error", e.Message, e.StackTrace);
+
+    private static JsonObject Error(JsException e)
     {
-        var (name, stack) = e is JsException js ? (js.Name, js.JsStack ?? e.StackTrace) : ("Error", e.StackTrace);
-        var error = new JsonObject { ["name"] = name, ["message"] = e.Message };
-        if (stack is not null)
+        var error = new JsonObject { ["name"] = e.Name, ["message"] = e.Message };
+        if ((e.JsStack ?? e.StackTrace) is { } stack)
         {
             error["stack"] = stack;
         }
-        return new JsonObject { ["e"] = error }.ToJsonString();
+        if (e is JsBatchException batch)
+        {
+            error["errors"] = new JsonArray([.. batch.Errors.Select(x => (JsonNode)Indexed(x.Index, Error(x.Error)))]);
+        }
+        return error;
+    }
+
+    private static JsonObject Indexed(int index, JsonObject error)
+    {
+        error.Insert(0, "index", index);
+        return error;
     }
 }
