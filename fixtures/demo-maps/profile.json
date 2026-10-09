@@ -1,0 +1,15 @@
+{
+  "package": "@acme/demo-maps",
+  "runtimeClassProperty": "declaredClass",
+  "valueClasses": ["Shape", "Point", "Line", "Polygon"],
+  "discriminators": {
+    "Shape": "type",
+    "Style": "type"
+  },
+  "events": {
+    "mapProperty": "@eventTypes",
+    "subscribe": "on"
+  },
+  "watch": "watch",
+  "collections": ["Collection"]
+}

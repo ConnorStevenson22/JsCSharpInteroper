@@ -1,0 +1,11 @@
+{
+  "name": "@acme/demo-maps",
+  "version": "0.0.0",
+  "private": true,
+  "description": "A tiny made-up map library that Interoper's tests bind. Not a real map library.",
+  "type": "module",
+  "exports": {
+    "./*.js": "./*.js"
+  },
+  "customElements": "custom-elements.json"
+}

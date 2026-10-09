@@ -1,0 +1,66 @@
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { Line, Point } from "../geometry.js";
+import { MapView } from "../MapView.js";
+import { Marker } from "../Marker.js";
+
+test("defaults and constructor bag", () => {
+  const view = new MapView({ zoom: 4, basemap: "3d-terrain" });
+  assert.deepEqual([view.zoom, view.rotation, view.basemap, view.cursor], [4, 0, "3d-terrain", "default"]);
+  assert.equal(view.title, undefined);
+  assert.equal(view.selected, null);
+  assert.equal(view.declaredClass, "views.MapView");
+});
+
+test("setters normalize: zoom is clamped, rotation wraps", () => {
+  const view = new MapView();
+  view.zoom = 99;
+  view.rotation = -90;
+  assert.deepEqual([view.zoom, view.rotation], [20, 270]);
+});
+
+test("watch on zoom", () => {
+  const view = new MapView();
+  const seen = [];
+  view.watch("zoom", (zoom, old) => seen.push([zoom, old]));
+  view.zoom = 2;
+  assert.deepEqual(seen, [[2, 1]]);
+});
+
+test("click events carry the map point", () => {
+  const view = new MapView({ center: new Point({ x: 10, y: 10 }), zoom: 1 });
+  const seen = [];
+  view.on("click", (e) => seen.push(e));
+  view.emit("click", { type: "click", x: 4, y: 2, button: 0, mapPoint: view.toMap(4, 2) });
+  assert.deepEqual([seen[0].mapPoint.x, seen[0].mapPoint.y], [12, 9]);
+});
+
+test("goTo accepts every GoToTarget case", async () => {
+  const view = new MapView();
+  const center = () => [view.center.x, view.center.y];
+  await view.goTo(new Line({ path: [[0, 0], [4, 2]] }));
+  assert.deepEqual(center(), [2, 1]);
+  await view.goTo([5, 6]);
+  assert.deepEqual(center(), [5, 6]);
+  await view.goTo({ xmin: 0, ymin: 0, xmax: 10, ymax: 20 });
+  assert.deepEqual(center(), [5, 10]);
+  await view.goTo({ center: [1, 1], zoom: 7 });
+  assert.deepEqual([...center(), view.zoom], [1, 1, 7]);
+});
+
+test("goTo rejects when aborted", async () => {
+  const view = new MapView();
+  const controller = new AbortController();
+  const moving = view.goTo([1, 1], { duration: 1000, signal: controller.signal });
+  controller.abort();
+  await assert.rejects(moving, { name: "AbortError" });
+  assert.equal(view.center.x, 0);
+});
+
+test("hitTest resolves to the marker under the offset, or null", async () => {
+  const view = new MapView({ zoom: 0 });
+  const marker = new Marker({ position: [100, -50] });
+  view.markers.add(marker);
+  assert.equal(await view.hitTest(105, 50), marker);
+  assert.equal(await view.hitTest(0, 0), null);
+});
