@@ -14,6 +14,14 @@ test("constructor bags are partial", () => {
   assert.deepEqual([point.x, point.y], [0, 5]);
 });
 
+test("constructors accept a snapshot bag that keeps its discriminant", () => {
+  // R16, R20: the runtime calls new Point(bag) with the bag's `type` still in it.
+  const point = new Point({ type: "point", x: 1, y: 2 });
+  assert.deepEqual([point.type, point.x, point.y], ["point", 1, 2]);
+  assert.deepEqual(new Line({ type: "line", path: [[0, 0], [1, 1]] }).path, [[0, 0], [1, 1]]);
+  assert.deepEqual(new Polygon({ type: "polygon", vertices: [[0, 0], [1, 0], [0, 1]] }).vertices.length, 3);
+});
+
 test("bounds and clone", () => {
   const polygon = new Polygon({ vertices: [[0, 0], [4, 0], [4, 3]] });
   assert.deepEqual(polygon.bounds, { minX: 0, minY: 0, maxX: 4, maxY: 3 });

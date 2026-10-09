@@ -65,3 +65,11 @@ test("markerAt resolves to the marker under the offset, or null", async () => {
   assert.equal(await view.markerAt(105, 50), marker);
   assert.equal(await view.markerAt(0, 0), null);
 });
+
+test("no autocast: a plain snapshot is not turned into a Point", () => {
+  // Design §3.4: interoper.js builds instances from `$c`, so the library never has to.
+  const view = new MapView({ center: { type: "point", x: 1, y: 2 } });
+  assert.equal(view.center instanceof Point, false);
+  const marker = new Marker({ position: { type: "point", x: 1, y: 2 } });
+  assert.equal(marker.position instanceof Point, false);
+});

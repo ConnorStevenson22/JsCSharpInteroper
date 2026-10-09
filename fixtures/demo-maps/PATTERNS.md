@@ -14,6 +14,7 @@ node --test "fixtures/demo-maps/test/*.test.mjs"
 | Abstract base with subclasses | R4, R15 | `Shape` → `Point`, `Line`, `Polygon` (`geometry`) |
 | Runtime class-name property | R19 (step 1) | `Observable.className` (`core`), e.g. `"geometry.Point"`, `"MapView"` |
 | Value-like classes (live class + snapshot) | R16–R18 | `Shape` and subclasses, via `profile.json` |
+| No autocast: class-typed positions need instances ([design §3.4](../../docs/design.md#34-protocol) `$c`) | R16, R20 | `MapView.center`, `Marker.position`, `MapView.flyTo`; constructors accept a bag that keeps its `type` |
 | Data records | R15, R20 | `Bounds` (`geometry`), `Rgba`, `FillStyle`, … (`styles`), `ClickEvent` (`MapView`) |
 | Properties, read-only properties | §5, R7 | `MapView.zoom`, `MapView.markers` |
 | Getter type ≠ setter type | §5, R27 | `Marker.position`: get `Point`, set `Point \| [number, number]` |
