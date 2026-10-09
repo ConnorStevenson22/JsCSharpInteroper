@@ -23,12 +23,10 @@ There is no CI. Run these before merging; all of them must pass.
 ```bash
 dotnet build Interoper.slnx
 dotnet test Interoper.slnx                      # unit + golden tests
-dotnet test tests/Interoper.E2E                 # browser tests (Playwright, Chromium)
+dotnet test tests/Interoper.E2E                 # browser tests (Playwright, Chromium), once the harness lands
 dotnet format Interoper.slnx --verify-no-changes
 node --test "tests/interoper-js/*.test.mjs" "fixtures/demo-maps/test/*.test.mjs"   # JS tests (glob form; a bare folder fails on Node 22)
 ```
-
-Until the phase 1 scaffold lands there is no solution file. The spikes build on their own (`dotnet run` in `spikes/value-model`; see `spikes/hosts/README.md`).
 
 ## Environment
 
