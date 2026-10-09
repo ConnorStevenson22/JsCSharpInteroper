@@ -20,7 +20,10 @@ export type Camera = Bounds | CenterAndZoom;
 export type FlyToTarget = Shape | [number, number] | Camera;
 
 export interface FlyToOptions {
-  /** Milliseconds. Defaults to 0. */
+  /**
+   * Milliseconds.
+   * @default 0
+   */
   duration?: number;
   signal?: AbortSignal;
 }
@@ -55,7 +58,17 @@ export class MapView extends Emitter {
   container: HTMLElement | null;
   selected: Marker | null;
   readonly markers: Collection<Marker>;
+  /**
+   * Screen offset (pixels from the center) to map coordinates.
+   * @since 0.2
+   */
   screenToMap(x: number, y: number): Point;
+  /**
+   * The offset as an `[x, y]` pair.
+   * @deprecated Pass `x` and `y`.
+   * @see MapView.flyTo
+   */
+  screenToMap(offset: [number, number]): Point;
   flyTo(target: FlyToTarget, options?: FlyToOptions): Promise<void>;
   markerAt(x: number, y: number): Promise<Marker | null>;
 }

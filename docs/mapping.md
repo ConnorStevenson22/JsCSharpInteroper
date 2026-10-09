@@ -192,7 +192,7 @@ Sync mode needs .NET and JS on one thread, so it runs on WebAssembly only and fa
 
 ## 7. What the extractor must resolve with the checker
 
-A syntax walk isn't enough. The extractor asks the TypeScript checker for *resolved* members and records them in the IR:
+A syntax walk isn't enough. The extractor asks the TypeScript checker for *resolved* members and records them in the [IR](ir.md):
 
 - utility types (`Partial`, `Pick`, `Omit`, `Record`), `keyof`, indexed access, `typeof`, mapped types, and conditional types where they resolve;
 - event maps declared through phantom properties;

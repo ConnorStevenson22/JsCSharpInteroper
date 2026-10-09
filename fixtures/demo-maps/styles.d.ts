@@ -2,7 +2,10 @@ export interface Rgba {
   r: number;
   g: number;
   b: number;
-  /** 0–1. Defaults to 1. */
+  /**
+   * 0–1.
+   * @default 1
+   */
   a?: number;
 }
 

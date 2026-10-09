@@ -37,8 +37,9 @@ export class MapView extends Emitter {
   get container() { return this._get("container"); }
   set container(value) { this._set("container", value ?? null); }
 
-  // Screen offset (pixels from the center) to map coordinates; one pixel is 2^-zoom map units.
+  // Screen offset (pixels from the center) to map coordinates, or an [x, y] pair; one pixel is 2^-zoom map units.
   screenToMap(x, y) {
+    if (Array.isArray(x)) [x, y] = x;
     const scale = 2 ** this.zoom;
     return new Point({ x: this.center.x + x / scale, y: this.center.y - y / scale });
   }

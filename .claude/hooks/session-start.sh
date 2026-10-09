@@ -1,6 +1,6 @@
 #!/bin/bash
 # Prepares a Claude Code cloud session: installs the .NET SDK pinned in global.json and
-# restores NuGet packages so builds and tests work immediately. Idempotent.
+# restores NuGet and npm packages so builds and tests work immediately. Idempotent.
 set -euo pipefail
 
 if [ "${CLAUDE_CODE_REMOTE:-}" != "true" ]; then
@@ -27,6 +27,7 @@ if [ -n "${CLAUDE_ENV_FILE:-}" ]; then
 fi
 export DOTNET_ROOT="$dotnet_root" PATH="$dotnet_root:$PATH" DOTNET_CLI_TELEMETRY_OPTOUT=1 DOTNET_NOLOGO=1
 
-# Restore packages so the first build in the session doesn't wait on NuGet.
+# Restore packages so the first build in the session doesn't wait on NuGet or npm.
 cd "$repo"
 dotnet restore Interoper.slnx --verbosity quiet
+npm install --prefix src/interoper-extractor --no-audit --no-fund --silent

@@ -24,7 +24,7 @@ Hand-written bindings for a slice of the fixture, running on every host.
 
 ## Phase 2 · Generator
 
-- [ ] An IR schema v1 and an extractor grown from `tools/dts-survey`. It must use checker-resolved members, accessor pairs, overloads, event maps, discriminants, JSDoc and module specifiers.
+- [x] An IR schema v1 and an extractor grown from `tools/dts-survey`. It must use checker-resolved members, accessor pairs, overloads, event maps, discriminants, JSDoc and module specifiers.
 - [ ] A CEM reader and a golden IR for the fixture.
 - [ ] Emitter infrastructure: an indented writer, naming (R25–R27) and diagnostics.
 - [ ] Emitters for value types, snapshot records + JSON, live classes in both modes, and metadata tables.
@@ -36,6 +36,7 @@ Hand-written bindings for a slice of the fixture, running on every host.
 - [ ] Events and watches, with options and projection.
 - [ ] Collections, callbacks (R21), module functions, `Diff`, and the chatty-await analyzer.
 - [ ] Razor components from the CEM, with custom events, `@bind` and slots.
+- [ ] Extractor: default exports, re-exports and namespaces, specifiers through `exports` maps, and declarations for dependency packages' types, as the validation samples need them.
 
 **Done when** the whole fixture is generated and passes on all hosts, and the first private validation samples pass.
 

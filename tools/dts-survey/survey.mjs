@@ -16,6 +16,7 @@
 import { createRequire } from "node:module";
 import fs from "node:fs";
 import path from "node:path";
+import { createProgram, discriminant, listDts } from "../../src/interoper-extractor/program.mjs";
 
 const args = process.argv.slice(2);
 const modulesDir = path.resolve(args[0] ?? "node_modules");
@@ -29,25 +30,6 @@ const ts = require("typescript");
 /** name, the directory under node_modules that counts as "the library", optional file filters. */
 const libsFile = path.resolve(opt("--libs") ?? new URL("libraries.json", import.meta.url).pathname);
 const libraries = JSON.parse(fs.readFileSync(libsFile, "utf8"));
-
-function listDts(dir, lib) {
-  const out = [];
-  const walk = (d) => {
-    for (const e of fs.readdirSync(d, { withFileTypes: true })) {
-      const p = path.join(d, e.name);
-      if (e.isDirectory()) {
-        if (e.name === "node_modules") continue;
-        walk(p);
-      } else if (/\.d\.(m|c)?ts$/.test(e.name)) {
-        if (lib.only && !lib.only.includes(e.name)) continue;
-        if (lib.skip?.some((s) => p.includes(s))) continue;
-        out.push(p);
-      }
-    }
-  };
-  walk(dir);
-  return out;
-}
 
 const BUCKETS = [
   ["primitive", "string / number / boolean / bigint (incl. single literal)"],
@@ -87,16 +69,7 @@ function surveyLibrary(lib) {
   const dir = path.join(modulesDir, lib.dir);
   if (!fs.existsSync(dir)) return null;
   const files = listDts(dir, lib);
-  const program = ts.createProgram(files, {
-    noEmit: true,
-    skipLibCheck: true,
-    target: ts.ScriptTarget.ESNext,
-    module: ts.ModuleKind.NodeNext,
-    moduleResolution: ts.ModuleResolutionKind.NodeNext,
-    lib: ["lib.esnext.d.ts", "lib.dom.d.ts", "lib.dom.iterable.d.ts"],
-    types: [],
-    strict: true,
-  });
+  const program = createProgram(ts, files);
   const checker = program.getTypeChecker();
   const inLib = (sf) => (lib.only ? files.includes(sf.fileName) : sf.fileName.startsWith(dir + path.sep));
 
@@ -130,26 +103,6 @@ function surveyLibrary(lib) {
     t.getCallSignatures().length > 0 && t.getProperties().length === 0;
   const isArrayLike = (t) => checker.isArrayType(t) || checker.isTupleType(t);
 
-  function discriminant(members) {
-    // A property present on every member whose type is a distinct literal per member.
-    const first = members[0].getProperties().map((p) => p.name);
-    for (const name of first) {
-      const seen = new Set();
-      let ok = true;
-      for (const m of members) {
-        const prop = m.getProperty(name);
-        if (!prop) { ok = false; break; }
-        const pt = checker.getTypeOfSymbol(prop);
-        if (!(pt.flags & (ts.TypeFlags.StringLiteral | ts.TypeFlags.NumberLiteral | ts.TypeFlags.BooleanLiteral))) { ok = false; break; }
-        const key = checker.typeToString(pt);
-        if (seen.has(key)) { ok = false; break; }
-        seen.add(key);
-      }
-      if (ok) return name;
-    }
-    return null;
-  }
-
   function classify(type, where) {
     if (type.flags & (ts.TypeFlags.Any | ts.TypeFlags.Unknown)) return "any";
     if (type.flags & ts.TypeFlags.TypeParameter) return "typeParam";
@@ -173,7 +126,7 @@ function surveyLibrary(lib) {
       if (members.every((t) => !isPrimitive(t))) {
         const objs = members.filter((t) => t.flags & ts.TypeFlags.Object || t.flags & ts.TypeFlags.Intersection);
         if (objs.length === members.length && !members.some(isFunctionType) && !members.some(isArrayLike)) {
-          return discriminant(members) ? "discriminatedUnion" : "objectUnion";
+          return discriminant(ts, checker, members) ? "discriminatedUnion" : "objectUnion";
         }
       }
       return "mixedUnion";

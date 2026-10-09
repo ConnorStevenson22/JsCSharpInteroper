@@ -32,6 +32,8 @@ node --test "fixtures/demo-maps/test/*.test.mjs"
 | `Partial<Pick<…>>` constructor bags | R12, R18 | `Point`, `Line`, `Polygon` constructors; `MapViewOptions`; `MarkerOptions` (also extends with a wider `position`) |
 | Promise methods | R8 | `MapView.flyTo`, `MapView.markerAt` |
 | `AbortSignal` parameter | R14 | `FlyToOptions.signal` |
+| Overloads | R23 | `MapView.screenToMap(x, y)` and `screenToMap([x, y])` |
+| JSDoc tags | [mapping §7](../../docs/mapping.md#7-what-the-extractor-must-resolve-with-the-checker) | `@default` (`FlyToOptions.duration`, `Rgba.a`); `@since`, `@deprecated`, `@see` on the `screenToMap` overloads |
 | Optional parameters | R22 | `MapView.flyTo(target, options?)`, `DemoMapElement.clickAt(x, y, button?)` |
 | Callbacks | R21 | `on`, `watch`, `Collection.find` (synchronous `boolean` result) |
 | Callback with a synchronous return value | R21, IOP2005 | `Marker.labelFormatter` (`LabelFormatter`), read by `Marker.displayLabel` |
