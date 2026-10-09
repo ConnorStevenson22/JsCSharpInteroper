@@ -13,7 +13,6 @@ Read before changing anything:
 - **.NET 11+ only** (SDK pinned in `global.json`). On WebAssembly we use Mono (the default); don't set `UseMonoRuntime=false`.
 - **Zero warnings** (`TreatWarningsAsErrors`), and `dotnet format --verify-no-changes` must pass.
 - **Every change comes with tests.** Tests that exercise a mapping rule cite it (`R19`).
-- **`spikes/` is reference material.** Port code into `src/`; never reference spike projects.
 - **Decision changes** update `design.md` / `mapping.md` in the same PR.
 
 ## Commands
@@ -28,7 +27,7 @@ dotnet format Interoper.slnx --verify-no-changes
 node --test "tests/interoper-js/*.test.mjs" "fixtures/demo-maps/test/*.test.mjs"   # JS tests (glob form; a bare folder fails on Node 22)
 ```
 
-Until the phase 1 scaffold lands there is no solution file. The spikes build on their own (`dotnet run` in `spikes/value-model`; see `spikes/hosts/README.md`).
+Until the phase 1 scaffold lands there is no solution file.
 
 ## Environment
 
