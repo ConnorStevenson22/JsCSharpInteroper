@@ -28,6 +28,11 @@ test("watch on zoom", () => {
   assert.deepEqual(seen, [[2, 1]]);
 });
 
+test("screenToMap takes x and y, or an [x, y] pair", () => {
+  const view = new MapView({ center: new Point({ x: 10, y: 10 }), zoom: 1 });
+  assert.deepEqual([view.screenToMap(4, 2).x, view.screenToMap([4, 2]).y], [12, 9]);
+});
+
 test("click events carry the map point", () => {
   const view = new MapView({ center: new Point({ x: 10, y: 10 }), zoom: 1 });
   const seen = [];

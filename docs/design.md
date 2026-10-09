@@ -146,8 +146,8 @@ node_modules/@acme/maps/custom-elements.json ─► extractor (CEM) ────
                                                                                          └─► *.g.razor.cs components
 ```
 
-- **Extractor.** Node + the TypeScript 6.x checker, bundled into one JS file that ships inside the CLI. It resolves types with the checker, not a syntax walk ([mapping.md §7](mapping.md#7-what-the-extractor-must-resolve-with-the-checker)). We stay on 6.x until TypeScript 7 has a stable programmatic API. `tools/dts-survey` is its starting point.
-- **IR.** A language-neutral, versioned JSON model. A library upgrade is an IR diff.
+- **Extractor** (`src/interoper-extractor`). Node + the TypeScript 6.x checker (pinned exactly; it has no dependencies, so there's no lockfile), bundled into one JS file that ships inside the CLI. It resolves types with the checker, not a syntax walk ([mapping.md §7](mapping.md#7-what-the-extractor-must-resolve-with-the-checker)). We stay on 6.x until TypeScript 7 has a stable programmatic API. It grew from `tools/dts-survey`, which shares its program setup and discriminant check (`program.mjs`).
+- **IR.** A language-neutral, versioned JSON model ([ir.md](ir.md)). A library upgrade is an IR diff.
 - **Profile.** Optional, consumer-owned data for library-specific decisions:
   - entity vs value classes;
   - the runtime-class property and discriminators;
