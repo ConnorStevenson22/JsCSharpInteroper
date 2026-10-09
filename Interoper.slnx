@@ -1,6 +1,7 @@
 <Solution>
   <Folder Name="/src/">
     <Project Path="src/Interoper.Blazor/Interoper.Blazor.csproj" />
+    <Project Path="src/Interoper.Generator/Interoper.Generator.csproj" />
     <Project Path="src/Interoper.Runtime/Interoper.Runtime.csproj" />
   </Folder>
   <Folder Name="/tests/">
@@ -8,6 +9,7 @@
     <Project Path="tests/Interoper.E2E/Interoper.E2E.csproj" />
     <Project Path="tests/Interoper.E2E.Client/Interoper.E2E.Client.csproj" />
     <Project Path="tests/Interoper.E2E.Host/Interoper.E2E.Host.csproj" />
+    <Project Path="tests/Interoper.Generator.Tests/Interoper.Generator.Tests.csproj" />
     <Project Path="tests/Interoper.Runtime.Tests/Interoper.Runtime.Tests.csproj" />
   </Folder>
 </Solution>
