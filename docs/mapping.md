@@ -115,11 +115,11 @@ The profile overrides either way. Getting this wrong is the classic failure mode
 - a live class (`Point`), used when you hold a handle: what `Create` returns, and `this`-typed results (`Shape Clone(scope)`);
 - an `XSnapshot` record (`PointSnapshot`), used wherever a type names the class: properties, arguments and results (read with `byValue`), inside snapshots and event payloads, constructor bags and data-in/data-out module functions.
 
-Sent to JS, a snapshot record of a value-like class arrives as an instance: the writer adds its concrete class id (`$c`, [design §3.4](design.md#34-protocol)) and the runtime calls `new Point(bag)`. The bag keeps its discriminant (R20). Data records stay plain objects. The snapshots of an abstract value-like base form a `closed record` hierarchy (`ShapeSnapshot`), read by the discriminant (R19 step 2).
+Sent to JS, a snapshot record of a value-like class arrives as an instance: the writer adds its concrete class id (`$c`, [design §3.4](design.md#34-protocol)) and the runtime calls `new Point(bag)`. The bag keeps its constants, such as the discriminant (R20). Data records stay plain objects. The snapshots of an abstract value-like base form a `closed record` hierarchy (`ShapeSnapshot`), read by the discriminant (R19 step 2).
 
 **R17. Snapshot depth.** Snapshot records carry data members only, copying value-like members deeply as their snapshot records. Entity members are not in snapshots, because reading one needs a scope: read them with their scoped getter (`GetSelected(scope)`).
 
-**R18. Every live class has an `XSnapshot` record.** It carries the class's data members, all optional. One type serves as:
+**R18. Every live class has an `XSnapshot` record.** It carries the class's writable data members, all optional, each with its getter's type where the setter's differs (`MarkerSnapshot.Position` is a `PointSnapshot`). Read-only members are read with their getters. One type serves as:
 - what `Snapshot()`/`SnapshotAsync()` returns;
 - the constructor input for `Create`/`CreateAsync`;
 - the patch for `Apply`/`ApplyAsync`. Unset members are undefined (R2), so a patch is just a partially filled record.
@@ -140,7 +140,7 @@ When JS returns a value for a union position, the runtime must pick the case.
 3. **Object without a discriminant.** The generator computes each case's *required* member names. If those sets separate the cases, it emits a structural check. Otherwise the union is **ambiguous**: diagnostic IOP2003, with the profile supplying a classifier. Optional members don't count, because TypeScript makes most distinguishing members optional.
 4. **Primitives** by JSON token kind (string / number / bool / array). Two cases with the same token kind (e.g. `string` and a string enum) are told apart by value where possible; otherwise IOP2003.
 
-**R20. Writing** serializes the active case. Data records include their discriminant as a constant property, so JS receives `{ "type": "point", … }`.
+**R20. Writing** serializes the active case. A member typed with one literal (`type: "point"`) is a constant: not a property, but always written, so JS receives `{ "type": "point", … }`.
 
 ---
 

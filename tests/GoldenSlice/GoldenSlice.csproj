@@ -1,7 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk.Razor">
 
-  <!-- The bindings the generator must emit for fixtures/demo-maps, written by hand, per mode (Sync/, Async/). Its
-       metadata module, wwwroot/demo-maps.meta.js, is served at /_content/GoldenSlice/. -->
+  <!-- The bindings the generator emits for fixtures/demo-maps, per mode (Sync/, Async/): the data types come from
+       tests/Interoper.Generator.Tests/GoldenSliceTests, the rest is written by hand for now. Its metadata module,
+       wwwroot/demo-maps.meta.js, is served at /_content/GoldenSlice/. -->
 
   <ItemGroup>
     <SupportedPlatform Include="browser" />
