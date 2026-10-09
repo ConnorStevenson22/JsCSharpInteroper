@@ -63,4 +63,4 @@ Provisional; the generator (plan phase 2) fixes the schema.
 | `events` | Event convention: `mapProperty` is the phantom event-map property (`$events`), `subscribe` the method that takes `(type, listener)` and returns a `Subscription` with `dispose()`. |
 | `watch` | Method that takes `(propertyName, callback)` and returns a `Subscription` with `dispose()`. |
 | `collections` | Generic classes treated as collections of their type argument. |
-| `include` | What to emit: a whole declaration (`"Point"`, `"distance"`), or a class's member (`"MapView.zoom"`), event (`"MapView.on:click"`) or watch (`"MapView.watch:zoom"`). Data types they use come in whole. Absent, everything is emitted. |
+| `include` | What to emit: a whole declaration (`"Point"`, `"distance"`), or a class's member (`"MapView.zoom"`), event (`"MapView.on:click"`) or watch (`"MapView.watch:zoom"`). Data types they use come in whole. Watches are emitted only where listed; absent, everything else is. |

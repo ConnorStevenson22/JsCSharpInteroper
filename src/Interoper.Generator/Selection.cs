@@ -11,7 +11,7 @@ public sealed record Selected(string Module, Declaration Declaration, IReadOnlyL
 
 /// <summary>
 /// What to emit for an IR and a profile. The profile's <c>include</c> lists live classes, their members, events and
-/// watches, and module functions; absent, it lists everything. Data types (interfaces, aliases, enums) come in whole
+/// watches, and module functions; absent, it lists everything but watches, which are emitted only where listed. Data types (interfaces, aliases, enums) come in whole
 /// when an included member uses them. A member that uses an unlisted class, or a type that can't be mapped yet, is
 /// skipped with IOP2007; an optional trailing parameter is dropped instead (R22).
 /// </summary>
@@ -25,7 +25,9 @@ public sealed class Selection
     private readonly Dictionary<Declaration, Selected> selected = new(ReferenceEqualityComparer.Instance);
     private readonly HashSet<ClassDeclaration> classes = new(ReferenceEqualityComparer.Instance);
     private readonly Dictionary<Declaration, string?> problems = new(ReferenceEqualityComparer.Instance);
+    private readonly HashSet<Declaration> checking = new(ReferenceEqualityComparer.Instance);
     private readonly List<Diagnostic> diagnostics = [];
+    private bool recursed;
 
     private Selection(IrDocument ir, Profile profile)
     {
@@ -51,16 +53,16 @@ public sealed class Selection
         }
         foreach (var (declaration, listed) in included)
         {
-            Select(declaration, listed);
+            Add(declaration, listed);
         }
         Declarations = [.. all.Where(x => selected.ContainsKey(x.Declaration)).Select(x => selected[x.Declaration])];
-        Diagnostics = diagnostics;
     }
 
     /// <summary>The declarations to emit, in IR order.</summary>
     public IReadOnlyList<Selected> Declarations { get; }
 
-    public IReadOnlyList<Diagnostic> Diagnostics { get; }
+    /// <summary>What was skipped or dropped (IOP2007), each once.</summary>
+    public IReadOnlyList<Diagnostic> Diagnostics => diagnostics;
 
     public static Selection Select(IrDocument ir, Profile profile) => new(ir, profile);
 
@@ -128,7 +130,7 @@ public sealed class Selection
         }
     }
 
-    private void Select(Declaration declaration, Listed? listed)
+    private void Add(Declaration declaration, Listed? listed)
     {
         switch (declaration)
         {
@@ -136,7 +138,7 @@ public sealed class Selection
                 Skip(declaration.Name, $"generic `{declaration.Name}`");
                 break;
             case ClassDeclaration c:
-                SelectClass(c, listed);
+                AddClass(c, listed);
                 break;
             case FunctionDeclaration f:
                 var signatures = Signatures(f.Name, f.Signatures);
@@ -161,7 +163,7 @@ public sealed class Selection
         }
     }
 
-    private void SelectClass(ClassDeclaration c, Listed? listed)
+    private void AddClass(ClassDeclaration c, Listed? listed)
     {
         var members = new List<Member>();
         foreach (var member in c.Members.Where(m => listed?.Members.Contains(m.Name) ?? !IsConvention(m)))
@@ -225,7 +227,10 @@ public sealed class Selection
     private bool IsConvention(Member member) =>
         member.Name == profile.RuntimeClassProperty || member.Name == profile.Events?.Subscribe || member.Name == profile.Watch;
 
-    /// <summary>A base's discriminant (<c>Shape.type</c>), which a subclass narrows to a literal: the live type says it.</summary>
+    /// <summary>
+    /// A base's discriminant (<c>Shape.type</c>), which each subclass narrows to a literal: the live type says it, so it's
+    /// no member, and its type (<c>ShapeType</c>) isn't emitted for it.
+    /// </summary>
     private bool IsDiscriminant(ClassDeclaration c, PropertyMember property) =>
         moduleOf.Keys.OfType<ClassDeclaration>().Any(sub =>
             sub.Extends is RefType r && ReferenceEquals(Find(r), c) &&
@@ -246,8 +251,7 @@ public sealed class Selection
             if (kept.Count < signature.Params.Count)
             {
                 var dropped = signature.Params[kept.Count];
-                diagnostics.Add(new(Diagnostic.NotSupported, $"{subject}({dropped.Name})",
-                    $"optional parameter dropped (R22): uses {Problem(dropped.Type)}"));
+                Report(new(Diagnostic.NotSupported, $"{subject}({dropped.Name})", $"optional parameter dropped (R22): uses {Problem(dropped.Type)}"));
             }
             var trimmed = signature with { Params = kept };
             foreach (var type in trimmed.Params.Select(p => p.Type).Append(trimmed.Returns).OfType<IrType>())
@@ -266,8 +270,16 @@ public sealed class Selection
         : signature.Params.FirstOrDefault(p => Problem(p.Type) is not null) is { Optional: false } required ? Problem(required.Type)
         : null;
 
-    private void Skip(string subject, string problem) =>
-        diagnostics.Add(new(Diagnostic.NotSupported, subject, $"skipped: uses {problem}"));
+    private void Skip(string subject, string problem) => Report(new(Diagnostic.NotSupported, subject, $"skipped: uses {problem}"));
+
+    /// <summary>Adds a diagnostic unless it's already there, as when two overloads are skipped for the same reason.</summary>
+    private void Report(Diagnostic diagnostic)
+    {
+        if (!diagnostics.Contains(diagnostic))
+        {
+            diagnostics.Add(diagnostic);
+        }
+    }
 
     // --- What can be mapped ---
 
@@ -300,7 +312,11 @@ public sealed class Selection
         {
             return known;
         }
-        problems[declaration] = null; // a recursive data type is fine
+        if (!checking.Add(declaration))
+        {
+            recursed = true; // a recursive data type is fine, unless something else in it isn't
+            return null;
+        }
         var problem = declaration switch
         {
             ClassDeclaration c => classes.Contains(c) ? null
@@ -315,7 +331,14 @@ public sealed class Selection
         {
             problem = $"{problem} (in `{declaration.Name}`)";
         }
-        return problems[declaration] = problem;
+        checking.Remove(declaration);
+        // Inside a recursion, "fine" may only mean the declaration being checked further up wasn't known yet.
+        if (problem is not null || !recursed || checking.Count == 0)
+        {
+            problems[declaration] = problem;
+        }
+        recursed &= checking.Count > 0;
+        return problem;
     }
 
     // --- Reachable data types ---

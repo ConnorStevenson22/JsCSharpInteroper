@@ -63,8 +63,12 @@ public sealed class IrTests
     }
 
     [Fact]
-    public void OnlyVersionOneIsRead() =>
-        Assert.Throws<InvalidDataException>(() => IrDocument.Parse("""{ "version": 2, "package": { "name": "p", "version": "1" } }"""));
+    public void OnlyVersionOneIsRead()
+    {
+        Assert.Equal("IR version 2 isn't supported; expected 1.",
+            Assert.Throws<InvalidDataException>(() => IrDocument.Parse("""{ "package": { "name": "p", "version": "1" }, "added": 1, "version": 2 }""")).Message);
+        Assert.Throws<InvalidDataException>(() => IrDocument.Parse("""{ "package": { "name": "p", "version": "1" } }"""));
+    }
 
     private static T Declaration<T>(string name) where T : Declaration =>
         Assert.IsType<T>(Fixture.Ir.Modules.SelectMany(m => m.Declarations).Single(d => d.Name == name));

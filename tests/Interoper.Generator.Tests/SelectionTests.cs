@@ -24,7 +24,7 @@ public sealed class SelectionTests
         Assert.Equal(["zoom"], Selected("MapView").Watches.Select(p => p.Name));
         Assert.Equal(["position", "label", "style", "displayLabel"], Members("Marker"));
         Assert.Empty(Class("Marker").Events);
-        Assert.Equal(["bounds", "clone"], Members("Shape")); // the discriminant `type` isn't a member of a live class
+        Assert.Equal(["bounds", "clone"], Members("Shape")); // not the discriminant `type`, nor the runtime-class property
         Assert.Equal(["type", "x", "y"], Members("Point")); // a constant (R20)
 
         // R14 isn't supported yet, so flyTo loses its optional `options` (R22), and FlyToOptions isn't used.
@@ -53,8 +53,7 @@ public sealed class SelectionTests
         Assert.Empty(Assert.IsType<ClassDeclaration>(Assert.Single(selection.Declarations).Declaration).Members);
         Assert.Equal(
         [
-            "IOP2007 MapView.screenToMap: skipped: uses unlisted class `Point`",
-            "IOP2007 MapView.screenToMap: skipped: uses unlisted class `Point`",
+            "IOP2007 MapView.screenToMap: skipped: uses unlisted class `Point`", // once for its two overloads
             "IOP2007 MapView.flyTo: skipped: uses unlisted class `Shape` (in `FlyToTarget`)",
             "IOP2007 MapView.markerAt: skipped: uses unlisted class `Marker`",
         ], selection.Diagnostics.Select(d => d.ToString()));
@@ -74,6 +73,25 @@ public sealed class SelectionTests
         // The runtime-class property and the event and watch methods are never members.
         var observable = Assert.IsType<ClassDeclaration>(selection.Declarations.Single(s => s.Declaration.Name == "Observable").Declaration);
         Assert.Empty(observable.Members);
+    }
+
+    [Fact]
+    public void ARecursiveDataTypeIsSkippedForWhatItUses()
+    {
+        // g checks A, which reaches B, which reaches A again before A's AbortSignal is seen: B must not pass for fine.
+        var ir = IrDocument.Parse("""
+            { "version": 1, "package": { "name": "p", "version": "1" }, "modules": [{ "specifier": "p/a.js", "declarations": [
+              { "kind": "interface", "name": "A", "members": [
+                { "kind": "property", "name": "b", "type": { "kind": "ref", "name": "B", "module": "p/a.js" } },
+                { "kind": "property", "name": "signal", "type": { "kind": "ref", "name": "AbortSignal" } }] },
+              { "kind": "interface", "name": "B", "members": [
+                { "kind": "property", "name": "a", "type": { "kind": "ref", "name": "A", "module": "p/a.js" } }] },
+              { "kind": "function", "name": "g", "signatures": [{ "params": [{ "name": "a", "type": { "kind": "ref", "name": "A", "module": "p/a.js" } }] }] },
+              { "kind": "function", "name": "f", "signatures": [{ "params": [{ "name": "b", "type": { "kind": "ref", "name": "B", "module": "p/a.js" } }] }] }] }] }
+            """);
+        var selection = Selection.Select(ir, new Profile { Package = "p", Include = ["g", "f"] });
+        Assert.Empty(selection.Declarations);
+        Assert.Equal(["g", "f"], selection.Diagnostics.Select(d => d.Subject));
     }
 
     [Theory]

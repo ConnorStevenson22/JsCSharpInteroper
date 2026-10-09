@@ -15,10 +15,13 @@ public sealed record IrDocument
 
     public static IrDocument Load(string path) => Parse(File.ReadAllText(path));
 
+    /// <summary>Reads the version first, so a newer IR fails on its version rather than on a field this one lacks.</summary>
     public static IrDocument Parse(string json)
     {
-        var ir = JsonSerializer.Deserialize<IrDocument>(json, Json.Options)!;
-        return ir.Version == 1 ? ir : throw new InvalidDataException($"IR version {ir.Version} isn't supported; expected 1.");
+        using var document = JsonDocument.Parse(json);
+        return document.RootElement.TryGetProperty("version", out var version) && version.ValueKind == JsonValueKind.Number && version.GetInt32() == 1
+            ? document.RootElement.Deserialize<IrDocument>(Json.Options)!
+            : throw new InvalidDataException($"IR version {version} isn't supported; expected 1.");
     }
 }
 

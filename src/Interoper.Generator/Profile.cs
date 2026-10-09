@@ -25,7 +25,7 @@ public sealed record Profile
     public IReadOnlyList<string> Collections { get; init; } = [];
 
     /// <summary>
-    /// What to emit; absent means everything. <c>"Point"</c> is a whole declaration, <c>"MapView.zoom"</c> one member,
+    /// What to emit; absent means everything but watches. <c>"Point"</c> is a whole declaration, <c>"MapView.zoom"</c> one member,
     /// <c>"MapView.on:click"</c> one event and <c>"MapView.watch:zoom"</c> one property watch (<see cref="Selection"/>).
     /// </summary>
     public IReadOnlyList<string>? Include { get; init; }
