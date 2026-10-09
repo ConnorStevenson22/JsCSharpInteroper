@@ -10,6 +10,7 @@ let nextId = 1;
 let meta = { classes: {} };
 let classIdsByName = new Map();
 let callbackSink = null;
+let fastPathError = null; // { error } until takeError reads it
 let syncOnly = false; // set while invokeSync runs: nothing may start async work
 const PROMISE_IN_SYNC = "The op returned a Promise; send it through invoke.";
 
@@ -59,18 +60,36 @@ export async function invoke(opJson) {
   return respondWith(false, opJson);
 }
 
-// Typed fast paths for [JSImport]: one JS function serves number, string and bool signatures.
+// Typed fast paths for [JSImport]: one JS function serves number, string and bool signatures. They throw;
+// .NET then reads the error with takeError, since [JSImport] keeps only its message.
 export function getValue(handle, name) {
-  return target(handle)[name];
+  return fastPath(() => target(handle)[name]);
 }
 
 export function setValue(handle, name, value) {
-  target(handle)[name] = value;
+  fastPath(() => { target(handle)[name] = value; });
+}
+
+// What the last fast path call threw, as an error envelope, once; null if it threw nothing.
+export function takeError() {
+  const taken = fastPathError;
+  fastPathError = null;
+  return taken && failure(taken.error);
 }
 
 // The number of live handles, for leak tests.
 export function census() {
   return handles.size;
+}
+
+function fastPath(fn) {
+  fastPathError = null;
+  try {
+    return fn();
+  } catch (error) {
+    fastPathError = { error };
+    throw error;
+  }
 }
 
 // The flag is restored afterwards because a callback into .NET can re-enter either entry point.

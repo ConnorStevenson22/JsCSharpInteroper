@@ -1,0 +1,57 @@
+@using Interoper.Contract
+@inject IJSRuntime JS
+
+<pre id="result" data-done="@done">@string.Join("\n", lines)</pre>
+
+@code {
+    // Runs the transport contract (tests/Interoper.Runtime.Tests/TransportContract.cs) against fixtures/demo-maps
+    // through one seam, and prints one line per case for the test to assert on.
+    const string Metadata = "/demo-maps.meta.js";
+    const string Load = """{"op":"load","modules":["@acme/demo-maps/MapView.js","@acme/demo-maps/Marker.js"]}""";
+
+    readonly List<string> lines = [];
+    bool done;
+
+    [Parameter, EditorRequired] public SeamKind Kind { get; set; }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        try
+        {
+            var seam = await StartAsync();
+            foreach (var (name, run) in TransportContract.Cases)
+            {
+                try
+                {
+                    await run(seam);
+                    lines.Add($"PASS {name}");
+                }
+                catch (Exception e)
+                {
+                    lines.Add($"FAIL {name}: {e.GetType().Name}: {e.Message}");
+                }
+            }
+        }
+        catch (Exception e)
+        {
+            lines.Add($"{e.GetType().Name}: {e.Message}");
+        }
+        done = true;
+        StateHasChanged();
+    }
+
+    async Task<Seam> StartAsync()
+    {
+        if (Kind == SeamKind.JsRuntime)
+        {
+            return Seam.Async(await JsRuntimeTransport.StartAsync(JS, Metadata), callbacksReturn: false);
+        }
+        // On Server this fails fast: sync bindings need WebAssembly.
+#pragma warning disable CA1416
+        var transport = await JsImportTransport.StartAsync(Metadata);
+#pragma warning restore CA1416
+        JsEnvelope.Check(await transport.InvokeAsync(Load)); // sync mode loads modules up front
+        return Kind == SeamKind.JsImportSync ? Seam.Sync(transport) : Seam.Async(transport, callbacksReturn: true);
+    }
+}

@@ -34,7 +34,7 @@ Claims marked **verified** come from two throwaway experiments, summarized in [�
 | **JS metadata tables** | class id → module specifier and export name, runtime class name → class id, snapshot member lists, event names. There is no per-member generated JS. |
 
 The runtime also provides:
-- an **in-memory transport** that emulates the JS object model, so unit and bUnit tests need no browser, with record/replay of browser op logs;
+- an **in-memory transport** that emulates the JS object model, so unit and bUnit tests need no browser: tests register fake classes in C# (`InMemoryClass`, `InMemoryObject`), and it speaks the same JSON protocol as `interoper.js`, so one contract suite runs against both;
 - **diagnostics**: a handle census for leaks, a round-trip counter, and an analyzer for chatty sequential awaits.
 
 Batching, snapshots and module functions are first-class because each awaited call on Server is a full round trip.
@@ -50,8 +50,11 @@ Batching, snapshots and module functions are first-class because each awaited ca
 | `sync` | `IJsSyncTransport` | `[JSImport]`: ~0.65 µs per read, 0 B | fails fast ("regenerate with `--api async`") | fails fast |
 | `async` | `IJsTransport` | `[JSImport]`, completed `Task`s: ~1.1 µs, 48 B | `IJSRuntime` over SignalR: ~1 ms per await on localhost, ~50 µs per pipelined write | `IJSRuntime` over the WebView bridge |
 
-- **Both seams have in-memory versions** for tests.
-- **JS → .NET** goes through one `[JSExport]` entry point on WebAssembly, and one `DotNetObjectReference` per circuit or WebView elsewhere. Both were verified. Callbacks are posted to the component's dispatcher.
+- **Both seams have in-memory versions** for tests (`InMemoryTransport`).
+- **The seams carry one op and return its envelope** (§3.4), plus typed fast paths for number, string and bool properties. `JsEnvelope` reads an envelope and turns `{"e"}` into `JsException`. `JsImportTransport` serves both seams: its async seam returns completed `Task`s for the fast paths and sends ops through `invoke`. `JsRuntimeTransport` serves only the async seam, and its fast paths are plain `get`/`set` ops.
+- **Sync mode fails fast** in `JsImportTransport.StartAsync` when .NET isn't in the browser: an `InvalidOperationException` that says to regenerate with `--api async`.
+- **Error handling lives in the transports.** They map JS errors to `JsException`, whatever the path; `JSDisconnectedException` passes through. The Blazor analyzer BL0016 (try/catch around JS interop) doesn't apply to the runtime, which doesn't reference the components package.
+- **JS → .NET** goes through one sink per transport into its callback registry (`JsCallbacks`, `{"$f":id}`, R21). On WebAssembly the sink is a .NET delegate passed to `start` through `[JSImport]`: the same synchronous call as the verified `[JSExport]` entry point, but per transport and with no export lookup from JS. Elsewhere it is one `DotNetObjectReference` per circuit or WebView (verified), calling `[JSInvokable] InvokeCallback`. A registry per transport means one circuit can't call another's callbacks. Callbacks are posted to the component's dispatcher (with the realm item; the sink is the hook).
 - **Registration.** `services.AddInteroper()` registers a scoped `IJsRealm` that provides the right seam.
 - **Transport per component.** In async mode the transport is resolved per component (`"Interop": { "Transport": "Auto" | "JsRuntime" | "JsImport" }`). Under `InteractiveAuto` the same component moved from Server to WebAssembly between visits, and `Auto` followed it (verified). Forcing `JsRuntime` inside WebAssembly reproduces the Server/Hybrid code path in the browser, which is how Hybrid gets tested without Windows (§6).
 
@@ -109,7 +112,7 @@ await using (scope.BeginBatch())
 - Entry points:
   - `invoke(json)` for `IJSRuntime` and Promise ops; it never rejects. Modules not yet loaded are imported on first use.
   - `invokeSync(json)` for `[JSImport]`; it never starts async work. Sync mode loads every module it uses (classes and module functions) up front with `load`; an unloaded module is an error. A Promise-returning `call`, or a batch containing one, is a caller error, reported after the call has already run.
-  - `getValue`/`setValue(h, name, v)`: the typed fast paths for number, string and bool. `census()`: the number of live handles.
+  - `getValue`/`setValue(h, name, v)`: the typed fast paths for number, string and bool. They throw, and `[JSImport]` keeps only the message, so `takeError()` returns the last fast-path call's error as an error envelope (once; null if it threw nothing). `census()`: the number of live handles.
 - A result that can't be encoded (a `BigInt`, a cyclic plain object) becomes an error envelope.
 - `start(metadataSpecifier, sink)` imports the generated metadata module (`{ classNameProperty, classes: { id: { module, export, name, value?, members } } }`) and the modules of value-like classes. `sink(callbackId, argsJson)` returns the callback's result as JSON text (`"null"` for JS null), or null/nothing for undefined, or a Promise of either. `startWithDotNetObject(specifier, ref)` uses `ref.invokeMethodAsync("InvokeCallback", id, argsJson)` as the sink.
 
@@ -186,6 +189,8 @@ All committed tests use it.
 | Hybrid | Its code path (`JsRuntimeTransport` over an async bridge) is exercised by the Server tests, and by WebAssembly tests with `Transport=JsRuntime`. A short manual smoke check on a real `BlazorWebView` runs before releases. |
 
 **Browser harness** (`tests/Interoper.E2E`). The tests start `tests/Interoper.E2E.Host` (one app with Server and WebAssembly interactivity; its pages live in `tests/Interoper.E2E.Client`) as a separate process on a free port, in Development so static web assets come from the build output, and drive one headless Chromium through Microsoft.Playwright. The package version is pinned to the Chromium revision preinstalled in cloud sessions. Pages are fixed to the `en-US` locale, because .NET on WebAssembly rejects the POSIX locale that headless Chromium reports on Linux. The host serves `fixtures/demo-maps` at `/demo-maps/`, mapped to `@acme/demo-maps/` in its import map, plus a hand-written metadata module. The E2E projects are in `Interoper.slnx`, so the solution builds and formats them, but the test project turns off `IsTestProject` when built through the solution, so `dotnet test Interoper.slnx` stays browser-free (and IDE test explorers on the slnx don't list the E2E tests).
+
+**Transport contract** (`tests/Interoper.Runtime.Tests/TransportContract.cs`). One framework-free suite (create/get/set, fast paths, `$c`, Promises, `$f` callbacks, subscribe/release, errors, census) runs against `InMemoryTransport` with C# fakes of the fixture in `dotnet test`, and in the browser through each seam on each host: the file is compiled into `Interoper.E2E.Client`, whose pages run it and print one line per case.
 
 The private validation repo generates bindings for ArcGIS exactly as a consumer would, against a sibling clone of this repo.
 

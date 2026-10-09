@@ -106,6 +106,18 @@ test("typed fast paths read and write primitives", () => {
   release(view);
 });
 
+test("takeError returns what the last fast path call threw, once", () => {
+  const view = create(ids.MapView);
+  assert.throws(() => interoper.getValue(-1, "zoom"));
+  interoper.getValue(view.$h, "zoom");
+  assert.equal(interoper.takeError(), null);
+  assert.throws(() => interoper.setValue(-1, "zoom", 1));
+  const { e } = JSON.parse(interoper.takeError());
+  assert.deepEqual([e.name, e.message, typeof e.stack], ["InteroperError", "Unknown handle: -1", "string"]);
+  assert.equal(interoper.takeError(), null);
+  release(view);
+});
+
 test("release drops handles, is idempotent, and the census returns to baseline", () => {
   const baseline = census();
   const view = create(ids.MapView);

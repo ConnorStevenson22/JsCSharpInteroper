@@ -14,6 +14,9 @@
     <PackageReference Include="xunit.runner.visualstudio" />
     <!-- Only for the build order: the tests start the host as its own process. -->
     <ProjectReference Include="..\Interoper.E2E.Host\Interoper.E2E.Host.csproj" ReferenceOutputAssembly="false" />
+    <!-- For the contract's case names. -->
+    <ProjectReference Include="..\..\src\Interoper.Runtime\Interoper.Runtime.csproj" />
+    <Compile Include="..\Interoper.Runtime.Tests\TransportContract.cs" Link="TransportContract.cs" />
   </ItemGroup>
 
   <ItemGroup>

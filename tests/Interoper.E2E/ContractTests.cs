@@ -1,35 +1,30 @@
+using Interoper.Contract;
+
 namespace Interoper.E2E;
 
 /// <summary>
-/// One page per mode and host (design §3.1, §6). Each page plays the same protocol scenario against
-/// fixtures/demo-maps through interoper.js (design §3.4) and prints the responses.
+/// The transport contract (tests/Interoper.Runtime.Tests/TransportContract.cs) through each seam on each host
+/// (design §3.1, §6), against fixtures/demo-maps. Each page runs every case and prints one line per case.
 /// </summary>
-public sealed class SmokeTests(BrowserHost host)
+public sealed class ContractTests(BrowserHost host)
 {
-    private const string Transcript = """
-        {}
-        {"v":{"$h":1,"$t":5}}
-        {}
-        {"v":7}
-        {"v":{"$c":2,"type":"point","x":1,"y":2}}
-        {}
-        census 0
-        """;
-
     [Theory]
-    [InlineData("wasm-sync")] // sync mode on WebAssembly: [JSImport] → invokeSync
-    [InlineData("wasm")] // async mode on WebAssembly: [JSImport] → invoke
+    [InlineData("wasm-sync")] // sync mode on WebAssembly: JsImportTransport → invokeSync
+    [InlineData("wasm")] // async mode on WebAssembly: JsImportTransport → invoke
     [InlineData("wasm-jsruntime")] // async mode on WebAssembly through IJSRuntime: the Server/Hybrid path
-    [InlineData("server")] // async mode on Server: IJSRuntime → invoke
-    public async Task RunsTheProtocol(string path)
+    [InlineData("server")] // async mode on Server: JsRuntimeTransport
+    public async Task PassesTheContract(string path)
     {
-        Assert.Equal(Transcript, await RunAsync(path));
+        var expected = TransportContract.Cases.Select(c => $"PASS {c.Name}");
+        Assert.Equal(expected, (await RunAsync(path)).Split('\n'));
     }
 
     [Fact]
     public async Task SyncModeFailsFastOnServer()
     {
-        Assert.StartsWith(nameof(PlatformNotSupportedException), await RunAsync("server-sync"), StringComparison.Ordinal);
+        var output = await RunAsync("server-sync");
+        Assert.StartsWith(nameof(InvalidOperationException), output, StringComparison.Ordinal);
+        Assert.Contains("regenerate with `--api async`", output, StringComparison.Ordinal);
     }
 
     // Opens the page in a fresh context, waits for it to finish, and returns what it printed. The first browser
