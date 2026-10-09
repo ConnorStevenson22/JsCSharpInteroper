@@ -183,7 +183,7 @@ dotnet interoper generate @acme/maps --api async --namespace Acme.Maps --out Gen
 
 ## 6. Testing
 
-**`fixtures/demo-maps`** is a small JS library we write ourselves (ES modules + hand-written `.d.ts` + `custom-elements.json` + a profile). It covers:
+**`fixtures/demo-maps`** is a small JS library we write ourselves (ES modules + hand-written `.d.ts` + `custom-elements.json` + a profile), with its golden IR (`demo-maps.ir.json`, the generator's test input). It covers:
 - an abstract base with subclasses and a runtime class-name property;
 - getter ≠ setter;
 - discriminated, untagged, mixed and literal unions (including a 100+ member one);

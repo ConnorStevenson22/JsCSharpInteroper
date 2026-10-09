@@ -20,9 +20,12 @@ export function listDts(dir, { only, skip } = {}) {
   return out.sort();
 }
 
-/** A program over declaration files, with the DOM in scope and nothing from @types. */
-export function createProgram(ts, files) {
-  return ts.createProgram(files, {
+/**
+ * A program over declaration files, with the DOM in scope and nothing from @types. `virtual` adds in-memory source
+ * files, `{ [path]: text }`, with `/` separators.
+ */
+export function createProgram(ts, files, virtual = {}) {
+  const options = {
     noEmit: true,
     skipLibCheck: true,
     target: ts.ScriptTarget.ESNext,
@@ -31,7 +34,11 @@ export function createProgram(ts, files) {
     lib: ["lib.esnext.d.ts", "lib.dom.d.ts", "lib.dom.iterable.d.ts"],
     types: [],
     strict: true,
-  });
+  };
+  const host = ts.createCompilerHost(options);
+  const { getSourceFile } = host;
+  host.getSourceFile = (f, language, ...rest) => (Object.hasOwn(virtual, f) ? ts.createSourceFile(f, virtual[f], language) : getSourceFile(f, language, ...rest));
+  return ts.createProgram([...files, ...Object.keys(virtual)], options, host);
 }
 
 /** R19 step 2: the first property that every member declares with a distinct literal type (`type: "point"`), or null. */
