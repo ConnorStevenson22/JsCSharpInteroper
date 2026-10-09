@@ -4,6 +4,7 @@ import * as interoper from "../../src/Interoper.Runtime/wwwroot/interoper.js";
 import demoMaps from "./demo-maps.meta.mjs";
 
 export { ids, modules } from "./demo-maps.meta.mjs";
+export const faulty = new URL("./faulty.mjs", import.meta.url).href;
 export const metadata = new URL("./demo-maps.meta.mjs", import.meta.url).href;
 export const { census } = interoper;
 

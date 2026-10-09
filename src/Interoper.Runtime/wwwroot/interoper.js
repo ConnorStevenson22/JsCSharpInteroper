@@ -10,6 +10,8 @@ let nextId = 1;
 let meta = { classes: {} };
 let classIdsByName = new Map();
 let callbackSink = null;
+let syncOnly = false; // set while invokeSync runs: nothing may start async work
+const PROMISE_IN_SYNC = "The op returned a Promise; send it through invoke.";
 
 class InteroperError extends Error {
   name = "InteroperError";
@@ -27,7 +29,8 @@ class BatchError extends Error {
 
 // metadataSpecifier: a module whose default export is the generated metadata table:
 //   { classNameProperty: "className", classes: { [classId]: { module, export, name, value?, members } } }
-// sink(callbackId, argsJson) calls a .NET callback and returns its result as JSON (or nothing, or a Promise).
+// sink(callbackId, argsJson) calls a .NET callback and returns its result as JSON text ("null" for null), null or
+// nothing for undefined, or a Promise of either.
 // Value-like classes are imported here so `$c` can be built synchronously, in sync mode too.
 export async function start(metadataSpecifier, sink) {
   meta = (await import(metadataSpecifier)).default;
@@ -44,17 +47,16 @@ export function startWithDotNetObject(metadataSpecifier, dotNetObject) {
 
 // --- Entry points ---
 
-// For [JSImport] in sync mode: the op must not return a Promise.
+// For [JSImport] in sync mode. Modules must already be loaded. An op that returns a Promise is a caller
+// error, reported after the op has run.
 export function invokeSync(opJson) {
-  const response = respond(opJson);
-  if (!isThenable(response)) return response;
-  response.catch(() => {});
-  return failure(new InteroperError("The op returned a Promise; send it through invoke."));
+  const response = respondWith(true, opJson);
+  return isThenable(response) ? failure(new InteroperError(PROMISE_IN_SYNC)) : response;
 }
 
 // For IJSRuntime.InvokeAsync and Promise-returning ops: never rejects; errors come back as {"e": …}.
 export async function invoke(opJson) {
-  return respond(opJson);
+  return respondWith(false, opJson);
 }
 
 // Typed fast paths for [JSImport]: one JS function serves number, string and bool signatures.
@@ -71,10 +73,23 @@ export function census() {
   return handles.size;
 }
 
+// The flag is restored afterwards because a callback into .NET can re-enter either entry point.
+function respondWith(sync, opJson) {
+  const outer = syncOnly;
+  syncOnly = sync;
+  try {
+    return respond(opJson);
+  } finally {
+    syncOnly = outer;
+  }
+}
+
+// A JSON envelope, or a Promise of one that never rejects.
 function respond(opJson) {
   const success = (v) => JSON.stringify(v === undefined ? {} : { v });
   try {
-    return then(run(parse(opJson)), success, failure);
+    const result = run(parse(opJson));
+    return isThenable(result) ? result.then(success).catch(failure) : success(result);
   } catch (e) {
     return failure(e);
   }
@@ -85,10 +100,14 @@ function failure(e) {
 }
 
 function toError(e) {
-  if (!(e instanceof Error)) return { name: "Error", message: String(e) };
-  const error = { name: e.name, message: e.message, stack: e.stack };
-  if (e instanceof BatchError) error.errors = e.errors;
-  return error;
+  try {
+    if (!(e instanceof Error)) return { name: "Error", message: String(e) };
+    const error = { name: e.name, message: e.message, stack: e.stack };
+    if (e instanceof BatchError) error.errors = e.errors;
+    return error;
+  } catch {
+    return { name: "Error", message: "Unknown error" }; // e.g. an object with no string form
+  }
 }
 
 // --- Ops ---
@@ -107,12 +126,17 @@ const ops = {
   subscribe: (op) => {
     const subscription = target(op.h)[op.method](op.name, op.callback);
     if (typeof subscription?.dispose !== "function") throw new InteroperError(`${op.method} returned no dispose()`);
+    // An object .NET already holds is not a subscription; releasing it must not dispose it.
+    if (ids.has(subscription)) throw new InteroperError(`${op.method} returned an object that already has a handle`);
     const id = handleOf(subscription);
     subscriptions.add(id);
     return id;
   },
-  release: (op) => { for (const id of op.ids) release(id); },
-  load: (op) => Promise.all(op.modules.map(load)).then(() => undefined),
+  release: (op) => releaseAll(op.ids),
+  load: (op) => {
+    if (syncOnly) throw new InteroperError("load imports modules; send it through invoke");
+    return Promise.all(op.modules.map(load)).then(() => undefined);
+  },
   batch: (op) => runBatch(op.ops),
 };
 
@@ -122,10 +146,10 @@ function run(op) {
   return handler(op);
 }
 
-// Runs ops in order, awaiting any that return a Promise before the next. A failed op doesn't stop the
-// batch; the batch then fails with one entry per failed op.
+// Runs ops that return nothing (writes, void calls) in order. A Promise is awaited before the next op, or
+// under invokeSync counts as that op's failure. A failed op doesn't stop the batch; the batch then fails
+// with one entry per failed op.
 function runBatch(list) {
-  const results = [];
   const errors = [];
   const fail = (index, e) => errors.push({ index, ...toError(e) });
   const next = (i) => {
@@ -138,23 +162,36 @@ function runBatch(list) {
         fail(i, e);
         continue;
       }
-      if (isThenable(result)) {
-        return result.then((v) => { results[index] = wireItem(v); }, (e) => fail(index, e)).then(() => next(index + 1));
+      if (!isThenable(result)) continue;
+      if (syncOnly) {
+        result.then(undefined, () => {});
+        fail(i, new InteroperError(PROMISE_IN_SYNC));
+        continue;
       }
-      results[i] = wireItem(result);
+      return result.then(undefined, (e) => fail(index, e)).then(() => next(index + 1));
     }
     if (errors.length > 0) throw new BatchError(errors, list.length);
-    return results;
   };
   return next(0);
 }
 
-function release(id) {
-  const object = handles.get(id);
-  if (object === undefined) return;
-  handles.delete(id);
-  ids.delete(object);
-  if (subscriptions.delete(id)) object.dispose();
+// Releases every id, even when a subscription's dispose() throws; then reports what failed.
+function releaseAll(list) {
+  const errors = [];
+  for (const id of list) {
+    const object = handles.get(id);
+    if (object === undefined) continue;
+    handles.delete(id);
+    ids.delete(object);
+    if (!subscriptions.delete(id)) continue;
+    try {
+      object.dispose();
+    } catch (e) {
+      errors.push(e);
+    }
+  }
+  if (errors.length === 1) throw errors[0];
+  if (errors.length > 1) throw new AggregateError(errors, `${errors.length} dispose() calls failed`);
 }
 
 // --- Handles and classes ---
@@ -199,7 +236,9 @@ function load(specifier) {
 
 function withModule(specifier, fn) {
   const m = modules.get(specifier);
-  return m ? fn(m) : load(specifier).then(fn);
+  if (m) return fn(m);
+  if (syncOnly) throw new InteroperError(`Module not loaded: ${specifier}; send load first`);
+  return load(specifier).then(fn);
 }
 
 // --- Wire format ---
@@ -266,6 +305,6 @@ function isThenable(v) {
   return typeof v?.then === "function";
 }
 
-function then(value, onValue, onError) {
-  return isThenable(value) ? value.then(onValue, onError) : onValue(value);
+function then(value, onValue) {
+  return isThenable(value) ? value.then(onValue) : onValue(value);
 }

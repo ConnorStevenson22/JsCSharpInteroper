@@ -3,27 +3,41 @@ import assert from "node:assert/strict";
 import { invokeSync } from "../../src/Interoper.Runtime/wwwroot/interoper.js";
 import { callback, census, create, get, ids, modules, release, send, sendAsync, value } from "./realm.mjs";
 
-test("a batch runs its ops in order and returns each result", () => {
+test("a batch runs its ops in order and returns nothing", () => {
   const view = create(ids.MapView);
+  const changes = [];
+  const watch = value(send({ op: "subscribe", h: view.$h, method: "watch", name: "zoom", callback: callback((z) => { changes.push(z); }) }));
   const ops = [
     { op: "set", h: view.$h, name: "zoom", value: 2 },
+    { op: "call", h: view.$h, name: "emit", args: ["click", {}] },
     { op: "set", h: view.$h, name: "zoom", value: 3 },
-    { op: "get", h: view.$h, name: "zoom" },
-    { op: "get", h: view.$h, name: "title" },
   ];
-  assert.deepEqual(value(send({ op: "batch", ops })), [{ $u: 1 }, { $u: 1 }, 3, { $u: 1 }]);
-  release(view);
+  assert.deepEqual(send({ op: "batch", ops }), {});
+  assert.deepEqual(changes, [2, 3]);
+  release(watch, view);
 });
 
 test("a batch awaits a Promise op before running the next", async () => {
   const view = create(ids.MapView);
   const ops = [
     { op: "call", h: view.$h, name: "flyTo", args: [[4, 4], { duration: 5 }] },
-    { op: "get", h: view.$h, name: "center", byValue: true },
+    { op: "set", h: view.$h, name: "zoom", value: 9 },
   ];
-  const [, center] = value(await sendAsync({ op: "batch", ops }));
-  assert.deepEqual(center, { $c: ids.Point, type: "point", x: 4, y: 4 });
-  assert.equal(send({ op: "batch", ops }).e.message, "The op returned a Promise; send it through invoke.");
+  assert.deepEqual(await sendAsync({ op: "batch", ops }), {});
+  assert.deepEqual(get(view, "center", true), { $c: ids.Point, type: "point", x: 4, y: 4 });
+  assert.equal(get(view, "zoom"), 9);
+  release(view);
+});
+
+test("through invokeSync, a Promise op in a batch is that op's failure and the batch stays synchronous", () => {
+  const view = create(ids.MapView);
+  const ops = [
+    { op: "call", h: view.$h, name: "flyTo", args: [[4, 4]] }, // has already started
+    { op: "set", h: view.$h, name: "zoom", value: 9 },
+  ];
+  const { e } = send({ op: "batch", ops });
+  assert.deepEqual(e.errors.map(({ index, message }) => [index, message]), [[0, "The op returned a Promise; send it through invoke."]]);
+  assert.equal(get(view, "zoom"), 9);
   release(view);
 });
 

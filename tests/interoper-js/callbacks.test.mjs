@@ -82,7 +82,7 @@ test("an async callback sink (Server, Hybrid) still delivers events; sync result
   try {
     const view = create(ids.MapView, { zoom: 1 });
     const zooms = [];
-    subscribe(view, "watch", "zoom", (zoom) => { zooms.push(zoom); });
+    const subscription = subscribe(view, "watch", "zoom", (zoom) => { zooms.push(zoom); });
     set(view, "zoom", 2);
     await Promise.resolve();
     assert.deepEqual(zooms, [2]);
@@ -93,7 +93,7 @@ test("an async callback sink (Server, Hybrid) still delivers events; sync result
     const label = get(marker, "displayLabel");
     assert.deepEqual(Object.keys(label), ["$h", "$t"]);
     assert.equal(label.$t, 0); // no class id: an object the metadata doesn't know
-    release(view, marker, label);
+    release(subscription, view, marker, label);
   } finally {
     await interoper.start(metadata, sink);
   }

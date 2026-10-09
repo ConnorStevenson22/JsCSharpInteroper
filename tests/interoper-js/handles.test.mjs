@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import * as interoper from "../../src/Interoper.Runtime/wwwroot/interoper.js";
-import { call, census, create, get, ids, modules, release, send, sendAsync, set, value } from "./realm.mjs";
+import { call, census, create, faulty, get, ids, modules, release, send, sendAsync, set, value } from "./realm.mjs";
 
 test("create returns a handle with the class id", () => {
   const view = create(ids.MapView, { zoom: 3 });
@@ -31,7 +31,7 @@ test("one JS object has one id", () => {
   release(view, markers, marker);
 });
 
-test("handles report the most-derived class id (R19)", () => {
+test("handles report the most-derived class id (design §3.2)", () => {
   // Collection<Shape>: read through a Shape position, a Polygon still reports Polygon.
   const shapes = create(ids.Collection, [{ $c: ids.Polygon, type: "polygon", vertices: [[0, 0], [1, 1], [1, 0]] }]);
   const shape = call(shapes, "at", 0);
@@ -59,9 +59,13 @@ test("call awaits Promise results through the async seam (R8)", async () => {
   release(view, marker, get(view, "markers"));
 });
 
-test("module functions: loaded on first use, then synchronous", async () => {
+test("modules load on first use through invoke; invokeSync never starts an import", async () => {
   const op = { op: "call", module: modules.measure, name: "distance", args: [{ x: 0, y: 0 }, { x: 3, y: 4 }] };
-  assert.equal(send(op).e.message, "The op returned a Promise; send it through invoke.");
+  const notLoaded = `Module not loaded: ${modules.measure}; send load first`;
+  assert.equal(send(op).e.message, notLoaded);
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.equal(send(op).e.message, notLoaded); // nothing was imported in the background
+  assert.equal(send({ op: "load", modules: [modules.measure] }).e.name, "InteroperError");
   assert.deepEqual(await sendAsync(op), { v: 5 });
   assert.deepEqual(send(op), { v: 5 });
 });
@@ -112,5 +116,34 @@ test("release drops handles, is idempotent, and the census returns to baseline",
   assert.equal(census(), baseline);
   assert.equal(send({ op: "get", h: view.$h, name: "zoom" }).e.message, `Unknown handle: ${view.$h}`);
   // A released object gets a new id the next time it crosses.
-  assert.notEqual(create(ids.MapView).$h, view.$h);
+  const again = create(ids.MapView);
+  assert.notEqual(again.$h, view.$h);
+  release(again);
+  assert.equal(census(), baseline);
+});
+
+test("release releases every id even when a dispose() throws", async () => {
+  const baseline = census();
+  const source = value(await sendAsync({ op: "call", module: faulty, name: "source" }));
+  const subscribe = () => value(send({ op: "subscribe", h: source.$h, method: "onFaulty", name: "x", callback: null }));
+  const [a, b] = [subscribe(), subscribe()];
+  const { e } = send({ op: "release", ids: [a, source.$h, b] });
+  assert.equal(e.name, "AggregateError");
+  assert.equal(census(), baseline);
+  assert.equal(send({ op: "release", ids: [a] }).e, undefined);
+});
+
+test("subscribe refuses a returned object that already has a handle", async () => {
+  const source = value(await sendAsync({ op: "call", module: faulty, name: "source" }));
+  const { e } = send({ op: "subscribe", h: source.$h, method: "onSelf", name: "x", callback: null });
+  assert.equal(e.message, "onSelf returned an object that already has a handle");
+  release(source);
+});
+
+test("results that can't be encoded and errors with no string form become error envelopes", async () => {
+  value(await sendAsync({ op: "load", modules: [faulty] }));
+  for (const respond of [send, sendAsync]) {
+    assert.equal((await respond({ op: "call", module: faulty, name: "big" })).e.name, "TypeError");
+    assert.deepEqual(await respond({ op: "call", module: faulty, name: "throwBare" }), { e: { name: "Error", message: "Unknown error" } });
+  }
 });
