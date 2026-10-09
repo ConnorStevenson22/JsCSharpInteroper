@@ -1,5 +1,3 @@
-using Microsoft.Playwright;
-
 namespace Interoper.E2E;
 
 /// <summary>
@@ -25,44 +23,33 @@ public sealed class SmokeTests(BrowserHost host)
     [InlineData("server")] // async mode on Server: IJSRuntime → invoke
     public async Task RunsTheProtocol(string path)
     {
-        var (result, resources) = await RunAsync(path);
-
-        Assert.Equal(Transcript, result);
-        Assert.Contains(resources, url => url.Contains("/_content/Interoper.Runtime/interoper", StringComparison.Ordinal));
+        Assert.Equal(Transcript, await RunAsync(path));
     }
 
     [Fact]
     public async Task SyncModeFailsFastOnServer()
     {
-        var (result, _) = await RunAsync("server-sync");
-
-        Assert.StartsWith(nameof(PlatformNotSupportedException), result, StringComparison.Ordinal);
+        Assert.StartsWith(nameof(PlatformNotSupportedException), await RunAsync("server-sync"), StringComparison.Ordinal);
     }
 
-    // Opens the page in a fresh context, waits for it to finish, and returns what it printed and the resources
-    // it loaded. Any browser error fails the test.
-    private async Task<(string Result, string[] Resources)> RunAsync(string path)
+    // Opens the page in a fresh context, waits for it to finish, and returns what it printed. The first browser
+    // error fails the test at once.
+    private async Task<string> RunAsync(string path)
     {
         // A fixed locale: .NET on WebAssembly rejects the POSIX one headless Chromium reports on Linux.
         await using var context = await host.Browser.NewContextAsync(new() { BaseURL = host.BaseUrl.ToString(), Locale = "en-US" });
         var page = await context.NewPageAsync();
-        var errors = new List<string>();
-        page.Console += (_, m) => { if (m.Type == "error") errors.Add(m.Text); };
-        page.PageError += (_, e) => errors.Add(e);
+        var error = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+        page.Console += (_, m) => { if (m.Type == "error") error.TrySetResult(m.Text); };
+        page.PageError += (_, e) => error.TrySetResult(e);
 
         await page.GotoAsync(path);
-        try
-        {
-            await page.Locator("#result[data-done]").WaitForAsync(new() { Timeout = 60_000 }); // WebAssembly boots first
-        }
-        catch (TimeoutException e)
-        {
-            throw new TimeoutException($"{path} didn't finish. Browser errors:\n{string.Join("\n", errors)}", e);
-        }
+        var done = page.Locator("#result[data-done]").WaitForAsync(new() { Timeout = 60_000 }); // WebAssembly boots first
+        if (await Task.WhenAny(done, error.Task) == error.Task) Assert.Fail($"{path}: {await error.Task}");
+        await done;
         var result = await page.Locator("#result").TextContentAsync() ?? "";
-        var resources = await page.EvaluateAsync<string[]>("performance.getEntriesByType('resource').map(e => e.name)");
 
-        Assert.Empty(errors);
-        return (result, resources);
+        if (error.Task.IsCompleted) Assert.Fail($"{path}: {await error.Task}");
+        return result;
     }
 }

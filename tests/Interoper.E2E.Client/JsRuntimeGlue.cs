@@ -1,5 +1,8 @@
 using Microsoft.JSInterop;
 
+// BL0016 wants every JS interop call in a try/catch; the smoke page catches and prints errors in one place.
+#pragma warning disable BL0016
+
 namespace Interoper.E2E.Client;
 
 /// <summary>The thinnest IJSRuntime path to interoper.js, until the runtime has its transports.</summary>

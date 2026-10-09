@@ -2,10 +2,6 @@
 
   <PropertyGroup>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <NoDefaultLaunchSettingsFile>true</NoDefaultLaunchSettingsFile>
-    <StaticWebAssetProjectMode>Default</StaticWebAssetProjectMode>
-    <!-- BL0016 wants every JS interop call in a try/catch; the smoke page catches and prints errors in one place -->
-    <NoWarn>$(NoWarn);BL0016</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>

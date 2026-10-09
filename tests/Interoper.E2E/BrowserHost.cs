@@ -68,9 +68,10 @@ public sealed partial class BrowserHost : IAsyncLifetime
         process.BeginErrorReadLine();
 
         var exited = process.WaitForExitAsync();
-        var first = await Task.WhenAny(url.Task, exited).WaitAsync(TimeSpan.FromSeconds(60));
+        var first = await Task.WhenAny(url.Task, exited, Task.Delay(TimeSpan.FromSeconds(60)));
         if (first == url.Task) return await url.Task;
-        lock (log) throw new InvalidOperationException($"The test host exited with code {process.ExitCode}:\n{log}");
+        var why = first == exited ? $"exited with code {process.ExitCode}" : "didn't start within 60 s";
+        lock (log) throw new InvalidOperationException($"The test host {why}:\n{log}");
     }
 
     private static string Metadata(string key) =>

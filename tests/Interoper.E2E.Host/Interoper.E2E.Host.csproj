@@ -1,9 +1,5 @@
 <Project Sdk="Microsoft.NET.Sdk.Web">
 
-  <PropertyGroup>
-    <NoDefaultLaunchSettingsFile>true</NoDefaultLaunchSettingsFile>
-  </PropertyGroup>
-
   <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.Server" />
     <ProjectReference Include="..\Interoper.E2E.Client\Interoper.E2E.Client.csproj" />

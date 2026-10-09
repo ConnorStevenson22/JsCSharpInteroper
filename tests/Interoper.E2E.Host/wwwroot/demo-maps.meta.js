@@ -1,5 +1,5 @@
-// A hand-written stand-in for the generated metadata table (design §2), with the class ids of
-// tests/interoper-js/demo-maps.meta.mjs. Bare specifiers resolve through the host's import map.
+// A hand-written stand-in for the generated metadata table (design §2). Bare specifiers resolve through the
+// host's import map. Keep in sync with tests/interoper-js/demo-maps.meta.mjs.
 const at = (file) => `@acme/demo-maps/${file}`;
 
 export default {
