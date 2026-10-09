@@ -6,7 +6,6 @@
 @code {
     // Runs the transport contract (tests/Interoper.Runtime.Tests/TransportContract.cs) against fixtures/demo-maps
     // through one seam, and prints one line per case for the test to assert on.
-    const string Metadata = "/demo-maps.meta.js";
     const string Load = """{"op":"load","modules":["@acme/demo-maps/MapView.js","@acme/demo-maps/Marker.js","@acme/demo-maps/measure.js"]}""";
 
     readonly List<string> lines = [];
@@ -58,13 +57,13 @@
     Task<Seam> StartAsync() =>
         Kind == SeamKind.JsRuntime ? StartJsRuntimeAsync() : StartJsImportAsync(sync: Kind == SeamKind.JsImportSync);
 
-    async Task<Seam> StartJsRuntimeAsync() => Seam.Async(await JsRuntimeTransport.StartAsync(JS, Metadata), callbacksReturn: false);
+    async Task<Seam> StartJsRuntimeAsync() => Seam.Async(await JsRuntimeTransport.StartAsync(JS, DemoMaps.Metadata), callbacksReturn: false);
 
     async Task<Seam> StartJsImportAsync(bool sync)
     {
         // On Server this fails fast: sync bindings need WebAssembly.
 #pragma warning disable CA1416
-        var transport = await JsImportTransport.StartAsync(Metadata);
+        var transport = await JsImportTransport.StartAsync(DemoMaps.Metadata);
 #pragma warning restore CA1416
         JsEnvelope.Check(await transport.InvokeAsync(Load)); // sync mode loads modules up front
         return sync ? Seam.Sync(transport) : Seam.Async(transport, callbacksReturn: true);

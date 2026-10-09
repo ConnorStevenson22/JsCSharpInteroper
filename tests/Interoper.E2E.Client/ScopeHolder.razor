@@ -1,0 +1,27 @@
+@using Interoper.Contract
+@inherits JsComponentBase
+
+@code {
+    // Three handles and a callback in this component's scope. JsComponentBase has started the realm already.
+    [Parameter, EditorRequired] public TaskCompletionSource Ready { get; set; } = null!;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var view = await DemoMaps.CreateAsync(Scope, TransportContract.MapView);
+            var center = await DemoMaps.GetAsync(Scope, view, "center");
+            if (!ReferenceEquals(center, await DemoMaps.GetAsync(Scope, view, "center")))
+            {
+                throw new InvalidOperationException("one JS object gave two C# objects");
+            }
+            var formatter = Scope.Register(_ => "\"#\"");
+            await DemoMaps.CreateAsync(Scope, TransportContract.Marker, $$$"""{"labelFormatter":{"$f":{{{formatter}}}}}""");
+            Ready.TrySetResult();
+        }
+        catch (Exception e)
+        {
+            Ready.TrySetException(e);
+        }
+    }
+}

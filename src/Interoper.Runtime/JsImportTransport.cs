@@ -32,7 +32,8 @@ public sealed partial class JsImportTransport : IJsSyncTransport, IJsTransport
                 "JsImportTransport needs .NET running in the browser (Blazor WebAssembly). On Server and Hybrid, use " +
                 "bindings generated in async mode on the JsRuntime transport: regenerate with `--api async`.");
         }
-        if (started is null)
+        // A failed start (a failed import) can be retried, with any metadata.
+        if (started is null or { IsFaulted: true } or { IsCanceled: true })
         {
             startedWith = metadataSpecifier;
             started = StartNewAsync(metadataSpecifier);

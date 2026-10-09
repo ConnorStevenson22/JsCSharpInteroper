@@ -83,28 +83,6 @@ public sealed class TransportTests
         Assert.True(js.Disposed); // a failed start disposes the module
     }
 
-    // Serves as the runtime and as the imported module; fails one identifier.
-    private sealed class StubRuntime : IJSRuntime, IJSObjectReference
-    {
-        public string FailOn { get; init; } = "";
-        public Exception Error { get; init; } = null!;
-        public bool Disposed { get; private set; }
-
-        public ValueTask<TValue> InvokeAsync<TValue>(string identifier, object?[]? args) =>
-            identifier == FailOn ? ValueTask.FromException<TValue>(Error)
-            : identifier == "import" ? new((TValue)(object)this)
-            : new(default(TValue)!);
-
-        public ValueTask<TValue> InvokeAsync<TValue>(string identifier, CancellationToken cancellationToken, object?[]? args) =>
-            InvokeAsync<TValue>(identifier, args);
-
-        public ValueTask DisposeAsync()
-        {
-            Disposed = true;
-            return default;
-        }
-    }
-
     private sealed class Odd : InMemoryObject
     {
         public override string ClassName => "Odd";

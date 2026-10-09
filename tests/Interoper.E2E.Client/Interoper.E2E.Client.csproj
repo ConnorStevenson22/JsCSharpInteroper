@@ -2,7 +2,7 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly" />
-    <ProjectReference Include="..\..\src\Interoper.Runtime\Interoper.Runtime.csproj" />
+    <ProjectReference Include="..\..\src\Interoper.Blazor\Interoper.Blazor.csproj" />
     <Compile Include="..\Interoper.Runtime.Tests\TransportContract.cs" Link="TransportContract.cs" />
   </ItemGroup>
 

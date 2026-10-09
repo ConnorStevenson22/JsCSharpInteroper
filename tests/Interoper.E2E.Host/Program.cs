@@ -1,3 +1,4 @@
+using Interoper;
 using Interoper.E2E.Client;
 using Interoper.E2E.Host.Components;
 using Microsoft.Extensions.FileProviders;
@@ -7,6 +8,7 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents()
     .AddInteractiveWebAssemblyComponents();
+builder.Services.AddInteroper(DemoMaps.Metadata, DemoMaps.Classes); // for Server components, and prerendering
 
 var app = builder.Build();
 var demoMaps = Path.GetFullPath(Path.Combine(app.Environment.ContentRootPath, "../../fixtures/demo-maps"));

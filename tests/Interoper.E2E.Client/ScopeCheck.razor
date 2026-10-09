@@ -1,0 +1,65 @@
+@inherits JsComponentBase
+
+<pre id="result" data-done="@done">@result</pre>
+@if (holding)
+{
+    <ScopeHolder Ready="ready" />
+}
+
+@code {
+    // A child component (ScopeHolder) creates objects and a callback in its own scope; removing the child disposes
+    // that scope, and the census returns to its baseline. The realm's transport is shared with this component's
+    // scope (on WebAssembly, with every scope in the app), so the baseline is measured, not assumed.
+    readonly TaskCompletionSource ready = new();
+    string result = "";
+    bool done, holding;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (RendererInfo.IsInteractive) return;
+        try
+        {
+            await Scope.Transport.CensusAsync();
+            result = "prerendered: no exception";
+        }
+        catch (JsRealmUnavailableException e)
+        {
+            result = $"prerendered: {e.GetType().Name}";
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        try
+        {
+            var transport = Scope.Transport;
+            var baseline = await CountAsync(transport);
+            holding = true;
+            StateHasChanged();
+            await ready.Task.WaitAsync(TimeSpan.FromSeconds(10));
+            var held = await CountAsync(transport);
+
+            holding = false;
+            StateHasChanged(); // the child's DisposeAsync runs after this render
+            var after = await CountAsync(transport);
+            for (var i = 0; i < 100 && after != baseline; i++)
+            {
+                await Task.Delay(50);
+                after = await CountAsync(transport);
+            }
+            result = held == (baseline.Handles + 3, baseline.Callbacks + 1) && after == baseline
+                ? "PASS scope disposal returns the census to baseline"
+                : $"FAIL baseline {baseline}, held {held}, after {after}";
+        }
+        catch (Exception e)
+        {
+            result = $"FAIL {e.GetType().Name}: {e.Message}";
+        }
+        done = true;
+        StateHasChanged();
+    }
+
+    static async Task<(int Handles, int Callbacks)> CountAsync(IJsTransport transport) =>
+        (await transport.CensusAsync(), transport.Callbacks.Count);
+}

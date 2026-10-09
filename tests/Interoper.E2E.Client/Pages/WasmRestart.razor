@@ -1,0 +1,36 @@
+@page "/wasm-restart"
+@rendermode @(new InteractiveWebAssemblyRenderMode(prerender: false))
+
+<pre id="result" data-done="@done">@result</pre>
+
+@code {
+    // A failed first start of the one JsImportTransport can be retried.
+    string result = "";
+    bool done;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+#pragma warning disable CA1416 // WebAssembly only
+        try
+        {
+            try
+            {
+                await JsImportTransport.StartAsync("data:text/javascript,throw new Error('bad metadata')");
+                result = "FAIL the first start succeeded";
+            }
+            catch (System.Runtime.InteropServices.JavaScript.JSException e) when (e.Message.Contains("bad metadata", StringComparison.Ordinal))
+            {
+                var transport = await JsImportTransport.StartAsync(DemoMaps.Metadata);
+                result = $"PASS restarted, census {await transport.CensusAsync()}";
+            }
+        }
+        catch (Exception e)
+        {
+            result = $"FAIL {e.GetType().Name}: {e.Message}";
+        }
+#pragma warning restore CA1416
+        done = true;
+        StateHasChanged();
+    }
+}
