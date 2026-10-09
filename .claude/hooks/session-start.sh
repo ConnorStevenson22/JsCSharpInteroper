@@ -28,13 +28,5 @@ fi
 export DOTNET_ROOT="$dotnet_root" PATH="$dotnet_root:$PATH" DOTNET_CLI_TELEMETRY_OPTOUT=1 DOTNET_NOLOGO=1
 
 # Restore packages so the first build in the session doesn't wait on NuGet.
-# Prefer the solution once it exists; until then, the spike projects.
 cd "$repo"
-if ls ./*.slnx ./*.sln >/dev/null 2>&1; then
-  for solution in ./*.slnx ./*.sln; do
-    [ -e "$solution" ] && dotnet restore "$solution" --verbosity quiet
-  done
-else
-  find . -name '*.csproj' -not -path './node_modules/*' -print0 |
-    while IFS= read -r -d '' project; do dotnet restore "$project" --verbosity quiet; done
-fi
+dotnet restore Interoper.slnx --verbosity quiet
