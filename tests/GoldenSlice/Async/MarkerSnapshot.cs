@@ -1,0 +1,42 @@
+using System.Text.Json;
+using Interoper;
+
+namespace GoldenSlice.Async;
+
+/// <summary>
+/// The snapshot of <c>class Marker</c> (R18): its data members, all optional. <c>position</c> has its getter's type.
+/// </summary>
+public sealed record MarkerSnapshot
+{
+    public Opt<PointSnapshot> Position { get; init; }
+    public Opt<string> Label { get; init; }
+    public Style Style { get; init; }
+
+    /// <summary>The members alone: a constructor bag or a patch (R18).</summary>
+    public static void WriteMembers(Utf8JsonWriter writer, MarkerSnapshot value)
+    {
+        JsJson.WriteProperty(writer, "position"u8, value.Position, PointSnapshot.Write);
+        JsJson.WriteProperty(writer, "label"u8, value.Label, JsJson.WriteString);
+        JsJson.WriteProperty(writer, "style"u8, value.Style);
+    }
+
+    public static MarkerSnapshot Read(ref Utf8JsonReader reader)
+    {
+        Opt<PointSnapshot> position = default;
+        Opt<string> label = default;
+        Style style = default;
+        while (reader.Read() && reader.TokenType == JsonTokenType.PropertyName)
+        {
+            var property = reader.GetString();
+            reader.Read();
+            switch (property)
+            {
+                case "position": position = JsJson.ReadOpt(ref reader, PointSnapshot.Read); break;
+                case "label": label = JsJson.ReadOpt(ref reader, JsJson.ReadString); break;
+                case "style": style = JsJson.ReadUnion<Style>(ref reader); break;
+                default: reader.Skip(); break;
+            }
+        }
+        return new MarkerSnapshot { Position = position, Label = label, Style = style };
+    }
+}

@@ -1,0 +1,46 @@
+using System.Text.Json;
+using Interoper;
+
+namespace GoldenSlice.Async;
+
+/// <summary><c>interface Bounds { minX; minY; maxX; maxY: number }</c>: a data record (R15).</summary>
+public sealed record Bounds
+{
+    public required double MinX { get; init; }
+    public required double MinY { get; init; }
+    public required double MaxX { get; init; }
+    public required double MaxY { get; init; }
+
+    public static void Write(Utf8JsonWriter writer, Bounds value)
+    {
+        writer.WriteStartObject();
+        writer.WritePropertyName("minX"u8);
+        JsJson.WriteNumber(writer, value.MinX);
+        writer.WritePropertyName("minY"u8);
+        JsJson.WriteNumber(writer, value.MinY);
+        writer.WritePropertyName("maxX"u8);
+        JsJson.WriteNumber(writer, value.MaxX);
+        writer.WritePropertyName("maxY"u8);
+        JsJson.WriteNumber(writer, value.MaxY);
+        writer.WriteEndObject();
+    }
+
+    public static Bounds Read(ref Utf8JsonReader reader)
+    {
+        double minX = default, minY = default, maxX = default, maxY = default;
+        while (reader.Read() && reader.TokenType == JsonTokenType.PropertyName)
+        {
+            var property = reader.GetString();
+            reader.Read();
+            switch (property)
+            {
+                case "minX": minX = JsJson.ReadNumber(ref reader); break;
+                case "minY": minY = JsJson.ReadNumber(ref reader); break;
+                case "maxX": maxX = JsJson.ReadNumber(ref reader); break;
+                case "maxY": maxY = JsJson.ReadNumber(ref reader); break;
+                default: reader.Skip(); break;
+            }
+        }
+        return new Bounds { MinX = minX, MinY = minY, MaxX = maxX, MaxY = maxY };
+    }
+}

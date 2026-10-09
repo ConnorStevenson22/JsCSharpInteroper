@@ -1,0 +1,88 @@
+using System.Diagnostics.CodeAnalysis;
+using System.Runtime.CompilerServices;
+using System.Text.Json;
+using Interoper;
+
+namespace GoldenSlice.Async;
+
+/// <summary>
+/// <c>type FlyToTarget = Shape | [number, number] | Camera</c>, with <c>Camera = Bounds | CenterAndZoom</c> flattened
+/// (R2, R6). The tuple is <c>double[]</c> (R5), and the value-like <c>Shape</c> goes by value (R16).
+/// </summary>
+[Union]
+public readonly struct FlyToTarget : IJsUnion<FlyToTarget>, IEquatable<FlyToTarget>
+{
+    private readonly object? _ref;
+    private readonly byte _tag; // 0 = undefined, 1 = null, 2 = ShapeSnapshot, 3 = double[], 4 = Bounds, 5 = CenterAndZoom
+
+    private FlyToTarget(object? value, byte tag) => (_ref, _tag) = (value, tag);
+    public FlyToTarget(ShapeSnapshot value) : this(value, 2) { }
+    public FlyToTarget(double[] value) : this(value, 3) { }
+    public FlyToTarget(Bounds value) : this(value, 4) { }
+    public FlyToTarget(CenterAndZoom value) : this(value, 5) { }
+    public FlyToTarget(Undefined? value) : this(null, value is null ? (byte)1 : (byte)0) { }
+
+    public static implicit operator FlyToTarget(Undefined? value) => new(value);
+
+    public object? Value => _tag switch { 0 => Undefined.Value, 1 => null, _ => _ref };
+    public bool HasValue => _tag != 1;
+    public bool IsUndefined => _tag == 0;
+    public bool IsNull => _tag == 1;
+
+    public bool TryGetValue(out Undefined value)
+    {
+        value = Undefined.Value;
+        return _tag == 0;
+    }
+
+    public bool TryGetValue([MaybeNullWhen(false)] out ShapeSnapshot value)
+    {
+        value = _tag == 2 ? (ShapeSnapshot)_ref! : null;
+        return _tag == 2;
+    }
+
+    public bool TryGetValue([MaybeNullWhen(false)] out double[] value)
+    {
+        value = _tag == 3 ? (double[])_ref! : null;
+        return _tag == 3;
+    }
+
+    public bool TryGetValue([MaybeNullWhen(false)] out Bounds value)
+    {
+        value = _tag == 4 ? (Bounds)_ref! : null;
+        return _tag == 4;
+    }
+
+    public bool TryGetValue([MaybeNullWhen(false)] out CenterAndZoom value)
+    {
+        value = _tag == 5 ? (CenterAndZoom)_ref! : null;
+        return _tag == 5;
+    }
+
+    // On the tag, not the CLR type: cases may share one (R20).
+    public static void WriteValue(Utf8JsonWriter writer, FlyToTarget value)
+    {
+        switch (value._tag)
+        {
+            case 2: ShapeSnapshot.Write(writer, (ShapeSnapshot)value._ref!); break;
+            case 3: JsJson.WriteArray(writer, (double[])value._ref!, JsJson.WriteNumber); break;
+            case 4: Bounds.Write(writer, (Bounds)value._ref!); break;
+            case 5: CenterAndZoom.Write(writer, (CenterAndZoom)value._ref!); break;
+        }
+    }
+
+    // R19 step 4 for the array; step 3 for the objects, by a required member only one case declares.
+    public static FlyToTarget ReadValue(ref Utf8JsonReader reader) => reader.TokenType switch
+    {
+        JsonTokenType.StartArray => JsJson.ReadArray(ref reader, JsJson.ReadNumber),
+        JsonTokenType.StartObject when JsJson.HasProperty(reader, "type"u8) => ShapeSnapshot.Read(ref reader),
+        JsonTokenType.StartObject when JsJson.HasProperty(reader, "minX"u8) => Bounds.Read(ref reader),
+        JsonTokenType.StartObject when JsJson.HasProperty(reader, "center"u8) => CenterAndZoom.Read(ref reader),
+        var token => throw new JsonException($"FlyToTarget: unexpected {token}"),
+    };
+
+    public bool Equals(FlyToTarget other) => _tag == other._tag && Equals(_ref, other._ref);
+    public override bool Equals(object? obj) => obj is FlyToTarget other && Equals(other);
+    public override int GetHashCode() => HashCode.Combine(_tag, _ref);
+    public override string ToString() => _tag switch { 0 => "undefined", 1 => "null", _ => $"{_ref}" };
+}

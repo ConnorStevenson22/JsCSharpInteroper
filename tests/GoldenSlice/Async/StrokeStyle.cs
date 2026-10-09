@@ -1,0 +1,38 @@
+using System.Text.Json;
+using Interoper;
+
+namespace GoldenSlice.Async;
+
+/// <summary><c>interface StrokeStyle { type: "stroke"; color?: ColorInput | null; width?: number }</c> (R15, R20).</summary>
+public sealed record StrokeStyle
+{
+    public ColorInput Color { get; init; }
+    public Opt<double> Width { get; init; }
+
+    public static void Write(Utf8JsonWriter writer, StrokeStyle value)
+    {
+        writer.WriteStartObject();
+        writer.WriteString("type"u8, "stroke"u8);
+        JsJson.WriteProperty(writer, "color"u8, value.Color);
+        JsJson.WriteProperty(writer, "width"u8, value.Width, JsJson.WriteNumber);
+        writer.WriteEndObject();
+    }
+
+    public static StrokeStyle Read(ref Utf8JsonReader reader)
+    {
+        ColorInput color = default;
+        Opt<double> width = default;
+        while (reader.Read() && reader.TokenType == JsonTokenType.PropertyName)
+        {
+            var property = reader.GetString();
+            reader.Read();
+            switch (property)
+            {
+                case "color": color = JsJson.ReadUnion<ColorInput>(ref reader); break;
+                case "width": width = JsJson.ReadOpt(ref reader, JsJson.ReadNumber); break;
+                default: reader.Skip(); break;
+            }
+        }
+        return new StrokeStyle { Color = color, Width = width };
+    }
+}

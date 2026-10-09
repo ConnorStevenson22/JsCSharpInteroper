@@ -1,0 +1,137 @@
+using System.Text.Json;
+
+namespace GoldenSlice.Sync;
+
+/// <summary>
+/// <c>type IconName = "pin-1" | … | "pin-120"</c>: more than 64 members, so an extensible enum over the string, with
+/// the known values (R10, names R25).
+/// </summary>
+public readonly record struct IconName(string Value)
+{
+    public static IconName Pin1 { get; } = new("pin-1");
+    public static IconName Pin2 { get; } = new("pin-2");
+    public static IconName Pin3 { get; } = new("pin-3");
+    public static IconName Pin4 { get; } = new("pin-4");
+    public static IconName Pin5 { get; } = new("pin-5");
+    public static IconName Pin6 { get; } = new("pin-6");
+    public static IconName Pin7 { get; } = new("pin-7");
+    public static IconName Pin8 { get; } = new("pin-8");
+    public static IconName Pin9 { get; } = new("pin-9");
+    public static IconName Pin10 { get; } = new("pin-10");
+    public static IconName Pin11 { get; } = new("pin-11");
+    public static IconName Pin12 { get; } = new("pin-12");
+    public static IconName Pin13 { get; } = new("pin-13");
+    public static IconName Pin14 { get; } = new("pin-14");
+    public static IconName Pin15 { get; } = new("pin-15");
+    public static IconName Pin16 { get; } = new("pin-16");
+    public static IconName Pin17 { get; } = new("pin-17");
+    public static IconName Pin18 { get; } = new("pin-18");
+    public static IconName Pin19 { get; } = new("pin-19");
+    public static IconName Pin20 { get; } = new("pin-20");
+    public static IconName Pin21 { get; } = new("pin-21");
+    public static IconName Pin22 { get; } = new("pin-22");
+    public static IconName Pin23 { get; } = new("pin-23");
+    public static IconName Pin24 { get; } = new("pin-24");
+    public static IconName Pin25 { get; } = new("pin-25");
+    public static IconName Pin26 { get; } = new("pin-26");
+    public static IconName Pin27 { get; } = new("pin-27");
+    public static IconName Pin28 { get; } = new("pin-28");
+    public static IconName Pin29 { get; } = new("pin-29");
+    public static IconName Pin30 { get; } = new("pin-30");
+    public static IconName Pin31 { get; } = new("pin-31");
+    public static IconName Pin32 { get; } = new("pin-32");
+    public static IconName Pin33 { get; } = new("pin-33");
+    public static IconName Pin34 { get; } = new("pin-34");
+    public static IconName Pin35 { get; } = new("pin-35");
+    public static IconName Pin36 { get; } = new("pin-36");
+    public static IconName Pin37 { get; } = new("pin-37");
+    public static IconName Pin38 { get; } = new("pin-38");
+    public static IconName Pin39 { get; } = new("pin-39");
+    public static IconName Pin40 { get; } = new("pin-40");
+    public static IconName Pin41 { get; } = new("pin-41");
+    public static IconName Pin42 { get; } = new("pin-42");
+    public static IconName Pin43 { get; } = new("pin-43");
+    public static IconName Pin44 { get; } = new("pin-44");
+    public static IconName Pin45 { get; } = new("pin-45");
+    public static IconName Pin46 { get; } = new("pin-46");
+    public static IconName Pin47 { get; } = new("pin-47");
+    public static IconName Pin48 { get; } = new("pin-48");
+    public static IconName Pin49 { get; } = new("pin-49");
+    public static IconName Pin50 { get; } = new("pin-50");
+    public static IconName Pin51 { get; } = new("pin-51");
+    public static IconName Pin52 { get; } = new("pin-52");
+    public static IconName Pin53 { get; } = new("pin-53");
+    public static IconName Pin54 { get; } = new("pin-54");
+    public static IconName Pin55 { get; } = new("pin-55");
+    public static IconName Pin56 { get; } = new("pin-56");
+    public static IconName Pin57 { get; } = new("pin-57");
+    public static IconName Pin58 { get; } = new("pin-58");
+    public static IconName Pin59 { get; } = new("pin-59");
+    public static IconName Pin60 { get; } = new("pin-60");
+    public static IconName Pin61 { get; } = new("pin-61");
+    public static IconName Pin62 { get; } = new("pin-62");
+    public static IconName Pin63 { get; } = new("pin-63");
+    public static IconName Pin64 { get; } = new("pin-64");
+    public static IconName Pin65 { get; } = new("pin-65");
+    public static IconName Pin66 { get; } = new("pin-66");
+    public static IconName Pin67 { get; } = new("pin-67");
+    public static IconName Pin68 { get; } = new("pin-68");
+    public static IconName Pin69 { get; } = new("pin-69");
+    public static IconName Pin70 { get; } = new("pin-70");
+    public static IconName Pin71 { get; } = new("pin-71");
+    public static IconName Pin72 { get; } = new("pin-72");
+    public static IconName Pin73 { get; } = new("pin-73");
+    public static IconName Pin74 { get; } = new("pin-74");
+    public static IconName Pin75 { get; } = new("pin-75");
+    public static IconName Pin76 { get; } = new("pin-76");
+    public static IconName Pin77 { get; } = new("pin-77");
+    public static IconName Pin78 { get; } = new("pin-78");
+    public static IconName Pin79 { get; } = new("pin-79");
+    public static IconName Pin80 { get; } = new("pin-80");
+    public static IconName Pin81 { get; } = new("pin-81");
+    public static IconName Pin82 { get; } = new("pin-82");
+    public static IconName Pin83 { get; } = new("pin-83");
+    public static IconName Pin84 { get; } = new("pin-84");
+    public static IconName Pin85 { get; } = new("pin-85");
+    public static IconName Pin86 { get; } = new("pin-86");
+    public static IconName Pin87 { get; } = new("pin-87");
+    public static IconName Pin88 { get; } = new("pin-88");
+    public static IconName Pin89 { get; } = new("pin-89");
+    public static IconName Pin90 { get; } = new("pin-90");
+    public static IconName Pin91 { get; } = new("pin-91");
+    public static IconName Pin92 { get; } = new("pin-92");
+    public static IconName Pin93 { get; } = new("pin-93");
+    public static IconName Pin94 { get; } = new("pin-94");
+    public static IconName Pin95 { get; } = new("pin-95");
+    public static IconName Pin96 { get; } = new("pin-96");
+    public static IconName Pin97 { get; } = new("pin-97");
+    public static IconName Pin98 { get; } = new("pin-98");
+    public static IconName Pin99 { get; } = new("pin-99");
+    public static IconName Pin100 { get; } = new("pin-100");
+    public static IconName Pin101 { get; } = new("pin-101");
+    public static IconName Pin102 { get; } = new("pin-102");
+    public static IconName Pin103 { get; } = new("pin-103");
+    public static IconName Pin104 { get; } = new("pin-104");
+    public static IconName Pin105 { get; } = new("pin-105");
+    public static IconName Pin106 { get; } = new("pin-106");
+    public static IconName Pin107 { get; } = new("pin-107");
+    public static IconName Pin108 { get; } = new("pin-108");
+    public static IconName Pin109 { get; } = new("pin-109");
+    public static IconName Pin110 { get; } = new("pin-110");
+    public static IconName Pin111 { get; } = new("pin-111");
+    public static IconName Pin112 { get; } = new("pin-112");
+    public static IconName Pin113 { get; } = new("pin-113");
+    public static IconName Pin114 { get; } = new("pin-114");
+    public static IconName Pin115 { get; } = new("pin-115");
+    public static IconName Pin116 { get; } = new("pin-116");
+    public static IconName Pin117 { get; } = new("pin-117");
+    public static IconName Pin118 { get; } = new("pin-118");
+    public static IconName Pin119 { get; } = new("pin-119");
+    public static IconName Pin120 { get; } = new("pin-120");
+
+    public static void Write(Utf8JsonWriter writer, IconName value) => writer.WriteStringValue(value.Value);
+
+    public static IconName Read(ref Utf8JsonReader reader) => new(reader.GetString()!);
+
+    public override string ToString() => Value;
+}

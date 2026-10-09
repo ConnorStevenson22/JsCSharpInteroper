@@ -18,7 +18,7 @@ Hand-written bindings for a slice of the fixture, running on every host.
 - [x] **Seams and transports.** Implement `IJsSyncTransport`, `IJsTransport`, `JsImportTransport`, `JsRuntimeTransport`, the callback registry and `InMemoryTransport`. The same contract tests run in-memory and in the browser.
 - [x] **Realm, scopes and identity.** Add `AddInteroper()`, the per-realm transport choice, `JsScope`, the identity cache and the most-derived-type registry. The handle census must return to baseline after disposal.
 - [x] **Batching.** Add `BeginBatch()`, flush-on-read, `JsBatchException` and a round-trip counter. N writes must be one round trip.
-- [ ] **Golden slice** in `tests/GoldenSlice`. Write the bindings the generator should emit, by hand, in both modes, citing R-numbers. Cover `Shape`/`Point`/`Line`/`Polygon`, `MapView` (properties, a Promise method, a `click` event), `Marker` (getter ≠ setter), one union, one enum, one watch, one module function and their snapshots.
+- [x] **Golden slice** in `tests/GoldenSlice`. Write the bindings the generator should emit, by hand, in both modes, citing R-numbers. Cover `Shape`/`Point`/`Line`/`Polygon`, `MapView` (properties, a Promise method, a `click` event), `Marker` (getter ≠ setter), one union, one enum, one watch, one module function and their snapshots.
 
 **Done when** the golden slice passes one behavioural suite per mode in each of these places: in-memory, on WebAssembly (sync and async), on WebAssembly async with `Transport=JsRuntime`, and on Server async. Sync bindings must also fail fast on Server.
 

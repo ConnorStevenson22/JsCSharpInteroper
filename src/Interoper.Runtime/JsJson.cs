@@ -80,12 +80,68 @@ public static class JsJson
         : ReadUndefined(ref reader) ? default
         : TUnion.ReadValue(ref reader);
 
-    // Readers for required primitives.
+    // Readers and writers for required primitives and arrays.
     public static double ReadNumber(ref Utf8JsonReader reader) => reader.GetDouble();
 
     public static string ReadString(ref Utf8JsonReader reader) => reader.GetString()!;
 
     public static bool ReadBoolean(ref Utf8JsonReader reader) => reader.GetBoolean();
+
+    public static void WriteNumber(Utf8JsonWriter writer, double value) => writer.WriteNumberValue(value);
+
+    public static void WriteString(Utf8JsonWriter writer, string value) => writer.WriteStringValue(value);
+
+    public static void WriteBoolean(Utf8JsonWriter writer, bool value) => writer.WriteBooleanValue(value);
+
+    public static T[] ReadArray<T>(ref Utf8JsonReader reader, JsonRead<T> read)
+    {
+        var items = new List<T>();
+        while (reader.Read() && reader.TokenType != JsonTokenType.EndArray)
+        {
+            items.Add(read(ref reader));
+        }
+        return [.. items];
+    }
+
+    public static void WriteArray<T>(Utf8JsonWriter writer, T[] values, JsonWrite<T> write)
+    {
+        writer.WriteStartArray();
+        foreach (var value in values)
+        {
+            write(writer, value);
+        }
+        writer.WriteEndArray();
+    }
+
+    // For generated union readers (R19), which classify an object before reading it. The reader is a copy, so the
+    // caller's stays on the object's start.
+
+    /// <summary>Whether the object starting at <paramref name="reader"/> has the property (R19 step 3).</summary>
+    public static bool HasProperty(Utf8JsonReader reader, ReadOnlySpan<byte> name) => FindProperty(ref reader, name);
+
+    /// <summary>The object's string property, such as a discriminant (R19 step 2); null when it has none.</summary>
+    public static string? PeekString(Utf8JsonReader reader, ReadOnlySpan<byte> name) =>
+        FindProperty(ref reader, name) && reader.TokenType == JsonTokenType.String ? reader.GetString() : null;
+
+    // Leaves the reader on the property's value.
+    private static bool FindProperty(ref Utf8JsonReader reader, ReadOnlySpan<byte> name)
+    {
+        if (reader.TokenType != JsonTokenType.StartObject)
+        {
+            return false;
+        }
+        while (reader.Read() && reader.TokenType == JsonTokenType.PropertyName)
+        {
+            var found = reader.ValueTextEquals(name);
+            reader.Read();
+            if (found)
+            {
+                return true;
+            }
+            reader.Skip();
+        }
+        return false;
+    }
 
     /// <summary>On <c>{"$u":1}</c>, skips it and returns true; otherwise leaves the reader where it was.</summary>
     private static bool ReadUndefined(ref Utf8JsonReader reader)

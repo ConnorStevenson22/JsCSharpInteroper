@@ -10,6 +10,7 @@
     <PackageReference Include="xunit.v3" />
     <PackageReference Include="xunit.runner.visualstudio" />
     <ProjectReference Include="..\..\src\Interoper.Blazor\Interoper.Blazor.csproj" />
+    <ProjectReference Include="..\GoldenSlice\GoldenSlice.csproj" />
   </ItemGroup>
 
   <ItemGroup>

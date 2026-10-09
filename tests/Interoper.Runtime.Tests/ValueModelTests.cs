@@ -8,6 +8,9 @@
 // - Removing a subclass arm from a switch over the `closed` Shape warns CS8509, through `Opt<Shape>` too.
 // TreatWarningsAsErrors turns each of those into a build break.
 // R5 (collapse) and R6 (flatten) are generator rules, tested in phase 2.
+// The types are the golden slice's (tests/GoldenSlice).
+using GoldenSlice.Async;
+
 namespace Interoper.Runtime.Tests;
 
 public class ValueModelTests
@@ -94,9 +97,9 @@ public class ValueModelTests
     };
 
     [Fact] // R4
-    public void Closed_live_hierarchy_is_exhaustive()
+    public async Task Closed_live_hierarchy_is_exhaustive()
     {
-        Assert.Equal("line", Kind(new Line(7)));
+        Assert.Equal("line", Kind(await Line.CreateAsync(await Scope(), new LineSnapshot())));
     }
 
     // A nullable getter such as `get shape(): Point | Line | Polygon | null | undefined` maps to Opt<Shape> (R3, R4).
@@ -110,10 +113,17 @@ public class ValueModelTests
     };
 
     [Fact] // R3, R4
-    public void Opt_of_closed_base_is_exhaustive_over_subclasses_undefined_and_null()
+    public async Task Opt_of_closed_base_is_exhaustive_over_subclasses_undefined_and_null()
     {
-        Assert.Equal("polygon", ShapeKind(new Polygon(3)));
+        Assert.Equal("polygon", ShapeKind(await Polygon.CreateAsync(await Scope(), new PolygonSnapshot())));
         Assert.Equal("undefined", ShapeKind(default));
         Assert.Equal("null", ShapeKind(null));
+    }
+
+    private static async Task<JsScope> Scope()
+    {
+        var realm = new JsRealm(() => Task.FromResult<IJsTransport>(InMemoryDemoMaps.Create()), DemoMaps.Classes);
+        await realm.StartAsync();
+        return new JsScope(realm);
     }
 }

@@ -1,4 +1,6 @@
 using System.Runtime.ExceptionServices;
+using System.Text;
+using System.Text.Json;
 using Microsoft.JSInterop;
 
 namespace Interoper;
@@ -40,6 +42,33 @@ public sealed class JsScope(JsRealm realm) : IDisposable, IAsyncDisposable
             ThrowIfDisposed(handle);
             return (T)Realm.Wrap(this, handle, classId);
         }
+    }
+
+    /// <summary>
+    /// Reads a <c>{"$h","$t"}</c> handle and wraps it (<see cref="Wrap{T}"/>): the reader for live results in
+    /// generated code.
+    /// </summary>
+    public T Read<T>(ref Utf8JsonReader reader) where T : JsObject
+    {
+        if (reader.TokenType != JsonTokenType.StartObject)
+        {
+            throw new JsonException($"Expected a handle, got {reader.TokenType}");
+        }
+        int handle = 0, classId = 0;
+        while (reader.Read() && reader.TokenType == JsonTokenType.PropertyName)
+        {
+            var isHandle = reader.ValueTextEquals("$h"u8);
+            reader.Read();
+            if (isHandle)
+            {
+                handle = reader.GetInt32();
+            }
+            else
+            {
+                classId = reader.GetInt32();
+            }
+        }
+        return Wrap<T>(handle, classId);
     }
 
     /// <summary>Owns a handle that has no live object, such as a subscription.</summary>
@@ -106,6 +135,38 @@ public sealed class JsScope(JsRealm realm) : IDisposable, IAsyncDisposable
             return id;
         }
     }
+
+    /// <summary>
+    /// Subscribes through the sync seam (sync mode): calls <c>target[method](name, listener)</c> (R24) with a listener
+    /// that reads the first argument and calls <paramref name="handler"/>. The subscription and the listener belong to
+    /// this scope; disposing the result releases both sooner.
+    /// </summary>
+    public IDisposable Subscribe<T>(int handle, string method, string name, JsonRead<T> read, Action<T> handler)
+    {
+        var listener = Register(Listener(read, handler));
+        var subscription = (int)Realm.Call(JsOp.Subscribe(handle, method, name, listener), JsJson.ReadNumber);
+        Own(subscription);
+        return new Subscription(this, subscription, listener);
+    }
+
+    /// <summary>Subscribes through the async seam (async mode); see <see cref="Subscribe{T}"/>.</summary>
+    public async Task<IAsyncDisposable> SubscribeAsync<T>(int handle, string method, string name, JsonRead<T> read, Action<T> handler)
+    {
+        var listener = Register(Listener(read, handler));
+        var subscription = (int)await Realm.CallAsync(JsOp.Subscribe(handle, method, name, listener), JsJson.ReadNumber);
+        Own(subscription);
+        return new Subscription(this, subscription, listener);
+    }
+
+    // Arguments arrive as a JSON array (R21); events and watches use the first.
+    private static Func<string, string?> Listener<T>(JsonRead<T> read, Action<T> handler) => args =>
+    {
+        var reader = new Utf8JsonReader(Encoding.UTF8.GetBytes(args));
+        reader.Read(); // [
+        reader.Read();
+        handler(read(ref reader));
+        return null;
+    };
 
     // Run inline (always on WebAssembly, or when already on the dispatcher), JS gets the result as without a
     // dispatcher. Posted for later, JS has moved on and gets undefined.
@@ -196,6 +257,70 @@ public sealed class JsScope(JsRealm realm) : IDisposable, IAsyncDisposable
             int[] owned = [.. callbacks];
             callbacks.Clear();
             return (handles.Count == 0 ? null : JsOp.Release(handles), owned, [.. batches]);
+        }
+    }
+
+    // A subscription disposed before its scope: its handle (unless another scope owns it too), then its listener.
+    // Nothing to do once the scope has released them.
+    private bool Unsubscribe(int handle, int listener, out string? release)
+    {
+        lock (gate)
+        {
+            release = null;
+            if (disposed || !callbacks.Remove(listener))
+            {
+                return false;
+            }
+            if (Realm.Disown(this, handle))
+            {
+                release = JsOp.Release([handle]);
+            }
+            return true;
+        }
+    }
+
+    private sealed class Subscription(JsScope scope, int handle, int listener) : IDisposable, IAsyncDisposable
+    {
+        public void Dispose()
+        {
+            if (!scope.Unsubscribe(handle, listener, out var release))
+            {
+                return;
+            }
+            try
+            {
+                if (release is not null)
+                {
+                    scope.Realm.Send(release);
+                }
+            }
+            finally
+            {
+                scope.Transport.Callbacks.Release(listener);
+            }
+        }
+
+        public async ValueTask DisposeAsync()
+        {
+            if (!scope.Unsubscribe(handle, listener, out var release))
+            {
+                return;
+            }
+            try
+            {
+                if (release is not null)
+                {
+                    await scope.Realm.ReleaseAsync(release);
+                }
+            }
+            catch (JSDisconnectedException)
+            {
+                // The circuit is gone, and the subscription with it.
+            }
+            finally
+            {
+                scope.Transport.Callbacks.Release(listener);
+            }
         }
     }
 

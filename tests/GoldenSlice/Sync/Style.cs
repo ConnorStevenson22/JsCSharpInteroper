@@ -1,0 +1,76 @@
+using System.Diagnostics.CodeAnalysis;
+using System.Runtime.CompilerServices;
+using System.Text.Json;
+using Interoper;
+
+namespace GoldenSlice.Sync;
+
+/// <summary><c>type Style = FillStyle | StrokeStyle | IconStyle</c>, discriminated by <c>type</c> (R2).</summary>
+[Union]
+public readonly struct Style : IJsUnion<Style>, IEquatable<Style>
+{
+    private readonly object? _ref;
+    private readonly byte _tag; // 0 = undefined, 1 = null, 2 = FillStyle, 3 = StrokeStyle, 4 = IconStyle
+
+    private Style(object? value, byte tag) => (_ref, _tag) = (value, tag);
+    public Style(FillStyle value) : this(value, 2) { }
+    public Style(StrokeStyle value) : this(value, 3) { }
+    public Style(IconStyle value) : this(value, 4) { }
+    public Style(Undefined? value) : this(null, value is null ? (byte)1 : (byte)0) { }
+
+    public static implicit operator Style(Undefined? value) => new(value);
+
+    public object? Value => _tag switch { 0 => Undefined.Value, 1 => null, _ => _ref };
+    public bool HasValue => _tag != 1;
+    public bool IsUndefined => _tag == 0;
+    public bool IsNull => _tag == 1;
+
+    public bool TryGetValue(out Undefined value)
+    {
+        value = Undefined.Value;
+        return _tag == 0;
+    }
+
+    public bool TryGetValue([MaybeNullWhen(false)] out FillStyle value)
+    {
+        value = _tag == 2 ? (FillStyle)_ref! : null;
+        return _tag == 2;
+    }
+
+    public bool TryGetValue([MaybeNullWhen(false)] out StrokeStyle value)
+    {
+        value = _tag == 3 ? (StrokeStyle)_ref! : null;
+        return _tag == 3;
+    }
+
+    public bool TryGetValue([MaybeNullWhen(false)] out IconStyle value)
+    {
+        value = _tag == 4 ? (IconStyle)_ref! : null;
+        return _tag == 4;
+    }
+
+    // On the tag, not the CLR type: cases may share one (R20).
+    public static void WriteValue(Utf8JsonWriter writer, Style value)
+    {
+        switch (value._tag)
+        {
+            case 2: FillStyle.Write(writer, (FillStyle)value._ref!); break;
+            case 3: StrokeStyle.Write(writer, (StrokeStyle)value._ref!); break;
+            case 4: IconStyle.Write(writer, (IconStyle)value._ref!); break;
+        }
+    }
+
+    // R19 step 2: the discriminant's value.
+    public static Style ReadValue(ref Utf8JsonReader reader) => JsJson.PeekString(reader, "type"u8) switch
+    {
+        "fill" => FillStyle.Read(ref reader),
+        "stroke" => StrokeStyle.Read(ref reader),
+        "icon" => IconStyle.Read(ref reader),
+        var type => throw new JsonException($"Style: unexpected type {type}"),
+    };
+
+    public bool Equals(Style other) => _tag == other._tag && Equals(_ref, other._ref);
+    public override bool Equals(object? obj) => obj is Style other && Equals(other);
+    public override int GetHashCode() => HashCode.Combine(_tag, _ref);
+    public override string ToString() => _tag switch { 0 => "undefined", 1 => "null", _ => $"{_ref}" };
+}

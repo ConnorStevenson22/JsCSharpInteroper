@@ -41,7 +41,7 @@ node --test "fixtures/demo-maps/test/*.test.mjs"
 | Module functions | §5 | `distance` (`measure`); `toRgba` (`styles`) |
 | Custom element: attributes, properties, events, slots | design §2 | `<demo-map>` (`demo-map`, `custom-elements.json`): attributes `basemap`, `zoom`; properties `view`, `center`; events `demo-map-click`, `demo-map-zoom-change` (pairs with `zoom` for `@bind`), `demo-map-ready`; slots default and `toolbar` |
 
-The golden slice binds `Shape`/`Point`/`Line`/`Polygon`, `MapView` (`center`, `zoom`, `flyTo`, `click`), `Marker.position`, `Style`, `Basemap`, `watch("zoom")` and `distance`.
+The golden slice (`tests/GoldenSlice`) binds `Shape`/`Point`/`Line`/`Polygon`, `MapView` (`center`, `zoom`, `rotation`, `basemap`, `title`, `selected`, `flyTo`, `click`, `watch("zoom")`), `Marker` (`position`, `label`, `style`, `displayLabel`), `Style` with `ColorInput` and `IconName`, `FlyToTarget`, `Basemap`, `ClickEvent` and `distance`.
 
 ## Node and the browser
 

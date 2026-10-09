@@ -2,6 +2,7 @@
 // browser on every host (tests/Interoper.E2E). Compiled into both, so it has no test framework.
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using static Interoper.Contract.Check;
 
 namespace Interoper.Contract;
 
@@ -67,7 +68,7 @@ public sealed class Seam
 /// <summary>The cases, against fixtures/demo-maps. A failed case throws <see cref="ContractException"/>.</summary>
 public static class TransportContract
 {
-    // Class ids from the demo-maps metadata (tests/Interoper.E2E.Host/wwwroot/demo-maps.meta.js).
+    // Class ids from the demo-maps metadata (tests/GoldenSlice/wwwroot/demo-maps.meta.js).
     public const int Shape = 1, Point = 2, MapView = 5, Marker = 6;
     public const string Measure = "@acme/demo-maps/measure.js";
 
@@ -359,19 +360,23 @@ public static class TransportContract
 
     private static Task<string> Release(Seam seam, params int[] ids) =>
         seam.Send($$"""{"op":"release","ids":[{{string.Join(",", ids)}}]}""");
+}
 
-    private static void Expect(bool condition, string what)
+/// <summary>Assertions for the framework-free suites: a failed one throws <see cref="ContractException"/>.</summary>
+public static class Check
+{
+    public static void Expect(bool condition, string what)
     {
         if (!condition) throw new ContractException($"Expected {what}");
     }
 
-    private static void Equal<T>(T expected, T actual) =>
+    public static void Equal<T>(T expected, T actual) =>
         Expect(EqualityComparer<T>.Default.Equals(expected, actual), $"{expected}, got {actual}");
 
-    private static void Equal(string expectedJson, JsonNode? actual) =>
+    public static void Equal(string expectedJson, JsonNode? actual) =>
         Expect(JsonNode.DeepEquals(JsonNode.Parse(expectedJson), actual), $"{expectedJson}, got {actual?.ToJsonString() ?? "null"}");
 
-    private static async Task<JsException> Throws(Func<Task> action)
+    public static async Task<JsException> Throws(Func<Task> action)
     {
         try
         {

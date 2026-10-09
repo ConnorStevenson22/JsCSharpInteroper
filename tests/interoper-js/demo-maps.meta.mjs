@@ -1,5 +1,5 @@
-// A hand-written stand-in for the generated metadata table (design §2), pointing at fixtures/demo-maps.
-// Keep in sync with tests/Interoper.E2E.Host/wwwroot/demo-maps.meta.js.
+// The golden slice's metadata table (tests/GoldenSlice/wwwroot/demo-maps.meta.js) for Node: file URLs instead of bare
+// specifiers, and the members and Collection class these tests use beyond what the golden slice binds.
 const at = (file) => new URL(`../../fixtures/demo-maps/${file}`, import.meta.url).href;
 
 export const ids = { Shape: 1, Point: 2, Line: 3, Polygon: 4, MapView: 5, Marker: 6, Collection: 7 };

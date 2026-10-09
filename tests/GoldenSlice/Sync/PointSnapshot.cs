@@ -1,0 +1,45 @@
+using System.Text.Json;
+using Interoper;
+
+namespace GoldenSlice.Sync;
+
+/// <summary>The snapshot of <c>class Point</c> (R16–R18): its data members, all optional.</summary>
+public sealed record PointSnapshot : ShapeSnapshot
+{
+    public Opt<double> X { get; init; }
+    public Opt<double> Y { get; init; }
+
+    /// <summary>As a value: <c>new Point(bag)</c> in JS (R16, <c>$c</c>), its bag keeping the discriminant (R20).</summary>
+    public static void Write(Utf8JsonWriter writer, PointSnapshot value)
+    {
+        writer.WriteStartObject();
+        writer.WriteNumber("$c"u8, DemoMaps.PointId);
+        writer.WriteString("type"u8, "point"u8);
+        WriteMembers(writer, value);
+        writer.WriteEndObject();
+    }
+
+    /// <summary>The members alone: a constructor bag or a patch (R18).</summary>
+    public static void WriteMembers(Utf8JsonWriter writer, PointSnapshot value)
+    {
+        JsJson.WriteProperty(writer, "x"u8, value.X, JsJson.WriteNumber);
+        JsJson.WriteProperty(writer, "y"u8, value.Y, JsJson.WriteNumber);
+    }
+
+    public static new PointSnapshot Read(ref Utf8JsonReader reader)
+    {
+        Opt<double> x = default, y = default;
+        while (reader.Read() && reader.TokenType == JsonTokenType.PropertyName)
+        {
+            var property = reader.GetString();
+            reader.Read();
+            switch (property)
+            {
+                case "x": x = JsJson.ReadOpt(ref reader, JsJson.ReadNumber); break;
+                case "y": y = JsJson.ReadOpt(ref reader, JsJson.ReadNumber); break;
+                default: reader.Skip(); break;
+            }
+        }
+        return new PointSnapshot { X = x, Y = y };
+    }
+}

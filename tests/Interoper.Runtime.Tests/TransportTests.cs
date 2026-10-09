@@ -42,7 +42,7 @@ public sealed class TransportTests
         JsEnvelope.Check(transport.Invoke("""{"op":"apply","h":1,"value":{"zoom":7,"center":{"$c":2,"type":"point","x":9,"y":8}}}"""));
 
         Assert.Equal(
-            """{"v":{"center":{"$c":2,"type":"point","x":9,"y":8},"zoom":7,"basemap":"plain","selected":null}}""",
+            """{"v":{"center":{"$c":2,"type":"point","x":9,"y":8},"zoom":7,"rotation":0,"basemap":"plain"}}""",
             transport.Invoke("""{"op":"snapshot","h":1}"""));
     }
 

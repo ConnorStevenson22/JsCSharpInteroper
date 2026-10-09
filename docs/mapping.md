@@ -78,7 +78,7 @@ The nullable bottom case is what makes the compiler demand the `null` arm. With 
 | `Record<string, T>`, `{ [k: string]: T }` | `Dictionary<string, T>` | Known members next to an index signature stay typed |
 | `Promise<T>` | `Task<T>` | **R8.** In both modes |
 | `void` (return) | `void` (sync) / `Task` (async) | |
-| string-literal union | `enum`, with a generated name map | **R9.** See R25 for names |
+| string-literal union | `enum`, with a generated name map (`BasemapNames`: `ToJs`, `FromJs`, `Write`, `Read`) | **R9.** See R25 for names |
 | open-ended literal union (`"a" \| "b" \| (string & {})`) or more than 64 members | extensible enum: `readonly record struct` wrapping a string, with static known values | **R10.** |
 | number-literal union | `enum` with explicit values | |
 | TS `enum` | C# `enum` | |
@@ -112,10 +112,10 @@ The central decision for every class and interface.
 The profile overrides either way. Getting this wrong is the classic failure mode: a JSON copy of an entity loses identity and methods, and some libraries' `toJSON()` produces a different schema altogether.
 
 **R16. Value-like classes have two shapes.** The profile marks classes value-like; typical examples are geometry, symbols and colors. Such a class gets:
-- a live class (`Point`), used when you hold a handle;
-- an `XSnapshot` record (`PointSnapshot`), used inside snapshots, constructor bags and data-in/data-out module functions.
+- a live class (`Point`), used when you hold a handle: what `Create` returns, and `this`-typed results (`Shape Clone(scope)`);
+- an `XSnapshot` record (`PointSnapshot`), used wherever a type names the class: properties, arguments and results (read with `byValue`), inside snapshots and event payloads, constructor bags and data-in/data-out module functions.
 
-Sent to JS, a snapshot record of a value-like class arrives as an instance: the writer adds its concrete class id (`$c`, [design §3.4](design.md#34-protocol)) and the runtime calls `new Point(bag)`. The bag keeps its discriminant (R20). Data records stay plain objects.
+Sent to JS, a snapshot record of a value-like class arrives as an instance: the writer adds its concrete class id (`$c`, [design §3.4](design.md#34-protocol)) and the runtime calls `new Point(bag)`. The bag keeps its discriminant (R20). Data records stay plain objects. The snapshots of an abstract value-like base form a `closed record` hierarchy (`ShapeSnapshot`), read by the discriminant (R19 step 2).
 
 **R17. Snapshot depth.** Snapshot records copy value-like members deeply, as their snapshot records. Entity members appear as live objects inside the snapshot.
 
@@ -125,6 +125,8 @@ Sent to JS, a snapshot record of a value-like class arrives as an instance: the 
 - the patch for `Apply`/`ApplyAsync`. Unset members are undefined (R2), so a patch is just a partially filled record.
 
 A generated `XSnapshot.Diff(before, after)` produces the minimal patch.
+
+Every snapshot record has `WriteMembers` (the members alone: the bag for `create`, the patch for `apply`) and `Read`; a value-like one also has `Write`, which wraps the members as a value with `$c` and the discriminant. The bag and the patch leave both out, because `apply` assigns every member it gets and a discriminant is read-only.
 
 ---
 
@@ -150,11 +152,17 @@ When JS returns a value for a union position, the runtime must pick the case.
 | read-only property | `T X { get; }` | `Task<T> GetXAsync()` |
 | getter type ≠ setter type | `TGet X { get; }` + `void SetX(TSet value)` | `Task<TGet> GetXAsync()`, `Task SetXAsync(TSet value)` |
 | method `foo(a): R` | `R Foo(A a)` | `Task<R> FooAsync(A a)` |
+| property or method returning an entity | `R GetX(JsScope scope)` (+ `void SetX(T value)`), `R Foo(JsScope scope, A a)` | `Task<R> GetXAsync(JsScope scope)`, `Task<R> FooAsync(JsScope scope, A a)` |
 | method returning `Promise<R>` | `Task<R> FooAsync(A a)` | `Task<R> FooAsync(A a)` |
 | constructor `new X(props)` | `static X Create(JsScope scope, XSnapshot props)` | `static Task<X> CreateAsync(JsScope scope, XSnapshot props)` |
-| event (from an event map) | `IDisposable OnClick(Action<ClickEvent>, EventOptions?)` | `Task<IAsyncDisposable> OnClickAsync(Action<ClickEvent>, EventOptions?)` |
+| event (from an event map) | `IDisposable OnClick(JsScope scope, Action<ClickEvent>, EventOptions?)` | `Task<IAsyncDisposable> OnClickAsync(JsScope scope, Action<ClickEvent>, EventOptions?)` |
+| property watch | `IDisposable WatchZoom(JsScope scope, Action<double>)` | `Task<IAsyncDisposable> WatchZoomAsync(JsScope scope, Action<double>)` |
 | snapshot / patch | `XSnapshot Snapshot()`, `void Apply(XSnapshot)` | `Task<XSnapshot> SnapshotAsync()`, `Task ApplyAsync(XSnapshot)` |
-| module function | static method on a static class per module, same per-mode shape | |
+| module function | static method on a static class per module, same per-mode shape, with a leading `JsRealm realm` | |
+
+- **A live result belongs to the scope the caller passes** ([design §3.2](design.md#32-handles-identity-and-lifetime)), so members that return an entity take that `JsScope` first; in sync mode such a property is `GetX(scope)` plus `SetX(value)`. Value-like classes are values (R16), so `PointSnapshot Center { get; set; }` needs no scope.
+- **Events and watches** belong to the scope too: it owns the subscription and the listener, and disposing the result releases both sooner (R24).
+- **Discriminants** (`type: "point"`) aren't members of live classes: the live type already says it.
 
 Sync mode needs .NET and JS on one thread, so it runs on WebAssembly only and fails fast elsewhere (verified, [design §8](design.md#8-evidence)).
 

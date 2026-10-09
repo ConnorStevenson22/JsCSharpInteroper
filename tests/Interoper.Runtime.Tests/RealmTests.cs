@@ -1,34 +1,25 @@
 using System.Runtime.CompilerServices;
 using System.Text.Json.Nodes;
-using Interoper.Contract;
+using GoldenSlice.Async;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.JSInterop;
 
 namespace Interoper.Runtime.Tests;
 
-/// <summary>Realm, scopes and identity (design §3.1, §3.2) over the in-memory fixture fakes.</summary>
+/// <summary>
+/// Realm, scopes and identity (design §3.1, §3.2) over the in-memory fixture fakes, through the golden slice's async
+/// bindings (tests/GoldenSlice), which its suites cover in full.
+/// </summary>
 public sealed class RealmTests
 {
-    // Live types as generated code will declare and register them (the golden slice writes the real ones).
-    private abstract class Shape(JsRealm realm, int handle) : JsObject(realm, handle);
-
-    private sealed class Point(JsRealm realm, int handle) : Shape(realm, handle);
-
-    private sealed class View(JsRealm realm, int handle) : JsObject(realm, handle);
-
-    private sealed class Pin(JsRealm realm, int handle) : JsObject(realm, handle);
-
-    private static readonly JsClassRegistry Classes = new JsClassRegistry()
-        .Add(TransportContract.Point, (r, h) => new Point(r, h))
-        .Add(TransportContract.MapView, (r, h) => new View(r, h))
-        .Add(TransportContract.Marker, (r, h) => new Pin(r, h));
+    private static readonly JsClassRegistry Classes = DemoMaps.Classes;
 
     private readonly RecordingTransport transport = new(InMemoryDemoMaps.Create());
 
-    private async Task<JsRealm> StartedRealm()
+    private async Task<JsRealm> StartedRealm(JsClassRegistry? classes = null)
     {
-        var realm = new JsRealm(() => Task.FromResult<IJsTransport>(transport), Classes);
+        var realm = new JsRealm(() => Task.FromResult<IJsTransport>(transport), classes ?? Classes);
         await realm.StartAsync();
         return realm;
     }
@@ -37,36 +28,68 @@ public sealed class RealmTests
     public async Task OneJsObjectIsOneCSharpObjectOfItsMostDerivedType() // R19
     {
         var scope = new JsScope(await StartedRealm());
-        var view = await Create<View>(scope, TransportContract.MapView);
+        var view = await MapView.CreateAsync(scope, new());
+        var marker = await Marker.CreateAsync(scope, new());
+        await view.SetSelectedAsync(marker);
+        Assert.Same(marker, (await view.GetSelectedAsync(scope)).Value);
+        Assert.Same(view, scope.Wrap<MapView>(view.Handle, DemoMaps.MapViewId));
 
-        var center = await Get<Shape>(scope, view, "center"); // read through the base: the registry picks Point
-        Assert.IsType<Point>(center);
-        Assert.Same(center, await Get<Point>(scope, view, "center"));
-        Assert.Same(view, scope.Wrap<View>(view.Handle, TransportContract.MapView));
+        Shape polygon = await Polygon.CreateAsync(scope, new());
+        Assert.IsType<Polygon>(await polygon.CloneAsync(scope)); // read through the base: the registry picks Polygon
     }
 
     [Fact]
-    public async Task DisposalReleasesEveryHandleInOneOpAndEveryCallback() // R21
+    public async Task DisposalReleasesEveryHandleInOneOpAndEveryCallback() // R21, R24
     {
         var realm = await StartedRealm();
         var baseline = (transport.Census(), transport.Callbacks.Count);
         var scope = new JsScope(realm);
-        var view = await Create<View>(scope, TransportContract.MapView);
-        var center = await Get<Point>(scope, view, "center");
-        var formatter = scope.Register(_ => "\"#\"");
-        var pin = await Create<Pin>(scope, TransportContract.Marker, $$$"""{"labelFormatter":{"$f":{{{formatter}}}}}""");
+        var view = await MapView.CreateAsync(scope, new());
+        var marker = await Marker.CreateAsync(scope, new());
+        await view.OnClickAsync(scope, _ => { }); // a subscription handle and a listener
         Assert.Equal((baseline.Item1 + 3, baseline.Item2 + 1), (transport.Census(), transport.Callbacks.Count));
 
         transport.Ops.Clear();
         await scope.DisposeAsync();
         var release = JsonNode.Parse(Assert.Single(transport.Ops))!;
         Assert.Equal("release", (string?)release["op"]);
-        Assert.Equal([view.Handle, center.Handle, pin.Handle], release["ids"]!.AsArray().Select(id => (int)id!).Order());
+        Assert.Equal(3, release["ids"]!.AsArray().Count);
         Assert.Equal(baseline, (transport.Census(), transport.Callbacks.Count));
 
         await scope.DisposeAsync(); // once only
         Assert.Single(transport.Ops);
-        Assert.Throws<ObjectDisposedException>(() => scope.Wrap<View>(view.Handle, TransportContract.MapView));
+        Assert.Throws<ObjectDisposedException>(() => scope.Wrap<MapView>(view.Handle, DemoMaps.MapViewId));
+        Assert.Throws<ObjectDisposedException>(() => scope.Wrap<Marker>(marker.Handle, DemoMaps.MarkerId));
+    }
+
+    [Fact]
+    public async Task ASubscriptionCanBeReleasedBeforeItsScope() // R24
+    {
+        var realm = await StartedRealm();
+        var scope = new JsScope(realm);
+        var view = await MapView.CreateAsync(scope, new());
+        var baseline = (transport.Census(), transport.Callbacks.Count);
+        var watch = scope.Subscribe(view.Handle, "watch", "zoom", JsJson.ReadNumber, _ => { }); // sync mode
+        var click = await scope.SubscribeAsync(view.Handle, "on", "click", ClickEvent.Read, _ => { }); // async mode
+
+        transport.Ops.Clear();
+        watch.Dispose();
+        await click.DisposeAsync();
+        Assert.All(transport.Ops, op => Assert.StartsWith("""{"op":"release","ids":[""", op, StringComparison.Ordinal));
+        Assert.Equal(2, transport.Ops.Count);
+        Assert.Equal(baseline, (transport.Census(), transport.Callbacks.Count));
+
+        watch.Dispose(); // once only
+        await click.DisposeAsync();
+        await scope.DisposeAsync();
+        Assert.Equal(3, transport.Ops.Count); // the scope's own release
+    }
+
+    [Fact]
+    public async Task TheRegistryCanPreloadModules() // design §3.5: sync mode loads its modules up front
+    {
+        await StartedRealm(new JsClassRegistry().Preload("a.js").Preload("b.js"));
+        Assert.Equal("""{"op":"load","modules":["a.js","b.js"]}""", Assert.Single(transport.Ops));
     }
 
     [Fact]
@@ -76,8 +99,8 @@ public sealed class RealmTests
         var baseline = transport.Census();
         using (var scope = new JsScope(realm))
         {
-            await Create<View>(scope, TransportContract.MapView);
-            await Create<View>(scope, TransportContract.MapView);
+            await MapView.CreateAsync(scope, new());
+            await MapView.CreateAsync(scope, new());
             transport.Ops.Clear();
         }
         Assert.StartsWith("""{"op":"release","ids":[""", Assert.Single(transport.Ops), StringComparison.Ordinal);
@@ -92,8 +115,8 @@ public sealed class RealmTests
         var realm = await StartedRealm();
         var baseline = transport.Census();
         var (parent, child) = (new JsScope(realm), new JsScope(realm));
-        var view = await Create<View>(parent, TransportContract.MapView);
-        Assert.Same(view, child.Wrap<View>(view.Handle, TransportContract.MapView));
+        var view = await MapView.CreateAsync(parent, new());
+        Assert.Same(view, child.Wrap<MapView>(view.Handle, DemoMaps.MapViewId));
 
         var (first, last) = childFirst ? (child, parent) : (parent, child);
         transport.Ops.Clear();
@@ -115,7 +138,7 @@ public sealed class RealmTests
         GC.Collect();
         Assert.False(weak.IsAlive);
 
-        Assert.NotNull(scope.Wrap<View>(handle, TransportContract.MapView)); // a new object for the same handle
+        Assert.NotNull(scope.Wrap<MapView>(handle, DemoMaps.MapViewId)); // a new object for the same handle
         await scope.DisposeAsync();
         Assert.Equal(0, transport.Census());
     }
@@ -130,25 +153,8 @@ public sealed class RealmTests
         await scope.DisposeAsync();
         var handle = (int)JsEnvelope.Read(await create, static (ref reader) => JsonNode.Parse(ref reader))!["$h"]!;
 
-        Assert.Throws<ObjectDisposedException>(() => scope.Wrap<View>(handle, TransportContract.MapView));
+        Assert.Throws<ObjectDisposedException>(() => scope.Wrap<MapView>(handle, DemoMaps.MapViewId));
         Assert.Equal(baseline, transport.Census());
-    }
-
-    [Fact]
-    public async Task AScopeOwnsBareHandlesSuchAsSubscriptions() // R21
-    {
-        var realm = await StartedRealm();
-        var baseline = (transport.Census(), transport.Callbacks.Count);
-        var scope = new JsScope(realm);
-        var view = await Create<View>(scope, TransportContract.MapView);
-        var listener = scope.Register(_ => null);
-        var subscription = (int)(await Send(scope, $$$"""{"op":"subscribe","h":{{{view.Handle}}},"method":"on","name":"click","callback":{"$f":{{{listener}}}}}"""))!;
-        scope.Own(subscription);
-
-        transport.Ops.Clear();
-        await scope.DisposeAsync();
-        Assert.Single(transport.Ops);
-        Assert.Equal(baseline, (transport.Census(), transport.Callbacks.Count));
     }
 
     [Fact]
@@ -163,14 +169,14 @@ public sealed class RealmTests
     }
 
     [MethodImpl(MethodImplOptions.NoInlining)]
-    private static WeakReference WrapAndDrop(JsScope scope, int handle) => new(scope.Wrap<View>(handle, TransportContract.MapView));
+    private static WeakReference WrapAndDrop(JsScope scope, int handle) => new(scope.Wrap<MapView>(handle, DemoMaps.MapViewId));
 
     [Fact]
     public async Task AnUnknownClassIdFailsButItsHandleIsStillReleased()
     {
         var scope = new JsScope(await StartedRealm());
         var handle = (int)(await Send(scope, """{"op":"create","t":5,"args":[]}"""))!["$h"]!;
-        var e = Assert.Throws<JsException>(() => scope.Wrap<View>(handle, 0));
+        var e = Assert.Throws<JsException>(() => scope.Wrap<MapView>(handle, 0));
         Assert.Equal(("InteroperError", "No live type is registered for class id 0."), (e.Name, e.Message));
 
         await scope.DisposeAsync();
@@ -181,7 +187,7 @@ public sealed class RealmTests
     public async Task DisposalSwallowsADroppedCircuit()
     {
         var scope = new JsScope(await StartedRealm());
-        await Create<View>(scope, TransportContract.MapView);
+        await MapView.CreateAsync(scope, new());
         transport.Fail = new JSDisconnectedException("gone");
         await scope.DisposeAsync();
     }
@@ -235,16 +241,16 @@ public sealed class RealmTests
 
         // Posted for later: JS has moved on and gets undefined.
         var later = new JsScope(realm) { Dispatch = action => { posted.Enqueue(action); return new TaskCompletionSource().Task; } };
-        var pin = await Create<Pin>(later, TransportContract.Marker, $$$"""{"labelFormatter":{"$f":{{{later.Register(formatter)}}}}}""");
-        Assert.Equal("{}", await later.Transport.InvokeAsync($$"""{"op":"get","h":{{pin.Handle}},"name":"displayLabel"}"""));
+        var marker = await Send(later, $$$"""{"op":"create","t":6,"args":[{"labelFormatter":{"$f":{{{later.Register(formatter)}}}}}]}""");
+        Assert.Equal("{}", await later.Transport.InvokeAsync($$"""{"op":"get","h":{{marker!["$h"]}},"name":"displayLabel"}"""));
         Assert.Equal(0, calls);
         posted.Dequeue()();
         Assert.Equal(1, calls);
 
         // Run inline (already on the dispatcher): JS gets the result.
         var inline = new JsScope(realm) { Dispatch = action => { action(); return Task.CompletedTask; } };
-        pin = await Create<Pin>(inline, TransportContract.Marker, $$$"""{"labelFormatter":{"$f":{{{inline.Register(formatter)}}}}}""");
-        Assert.Equal("""{"v":"#"}""", await inline.Transport.InvokeAsync($$"""{"op":"get","h":{{pin.Handle}},"name":"displayLabel"}"""));
+        marker = await Send(inline, $$$"""{"op":"create","t":6,"args":[{"labelFormatter":{"$f":{{{inline.Register(formatter)}}}}}]}""");
+        Assert.Equal("""{"v":"#"}""", await inline.Transport.InvokeAsync($$"""{"op":"get","h":{{marker!["$h"]}},"name":"displayLabel"}"""));
     }
 
     [Theory]
@@ -283,16 +289,7 @@ public sealed class RealmTests
         .AddInteroper("/meta.js", Classes)
         .BuildServiceProvider();
 
-    // --- What generated code will do ---
-
-    private static async Task<T> Create<T>(JsScope scope, int classId, string bag = "{}") where T : JsObject =>
-        Wrap<T>(scope, await Send(scope, $$"""{"op":"create","t":{{classId}},"args":[{{bag}}]}"""));
-
-    private static async Task<T> Get<T>(JsScope scope, JsObject target, string name) where T : JsObject =>
-        Wrap<T>(scope, await Send(scope, $$"""{"op":"get","h":{{target.Handle}},"name":"{{name}}"}"""));
-
-    private static T Wrap<T>(JsScope scope, JsonNode? handle) where T : JsObject => scope.Wrap<T>((int)handle!["$h"]!, (int)handle["$t"]!);
-
+    // A raw op, for what the golden slice doesn't bind.
     private static Task<JsonNode?> Send(JsScope scope, string op) =>
         scope.Realm.CallAsync(op, static (ref reader) => JsonNode.Parse(ref reader));
 }

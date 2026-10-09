@@ -1,0 +1,38 @@
+using System.Text.Json;
+using Interoper;
+
+namespace GoldenSlice.Sync;
+
+/// <summary><c>interface FillStyle { type: "fill"; color?: ColorInput | null; outline?: StrokeStyle | null }</c> (R15, R20).</summary>
+public sealed record FillStyle
+{
+    public ColorInput Color { get; init; }
+    public Opt<StrokeStyle> Outline { get; init; }
+
+    public static void Write(Utf8JsonWriter writer, FillStyle value)
+    {
+        writer.WriteStartObject();
+        writer.WriteString("type"u8, "fill"u8);
+        JsJson.WriteProperty(writer, "color"u8, value.Color);
+        JsJson.WriteProperty(writer, "outline"u8, value.Outline, StrokeStyle.Write);
+        writer.WriteEndObject();
+    }
+
+    public static FillStyle Read(ref Utf8JsonReader reader)
+    {
+        ColorInput color = default;
+        Opt<StrokeStyle> outline = default;
+        while (reader.Read() && reader.TokenType == JsonTokenType.PropertyName)
+        {
+            var property = reader.GetString();
+            reader.Read();
+            switch (property)
+            {
+                case "color": color = JsJson.ReadUnion<ColorInput>(ref reader); break;
+                case "outline": outline = JsJson.ReadOpt(ref reader, StrokeStyle.Read); break;
+                default: reader.Skip(); break;
+            }
+        }
+        return new FillStyle { Color = color, Outline = outline };
+    }
+}
