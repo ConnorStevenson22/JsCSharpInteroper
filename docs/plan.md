@@ -1,0 +1,54 @@
+# Plan
+
+The build order for the [design](design.md), in four phases. Each phase has one tracking issue with this checklist. Open the next phase's issue when the current one closes.
+
+Every item is done when it has tests and the checks in [`CLAUDE.md`](../CLAUDE.md) pass. Tests that exercise a mapping rule cite it (`R19`).
+
+## Phase 1 · Runtime core
+
+Hand-written bindings for a slice of the fixture, running on every host.
+
+- [ ] **Scaffold.** Set up `Interoper.slnx`, `Directory.Build.props` (`net11.0`, nullable, `TreatWarningsAsErrors`), central package versions and `.editorconfig`.
+  - Projects: `src/Interoper.Runtime` and `src/Interoper.Blazor` (Razor class libraries, so `wwwroot/interoper.js` ships as a static web asset), plus `src/Interoper.Generator` and `src/Interoper.Tool` as placeholders.
+  - Tests: `tests/Interoper.Runtime.Tests` and `tests/Interoper.E2E` on xUnit v3, set up so that plain `dotnet test Interoper.slnx` works.
+- [ ] **Fixture library v0** in `fixtures/demo-maps`. It needs the JS library, a hand-written `.d.ts` covering every pattern in [design §6](design.md#6-testing), `custom-elements.json`, `profile.json`, and a `PATTERNS.md` table mapping each pattern to its R-number. Acceptance: `tsc --noEmit` passes, and it has `node --test` coverage.
+- [ ] **Browser test harness** in `tests/Interoper.E2E`. Build a Blazor test host (Server + WebAssembly) driven by Microsoft.Playwright, with one smoke test per mode and host. Port it from [`spikes/hosts`](../spikes/hosts).
+- [ ] **Value model.** Add `Undefined`, `Opt<T>`, the union pattern and JSON helpers for the three states (R1–R6). Port the [`spikes/value-model`](../spikes/value-model) checks as tests.
+- [ ] **`interoper.js`.** Build the handle table, the ops (`create`, `get`, `set`, `call`, `snapshot`, `apply`, `subscribe`, `release`, `batch`), the `$h`/`$f`/`$u` reviver, error mapping, and entry points for both seams. Tests live in `tests/interoper-js`.
+- [ ] **Seams and transports.** Implement `IJsSyncTransport`, `IJsTransport`, `JsImportTransport`, `JsRuntimeTransport`, the callback registry and `InMemoryTransport`. The same contract tests run in-memory and in the browser.
+- [ ] **Realm, scopes and identity.** Add `AddInteroper()`, the per-component transport choice, `JsScope`, the identity cache and the most-derived-type registry. The handle census must return to baseline after disposal.
+- [ ] **Batching.** Add `BeginBatch()`, flush-on-read, `JsBatchException` and a round-trip counter. N writes must be one round trip.
+- [ ] **Golden slice** in `tests/GoldenSlice`. Write the bindings the generator should emit, by hand, in both modes, citing R-numbers. Cover `Shape`/`Point`/`Line`/`Polygon`, `MapView` (properties, a Promise method, a `click` event), `Marker` (getter ≠ setter), one union, one enum, one watch, one module function and their snapshots.
+
+**Done when** the golden slice passes one behavioural suite per mode in each of these places: in-memory, on WebAssembly (sync and async), on WebAssembly async with `Transport=JsRuntime`, and on Server async. Sync bindings must also fail fast on Server.
+
+## Phase 2 · Generator
+
+- [ ] An IR schema v1 and an extractor grown from `tools/dts-survey`. It must use checker-resolved members, accessor pairs, overloads, event maps, discriminants, JSDoc and module specifiers.
+- [ ] A CEM reader and a golden IR for the fixture.
+- [ ] Emitter infrastructure: an indented writer, naming (R25–R27) and diagnostics.
+- [ ] Emitters for value types, snapshot records + JSON, live classes in both modes, and metadata tables.
+
+**Done when** generated code replaces the golden slice with no API changes, the phase-1 tests pass unmodified, and the IR is byte-identical across runs.
+
+## Phase 3 · Full surface
+
+- [ ] Events and watches, with options and projection.
+- [ ] Collections, callbacks (R21), module functions, `Diff`, and the chatty-await analyzer.
+- [ ] Razor components from the CEM, with custom events, `@bind` and slots.
+
+**Done when** the whole fixture is generated and passes on all hosts, and the first private validation samples pass.
+
+## Phase 4 · Ship
+
+- [ ] The `dotnet interoper generate` command, the IR cache, the report with `--warnings-as-errors`, the import-map helper, and XML docs from JSDoc.
+- [ ] The three NuGet packages and a quickstart.
+- [ ] Latency-throttled Server tests, a trim/size budget, and the Hybrid manual check.
+
+**Done when** `npm install` plus one command works in both modes.
+
+## Later
+
+- A second, permissively licensed public library bound with only a profile.
+- A WebIDL front end.
+- The TypeScript 7 API, once it is stable.

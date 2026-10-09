@@ -13,13 +13,13 @@ view.Zoom = 7;                                    // --api sync: WebAssembly onl
 if (await feature.GetShapeAsync() is Point p) { } // unions, undefined/null and the most-derived type, all typed
 ```
 
-**Status:** design complete, implementation starting at milestone M0.
+**Status:** design complete, implementation starting at phase 1 ([plan](docs/plan.md)).
 
 | Read | For |
 |---|---|
-| [docs/roadmap.md](docs/roadmap.md) | Decisions, architecture, milestones |
+| [docs/design.md](docs/design.md) | Decisions and architecture |
+| [docs/plan.md](docs/plan.md) | Build order, as four phases with checklists |
 | [docs/mapping.md](docs/mapping.md) | TypeScript → C# mapping rules and diagnostics |
-| [docs/work-packages.md](docs/work-packages.md) | Delegable tasks with acceptance criteria |
 | [CLAUDE.md](CLAUDE.md) | Rules and commands for anyone (human or agent) working in the repo |
 | [spikes/](spikes/README.md) | Runnable experiments behind the key decisions |
 | [tools/dts-survey/](tools/dts-survey) | Measures which type shapes real typings use; seed for the extractor |

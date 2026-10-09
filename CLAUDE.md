@@ -3,9 +3,9 @@
 Interoper generates C# bindings for JavaScript libraries from their TypeScript typings, plus the runtime that drives them on Blazor Server, WebAssembly and Hybrid.
 
 Read before changing anything:
-- [docs/roadmap.md](docs/roadmap.md): decisions (D1–D13), architecture, milestones.
+- [docs/design.md](docs/design.md): decisions and architecture.
 - [docs/mapping.md](docs/mapping.md): TypeScript → C# rules (R1–R27) and diagnostic codes.
-- [docs/work-packages.md](docs/work-packages.md): the task you're on, its inputs and acceptance criteria.
+- [docs/plan.md](docs/plan.md): the build order; the current phase has a tracking issue.
 
 ## Hard rules
 
@@ -14,9 +14,11 @@ Read before changing anything:
 - **Zero warnings** (`TreatWarningsAsErrors`), and `dotnet format --verify-no-changes` must pass.
 - **Every change comes with tests.** Tests that exercise a mapping rule cite it (`R19`).
 - **`spikes/` is reference material.** Port code into `src/`; never reference spike projects.
-- **Decision changes** update `roadmap.md` / `mapping.md` in the same PR.
+- **Decision changes** update `design.md` / `mapping.md` in the same PR.
 
 ## Commands
+
+There is no CI. Run these before merging; all of them must pass.
 
 ```bash
 dotnet build Interoper.slnx
@@ -26,7 +28,7 @@ dotnet format Interoper.slnx --verify-no-changes
 node --test "tests/interoper-js/*.test.mjs" "fixtures/demo-maps/test/*.test.mjs"   # JS tests (glob form; a bare folder fails on Node 22)
 ```
 
-Until WP-0.1 lands there is no solution file. The spikes build on their own (`dotnet run` in `spikes/value-model`; see `spikes/hosts/README.md`).
+Until the phase 1 scaffold lands there is no solution file. The spikes build on their own (`dotnet run` in `spikes/value-model`; see `spikes/hosts/README.md`).
 
 ## Environment
 
