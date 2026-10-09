@@ -5,7 +5,7 @@ What the generator emits for each TypeScript construct.
 - The extractor and generator ([plan](plan.md) phase 2) implement these rules.
 - The fixture library (`fixtures/demo-maps`) exercises each one.
 - Rules are numbered (**R1**, **R2**, …) so tests, issues and diagnostics can cite them.
-- Where a rule is backed by an experiment, it links the spike.
+- Where a rule is backed by an experiment, it links the [evidence](design.md#8-evidence).
 
 Two generator inputs change the output everywhere: the **mode** (`--api sync|async`, see the [design](design.md)) and the consumer's optional **profile**.
 
@@ -13,7 +13,7 @@ Two generator inputs change the output everywhere: the **mode** (`--api sync|asy
 
 ## 1. The value model
 
-Verified in [`spikes/value-model`](../spikes/value-model).
+Verified ([design §8](design.md#8-evidence)).
 
 **R1. `undefined` is a type.** The runtime defines `Undefined`: a sealed class with a private constructor and one instance, `Undefined.Value`. Users can't construct it.
 
@@ -150,7 +150,7 @@ When JS returns a value for a union position, the runtime must pick the case.
 | snapshot / patch | `XSnapshot Snapshot()`, `void Apply(XSnapshot)` | `Task<XSnapshot> SnapshotAsync()`, `Task ApplyAsync(XSnapshot)` |
 | module function | static method on a static class per module, same per-mode shape | |
 
-Sync mode needs .NET and JS on one thread, so it runs on WebAssembly only and fails fast elsewhere (verified in [`spikes/hosts`](../spikes/hosts)).
+Sync mode needs .NET and JS on one thread, so it runs on WebAssembly only and fails fast elsewhere (verified, [design §8](design.md#8-evidence)).
 
 **R21. Callbacks** (function-typed parameters) become delegates registered in the runtime's callback registry, owned by the scope.
 - A callback whose *return value* JS uses synchronously (e.g. a formatter `(v) => string`) works in sync mode.

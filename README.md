@@ -21,7 +21,6 @@ if (await feature.GetShapeAsync() is Point p) { } // unions, undefined/null and 
 | [docs/plan.md](docs/plan.md) | Build order, as four phases with checklists |
 | [docs/mapping.md](docs/mapping.md) | TypeScript → C# mapping rules and diagnostics |
 | [CLAUDE.md](CLAUDE.md) | Rules and commands for anyone (human or agent) working in the repo |
-| [spikes/](spikes/README.md) | Runnable experiments behind the key decisions |
 | [tools/dts-survey/](tools/dts-survey) | Measures which type shapes real typings use; seed for the extractor |
 
 This repo publishes a generator and runtime only. It contains no code, typings or generated bindings from any third-party JS library: consumers install their library from npm and generate bindings themselves.

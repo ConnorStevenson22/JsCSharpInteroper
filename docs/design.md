@@ -2,7 +2,7 @@
 
 What **Interoper** is and how it works. It is a generator and runtime that turn a JavaScript library's TypeScript typings into C# for Blazor. The type-mapping rules are in [mapping.md](mapping.md), and the build order is in [plan.md](plan.md).
 
-Claims marked **verified** come from the runnable [spikes](../spikes) (.NET 11 RC1, Mono WebAssembly, headless Chromium). `@acme/maps` stands in for whatever JS library a consumer binds.
+Claims marked **verified** come from two throwaway experiments, summarized in [§8](#8-evidence). `@acme/maps` stands in for whatever JS library a consumer binds.
 
 ---
 
@@ -43,7 +43,7 @@ Batching, snapshots and module functions are first-class because each awaited ca
 
 ## 3. Runtime architecture
 
-### 3.1 Modes, seams and transports (verified in [`spikes/hosts`](../spikes/hosts))
+### 3.1 Modes, seams and transports (verified, [§8](#8-evidence))
 
 | Mode | Seam | WebAssembly | Server | Hybrid |
 |---|---|---|---|---|
@@ -165,4 +165,27 @@ The private validation repo generates bindings for ArcGIS exactly as a consumer 
 - **Server chattiness** (~1 ms+ per await). Mitigated by batching, snapshots, module functions, the chatty-await analyzer and latency-throttled tests.
 - **Things async mode can't do.** JS events can't be cancelled from .NET, and callbacks can't return a value synchronously. Mitigated by declarative JS-side event options, diagnostic IOP2005 and JS-side implementations via the profile.
 - **Sync-mode bindings used on Server, Hybrid or `InteractiveAuto`.** They fail fast with "regenerate with `--api async`", and the quickstart calls it out.
-- **The C# union feature may still change before .NET 11 GA** (November 2026). The SDK is pinned, the spikes double as regression checks, and our `[Union]` structs use only the stable core.
+- **The C# union feature may still change before .NET 11 GA** (November 2026). The SDK is pinned, the value-model tests (ported in phase 1) catch regressions, and our `[Union]` structs use only the stable core.
+
+---
+
+## 8. Evidence
+
+Two experiments settled the riskiest decisions before phase 1. Their code was deleted once its results were captured here; it is still in history at [`7d48a23/spikes`](https://github.com/ConnorStevenson22/JsCSharpInteroper/tree/7d48a23/spikes) for porting.
+
+**Value model** (.NET 11 RC1). All seven checks passed, and they passed again on the pinned SDK before the code was deleted. The checks covered `undefined` as a union case and the `default`, the `null` literal as JS null, exhaustive switches, `Opt<T>`, the wire format (`{"color":[255,0,0,1],"size":null}` with STJ `WhenWritingDefault`) and `closed` proxy hierarchies. Two compiler facts shaped [mapping.md §1](mapping.md#1-the-value-model):
+- `null` never takes a union conversion (`ColorInput c = null;` is CS0037), so the generated `implicit operator X(Undefined? value)` is what makes the literal compile.
+- The bottom case must be the nullable `Undefined?`. With a non-nullable `Undefined`, a switch that misses `null` compiles silently.
+
+**Hosts** (.NET 11 RC1, Mono WebAssembly, published Release build, headless Chromium, server on localhost). One `zoom` access:
+
+| | sync, WebAssembly | async, WebAssembly | async, Server |
+|---|---:|---:|---:|
+| read | 0.63–0.69 µs, 0 B | 1.1–1.2 µs, 48 B (the `Task<double>`) | 0.8–1.1 ms |
+| write | 0.74–1.17 µs | ~1.5 µs | 0.73–0.78 ms |
+| writes pipelined (`WhenAll`) | | ~1.9 µs | 49–65 µs |
+
+- Write order was preserved, and snapshots and events worked, in every column. In sync mode, events arrived before `Raise()` returned.
+- Sync-mode bindings on Server failed fast with the "regenerate with `--api async`" message.
+- **Hybrid can't use `[JSImport]`.** Outside the browser it throws `PlatformNotSupportedException`, and Hybrid's `WebViewJSRuntime` is not an `IJSInProcessRuntime`. So Hybrid takes the `IJSRuntime` path, the same shape as Server. It wasn't run end to end, because Hybrid hosts don't run on Linux.
+- Under `InteractiveAuto`, the same component ran on Server first and on WebAssembly on a later visit, and `Transport=Auto` followed it.

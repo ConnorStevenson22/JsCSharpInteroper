@@ -13,7 +13,6 @@ Read before changing anything:
 - **.NET 11+ only** (SDK pinned in `global.json`). On WebAssembly we use Mono (the default); don't set `UseMonoRuntime=false`.
 - **Zero warnings** (`TreatWarningsAsErrors`), and `dotnet format --verify-no-changes` must pass.
 - **Every change comes with tests.** Tests that exercise a mapping rule cite it (`R19`).
-- **`spikes/` is reference material.** Port code into `src/`; never reference spike projects.
 - **Decision changes** update `design.md` / `mapping.md` in the same PR.
 
 ## Commands
