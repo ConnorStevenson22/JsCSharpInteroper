@@ -5,8 +5,8 @@ import { DemoMapElement } from "../demo-map.js";
 test("attributes and properties drive the view", () => {
   const element = new DemoMapElement();
   element.attributeChangedCallback("zoom", null, "6");
-  element.attributeChangedCallback("basemap", null, "satellite");
-  assert.deepEqual([element.view.zoom, element.view.basemap], [6, "satellite"]);
+  element.attributeChangedCallback("basemap", null, "night");
+  assert.deepEqual([element.view.zoom, element.view.basemap], [6, "night"]);
   element.zoom = 8;
   assert.equal(element.view.zoom, 8);
 });
