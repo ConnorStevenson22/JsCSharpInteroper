@@ -7,6 +7,7 @@
 //   (without it, CS0037); IJsUnion<T> makes every generated union declare it.
 // - Removing a subclass arm from a switch over the `closed` Shape warns CS8509, through `Opt<Shape>` too.
 // TreatWarningsAsErrors turns each of those into a build break.
+// R5 (collapse) and R6 (flatten) are generator rules, tested in phase 2.
 namespace Interoper.Runtime.Tests;
 
 public class ValueModelTests
@@ -22,12 +23,13 @@ public class ValueModelTests
     [Fact] // R2, R3
     public void Unset_member_is_undefined_null_literal_is_js_null_value_is_value()
     {
-        var style = new StrokeStyle { Color = "red", Width = null };
+        var withValue = new StrokeStyle { Color = "red" };
+        var withNull = new StrokeStyle { Color = null };
 
-        Assert.True(style.Color.TryGetValue(out string color));
+        Assert.True(withValue.Color.TryGetValue(out string? color));
         Assert.Equal("red", color);
-        Assert.True(style.Width.IsNull);
-        Assert.True(new StrokeStyle().Color.IsUndefined);
+        Assert.True(withNull.Color.IsNull);
+        Assert.True(withNull.Width.IsUndefined);
         Assert.Same(Undefined.Value, default(ColorInput).Value);
     }
 
@@ -59,7 +61,7 @@ public class ValueModelTests
         Assert.Equal("null", Describe(null));
     }
 
-    private static string Size(Opt<double> width) => width switch
+    private static string Size(Opt<double> size) => size switch
     {
         double d => $"{d}px",
         Undefined => "default size",
@@ -77,10 +79,11 @@ public class ValueModelTests
     [Fact] // R2, R3, R20
     public void Wire_format_omits_undefined_and_keeps_null()
     {
-        var style = new StrokeStyle { Color = new double[] { 255, 0, 0, 1 }, Width = null };
+        var style = new StrokeStyle { Color = new double[] { 255, 0, 0, 1 } };
 
-        Assert.Equal("""{"color":[255,0,0,1],"width":null}""", Json.Write(style, StrokeStyle.Write));
-        Assert.Equal("{}", Json.Write(new StrokeStyle(), StrokeStyle.Write));
+        Assert.Equal("""{"type":"stroke","color":[255,0,0,1]}""", Json.Write(style, StrokeStyle.Write));
+        Assert.Equal("""{"type":"stroke","color":null,"width":2}""", Json.Write(new StrokeStyle { Color = null, Width = 2 }, StrokeStyle.Write));
+        Assert.Equal("""{"type":"stroke"}""", Json.Write(new StrokeStyle(), StrokeStyle.Write));
     }
 
     private static string Kind(Shape shape) => shape switch

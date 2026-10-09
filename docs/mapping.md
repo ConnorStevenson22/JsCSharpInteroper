@@ -48,7 +48,7 @@ Why not the `union` keyword: its `default` is `null`, and it boxes value types.
 | `= "red"` / `= new double[] {…}` / `= new Rgba {…}` | value | value |
 | `= Undefined.Value` | explicit `undefined` | omitted |
 
-Where a value can't be omitted (array elements, arguments), undefined is written as `{"$u":1}` ([design §3.4](design.md#34-protocol)).
+Where a value can't be omitted (array elements, arguments), undefined is `{"$u":1}` ([design §3.4](design.md#34-protocol)), in both directions: the `JsJson` readers accept it too.
 
 The compiler enforces exhaustiveness. A `switch` that misses `Undefined` warns CS8509; one that misses `null` warns CS8655.
 

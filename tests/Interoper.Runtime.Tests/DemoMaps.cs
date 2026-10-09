@@ -1,5 +1,6 @@
 // The shape the generator will emit for a few fixture types (fixtures/demo-maps), written by hand.
 // The golden slice (plan phase 1) writes the real bindings; this file holds only what the value-model tests need.
+using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
 
@@ -65,17 +66,18 @@ public readonly struct ColorInput : IJsUnion<ColorInput>, IEquatable<ColorInput>
     public bool IsNull => _tag == 1;
 
     public bool TryGetValue(out Undefined value) { value = Undefined.Value; return _tag == 0; }
-    public bool TryGetValue(out string value) { value = (_ref as string)!; return _tag == 2; }
-    public bool TryGetValue(out double[] value) { value = (_ref as double[])!; return _tag == 3; }
-    public bool TryGetValue(out Rgba value) { value = (_ref as Rgba)!; return _tag == 4; }
+    public bool TryGetValue([MaybeNullWhen(false)] out string value) { value = _tag == 2 ? _ref as string : null; return _tag == 2; }
+    public bool TryGetValue([MaybeNullWhen(false)] out double[] value) { value = _tag == 3 ? _ref as double[] : null; return _tag == 3; }
+    public bool TryGetValue([MaybeNullWhen(false)] out Rgba value) { value = _tag == 4 ? _ref as Rgba : null; return _tag == 4; }
 
     public static void WriteValue(Utf8JsonWriter writer, ColorInput value)
     {
-        switch (value._ref)
+        // On the tag, not the CLR type: cases may share a CLR type.
+        switch (value._tag)
         {
-            case string s: writer.WriteStringValue(s); break;
-            case double[] a: Json.WriteDoubles(writer, a); break;
-            case Rgba r: Rgba.Write(writer, r); break;
+            case 2: writer.WriteStringValue((string)value._ref!); break;
+            case 3: Json.WriteDoubles(writer, (double[])value._ref!); break;
+            case 4: Rgba.Write(writer, (Rgba)value._ref!); break;
         }
     }
 
@@ -95,8 +97,9 @@ public readonly struct ColorInput : IJsUnion<ColorInput>, IEquatable<ColorInput>
 }
 
 /// <summary>
-/// <c>interface StrokeStyle { color?: ColorInput | null; width?: number }</c> as a bag. No initializers:
-/// unset members are undefined, so a partially filled record is a patch (R18).
+/// <c>interface StrokeStyle { type: "stroke"; color?: ColorInput | null; width?: number }</c>. No initializers:
+/// unset members are undefined, so a partially filled record is a patch (R18). The discriminant is a
+/// constant that is always written (R20).
 /// </summary>
 public sealed record StrokeStyle
 {
@@ -106,6 +109,7 @@ public sealed record StrokeStyle
     public static void Write(Utf8JsonWriter writer, StrokeStyle value)
     {
         writer.WriteStartObject();
+        writer.WriteString("type"u8, "stroke"u8);
         JsJson.WriteProperty(writer, "color"u8, value.Color);
         JsJson.WriteProperty(writer, "width"u8, value.Width, Json.WriteDouble);
         writer.WriteEndObject();

@@ -82,7 +82,7 @@ await using (scope.BeginBatch())
   - `{"$h":12,"$t":7}` is a handle with its class id;
   - `{"$c":3, …}` is a value-like class instance (R16): writers tag every `XSnapshot` of a value-like class with its concrete class id, and the reviver builds `new Class(rest)`, so libraries don't need to autocast;
   - `{"$f":3}` is a .NET callback;
-  - `{"$u":1}` is undefined inside arrays and arguments; the `JSON.parse` reviver restores it.
+  - `{"$u":1}` is undefined inside arrays and arguments, in both directions; the `JSON.parse` reviver and the .NET readers restore it.
 - **Batches** travel as one op array.
 - **Errors** become `JsException` with the JS name, message and stack. The profile can map library error classes to typed subclasses.
 

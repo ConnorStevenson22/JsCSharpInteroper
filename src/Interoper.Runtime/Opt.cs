@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 
 namespace Interoper;
@@ -23,11 +24,12 @@ public readonly struct Opt<T> : IUnion, IEquatable<Opt<T>> where T : notnull
     public static implicit operator Opt<T>(Undefined? value) => new(value);
 
     public object? Value => _tag switch { 0 => Undefined.Value, 1 => null, _ => _value };
+    /// <summary>True unless JS null; undefined counts as a value here, so use <see cref="IsUndefined"/> for it.</summary>
     public bool HasValue => _tag != 1;
     public bool IsUndefined => _tag == 0;
     public bool IsNull => _tag == 1;
 
-    public bool TryGetValue(out T value)
+    public bool TryGetValue([MaybeNullWhen(false)] out T value)
     {
         value = _value;
         return _tag == 2;
