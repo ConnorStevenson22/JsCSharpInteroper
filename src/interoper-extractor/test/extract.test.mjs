@@ -1,6 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { extract } from "../extract.mjs";
 
@@ -71,7 +74,8 @@ test("R12, R18: Partial<Pick<…>> constructor bags are resolved by the checker"
 });
 
 test("R23: overloads are separate signatures, each with its own JSDoc", () => {
-  const { signatures } = member("MapView", "MapView", "screenToMap");
+  const { signatures, doc } = member("MapView", "MapView", "screenToMap");
+  assert.equal(doc, undefined); // a method's docs are on its signatures
   assert.deepEqual(signatures.map((s) => s.params.map((p) => p.name)), [["x", "y"], ["offset"]]);
   assert.deepEqual(signatures[1].params[0].type, pair);
   assert.deepEqual(signatures.map((s) => s.doc), [
@@ -90,7 +94,7 @@ test("classes: base, abstract, own members, generics, statics", () => {
   assert.equal(shape.abstract, true);
   assert.deepEqual(shape.extends, ref("core", "Observable"));
   assert.equal(member("geometry", "Shape", "type").abstract, true);
-  assert.deepEqual(member("geometry", "Point", "type").type, { kind: "literal", value: "point" });
+  assert.deepEqual(member("geometry", "Point", "type"), { kind: "property", name: "type", readonly: true, type: { kind: "literal", value: "point" } }); // no docs copied from Shape
   // Members a named base declares stay with it; `this` stays `this`.
   assert.deepEqual(decl("geometry", "Point").members.map((m) => m.name), ["type", "x", "y"]);
   assert.deepEqual(member("geometry", "Shape", "clone").signatures[0].returns, { kind: "this" });
@@ -119,6 +123,28 @@ test("R9, R10: literal unions and the open-ended form", () => {
 test("R21: function types and module functions", () => {
   assert.deepEqual(decl("Marker", "LabelFormatter").type, { kind: "function", params: [{ name: "marker", type: ref("Marker", "Marker") }], returns: { kind: "primitive", name: "string" } });
   assert.deepEqual(decl("measure", "distance"), { kind: "function", name: "distance", signatures: [{ params: [{ name: "a", type: ref("geometry", "Point") }, { name: "b", type: ref("geometry", "Point") }], returns: num }] });
+});
+
+test("TS enums, and R11: an intersection of object types is resolved", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "extract-"));
+  fs.writeFileSync(path.join(dir, "package.json"), JSON.stringify({ name: "@acme/extra", version: "1.0.0" }));
+  fs.writeFileSync(path.join(dir, "index.d.ts"), `
+    export enum Mode {
+      Fast = 1,
+      /** Careful. */
+      Slow = "slow",
+    }
+    export interface Named { name: string; mode: Mode }
+    export type Tagged = Named & { type: "tagged" };`);
+  const [{ specifier, declarations: [mode, , tagged] }] = extract(dir).modules;
+  fs.rmSync(dir, { recursive: true });
+  assert.equal(specifier, "@acme/extra/index.js");
+  assert.deepEqual(mode, { kind: "enum", name: "Mode", members: [{ name: "Fast", value: 1 }, { name: "Slow", value: "slow", doc: { summary: "Careful." } }] });
+  assert.deepEqual(tagged.type.members.map((m) => [m.name, m.type]), [
+    ["name", { kind: "primitive", name: "string" }],
+    ["mode", { kind: "ref", name: "Mode", module: "@acme/extra/index.js" }],
+    ["type", { kind: "literal", value: "tagged" }],
+  ]);
 });
 
 test("the CLI writes byte-identical IR on every run", () => {

@@ -24,7 +24,7 @@ A **specifier** is the nearest named `package.json` plus the path of the `.js` n
 
 ## Declarations
 
-Every declaration has `kind`, `name` and an optional `doc`.
+Every declaration has `kind`, `name` and an optional `doc` (a function's are on its signatures).
 
 | `kind` | Fields |
 |---|---|
@@ -35,14 +35,14 @@ Every declaration has `kind`, `name` and an optional `doc`.
 | `function` | `signatures` |
 | `variable` | `type`, `readonly` (`const`) |
 
-- **Members** are `{ kind: "property", name, type, writeType?, readonly?, optional?, static?, abstract?, inherited?, doc? }` or `{ kind: "method", name, signatures, optional?, static?, abstract?, inherited?, doc? }`.
+- **Members** are `{ kind: "property", name, type, writeType?, readonly?, optional?, static?, abstract?, inherited?, doc? }` or `{ kind: "method", name, signatures, optional?, static?, abstract?, inherited? }`, whose docs are on its signatures.
   - `writeType` is the setter's type when an accessor pair's types differ (§5).
   - Members a named base declares are listed on that base only: follow `extends`. Members of an anonymous base or a mapped type are listed, with `inherited`. Members the platform declares (the DOM's) are left out.
 - **Events** (R24) are `{ name, type, doc? }`, the checker-resolved properties of the event-map property's type on that class. The event-map property itself isn't a member.
 - **Signatures** are `{ typeParameters?, params, returns, doc? }`, one per overload (R23), each with its own JSDoc. Constructors have no `returns`. A parameter is `{ name, type, optional?, rest? }`; a rest parameter's type is its array.
 - **Type parameters** are `{ name, constraint?, default? }`.
 - **Index signatures** are `{ key, type, readonly? }`.
-- **Docs** are `{ summary?, default?, deprecated?, since?, see? }`: `see` is a list, and `deprecated` is `""` when the tag has no message.
+- **Docs** are `{ summary?, default?, deprecated?, since?, see? }`, from the declaration's own JSDoc (an override doesn't copy its base's): `see` is a list, and `deprecated` is `""` when the tag has no message.
 - An `optional` member or parameter's `type` doesn't include the `undefined` that `?` adds.
 
 ## Types
@@ -57,8 +57,8 @@ Every declaration has `kind`, `name` and an optional `doc`.
 | `array` | `element` | `number[]`, `readonly T[]` |
 | `tuple` | `elements`, `required` (when some are optional), `rest` (the last element repeats) | `[number, number]` |
 | `union` | `types`, `discriminant` (R19) | `Style` on `type` |
-| `intersection` | `types`; the generator flattens their members (R11) | `string & {}` (R10) |
-| `object` | `members`, `indexSignatures`, `callSignatures`, `constructSignatures` | `{ zoom: number }`, resolved mapped types |
+| `intersection` | `types`, when a part isn't an object type | `string & {}` (R10), `T & Named` |
+| `object` | `members`, `indexSignatures`, `callSignatures`, `constructSignatures` | `{ zoom: number }`, resolved mapped types and intersections (R11) |
 | `function` | a signature's fields: an object with one call signature and nothing else | `(marker: Marker) => string` |
 | `unresolved` | `text` (the checker's spelling), for IOP2002 | `keyof this`, `this["$events"][K]` |
 

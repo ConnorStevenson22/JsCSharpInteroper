@@ -66,6 +66,7 @@ export function extract(packageDir, { eventMap } = {}) {
     const type = checker.getDeclaredTypeOfSymbol(sym);
     const statics = checker.getTypeOfSymbol(sym);
     const decl = sym.declarations.find(ts.isClassLike);
+    const [superclass] = checker.getBaseTypes(type);
     const mapProp = eventMap && type.getProperty(eventMap);
     const implemented = decl?.heritageClauses?.find((h) => h.token === ts.SyntaxKind.ImplementsKeyword)?.types ?? [];
     return compact({
@@ -73,7 +74,7 @@ export function extract(packageDir, { eventMap } = {}) {
       ...base,
       abstract: hasModifier(decl, ts.ModifierFlags.Abstract),
       typeParameters: typeParams(type.typeParameters),
-      extends: checker.getBaseTypes(type).map((t) => typeRef(t))[0],
+      extends: superclass && typeRef(superclass),
       implements: implemented.map((n) => typeRef(checker.getTypeFromTypeNode(n), n)),
       constructors: signatures(statics, ts.SignatureKind.Construct),
       members: [...members(type), ...members(statics, true)],
@@ -115,9 +116,9 @@ export function extract(packageDir, { eventMap } = {}) {
       static: isStatic || undefined,
       abstract: hasModifier(decl, ts.ModifierFlags.Abstract),
       inherited: inherited || undefined,
-      doc: inherited ? undefined : doc(sym), // an inherited member's docs stay with its declaration
     };
     if (sym.flags & F.Method) {
+      // A method's docs are on its signatures, one per overload.
       return compact({ kind: "method", ...common, signatures: signatures(checker.getNonNullableType(checker.getTypeOfSymbol(sym)), ts.SignatureKind.Call) });
     }
     const getter = sym.declarations?.find(ts.isGetAccessor);
@@ -129,6 +130,7 @@ export function extract(packageDir, { eventMap } = {}) {
     return compact({
       kind: "property",
       ...common,
+      doc: inherited ? undefined : doc(sym), // an inherited member's docs stay with its declaration
       readonly: (getter && !setter) || hasModifier(decl, ts.ModifierFlags.Readonly),
       type: valueType(sym, (getter ?? decl)?.type, common.optional),
       writeType: setType && setType !== readType ? typeRef(setType, setNode) : undefined,
@@ -211,11 +213,12 @@ export function extract(packageDir, { eventMap } = {}) {
       return type.symbol.flags & (F.Class | F.Interface) ? { kind: "this" } : { kind: "typeParameter", name: type.symbol.name };
     }
     if (type.isUnion()) return union(type, node, optional);
-    if (type.isIntersection()) {
+    if (type.isIntersection() && !type.types.every((t) => t.flags & T.Object)) {
+      // `string & {}` (R10) or a part that's a type parameter; an intersection of object types is resolved (R11).
       const types = node && ts.isIntersectionTypeNode(node) ? node.types.map((n) => typeRef(checker.getTypeFromTypeNode(n), n)) : type.types.map((t) => typeRef(t));
-      return { kind: "intersection", types }; // R11: the generator flattens the parts' members
+      return { kind: "intersection", types };
     }
-    if (f & T.Object) return object(type, node);
+    if (f & (T.Object | T.Intersection)) return object(type, node);
     return unresolved(type);
   }
 
@@ -278,12 +281,13 @@ export function extract(packageDir, { eventMap } = {}) {
 
   // --- JSDoc ---
 
+  /** Its own JSDoc only: without the checker, TypeScript doesn't copy an overridden member's docs from its base. */
   function doc(symOrSig) {
     const text = (parts) => ts.displayPartsToString(parts).trim();
-    const tags = symOrSig.getJsDocTags(checker);
+    const tags = symOrSig.getJsDocTags();
     const tag = (...names) => tags.filter((t) => names.includes(t.name)).map((t) => text(t.text));
     const d = compact({
-      summary: text(symOrSig.getDocumentationComment(checker)) || undefined,
+      summary: text(symOrSig.getDocumentationComment()) || undefined,
       default: tag("default", "defaultValue")[0],
       deprecated: tag("deprecated")[0], // "" when it has no message
       since: tag("since")[0],
