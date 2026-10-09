@@ -21,6 +21,9 @@ public sealed class Seam
 
     public bool IsSync => sync is not null;
 
+    /// <summary>The async seam, for the cases that build a realm over it; null for a sync seam.</summary>
+    public IJsTransport? AsyncTransport => async;
+
     /// <summary>
     /// Whether JS gets a callback's return value synchronously (R21): yes when .NET runs on JS's thread, no
     /// across IJSRuntime, where JS gets a Promise.
@@ -80,6 +83,8 @@ public static class TransportContract
         ("module function call", ModuleCall),
         ("subscribe and release (R24)", Subscribe),
         ("errors become JsException", Errors),
+        ("batch op: failures listed by index, the rest applied", BatchOp),
+        ("BeginBatch: N writes are one round trip, a read flushes first", BeginBatch),
     ];
 
     private static async Task CreateGetSet(Seam seam)
@@ -249,6 +254,74 @@ public static class TransportContract
         Equal(baseline, await seam.Census());
     }
 
+    private static async Task BatchOp(Seam seam)
+    {
+        var h = await Create(seam, MapView);
+        string Set(double zoom) => $$"""{"op":"set","h":{{h}},"name":"zoom","value":{{zoom}}}""";
+        Equal("{}", await seam.Send($$"""{"op":"batch","ops":[{{Set(2)}},{{Set(3)}}]}"""));
+        Equal(3.0, await seam.GetNumber(h, "zoom"));
+
+        var noSuchMethod = $$"""{"op":"call","h":{{h}},"name":"noSuchMethod"}""";
+        var e = await Throws(async () => JsEnvelope.Check(await seam.Send($$"""{"op":"batch","ops":[{{Set(4)}},{{noSuchMethod}},{{Set(5)}}]}""")));
+        var batch = e as JsBatchException ?? throw new ContractException($"Expected a JsBatchException, got {e.GetType().Name}");
+        Equal(("BatchError", "1 of 3 batched ops failed"), (batch.Name, batch.Message));
+        Equal("1 TypeError", string.Join(", ", batch.Errors.Select(x => $"{x.Index} {x.Error.Name}")));
+        Equal(5.0, await seam.GetNumber(h, "zoom"));
+        await Release(seam, h);
+    }
+
+    // What async-mode generated code does through a realm and a scope (design §3.3). Sync mode doesn't batch.
+    private static async Task BeginBatch(Seam seam)
+    {
+        if (seam.AsyncTransport is not { } transport) return;
+        var realm = new JsRealm(() => Task.FromResult(transport), new JsClassRegistry());
+        await realm.StartAsync();
+        var baseline = await seam.Census();
+        var scope = new JsScope(realm);
+        var h = (int)(await realm.CallAsync("""{"op":"create","t":5,"args":[{}]}""", Node))!["$h"]!;
+        scope.Own(h);
+        string Set(string name, double value) => $$"""{"op":"set","h":{{h}},"name":"{{name}}","value":{{value}}}""";
+
+        var start = realm.RoundTrips;
+        await using (scope.BeginBatch())
+        {
+            await realm.SendAsync(Set("zoom", 3));
+            await realm.SetAsync(h, "basemap", "satellite");
+            await realm.SendAsync(Set("rotation", 15));
+            await realm.SendAsync($$"""{"op":"call","h":{{h}},"name":"flyTo","args":[[3,4]]}"""); // awaited in JS
+            Equal(start, realm.RoundTrips); // all queued
+            Equal(3.0, await realm.GetNumberAsync(h, "zoom")); // the queue, then the read
+            Equal(start + 2, realm.RoundTrips);
+            await realm.SetAsync(h, "zoom", 4);
+            await realm.SetAsync(h, "pinned", true);
+        }
+        Equal(start + 3, realm.RoundTrips);
+        Equal("""{"$c":2,"type":"point","x":3,"y":4}""", await realm.CallAsync($$"""{"op":"get","h":{{h}},"name":"center","byValue":true}""", Node));
+        Equal((4.0, "satellite", 15.0, true), (await realm.GetNumberAsync(h, "zoom"), await realm.GetStringAsync(h, "basemap"), await realm.GetNumberAsync(h, "rotation"), await realm.GetBooleanAsync(h, "pinned")));
+
+        var e = await Throws(async () =>
+        {
+            await using (scope.BeginBatch())
+            {
+                await realm.SendAsync(Set("zoom", 6));
+                await realm.SendAsync($$"""{"op":"call","h":{{h}},"name":"noSuchMethod"}""");
+                await realm.SetAsync(h, "rotation", 30);
+            }
+        });
+        Equal("1", string.Join(", ", ((JsBatchException)e).Errors.Select(x => x.Index)));
+        Equal((6.0, 30.0), (await realm.GetNumberAsync(h, "zoom"), await realm.GetNumberAsync(h, "rotation")));
+
+        // A scope disposed with a batch open sends the queue before releasing its handles.
+        var batch = scope.BeginBatch();
+        await realm.SetAsync(h, "zoom", 7);
+        start = realm.RoundTrips;
+        await scope.DisposeAsync();
+        Equal(start + 2, realm.RoundTrips);
+        await batch.DisposeAsync();
+        Equal(start + 2, realm.RoundTrips);
+        Equal(baseline, await seam.Census());
+    }
+
     /// <summary>
     /// Two transports on one page: each has its own interoper.js instance, so its own handles, census and
     /// callback ids.
@@ -277,8 +350,9 @@ public static class TransportContract
 
     // --- Helpers ---
 
-    private static async Task<JsonNode?> Value(Seam seam, string op) =>
-        JsEnvelope.Read(await seam.Send(op), static (ref reader) => JsonNode.Parse(ref reader));
+    private static readonly JsonRead<JsonNode?> Node = static (ref reader) => JsonNode.Parse(ref reader);
+
+    private static async Task<JsonNode?> Value(Seam seam, string op) => JsEnvelope.Read(await seam.Send(op), Node);
 
     private static async Task<int> Create(Seam seam, int classId, string bag = "{}") =>
         (int)(await Value(seam, $$"""{"op":"create","t":{{classId}},"args":[{{bag}}]}"""))!["$h"]!;

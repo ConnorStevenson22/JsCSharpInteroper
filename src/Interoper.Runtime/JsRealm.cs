@@ -11,6 +11,9 @@ public sealed class JsRealm(Func<Task<IJsTransport>> start, JsClassRegistry clas
 {
     // The identity cache: handle id → the live object (weakly), and the scopes that own the handle.
     private readonly Dictionary<int, Entry> objects = [];
+    // The batch the current async flow is inside, so other components' calls on the same realm don't join it.
+    private readonly AsyncLocal<JsBatch?> batch = new();
+    private long roundTrips;
     private Task? starting;
     private IJsTransport? transport;
 
@@ -23,6 +26,12 @@ public sealed class JsRealm(Func<Task<IJsTransport>> start, JsClassRegistry clas
         "transport. On Server and Hybrid, use bindings generated in async mode: regenerate with `--api async`.");
 
     internal bool IsStarted => transport is not null;
+
+    /// <summary>
+    /// The calls this realm has made through the async seam: ops, batches and fast paths. Each is a round trip on
+    /// Server and Hybrid.
+    /// </summary>
+    public long RoundTrips => Interlocked.Read(ref roundTrips);
 
     /// <summary>Starts the transport once; a failed start can be retried.</summary>
     public Task StartAsync()
@@ -42,6 +51,76 @@ public sealed class JsRealm(Func<Task<IJsTransport>> start, JsClassRegistry clas
         if (transport is IAsyncDisposable disposable)
         {
             await disposable.DisposeAsync();
+        }
+    }
+
+    // --- Calls (async mode) ---
+    // Generated code sends ops that return nothing through SendAsync and SetAsync, which a batch queues, and
+    // everything else through CallAsync and the Get*Async fast paths, which send the queue first (design §3.3).
+
+    /// <summary>Runs an op that returns nothing (a write or a void call); inside a batch it is queued.</summary>
+    public Task SendAsync(string opJson) => batch.Value?.TryAdd(opJson) == true ? Task.CompletedTask : CheckAsync(opJson);
+
+    /// <summary>Runs an op and reads its result (<c>default</c> for undefined), after any queued ops.</summary>
+    public async Task<T?> CallAsync<T>(string opJson, JsonRead<T> read)
+    {
+        await FlushAsync();
+        return JsEnvelope.Read(await InvokeAsync(opJson), read);
+    }
+
+    public Task<double> GetNumberAsync(int handle, string name) =>
+        batch.Value is null ? Trip().GetNumberAsync(handle, name) : AfterFlush(() => Trip().GetNumberAsync(handle, name));
+
+    public Task<string> GetStringAsync(int handle, string name) =>
+        batch.Value is null ? Trip().GetStringAsync(handle, name) : AfterFlush(() => Trip().GetStringAsync(handle, name));
+
+    public Task<bool> GetBooleanAsync(int handle, string name) =>
+        batch.Value is null ? Trip().GetBooleanAsync(handle, name) : AfterFlush(() => Trip().GetBooleanAsync(handle, name));
+
+    public Task SetAsync(int handle, string name, double value) =>
+        batch.Value?.TryAdd(JsOp.Set(handle, name, value)) == true ? Task.CompletedTask : Trip().SetNumberAsync(handle, name, value);
+
+    public Task SetAsync(int handle, string name, string value) =>
+        batch.Value?.TryAdd(JsOp.Set(handle, name, value)) == true ? Task.CompletedTask : Trip().SetStringAsync(handle, name, value);
+
+    public Task SetAsync(int handle, string name, bool value) =>
+        batch.Value?.TryAdd(JsOp.Set(handle, name, value)) == true ? Task.CompletedTask : Trip().SetBooleanAsync(handle, name, value);
+
+    private async Task<T> AfterFlush<T>(Func<Task<T>> read)
+    {
+        await FlushAsync();
+        return await read();
+    }
+
+    private Task FlushAsync() => batch.Value?.FlushAsync() ?? Task.CompletedTask;
+
+    private IJsTransport Trip()
+    {
+        var seam = Transport;
+        Interlocked.Increment(ref roundTrips);
+        return seam;
+    }
+
+    internal Task<string> InvokeAsync(string opJson) => Trip().InvokeAsync(opJson);
+
+    internal async Task CheckAsync(string opJson) => JsEnvelope.Check(await InvokeAsync(opJson));
+
+    /// <summary>Starts a batch on the caller's async flow, or joins the one it is already in (null).</summary>
+    internal JsBatch? BeginBatch(JsScope scope)
+    {
+        if (batch.Value is { IsOpen: true })
+        {
+            return null;
+        }
+        _ = Transport; // fails before the realm starts, like any live call
+        return batch.Value = new JsBatch(this, scope);
+    }
+
+    internal void EndBatch(JsBatch ended)
+    {
+        if (batch.Value == ended)
+        {
+            batch.Value = null;
         }
     }
 
@@ -120,7 +199,7 @@ public sealed class JsRealm(Func<Task<IJsTransport>> start, JsClassRegistry clas
     {
         try
         {
-            await Transport.InvokeAsync(JsOp.Release([handle]));
+            await InvokeAsync(JsOp.Release([handle]));
         }
         catch (JSDisconnectedException)
         {

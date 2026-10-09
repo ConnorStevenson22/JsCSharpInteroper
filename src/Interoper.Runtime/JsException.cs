@@ -7,3 +7,13 @@ public class JsException(string name, string message, string? jsStack) : Excepti
 
     public string? JsStack { get; } = jsStack;
 }
+
+/// <summary>
+/// A <c>batch</c> op in which some ops failed (design §3.3, §3.4); the others still ran. Each failed op comes with
+/// its index in the batch, in order.
+/// </summary>
+public sealed class JsBatchException(string message, string? jsStack, IReadOnlyList<(int Index, JsException Error)> errors)
+    : JsException("BatchError", message, jsStack)
+{
+    public IReadOnlyList<(int Index, JsException Error)> Errors { get; } = errors;
+}
