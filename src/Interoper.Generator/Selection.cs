@@ -169,6 +169,11 @@ public sealed class Selection
         foreach (var member in c.Members.Where(m => listed?.Members.Contains(m.Name) ?? !IsConvention(m)))
         {
             var subject = $"{c.Name}.{member.Name}";
+            if (member.Static)
+            {
+                Report(new(Diagnostic.NotSupported, subject, "skipped: a static member"));
+                continue;
+            }
             if (member is MethodMember method)
             {
                 var signatures = Signatures(subject, method.Signatures);

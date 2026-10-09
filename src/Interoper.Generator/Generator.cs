@@ -11,7 +11,7 @@ public enum Api
 
 public sealed record GeneratorOptions(Api Api, string Namespace);
 
-/// <param name="Path">Relative to the output folder: <c>Basemap.cs</c>.</param>
+/// <param name="Path">Relative to the output folder: <c>Basemap.cs</c>, <c>demo-maps.meta.js</c>.</param>
 public sealed record GeneratedFile(string Path, string Text);
 
 public sealed record GeneratorResult(IReadOnlyList<Diagnostic> Diagnostics, IReadOnlyList<GeneratedFile> Files);
@@ -29,12 +29,12 @@ public static class Generator
         var files = new List<GeneratedFile>();
         void Add(string type, string text) => files.Add(new($"{type}.cs", text));
 
-        foreach (var declaration in selection.Declarations.Select(s => s.Declaration))
+        foreach (var selected in selection.Declarations)
         {
-            switch (declaration)
+            switch (selected.Declaration)
             {
                 case InterfaceDeclaration or AliasDeclaration { Type: ObjectType }:
-                    Add(Naming.Type(declaration.Name), RecordEmitter.Data(types, ns, declaration));
+                    Add(Naming.Type(selected.Declaration.Name), RecordEmitter.Data(types, ns, selected.Declaration));
                     break;
                 case AliasDeclaration a when types.Union(Naming.Type(a.Name), a.Type) is { } type:
                     Add(Naming.Type(a.Name), ValueTypeEmitter.Emit(types, ns, type));
@@ -43,11 +43,20 @@ public static class Generator
                     Add(Naming.Type(e.Name), ValueTypeEmitter.Emit(types, ns, types.Enum(e)));
                     break;
                 case ClassDeclaration c:
-                    types.MapProperties(c);
+                    Add(Naming.Type(c.Name), LiveEmitter.Class(types, profile, options, diagnostics, selected));
                     Add(TypeMap.SnapshotName(c), RecordEmitter.Snapshot(types, ns, c));
                     break;
             }
         }
+        var modules = selection.Declarations.Where(s => s.Declaration is FunctionDeclaration).GroupBy(s => s.Module).ToList();
+        foreach (var module in modules)
+        {
+            var name = LiveEmitter.ModuleClass(module.Key);
+            Add(name, LiveEmitter.Module(types, profile, options, diagnostics, name, module.Key, module.Select(s => (FunctionDeclaration)s.Declaration)));
+        }
+        var classes = MetadataEmitter.ClassIds(types, selection);
+        Add(types.Registry, MetadataEmitter.Registry(types, options, classes, modules.Select(m => m.Key)));
+        files.Add(new(MetadataEmitter.FileName(ir), MetadataEmitter.Module(ir, profile, types, classes)));
         foreach (var type in types.Owned)
         {
             Add(type.Name, ValueTypeEmitter.Emit(types, ns, type));

@@ -80,13 +80,21 @@ internal sealed class TypeMap
     /// <summary>R16: the snapshots of an abstract value-like class form a closed hierarchy.</summary>
     public bool IsClosed(ClassDeclaration c) => c.Abstract && IsValueLike(c);
 
+    /// <summary>The emitted live classes, in IR order.</summary>
+    public IReadOnlyList<ClassDeclaration> Classes => classes;
+
+    /// <summary>The emitted class this class's live class derives from; otherwise it derives from <c>JsObject</c>.</summary>
+    public ClassDeclaration? LiveBase(ClassDeclaration c) =>
+        c.Extends is RefType r && Find(r) is ClassDeclaration b && classes.Contains(b) ? b : null;
+
     /// <summary>The closed snapshot record this class's snapshot derives from.</summary>
-    public ClassDeclaration? SnapshotBase(ClassDeclaration c) =>
-        c.Extends is RefType r && Find(r) is ClassDeclaration b && classes.Contains(b) && IsClosed(b) ? b : null;
+    public ClassDeclaration? SnapshotBase(ClassDeclaration c) => LiveBase(c) is { } b && IsClosed(b) ? b : null;
 
     /// <summary>The emitted concrete classes whose snapshots derive from <paramref name="c"/>'s, in IR order.</summary>
     public IReadOnlyList<ClassDeclaration> ConcreteSubclasses(ClassDeclaration c) =>
         [.. classes.Where(sub => !sub.Abstract && Bases(sub).Contains(c))];
+
+    public bool HasSubclasses(ClassDeclaration c) => classes.Any(sub => LiveBase(sub) == c);
 
     private IEnumerable<ClassDeclaration> Bases(ClassDeclaration c)
     {
@@ -125,9 +133,10 @@ internal sealed class TypeMap
 
     /// <summary>
     /// The type of a member or parameter: without null and undefined, which make it nullable. A nullable type is
-    /// <c>Opt&lt;T&gt;</c> (R3), unless it's a union, which has those states itself (R2).
+    /// <c>Opt&lt;T&gt;</c> (R3), unless it's a union, which has those states itself (R2). A member of a live class
+    /// (<paramref name="self"/>) can also be an entity or <c>this</c>: a live object (R16, R17).
     /// </summary>
-    public (CsType Type, bool Nullable) Slot(IrType type, string owner)
+    public (CsType Type, bool Nullable) Slot(IrType type, string owner, string? self = null)
     {
         var nullable = false;
         if (type is UnionType u && u.Types.Any(IsNullish))
@@ -136,8 +145,17 @@ internal sealed class TypeMap
             type = rest.Count == 1 ? rest[0] : u with { Types = rest };
             nullable = true;
         }
-        return (Map(type, owner), nullable || Flatten(type).Any(IsNullish));
+        var mapped = self is null ? null : type switch
+        {
+            ThisType => CsType.Live(self),
+            RefType { Module: not null } r when Find(r) is ClassDeclaration c && !IsValueLike(c) => CsType.Live(Naming.Type(c.Name)),
+            _ => null,
+        };
+        return (mapped ?? Map(type, owner), nullable || Flatten(type).Any(IsNullish));
     }
+
+    /// <summary>Whether a result mentions a value-like class, so it's read by value (R16, design §3.4 <c>byValue</c>).</summary>
+    public bool ByValue(IrType type) => Mentions(type, IsValueLike);
 
     private CsType Named(Declaration declaration) => declaration switch
     {
@@ -153,7 +171,7 @@ internal sealed class TypeMap
     {
         EnumType { Extensible: true } e => CsType.Method(e.Name, JsonKind.String, $"{e.Name}.Write", $"{e.Name}.Read", isValueType: true),
         EnumType { IsNumber: true } e => CsType.NumberEnum(e.Name),
-        EnumType e => CsType.Method(e.Name, JsonKind.String, $"{e.Name}Names.Write", $"{e.Name}Names.Read", isValueType: true),
+        EnumType e => CsType.StringEnum(e.Name),
         _ => CsType.Union(((UnionStruct)type).Name),
     };
 
@@ -289,19 +307,6 @@ internal sealed class TypeMap
         return declaration is ClassDeclaration c && IsClosed(c) ? wire.Prepend((Discriminant(c), true)) : wire;
     }
 
-    /// <summary>Maps the types of a class's properties, so the anonymous ones its live members use are emitted (R27).</summary>
-    public void MapProperties(ClassDeclaration c)
-    {
-        foreach (var p in c.Members.OfType<PropertyMember>().Where(p => !p.Static && p.Type is not LiteralType && !UsesEntity(p.Type)))
-        {
-            Slot(p.Type, Naming.OwnedType(Naming.Type(c.Name), p.Name));
-            if (p.WriteType is { } writeType && !UsesEntity(writeType))
-            {
-                Slot(writeType, Naming.OwnedType(Naming.Type(c.Name), p.Name, input: true));
-            }
-        }
-    }
-
     /// <summary>An interface's own members, then its bases' (as the IR orders inherited members).</summary>
     private IEnumerable<PropertyMember> Members(InterfaceDeclaration i)
     {
@@ -353,17 +358,19 @@ internal sealed class TypeMap
     }
 
     /// <summary>Whether a type mentions an entity class, which only a scope can read (R17).</summary>
-    private bool UsesEntity(IrType type) => type switch
+    private bool UsesEntity(IrType type) => Mentions(type, c => !IsValueLike(c));
+
+    private bool Mentions(IrType type, Func<ClassDeclaration, bool> match) => type switch
     {
         RefType { Module: not null } r => Find(r) switch
         {
-            ClassDeclaration c => !IsValueLike(c),
-            AliasDeclaration a => UsesEntity(a.Type),
+            ClassDeclaration c => match(c),
+            AliasDeclaration a => Mentions(a.Type, match),
             _ => false,
         },
-        UnionType u => u.Types.Any(UsesEntity),
-        ArrayType a => UsesEntity(a.Element),
-        TupleType t => t.Elements.Any(UsesEntity),
+        UnionType u => u.Types.Any(t => Mentions(t, match)),
+        ArrayType a => Mentions(a.Element, match),
+        TupleType t => t.Elements.Any(e => Mentions(e, match)),
         _ => false,
     };
 

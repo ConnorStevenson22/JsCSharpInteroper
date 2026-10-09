@@ -54,7 +54,7 @@ public sealed class GeneratorTests
             { "kind": "alias", "name": "Name", "type": { "kind": "union", "types": [{ "kind": "primitive", "name": "string" }, { "kind": "primitive", "name": "null" }] } },
             { "kind": "interface", "name": "Tag", "members": [{ "kind": "property", "name": "name", "type": { "kind": "ref", "name": "Name", "module": "@acme/maps/a.js" } }] }
             """, "Tag");
-        Assert.Equal(["Tag.cs"], result.Files.Select(f => f.Path));
+        Assert.Equal(["Tag.cs", "Maps.cs", "maps.meta.js"], result.Files.Select(f => f.Path)); // no Name.cs; the registry and metadata module
         Assert.Contains("public required Opt<string> Name { get; init; }", File(result, "Tag.cs"));
     }
 
@@ -67,6 +67,93 @@ public sealed class GeneratorTests
     {
         var e = Assert.Throws<NotSupportedException>(() => Generate($$"""{ "kind": "alias", "name": "Pair", "type": { "kind": "union", "types": [{{types}}] } }""", "Pair"));
         Assert.Equal(message, e.Message);
+    }
+
+    [Fact] // R16, R23: an overload per signature; a value-like result is read by value
+    public void EachOverloadIsAMethod()
+    {
+        var result = Generator.Generate(Fixture.Ir, Fixture.Profile with { Include = ["Shape", "Point", "Line", "Polygon", "MapView.screenToMap"] },
+            new(Api.Sync, "Acme.Maps"));
+        var view = File(result, "MapView.cs");
+        Assert.Contains("""
+                public PointSnapshot ScreenToMap(double x, double y) =>
+                    Realm.Call(JsOp.Call(Handle, "screenToMap", w =>
+                    {
+                        JsJson.WriteNumber(w, x);
+                        JsJson.WriteNumber(w, y);
+                    }, byValue: true), PointSnapshot.Read)!;
+            """, view);
+        Assert.Contains("public PointSnapshot ScreenToMap(double[] offset) =>", view);
+    }
+
+    [Theory] // R8, §5: a Promise is a Task in both modes, and a live result needs the caller's scope
+    [InlineData(Api.Sync)]
+    [InlineData(Api.Async)]
+    public void APromiseOfAnEntityTakesAScope(Api api)
+    {
+        var result = Generator.Generate(Fixture.Ir, Fixture.Profile with { Include = ["Marker", "MapView.markerAt"] }, new(api, "Acme.Maps"));
+        Assert.Contains("""
+                public Task<Opt<Marker>> MarkerAtAsync(JsScope scope, double x, double y) =>
+                    Realm.CallAsync(JsOp.Call(Handle, "markerAt", w =>
+                    {
+                        JsJson.WriteNumber(w, x);
+                        JsJson.WriteNumber(w, y);
+                    }), (ref r) => JsJson.ReadOpt(ref r, scope.Read<Marker>));
+            """, File(result, "MapView.cs"));
+    }
+
+    [Theory] // R22, §5, R27
+    [InlineData(Api.Sync, "public void ClickAt(", "public MapView GetView(JsScope scope)")]
+    [InlineData(Api.Async, "public Task ClickAtAsync(", "public async Task<MapView> GetViewAsync(JsScope scope)")]
+    public void AnOptionalParameterIsUndefinedByDefault(Api api, string clickAt, string getView)
+    {
+        var result = Generator.Generate(Fixture.Ir, Fixture.Profile with { Include = ["DemoMapElement", "MapView.zoom"] }, new(api, "Acme.Maps"));
+        var element = File(result, "DemoMapElement.cs");
+        Assert.Contains("public sealed partial class DemoMapElement : JsObject", element); // its base, HTMLElement, isn't emitted
+        Assert.Contains(clickAt + "double x, double y, Opt<DemoMapElementClickAtButton> button = default) =>", element);
+        Assert.Contains("JsJson.WriteValue(w, button, static (w1, v1) => JsJson.WriteNumber(w1, (int)v1));", element);
+        Assert.Contains(getView + " =>", element);
+        Assert.Contains("IOP2007 DemoMapElement.observedAttributes: skipped: a static member", result.Diagnostics.Select(d => d.ToString()));
+    }
+
+    [Theory] // design §2, §3.5, R4, R19 step 1
+    [InlineData(Api.Sync)]
+    [InlineData(Api.Async)]
+    public void TheRegistryAndMetadataNumberTheClasses(Api api)
+    {
+        var ir = IrDocument.Parse("""
+            { "version": 1, "package": { "name": "@acme/maps", "version": "1" }, "modules": [
+              { "specifier": "@acme/maps/layers/Layer.js", "declarations": [
+                { "kind": "class", "name": "Layer", "abstract": true },
+                { "kind": "class", "name": "TileLayer", "extends": { "kind": "ref", "name": "Layer", "module": "@acme/maps/layers/Layer.js" } }] },
+              { "specifier": "@acme/maps/units.js", "declarations": [{ "kind": "class", "name": "Length" }] }] }
+            """);
+        var result = Generator.Generate(ir, new Profile { Package = "@acme/maps", ValueClasses = ["Length"] }, new(api, "Acme.Maps"));
+
+        Assert.Contains("public abstract partial class Layer : JsObject", File(result, "Layer.cs"));
+        Assert.Contains("public sealed partial class TileLayer : Layer", File(result, "TileLayer.cs"));
+        var registry = File(result, "Maps.cs");
+        Assert.Contains("""
+                public const int LengthId = 1;
+                public const int LayerId = 2;
+                public const int TileLayerId = 3;
+
+                public static JsClassRegistry Classes { get; } = new JsClassRegistry()
+                    .Add(LengthId, static (realm, handle) => new Length(realm, handle))
+                    .Add(TileLayerId, static (realm, handle) => new TileLayer(realm, handle))
+            """, registry);
+        Assert.Equal(api == Api.Sync, registry.Contains("""        .Preload("@acme/maps/units.js", "@acme/maps/layers/Layer.js");"""));
+        Assert.Equal("""
+            // <auto-generated/>
+            export default {
+                classes: {
+                    1: { module: "@acme/maps/units.js", export: "Length", name: "units.Length", value: true, members: [] },
+                    2: { module: "@acme/maps/layers/Layer.js", export: "Layer", name: "layers.Layer", members: [] },
+                    3: { module: "@acme/maps/layers/Layer.js", export: "TileLayer", name: "layers.Layer.TileLayer", members: [] },
+                },
+            };
+
+            """, File(result, "maps.meta.js"));
     }
 
     private static GeneratorResult Generate(string declarations, params string[] include)
