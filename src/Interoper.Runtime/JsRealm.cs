@@ -33,7 +33,7 @@ public sealed class JsRealm(Func<Task<IJsTransport>> start, JsClassRegistry clas
     /// </summary>
     public long RoundTrips => Interlocked.Read(ref roundTrips);
 
-    /// <summary>Starts the transport once; a failed start can be retried.</summary>
+    /// <summary>Starts the transport once, and loads the registry's preloaded modules; a failed start can be retried.</summary>
     public Task StartAsync()
     {
         if (starting is null or { IsFaulted: true } or { IsCanceled: true })
@@ -43,7 +43,15 @@ public sealed class JsRealm(Func<Task<IJsTransport>> start, JsClassRegistry clas
         return starting;
     }
 
-    private async Task StartTransportAsync() => transport = await start();
+    private async Task StartTransportAsync()
+    {
+        var started = await start();
+        if (classes.Modules.Length > 0)
+        {
+            JsEnvelope.Check(await started.InvokeAsync(JsOp.Load(classes.Modules)));
+        }
+        transport = started;
+    }
 
     /// <summary>Releases a transport that owns resources (<see cref="JsRuntimeTransport"/>'s module and sink).</summary>
     public async ValueTask DisposeAsync()
@@ -53,6 +61,27 @@ public sealed class JsRealm(Func<Task<IJsTransport>> start, JsClassRegistry clas
             await disposable.DisposeAsync();
         }
     }
+
+    // --- Calls (sync mode) ---
+    // Through the sync seam, which only WebAssembly's JsImportTransport has; elsewhere SyncTransport fails fast.
+
+    /// <summary>Runs an op that returns nothing.</summary>
+    public void Send(string opJson) => JsEnvelope.Check(SyncTransport.Invoke(opJson));
+
+    /// <summary>Runs an op and reads its result (<c>default</c> for undefined).</summary>
+    public T? Call<T>(string opJson, JsonRead<T> read) => JsEnvelope.Read(SyncTransport.Invoke(opJson), read);
+
+    public double GetNumber(int handle, string name) => SyncTransport.GetNumber(handle, name);
+
+    public string GetString(int handle, string name) => SyncTransport.GetString(handle, name);
+
+    public bool GetBoolean(int handle, string name) => SyncTransport.GetBoolean(handle, name);
+
+    public void Set(int handle, string name, double value) => SyncTransport.SetNumber(handle, name, value);
+
+    public void Set(int handle, string name, string value) => SyncTransport.SetString(handle, name, value);
+
+    public void Set(int handle, string name, bool value) => SyncTransport.SetBoolean(handle, name, value);
 
     // --- Calls (async mode) ---
     // Generated code sends ops that return nothing through SendAsync and SetAsync, which a batch queues, and
@@ -171,6 +200,27 @@ public sealed class JsRealm(Func<Task<IJsTransport>> start, JsClassRegistry clas
             }
             entry.Owners.Add(scope);
             return entry;
+        }
+    }
+
+    /// <summary>Whether <paramref name="scope"/> is the only owner of a handle.</summary>
+    internal bool OwnsAlone(JsScope scope, int handle)
+    {
+        lock (objects)
+        {
+            return objects.TryGetValue(handle, out var entry) && entry.Owners.Count == 1 && entry.Owners.Contains(scope);
+        }
+    }
+
+    /// <summary>Removes <paramref name="scope"/> from the owners of a handle, once its release has gone out.</summary>
+    internal void Disown(JsScope scope, int handle)
+    {
+        lock (objects)
+        {
+            if (objects.TryGetValue(handle, out var entry) && entry.Owners.Remove(scope) && entry.Owners.Count == 0)
+            {
+                objects.Remove(handle);
+            }
         }
     }
 

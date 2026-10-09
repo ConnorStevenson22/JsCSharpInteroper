@@ -1,0 +1,61 @@
+@using Interoper.Contract
+@using Microsoft.Extensions.Configuration
+@using Microsoft.Extensions.DependencyInjection
+@inject IJSRuntime JS
+
+<pre id="result" data-done="@done">@string.Join("\n", lines)</pre>
+
+@code {
+    // Runs the golden slice's suite for one mode (tests/Interoper.Runtime.Tests/Golden*Suite.cs) against
+    // fixtures/demo-maps, on a realm that AddInteroper builds for the given Interop:Transport setting, and prints one
+    // line per case for the test to assert on.
+    readonly List<string> lines = [];
+    bool done;
+
+    /// <summary>The sync-mode bindings and suite, rather than the async ones.</summary>
+    [Parameter] public bool Sync { get; set; }
+
+    [Parameter] public string Transport { get; set; } = "Auto";
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        await using var services = new ServiceCollection()
+            .AddSingleton<IConfiguration>(new ConfigurationBuilder()
+                .AddInMemoryCollection(new Dictionary<string, string?> { ["Interop:Transport"] = Transport })
+                .Build())
+            .AddSingleton(JS)
+            .AddInteroper(Fixture.Metadata, Sync ? GoldenSlice.Sync.DemoMaps.Classes : GoldenSlice.Async.DemoMaps.Classes)
+            .BuildServiceProvider();
+        try
+        {
+            var realm = services.GetRequiredService<JsRealm>();
+            await realm.StartAsync();
+            foreach (var (name, run) in Sync ? GoldenSyncSuite.Cases : GoldenAsyncSuite.Cases)
+            {
+                try
+                {
+                    await run(realm);
+                    lines.Add($"PASS {name}");
+                }
+                catch (Exception e)
+                {
+                    lines.Add($"FAIL {name}: {e.GetType().Name}: {e.Message} [at {Binding(e)}]");
+                }
+            }
+        }
+        catch (Exception e)
+        {
+            lines.Add($"{e.GetType().Name}: {e.Message}");
+        }
+        finally
+        {
+            done = true;
+            StateHasChanged();
+        }
+    }
+
+    // The innermost golden-slice frame of a failure: which binding threw.
+    static string? Binding(Exception e) =>
+        e.StackTrace?.Split('\n').Select(line => line.Trim()).FirstOrDefault(line => line.StartsWith("at GoldenSlice.", StringComparison.Ordinal));
+}

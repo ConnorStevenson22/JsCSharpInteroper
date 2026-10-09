@@ -10,10 +10,10 @@ dotnet interoper generate @acme/maps --api async --namespace Acme.Maps --out Gen
 ```csharp
 await view.SetZoomAsync(7);                       // --api async: every host
 view.Zoom = 7;                                    // --api sync: WebAssembly only, plain properties
-if (await feature.GetShapeAsync() is Point p) { } // unions, undefined/null and the most-derived type, all typed
+if (await feature.GetShapeAsync() is PointSnapshot p) { } // unions, undefined/null and the most-derived type, all typed
 ```
 
-**Status:** design complete, implementation starting at phase 1 ([plan](docs/plan.md)).
+**Status:** phase 1 (runtime core) is done; phase 2 (the generator) is next ([plan](docs/plan.md)).
 
 | Read | For |
 |---|---|

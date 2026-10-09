@@ -21,7 +21,7 @@
             }
             catch (System.Runtime.InteropServices.JavaScript.JSException e) when (e.Message.Contains("bad metadata", StringComparison.Ordinal))
             {
-                var transport = await JsImportTransport.StartAsync(DemoMaps.Metadata);
+                var transport = await JsImportTransport.StartAsync(Fixture.Metadata);
                 result = $"PASS restarted, census {await transport.CensusAsync()}";
             }
         }

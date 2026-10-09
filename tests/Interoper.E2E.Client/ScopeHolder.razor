@@ -1,22 +1,23 @@
-@using Interoper.Contract
+@using GoldenSlice.Async
 @inherits JsComponentBase
 
 @code {
-    // Three handles and a callback in this component's scope. JsComponentBase has started the realm already.
+    // Three handles (a view, a marker, a click subscription) and a listener in this component's scope.
+    // JsComponentBase has started the realm already.
     [Parameter, EditorRequired] public TaskCompletionSource Ready { get; set; } = null!;
 
     protected override async Task OnInitializedAsync()
     {
         try
         {
-            var view = await DemoMaps.CreateAsync(Scope, TransportContract.MapView);
-            var center = await DemoMaps.GetAsync(Scope, view, "center");
-            if (!ReferenceEquals(center, await DemoMaps.GetAsync(Scope, view, "center")))
+            var view = await MapView.CreateAsync(Scope, new MapViewSnapshot());
+            var marker = await Marker.CreateAsync(Scope, new MarkerSnapshot());
+            await view.SetSelectedAsync(marker);
+            if (!ReferenceEquals(marker, (await view.GetSelectedAsync(Scope)).Value))
             {
                 throw new InvalidOperationException("one JS object gave two C# objects");
             }
-            var formatter = Scope.Register(_ => "\"#\"");
-            await DemoMaps.CreateAsync(Scope, TransportContract.Marker, $$$"""{"labelFormatter":{"$f":{{{formatter}}}}}""");
+            await view.OnClickAsync(Scope, _ => { });
             Ready.TrySetResult();
         }
         catch (Exception e)

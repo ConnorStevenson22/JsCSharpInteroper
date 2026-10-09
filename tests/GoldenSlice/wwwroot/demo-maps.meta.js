@@ -1,0 +1,14 @@
+// The metadata module for @acme/demo-maps (design §2, §3.4), in the generator's format, for both modes: per class id,
+// the module and export that construct it, its runtime class name, whether it is value-like (R16), and its snapshot
+// members (R18), here only those the golden slice binds. Bare specifiers resolve through the app's import map.
+export default {
+  classNameProperty: "className",
+  classes: {
+    1: { module: "@acme/demo-maps/geometry.js", export: "Shape", name: "geometry.Shape", value: true, members: ["type"] },
+    2: { module: "@acme/demo-maps/geometry.js", export: "Point", name: "geometry.Point", value: true, members: ["type", "x", "y"] },
+    3: { module: "@acme/demo-maps/geometry.js", export: "Line", name: "geometry.Line", value: true, members: ["type", "path"] },
+    4: { module: "@acme/demo-maps/geometry.js", export: "Polygon", name: "geometry.Polygon", value: true, members: ["type", "vertices"] },
+    5: { module: "@acme/demo-maps/MapView.js", export: "MapView", name: "MapView", members: ["center", "zoom", "rotation", "basemap", "title"] },
+    6: { module: "@acme/demo-maps/Marker.js", export: "Marker", name: "Marker", members: ["position", "label", "style"] },
+  },
+};

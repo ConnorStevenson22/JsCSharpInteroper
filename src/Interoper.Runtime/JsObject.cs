@@ -1,3 +1,5 @@
+using System.Text.Json;
+
 namespace Interoper;
 
 /// <summary>
@@ -10,4 +12,12 @@ public abstract class JsObject(JsRealm realm, int handle)
     public JsRealm Realm { get; } = realm;
 
     public int Handle { get; } = handle;
+
+    /// <summary>Writes the object as its handle, <c>{"$h":id}</c>: the writer for live arguments in generated code.</summary>
+    public static void Write(Utf8JsonWriter writer, JsObject value)
+    {
+        writer.WriteStartObject();
+        writer.WriteNumber("$h"u8, value.Handle);
+        writer.WriteEndObject();
+    }
 }

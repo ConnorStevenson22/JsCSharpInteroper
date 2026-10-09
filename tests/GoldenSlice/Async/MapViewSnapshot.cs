@@ -1,0 +1,49 @@
+using System.Text.Json;
+using Interoper;
+
+namespace GoldenSlice.Async;
+
+/// <summary>
+/// The snapshot of <c>class MapView</c> (R18): its data members, all optional; value-like ones as snapshots (R17).
+/// </summary>
+public sealed record MapViewSnapshot
+{
+    public Opt<PointSnapshot> Center { get; init; }
+    public Opt<double> Zoom { get; init; }
+    public Opt<double> Rotation { get; init; }
+    public Opt<Basemap> Basemap { get; init; }
+    public Opt<string> Title { get; init; }
+
+    /// <summary>The members alone: a constructor bag or a patch (R18).</summary>
+    public static void WriteMembers(Utf8JsonWriter writer, MapViewSnapshot value)
+    {
+        JsJson.WriteProperty(writer, "center"u8, value.Center, PointSnapshot.Write);
+        JsJson.WriteProperty(writer, "zoom"u8, value.Zoom, JsJson.WriteNumber);
+        JsJson.WriteProperty(writer, "rotation"u8, value.Rotation, JsJson.WriteNumber);
+        JsJson.WriteProperty(writer, "basemap"u8, value.Basemap, BasemapNames.Write);
+        JsJson.WriteProperty(writer, "title"u8, value.Title, JsJson.WriteString);
+    }
+
+    public static MapViewSnapshot Read(ref Utf8JsonReader reader)
+    {
+        Opt<PointSnapshot> center = default;
+        Opt<double> zoom = default, rotation = default;
+        Opt<Basemap> basemap = default;
+        Opt<string> title = default;
+        while (reader.Read() && reader.TokenType == JsonTokenType.PropertyName)
+        {
+            var property = reader.GetString();
+            reader.Read();
+            switch (property)
+            {
+                case "center": center = JsJson.ReadOpt(ref reader, PointSnapshot.Read); break;
+                case "zoom": zoom = JsJson.ReadOpt(ref reader, JsJson.ReadNumber); break;
+                case "rotation": rotation = JsJson.ReadOpt(ref reader, JsJson.ReadNumber); break;
+                case "basemap": basemap = JsJson.ReadOpt(ref reader, BasemapNames.Read); break;
+                case "title": title = JsJson.ReadOpt(ref reader, JsJson.ReadString); break;
+                default: reader.Skip(); break;
+            }
+        }
+        return new MapViewSnapshot { Center = center, Zoom = zoom, Rotation = rotation, Basemap = basemap, Title = title };
+    }
+}

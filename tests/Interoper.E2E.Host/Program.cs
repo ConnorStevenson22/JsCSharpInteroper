@@ -8,7 +8,7 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents()
     .AddInteractiveWebAssemblyComponents();
-builder.Services.AddInteroper(DemoMaps.Metadata, DemoMaps.Classes); // for Server components, and prerendering
+builder.Services.AddInteroper(Fixture.Metadata, GoldenSlice.Async.DemoMaps.Classes); // for Server components, and prerendering
 
 var app = builder.Build();
 var demoMaps = Path.GetFullPath(Path.Combine(app.Environment.ContentRootPath, "../../fixtures/demo-maps"));

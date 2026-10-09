@@ -3,7 +3,10 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly" />
     <ProjectReference Include="..\..\src\Interoper.Blazor\Interoper.Blazor.csproj" />
+    <ProjectReference Include="..\GoldenSlice\GoldenSlice.csproj" />
     <Compile Include="..\Interoper.Runtime.Tests\TransportContract.cs" Link="TransportContract.cs" />
+    <Compile Include="..\Interoper.Runtime.Tests\GoldenSyncSuite.cs" Link="GoldenSyncSuite.cs" />
+    <Compile Include="..\Interoper.Runtime.Tests\GoldenAsyncSuite.cs" Link="GoldenAsyncSuite.cs" />
   </ItemGroup>
 
 </Project>
