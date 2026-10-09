@@ -8,11 +8,11 @@ Every item is done when it has tests and the checks in [`CLAUDE.md`](../CLAUDE.m
 
 Hand-written bindings for a slice of the fixture, running on every host.
 
-- [ ] **Scaffold.** Set up `Interoper.slnx`, `Directory.Build.props` (`net11.0`, nullable, `TreatWarningsAsErrors`), central package versions and `.editorconfig`.
-  - Projects: `src/Interoper.Runtime` and `src/Interoper.Blazor` (Razor class libraries, so `wwwroot/interoper.js` ships as a static web asset), plus `src/Interoper.Generator` and `src/Interoper.Tool` as placeholders.
-  - Tests: `tests/Interoper.Runtime.Tests` and `tests/Interoper.E2E` on xUnit v3, set up so that plain `dotnet test Interoper.slnx` works.
+- [ ] **Scaffold.** `Interoper.slnx`, `Directory.Build.props` (`net11.0`, nullable, `TreatWarningsAsErrors`), central package versions (`Directory.Packages.props`) and `.editorconfig`.
+  - Projects: `src/Interoper.Runtime` and `src/Interoper.Blazor` (Razor class libraries, so `wwwroot/interoper.js` ships as a static web asset), and `tests/Interoper.Runtime.Tests` on xUnit v3, so that plain `dotnet test Interoper.slnx` works.
+  - Other projects are added by the item that first needs them: `tests/Interoper.E2E` with the browser harness, `src/Interoper.Generator` in phase 2, `src/Interoper.Tool` in phase 4.
 - [ ] **Fixture library v0** in `fixtures/demo-maps`. It needs the JS library, a hand-written `.d.ts` covering every pattern in [design §6](design.md#6-testing), `custom-elements.json`, `profile.json`, and a `PATTERNS.md` table mapping each pattern to its R-number. Acceptance: `tsc --noEmit` passes, and it has `node --test` coverage.
-- [ ] **Browser test harness** in `tests/Interoper.E2E`. Build a Blazor test host (Server + WebAssembly) driven by Microsoft.Playwright, with one smoke test per mode and host. Port it from [`spikes/hosts`](../spikes/hosts).
+- [ ] **Browser test harness** in a new `tests/Interoper.E2E` project. Build a Blazor test host (Server + WebAssembly) driven by Microsoft.Playwright, with one smoke test per mode and host. Port it from [`spikes/hosts`](../spikes/hosts).
 - [ ] **Value model.** Add `Undefined`, `Opt<T>`, the union pattern and JSON helpers for the three states (R1–R6). Port the [`spikes/value-model`](../spikes/value-model) checks as tests.
 - [ ] **`interoper.js`.** Build the handle table, the ops (`create`, `get`, `set`, `call`, `snapshot`, `apply`, `subscribe`, `release`, `batch`), the `$h`/`$f`/`$u` reviver, error mapping, and entry points for both seams. Tests live in `tests/interoper-js`.
 - [ ] **Seams and transports.** Implement `IJsSyncTransport`, `IJsTransport`, `JsImportTransport`, `JsRuntimeTransport`, the callback registry and `InMemoryTransport`. The same contract tests run in-memory and in the browser.
