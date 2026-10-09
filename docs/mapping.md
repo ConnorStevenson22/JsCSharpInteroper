@@ -111,6 +111,8 @@ The profile overrides either way. Getting this wrong is the classic failure mode
 - a live class (`Point`), used when you hold a handle;
 - an `XSnapshot` record (`PointSnapshot`), used inside snapshots, constructor bags and data-in/data-out module functions.
 
+Sent to JS, a snapshot record of a value-like class arrives as an instance: the writer adds its concrete class id (`$c`, [design §3.4](design.md#34-protocol)) and the runtime calls `new Point(bag)`. The bag keeps its discriminant (R20). Data records stay plain objects.
+
 **R17. Snapshot depth.** Snapshot records copy value-like members deeply, as their snapshot records. Entity members appear as live objects inside the snapshot.
 
 **R18. Every live class has an `XSnapshot` record.** It carries the class's data members, all optional. One type serves as:

@@ -1,0 +1,11 @@
+{
+  "package": "@acme/demo-maps",
+  "runtimeClassProperty": "className",
+  "valueClasses": ["Shape", "Point", "Line", "Polygon"],
+  "events": {
+    "mapProperty": "$events",
+    "subscribe": "on"
+  },
+  "watch": "watch",
+  "collections": ["Collection"]
+}

@@ -31,7 +31,7 @@ Claims marked **verified** come from two throwaway experiments, summarized in [�
 | **Module functions** | Stateless library functions over snapshot records: data in, data out, one call, no handles. |
 | **Blazor components** | One per custom element in the library's Custom Elements Manifest. Simple values render as HTML attributes, so they work during prerender and SSR; complex values are set after the first interactive render. Events go through Blazor's own pipeline via generated `registerCustomEventType` + `[EventHandler]`, which works on all hosts. Supports `@bind-X` and slots. |
 | **Custom-event registrations** | The JS + C# registrations above, usable on hand-written custom-element markup too. |
-| **JS metadata tables** | class → module specifier, runtime class name → class id, snapshot member lists, event names. There is no per-member generated JS. |
+| **JS metadata tables** | class id → module specifier and export name, runtime class name → class id, snapshot member lists, event names. There is no per-member generated JS. |
 
 The runtime also provides:
 - an **in-memory transport** that emulates the JS object model, so unit and bUnit tests need no browser, with record/replay of browser op logs;
@@ -80,13 +80,14 @@ await using (scope.BeginBatch())
 - **UTF-8 JSON** for structured data, with generated readers and writers:
   - undefined members are omitted;
   - `{"$h":12,"$t":7}` is a handle with its class id;
+  - `{"$c":3, …}` is a value-like class instance (R16): writers tag every `XSnapshot` of a value-like class with its concrete class id, and the reviver builds `new Class(rest)`, so libraries don't need to autocast;
   - `{"$f":3}` is a .NET callback;
   - `{"$u":1}` is undefined inside arrays and arguments; the `JSON.parse` reviver restores it.
 - **Batches** travel as one op array.
 - **Errors** become `JsException` with the JS name, message and stack. The profile can map library error classes to typed subclasses.
 
 ### 3.5 Module loading
-Generated code knows only bare specifiers (`@acme/maps/views/MapView.js`). The runtime `import()`s them, and the app's import map (Blazor's `<ImportMap />`) decides where they come from: `node_modules` copied into `wwwroot`, a CDN, or a bundle. The CLI can print the import-map entries for a package.
+Generated code knows only bare specifiers (`@acme/maps/views/MapView.js`). The runtime `import()`s them, and the app's import map (Blazor's `<ImportMap />`) decides where they come from: `node_modules` copied into `wwwroot`, a CDN, or a bundle. The CLI can print the import-map entries for a package. The modules of value-like classes are imported when the realm starts, so the reviver can construct them synchronously (sync mode included).
 
 ---
 
