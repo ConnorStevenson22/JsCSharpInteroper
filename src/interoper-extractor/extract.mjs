@@ -1,4 +1,5 @@
-// Interoper extractor: reads a package's .d.ts files with the TypeScript checker and writes IR v1 (docs/ir.md).
+// Interoper extractor: reads a package's .d.ts files and its Custom Elements Manifest with the TypeScript checker
+// and writes IR v1 (docs/ir.md).
 //
 //   node extract.mjs <package dir> [--profile profile.json] [--out ir.json]
 //
@@ -25,7 +26,8 @@ export function extract(packageDir, { eventMap } = {}) {
   const dir = path.resolve(packageDir);
   const pkg = JSON.parse(fs.readFileSync(path.join(dir, "package.json"), "utf8"));
   const files = listDts(dir);
-  const program = createProgram(ts, files);
+  const manifest = readManifest(dir, pkg);
+  const program = createProgram(ts, files, Object.fromEntries([...manifest.types.values()].map((t) => [t.file, t.text])));
   const checker = program.getTypeChecker();
 
   const own = new Set(files);
@@ -296,6 +298,34 @@ export function extract(packageDir, { eventMap } = {}) {
     return Object.keys(d).length ? d : undefined;
   }
 
+  // --- Custom elements (design §2) ---
+
+  /** An element: what the manifest adds to its class. Attributes link to the class's properties, which the IR already has. */
+  function element({ tag, decl, type }) {
+    return compact({
+      tag,
+      class: manifestType(type),
+      doc: manifestDoc(decl),
+      attributes: decl.attributes?.map((a) => compact({ name: a.name, property: a.fieldName, type: a.fieldName ? undefined : manifestType(a.type), doc: manifestDoc(a) })),
+      events: decl.events?.map((e) => {
+        const type = manifestType(e.type);
+        const custom = type?.kind === "ref" && type.name === "CustomEvent" && !type.module; // the platform's
+        return compact({ name: e.name, detail: custom ? type.args[0] : undefined, type: custom ? undefined : type, doc: manifestDoc(e) });
+      }),
+      slots: decl.slots?.map((s) => compact({ name: s.name, doc: manifestDoc(s) })),
+    });
+  }
+
+  /** A manifest type text, resolved by the checker in its virtual module, or `unresolved` when that module has errors. */
+  function manifestType(type) {
+    const source = manifest.types.get(type);
+    if (!source) return undefined;
+    const sf = program.getSourceFile(source.file);
+    if (program.getSyntacticDiagnostics(sf).length || program.getSemanticDiagnostics(sf).length) return { kind: "unresolved", text: type.text };
+    const node = sf.statements.find(ts.isTypeAliasDeclaration).type;
+    return typeRef(checker.getTypeFromTypeNode(node), node);
+  }
+
   // --- Modules ---
 
   const modules = [];
@@ -311,7 +341,48 @@ export function extract(packageDir, { eventMap } = {}) {
     if (declarations.length) modules.push({ specifier: moduleOf(sf), declarations });
   }
   modules.sort((a, b) => (a.specifier < b.specifier ? -1 : 1));
-  return { version: 1, package: { name: pkg.name, version: pkg.version }, modules };
+  return compact({ version: 1, package: { name: pkg.name, version: pkg.version }, modules, elements: manifest.elements.map(element) });
+}
+
+/**
+ * The elements of the package's Custom Elements Manifest (`customElements` in package.json), sorted by tag. Each type
+ * text the IR needs becomes a virtual module next to the package, for the checker: it imports the names the text's
+ * `references` point at and exports the text as `__type`. `types` maps a manifest type to `{ file, text }`.
+ */
+function readManifest(dir, pkg) {
+  const elements = [];
+  const types = new Map();
+  if (!pkg.customElements) return { elements, types };
+  const { modules = [] } = JSON.parse(fs.readFileSync(path.join(dir, pkg.customElements), "utf8"));
+  const defined = new Map(modules.flatMap((m) => (m.exports ?? []).filter((e) => e.kind === "custom-element-definition")
+    .map((e) => [`${e.declaration.module ?? m.path}#${e.declaration.name}`, e.name])));
+  for (const m of modules) {
+    for (const decl of m.declarations ?? []) {
+      const tag = decl.tagName ?? defined.get(`${m.path}#${decl.name}`);
+      if (tag) elements.push({ tag, decl, type: { text: decl.name, references: [{ name: decl.name, module: m.path }] } });
+    }
+  }
+  elements.sort((a, b) => (a.tag < b.tag ? -1 : 1));
+
+  const root = dir.split(path.sep).join("/");
+  const add = (type) => {
+    if (!type?.text) return;
+    const from = (r) => (r.package && r.package !== "global:" ? [r.package, r.module].filter(Boolean).join("/") : !r.package && r.module && `./${r.module}`);
+    const imports = (type.references ?? []).filter(from).map((r) => `import type { ${r.name} } from ${JSON.stringify(from(r))};\n`);
+    types.set(type, { file: `${root}/__element-type-${types.size}.ts`, text: `${[...new Set(imports)].join("")}export type __type = ${type.text};\n` });
+  };
+  for (const { decl, type } of elements) {
+    add(type);
+    for (const a of decl.attributes ?? []) if (!a.fieldName) add(a.type);
+    for (const e of decl.events ?? []) add(e.type);
+  }
+  return { elements, types };
+}
+
+/** A manifest entry's docs: its description (or summary), default and deprecation. */
+function manifestDoc(entry) {
+  const d = compact({ summary: entry.description || entry.summary || undefined, default: entry.default, deprecated: entry.deprecated === true ? "" : entry.deprecated || undefined });
+  return Object.keys(d).length ? d : undefined;
 }
 
 /** The nearest package.json with a name decides the specifier: `<name>/<path of the .js next to the .d.ts>`. */

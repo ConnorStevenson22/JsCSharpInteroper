@@ -25,7 +25,7 @@ Hand-written bindings for a slice of the fixture, running on every host.
 ## Phase 2 · Generator
 
 - [x] An IR schema v1 and an extractor grown from `tools/dts-survey`. It must use checker-resolved members, accessor pairs, overloads, event maps, discriminants, JSDoc and module specifiers.
-- [ ] A CEM reader and a golden IR for the fixture.
+- [x] A CEM reader and a golden IR for the fixture.
 - [ ] Emitter infrastructure: an indented writer, naming (R25–R27) and diagnostics.
 - [ ] Emitters for value types, snapshot records + JSON, live classes in both modes, and metadata tables.
 

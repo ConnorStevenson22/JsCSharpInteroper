@@ -1,23 +1,24 @@
 # IR v1
 
-The extractor's output and the generator's input ([design §4](design.md#4-generator-architecture)): one JSON document per package, language-neutral and versioned. It records what the typings say, resolved by the TypeScript checker ([mapping §7](mapping.md#7-what-the-extractor-must-resolve-with-the-checker)). It makes no C# decisions: classification, naming and the profile are the generator's.
+The extractor's output and the generator's input ([design §4](design.md#4-generator-architecture)): one JSON document per package, language-neutral and versioned. It records what the typings and the Custom Elements Manifest say, resolved by the TypeScript checker ([mapping §7](mapping.md#7-what-the-extractor-must-resolve-with-the-checker)). It makes no C# decisions: classification, naming and the profile are the generator's.
 
 ```bash
 node src/interoper-extractor/extract.mjs fixtures/demo-maps --profile fixtures/demo-maps/profile.json --out ir.json
 ```
 
-The profile is read only for its event-map property (`events.mapProperty`).
+The profile is read only for its event-map property (`events.mapProperty`). The fixture's IR is committed as a golden file, [`src/interoper-extractor/test/demo-maps.ir.json`](../src/interoper-extractor/test/demo-maps.ir.json); after an intended change, regenerate it with `UPDATE_GOLDEN=1 node --test src/interoper-extractor/test/extract.test.mjs` and review the diff.
 
 ## Conventions
 
-- **Deterministic.** Modules are sorted by specifier, declarations follow source order, members follow the checker's order (own, then inherited), and union members follow the order they're written in. Two runs give byte-identical output.
+- **Deterministic.** Modules are sorted by specifier, elements by tag, declarations follow source order, members follow the checker's order (own, then inherited), and union members follow the order they're written in. Two runs give byte-identical output.
 - **Absent means none.** Empty lists, `false` flags and missing docs are left out.
 
 ## Document
 
 ```jsonc
 { "version": 1, "package": { "name": "@acme/demo-maps", "version": "0.0.0" },
-  "modules": [{ "specifier": "@acme/demo-maps/geometry.js", "declarations": [ … ] }] }
+  "modules": [{ "specifier": "@acme/demo-maps/geometry.js", "declarations": [ … ] }],
+  "elements": [{ "tag": "demo-map", "class": { "kind": "ref", "name": "DemoMapElement", "module": "@acme/demo-maps/demo-map.js" }, … }] }
 ```
 
 A **specifier** is the nearest named `package.json` plus the path of the `.js` next to the `.d.ts`. Only exported declarations are listed, under the module that declares them.
@@ -44,6 +45,22 @@ Every declaration has `kind`, `name` and an optional `doc` (a function's are on 
 - **Index signatures** are `{ key, type, readonly? }`.
 - **Docs** are `{ summary?, default?, deprecated?, since?, see? }`, from the declaration's own JSDoc (an override doesn't copy its base's): `see` is a list, and `deprecated` is `""` when the tag has no message.
 - An `optional` member or parameter's `type` doesn't include the `undefined` that `?` adds.
+
+## Elements
+
+The custom elements of the package's Custom Elements Manifest (`customElements` in `package.json`), for the Blazor components ([design §2](design.md#2-what-we-generate)). An element is a tag plus what the manifest adds to its class; the class's properties and methods are its declaration's members.
+
+```jsonc
+{ "tag": "demo-map", "class": { "kind": "ref", "name": "DemoMapElement", "module": "@acme/demo-maps/demo-map.js" },
+  "doc": { … }, "attributes": [ … ], "events": [ … ], "slots": [ … ] }
+```
+
+- An element's tag is its declaration's `tagName`, or the name of a `custom-element-definition` export of it.
+- **Attributes** are `{ name, property?, type?, doc? }`. `property` names the class member the attribute reflects, which has the type; `type` is given only when there's no `property`.
+- **Events** are `{ name, detail?, type?, doc? }`. A `CustomEvent<T>` gives `detail` (T); any other event type is `type`. Neither means a plain `Event`.
+- **Slots** are `{ name, doc? }`; the default slot's name is `""`.
+- **Docs** come from the manifest: `summary` is its `description` (or `summary`), `default` an attribute's default (a JS expression), `deprecated` as for JSDoc.
+- **Types** are the manifest's type texts, resolved by the checker in the scope of the names their `references` point at, so they're the same IR types as the typings'. A text that doesn't resolve is `unresolved`. `class` is resolved the same way, from the declaration's name and module.
 
 ## Types
 

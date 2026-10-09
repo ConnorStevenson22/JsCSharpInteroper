@@ -147,9 +147,74 @@ test("TS enums, and R11: an intersection of object types is resolved", () => {
   ]);
 });
 
-test("the CLI writes byte-identical IR on every run", () => {
-  const run = () => execFileSync(process.execPath, [fileURLToPath(new URL("../extract.mjs", import.meta.url)), fixture, "--profile", `${fixture}/profile.json`]);
-  const first = run();
-  assert.ok(first.equals(run()));
-  assert.deepEqual(JSON.parse(first), ir);
+test("design §2: custom elements come from the manifest, linked to the typings", () => {
+  const [element] = ir.elements;
+  assert.deepEqual(element.class, ref("demo-map", "DemoMapElement"));
+  assert.deepEqual(element.doc, { summary: "A map view as an element." });
+  // Attributes link to the class's properties, which carry the types (R9: `basemap` is a `Basemap`).
+  assert.deepEqual(element.attributes, [
+    { name: "basemap", property: "basemap", doc: { default: '"plain"' } },
+    { name: "zoom", property: "zoom", doc: { default: "1" } },
+  ]);
+  assert.deepEqual(member("demo-map", "DemoMapElement", "basemap").type, ref("MapView", "Basemap"));
+  // Event types are resolved by the checker; a CustomEvent<T> gives its detail type.
+  assert.deepEqual(element.events.map((e) => [e.name, e.detail]), [
+    ["demo-map-click", ref("demo-map", "DemoMapClickDetail")],
+    ["demo-map-zoom-change", { kind: "object", members: [{ kind: "property", name: "zoom", type: num }] }],
+    ["demo-map-ready", { kind: "primitive", name: "null" }],
+  ]);
+  assert.deepEqual(element.slots.map((s) => s.name), ["", "toolbar"]);
+});
+
+test("design §2: manifest types the typings don't give, and ones that don't resolve", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "extract-"));
+  const write = (name, value) => fs.writeFileSync(path.join(dir, name), typeof value === "string" ? value : JSON.stringify(value));
+  write("package.json", { name: "@acme/extra", version: "1.0.0", type: "module", customElements: "cem.json" });
+  write("kinds.d.ts", 'export type Kind = "a" | "b";');
+  write("x-pin.d.ts", "export class PinElement extends HTMLElement {}");
+  write("cem.json", { modules: [
+    { path: "x-pin.js", declarations: [{
+      kind: "class", name: "PinElement", deprecated: true,
+      attributes: [
+        { name: "kind", type: { text: "Kind | null", references: [{ name: "Kind", module: "kinds.js" }] }, description: "No property." },
+        { name: "size", type: { text: "Size" } },
+      ],
+      events: [{ name: "x-pin-press", type: { text: "MouseEvent" } }, { name: "x-pin-done" }],
+    }] },
+    // The definition can live in another module.
+    { path: "define.js", exports: [{ kind: "custom-element-definition", name: "x-pin", declaration: { name: "PinElement", module: "x-pin.js" } }] },
+  ] });
+  const { elements } = extract(dir);
+  fs.rmSync(dir, { recursive: true });
+  assert.deepEqual(elements, [{
+    tag: "x-pin",
+    class: { kind: "ref", name: "PinElement", module: "@acme/extra/x-pin.js" },
+    doc: { deprecated: "" },
+    attributes: [
+      { name: "kind", type: { kind: "union", types: [{ kind: "ref", name: "Kind", module: "@acme/extra/kinds.js" }, { kind: "primitive", name: "null" }] }, doc: { summary: "No property." } },
+      { name: "size", type: { kind: "unresolved", text: "Size" } },
+    ],
+    events: [{ name: "x-pin-press", type: { kind: "ref", name: "MouseEvent" } }, { name: "x-pin-done" }],
+  }]);
+});
+
+test("a package without a manifest has no elements", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "extract-"));
+  fs.writeFileSync(path.join(dir, "package.json"), JSON.stringify({ name: "@acme/plain", version: "1.0.0" }));
+  fs.writeFileSync(path.join(dir, "index.d.ts"), "export const x: number;");
+  const out = extract(dir);
+  fs.rmSync(dir, { recursive: true });
+  assert.equal(out.elements, undefined);
+});
+
+// The golden IR is the generator's input for the fixture. It's also the "byte-identical across runs" check.
+const golden = fileURLToPath(new URL("demo-maps.ir.json", import.meta.url));
+
+test("the CLI writes the golden IR for the fixture, byte for byte", () => {
+  const json = execFileSync(process.execPath, [fileURLToPath(new URL("../extract.mjs", import.meta.url)), fixture, "--profile", `${fixture}/profile.json`], { encoding: "utf8" });
+  if (process.env.UPDATE_GOLDEN) fs.writeFileSync(golden, json);
+  assert.ok(json === fs.readFileSync(golden, "utf8"),
+    "The IR differs from src/interoper-extractor/test/demo-maps.ir.json. If the change is intended, run\n" +
+    "  UPDATE_GOLDEN=1 node --test src/interoper-extractor/test/extract.test.mjs\nand review the diff.");
+  assert.deepEqual(JSON.parse(json), ir);
 });
