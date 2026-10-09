@@ -18,7 +18,8 @@ internal static class RecordEmitter
             using (w.Block($"public static void Write(Utf8JsonWriter writer, {name} value)"))
             {
                 w.Line("writer.WriteStartObject();");
-                WriteFields(w, fields, constants: true);
+                WriteConstants(w, fields);
+                WriteFields(w, fields);
                 w.Line("writer.WriteEndObject();");
             }
             w.Line();
@@ -69,7 +70,7 @@ internal static class RecordEmitter
         }
         using (w.Block($"public static void WriteMembers(Utf8JsonWriter writer, {name} value)"))
         {
-            WriteFields(w, fields, constants: false);
+            WriteFields(w, fields);
         }
         w.Line();
         Read(w, name, modifier, fields);
@@ -78,7 +79,7 @@ internal static class RecordEmitter
     /// <summary>Write and WriteMembers by the subclass, Read by the discriminant.</summary>
     private static void ClosedBase(CodeWriter w, TypeMap types, ClassDeclaration c, string name, string modifier)
     {
-        var subclasses = types.ConcreteSubclasses(c).Select(TypeMap.SnapshotName).ToList();
+        var subclasses = types.ConcreteSubclasses(c);
         foreach (var method in new[] { "Write", "WriteMembers" })
         {
             using (w.Block($"public static void {method}(Utf8JsonWriter writer, {name} value)"))
@@ -86,14 +87,14 @@ internal static class RecordEmitter
             {
                 foreach (var sub in subclasses)
                 {
-                    var local = Syntax.Local(sub[..^"Snapshot".Length], "writer", "value");
-                    w.Line($"case {sub} {local}: {sub}.{method}(writer, {local}); break;");
+                    var (type, local) = (TypeMap.SnapshotName(sub), Syntax.Local(Naming.Type(sub.Name), "writer", "value"));
+                    w.Line($"case {type} {local}: {type}.{method}(writer, {local}); break;");
                 }
             }
             w.Line();
         }
         var discriminant = types.Discriminant(c);
-        var cases = types.ConcreteSubclasses(c).Select(sub => (types.Fields(sub).Single(f => f.JsName == discriminant).Constant!.Value.GetString()!, TypeMap.SnapshotName(sub)));
+        var cases = subclasses.Select(sub => (types.Constant(sub, discriminant), TypeMap.SnapshotName(sub)));
         DiscriminantSwitch(w, $"public static {modifier}{name} Read(ref Utf8JsonReader reader)", name, discriminant, cases);
     }
 
@@ -124,39 +125,28 @@ internal static class RecordEmitter
         }
     }
 
+    /// <summary>The constants, always written (R20).</summary>
     private static void WriteConstants(CodeWriter w, IReadOnlyList<Field> fields)
     {
         foreach (var f in fields.Where(f => f.Constant is not null))
         {
-            WriteConstant(w, f);
+            var value = f.Constant!.Value;
+            w.Line(value.ValueKind switch
+            {
+                JsonValueKind.String => $"writer.WriteString({Syntax.Utf8(f.JsName)}, {Syntax.Utf8(value.GetString()!)});",
+                JsonValueKind.Number => $"writer.WriteNumber({Syntax.Utf8(f.JsName)}, {value.GetRawText()});",
+                _ => $"writer.WriteBoolean({Syntax.Utf8(f.JsName)}, {value.GetRawText()});",
+            });
         }
     }
 
-    private static void WriteConstant(CodeWriter w, Field f)
+    /// <summary>The other members, undefined ones left out (R2, R3).</summary>
+    private static void WriteFields(CodeWriter w, IReadOnlyList<Field> fields)
     {
-        var value = f.Constant!.Value;
-        w.Line(value.ValueKind switch
-        {
-            JsonValueKind.String => $"writer.WriteString({Syntax.Utf8(f.JsName)}, {Syntax.Utf8(value.GetString()!)});",
-            JsonValueKind.Number => $"writer.WriteNumber({Syntax.Utf8(f.JsName)}, {value.GetRawText()});",
-            _ => $"writer.WriteBoolean({Syntax.Utf8(f.JsName)}, {value.GetRawText()});",
-        });
-    }
-
-    /// <summary>The members, undefined ones left out (R2, R3).</summary>
-    private static void WriteFields(CodeWriter w, IReadOnlyList<Field> fields, bool constants)
-    {
-        foreach (var f in fields)
+        foreach (var f in fields.Where(f => f.Constant is null))
         {
             var name = Syntax.Utf8(f.JsName);
-            if (f.Constant is not null)
-            {
-                if (constants)
-                {
-                    WriteConstant(w, f);
-                }
-            }
-            else if (f.Type!.IsUnion)
+            if (f.Type!.IsUnion)
             {
                 w.Line($"JsJson.WriteProperty(writer, {name}, value.{f.Name});");
             }

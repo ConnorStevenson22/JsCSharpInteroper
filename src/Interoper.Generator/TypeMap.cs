@@ -278,10 +278,14 @@ internal sealed class TypeMap
         return result;
     }
 
+    /// <summary>The value of a string constant: a case's discriminant (R19 step 2).</summary>
+    public string Constant(Declaration declaration, string name) =>
+        Fields(declaration).Single(f => f.JsName == name).Constant!.Value.GetString()!;
+
     /// <summary>The wire members of an object case, and whether each is required, for R19 step 3.</summary>
     public IEnumerable<(string Name, bool Required)> WireMembers(Declaration declaration)
     {
-        var wire = Fields(declaration).Select(f => (f.JsName, f.Required || f.Constant is not null));
+        var wire = Fields(declaration).Select(f => (f.JsName, f.Required));
         return declaration is ClassDeclaration c && IsClosed(c) ? wire.Prepend((Discriminant(c), true)) : wire;
     }
 

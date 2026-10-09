@@ -154,7 +154,7 @@ internal static class ValueTypeEmitter
         var header = $"public static {u.Name} ReadValue(ref Utf8JsonReader reader)";
         if (u.Discriminant is { } discriminant)
         {
-            var cases = u.Cases.Select(c => (types.Fields(c.Declaration!).Single(f => f.JsName == discriminant).Constant!.Value.GetString()!, c.Type.Name));
+            var cases = u.Cases.Select(c => (types.Constant(c.Declaration!, discriminant), c.Type.Name));
             RecordEmitter.DiscriminantSwitch(w, header, u.Name, discriminant, cases);
             return;
         }
