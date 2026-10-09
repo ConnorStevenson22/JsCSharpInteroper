@@ -89,7 +89,7 @@ function respond(opJson) {
   const success = (v) => JSON.stringify(v === undefined ? {} : { v });
   try {
     const result = run(parse(opJson));
-    return isThenable(result) ? result.then(success).catch(failure) : success(result);
+    return isThenable(result) ? Promise.resolve(result).then(success).catch(failure) : success(result);
   } catch (e) {
     return failure(e);
   }
