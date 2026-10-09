@@ -16,7 +16,7 @@ Hand-written bindings for a slice of the fixture, running on every host.
 - [x] **Value model.** Add `Undefined`, `Opt<T>`, the union pattern and JSON helpers for the three states (R1–R6). Port the value-model experiment's checks as tests ([`7d48a23/spikes/value-model`](https://github.com/ConnorStevenson22/JsCSharpInteroper/tree/7d48a23/spikes/value-model)).
 - [x] **`interoper.js`.** Build the handle table, the ops (`create`, `get`, `set`, `call`, `snapshot`, `apply`, `subscribe`, `release`, `batch`), the `$h`/`$f`/`$u`/`$c` reviver, error mapping, and entry points for both seams. Tests live in `tests/interoper-js`.
 - [x] **Seams and transports.** Implement `IJsSyncTransport`, `IJsTransport`, `JsImportTransport`, `JsRuntimeTransport`, the callback registry and `InMemoryTransport`. The same contract tests run in-memory and in the browser.
-- [x] **Realm, scopes and identity.** Add `AddInteroper()`, the per-component transport choice, `JsScope`, the identity cache and the most-derived-type registry. The handle census must return to baseline after disposal.
+- [x] **Realm, scopes and identity.** Add `AddInteroper()`, the per-realm transport choice, `JsScope`, the identity cache and the most-derived-type registry. The handle census must return to baseline after disposal.
 - [ ] **Batching.** Add `BeginBatch()`, flush-on-read, `JsBatchException` and a round-trip counter. N writes must be one round trip.
 - [ ] **Golden slice** in `tests/GoldenSlice`. Write the bindings the generator should emit, by hand, in both modes, citing R-numbers. Cover `Shape`/`Point`/`Line`/`Polygon`, `MapView` (properties, a Promise method, a `click` event), `Marker` (getter ≠ setter), one union, one enum, one watch, one module function and their snapshots.
 

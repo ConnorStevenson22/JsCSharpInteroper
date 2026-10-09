@@ -10,8 +10,8 @@
         try
         {
             var view = await DemoMaps.CreateAsync(Scope, TransportContract.MapView);
-            var center = await DemoMaps.GetAsync(view, "center");
-            if (!ReferenceEquals(center, await DemoMaps.GetAsync(view, "center")))
+            var center = await DemoMaps.GetAsync(Scope, view, "center");
+            if (!ReferenceEquals(center, await DemoMaps.GetAsync(Scope, view, "center")))
             {
                 throw new InvalidOperationException("one JS object gave two C# objects");
             }

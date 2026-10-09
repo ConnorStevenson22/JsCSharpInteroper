@@ -9,6 +9,7 @@ public sealed class ScopeTests(BrowserHost host)
     [Theory]
     [InlineData("server-scope")] // JsRuntimeTransport, one realm per circuit
     [InlineData("wasm-scope")] // the one JsImportTransport, shared by every scope
+    [InlineData("auto-scope")] // InteractiveAuto: Server's realm on a first visit
     public async Task ScopeDisposalReturnsTheCensusToBaseline(string path)
     {
         using var http = new HttpClient { BaseAddress = host.BaseUrl };

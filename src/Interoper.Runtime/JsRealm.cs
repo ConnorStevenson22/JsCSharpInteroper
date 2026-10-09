@@ -1,3 +1,5 @@
+using Microsoft.JSInterop;
+
 namespace Interoper;
 
 /// <summary>
@@ -7,12 +9,10 @@ namespace Interoper;
 /// </summary>
 public sealed class JsRealm(Func<Task<IJsTransport>> start, JsClassRegistry classes) : IAsyncDisposable
 {
-    // The identity cache: handle id → the live object (weakly), and the scope that owns the handle.
+    // The identity cache: handle id → the live object (weakly), and the scopes that own the handle.
     private readonly Dictionary<int, Entry> objects = [];
     private Task? starting;
     private IJsTransport? transport;
-
-    public JsClassRegistry Classes { get; } = classes;
 
     /// <summary>The async seam. Throws <see cref="JsRealmUnavailableException"/> until the realm has started.</summary>
     public IJsTransport Transport => transport ?? throw new JsRealmUnavailableException();
@@ -21,6 +21,8 @@ public sealed class JsRealm(Func<Task<IJsTransport>> start, JsClassRegistry clas
     public IJsSyncTransport SyncTransport => Transport as IJsSyncTransport ?? throw new InvalidOperationException(
         "Bindings generated in sync mode need .NET running in the browser (Blazor WebAssembly) on the JsImport " +
         "transport. On Server and Hybrid, use bindings generated in async mode: regenerate with `--api async`.");
+
+    internal bool IsStarted => transport is not null;
 
     /// <summary>Starts the transport once; a failed start can be retried.</summary>
     public Task StartAsync()
@@ -43,43 +45,92 @@ public sealed class JsRealm(Func<Task<IJsTransport>> start, JsClassRegistry clas
         }
     }
 
-    /// <summary>The live object for a handle: the cached one, or a new one of the class's most-derived type.</summary>
+    /// <summary>
+    /// The live object for a handle, now also owned by <paramref name="scope"/>: the cached one, or a new one of the
+    /// class's most-derived type.
+    /// </summary>
     internal JsObject Wrap(JsScope scope, int handle, int classId)
     {
         lock (objects)
         {
-            if (objects.TryGetValue(handle, out var entry))
+            // Owned even if no live type can be made for it, so the scope still releases it.
+            var entry = Own(scope, handle);
+            if (entry.Object?.TryGetTarget(out var live) == true)
             {
-                if (entry.Object?.TryGetTarget(out var live) == true)
-                {
-                    return live;
-                }
+                return live;
             }
-            else
-            {
-                // The first scope to receive a handle owns it, even if no live type can be made for it.
-                objects.Add(handle, entry = new(scope));
-            }
-            var created = Classes.Create(entry.Owner, handle, classId);
+            var created = classes.Create(this, handle, classId);
             entry.Object = new(created);
             return created;
         }
     }
 
-    /// <summary>Forgets every handle <paramref name="scope"/> owns and returns them, for one <c>release</c>.</summary>
+    /// <summary>Adds <paramref name="scope"/> to the owners of a handle.</summary>
+    internal Entry Own(JsScope scope, int handle)
+    {
+        lock (objects)
+        {
+            if (!objects.TryGetValue(handle, out var entry))
+            {
+                objects.Add(handle, entry = new());
+            }
+            entry.Owners.Add(scope);
+            return entry;
+        }
+    }
+
+    /// <summary>
+    /// Removes <paramref name="scope"/> from every handle it owns, and returns the handles no scope owns any more,
+    /// for one <c>release</c>.
+    /// </summary>
     internal List<int> Forget(JsScope scope)
     {
         lock (objects)
         {
-            var owned = objects.Where(p => p.Value.Owner == scope).Select(p => p.Key).ToList();
-            owned.ForEach(handle => objects.Remove(handle));
-            return owned;
+            var unowned = new List<int>();
+            foreach (var (handle, entry) in objects)
+            {
+                if (entry.Owners.Remove(scope) && entry.Owners.Count == 0)
+                {
+                    unowned.Add(handle);
+                }
+            }
+            unowned.ForEach(handle => objects.Remove(handle));
+            return unowned;
         }
     }
 
-    private sealed class Entry(JsScope owner)
+    /// <summary>
+    /// Releases a handle that reached a disposed scope (its call was in flight), unless another scope owns it.
+    /// Fire and forget: the caller gets <see cref="ObjectDisposedException"/>.
+    /// </summary>
+    internal void Abandon(int handle)
     {
-        public JsScope Owner { get; } = owner;
+        lock (objects)
+        {
+            if (objects.ContainsKey(handle))
+            {
+                return;
+            }
+        }
+        _ = ReleaseAsync(handle);
+    }
+
+    private async Task ReleaseAsync(int handle)
+    {
+        try
+        {
+            await Transport.InvokeAsync(JsOp.Release([handle]));
+        }
+        catch (JSDisconnectedException)
+        {
+            // The circuit is gone, and the handle with it.
+        }
+    }
+
+    internal sealed class Entry
+    {
+        public HashSet<JsScope> Owners { get; } = [];
 
         public WeakReference<JsObject>? Object { get; set; }
     }

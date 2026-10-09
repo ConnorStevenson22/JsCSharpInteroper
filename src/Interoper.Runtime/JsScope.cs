@@ -3,12 +3,14 @@ using Microsoft.JSInterop;
 namespace Interoper;
 
 /// <summary>
-/// Owns handles and .NET callbacks (design §3.2, R21); a component owns one. Disposal releases every handle in
-/// one <c>release</c> op, and every callback. One type serves both modes: <see cref="Dispose"/> sends through
-/// the sync seam (WebAssembly only), <see cref="DisposeAsync"/> through the async seam.
+/// Owns handles and .NET callbacks (design §3.2, R21); a component owns one, and uses it from its dispatcher.
+/// Disposal releases every handle no other scope owns in one <c>release</c> op, then every callback. One type
+/// serves both modes: <see cref="Dispose"/> sends through the sync seam (WebAssembly only),
+/// <see cref="DisposeAsync"/> through the async seam.
 /// </summary>
 public sealed class JsScope(JsRealm realm) : IDisposable, IAsyncDisposable
 {
+    private readonly Lock gate = new(); // covers disposed, callbacks and this scope's ownership in the realm
     private readonly List<int> callbacks = [];
     private bool disposed;
 
@@ -26,25 +28,48 @@ public sealed class JsScope(JsRealm realm) : IDisposable, IAsyncDisposable
     public IJsSyncTransport SyncTransport => Realm.SyncTransport;
 
     /// <summary>
-    /// The live object for a <c>{"$h","$t"}</c> handle: the same C# object for the same JS object, of the most-derived
-    /// type registered for the class id (R19), read through any base. A new handle belongs to this scope.
+    /// The live object for a <c>{"$h","$t"}</c> handle, owned by this scope too: the same C# object for the same JS
+    /// object, of the most-derived type registered for the class id (R19), read through any base.
     /// </summary>
     public T Wrap<T>(int handle, int classId) where T : JsObject
     {
-        ObjectDisposedException.ThrowIf(disposed, this);
-        return (T)Realm.Wrap(this, handle, classId);
+        lock (gate)
+        {
+            ThrowIfDisposed(handle);
+            return (T)Realm.Wrap(this, handle, classId);
+        }
+    }
+
+    /// <summary>Owns a handle that has no live object, such as a subscription.</summary>
+    public void Own(int handle)
+    {
+        lock (gate)
+        {
+            ThrowIfDisposed(handle);
+            Realm.Own(this, handle);
+        }
+    }
+
+    // A handle whose call was in flight when the scope was disposed is released, not leaked.
+    private void ThrowIfDisposed(int handle)
+    {
+        if (disposed)
+        {
+            Realm.Abandon(handle);
+            throw new ObjectDisposedException(nameof(JsScope));
+        }
     }
 
     /// <summary>Registers a callback (R21) that this scope releases; send it as <c>{"$f":id}</c>.</summary>
     public int Register(Func<string, string?> handler)
     {
-        ObjectDisposedException.ThrowIf(disposed, this);
-        var id = Transport.Callbacks.Register(Dispatch is null ? handler : args => Dispatched(handler, args));
-        lock (callbacks)
+        lock (gate)
         {
+            ObjectDisposedException.ThrowIf(disposed, this);
+            var id = Transport.Callbacks.Register(Dispatch is null ? handler : args => Dispatched(handler, args));
             callbacks.Add(id);
+            return id;
         }
-        return id;
     }
 
     // Run inline (always on WebAssembly, or when already on the dispatcher), JS gets the result as without a
@@ -63,46 +88,66 @@ public sealed class JsScope(JsRealm realm) : IDisposable, IAsyncDisposable
 
     public void Dispose()
     {
-        if (Take() is { } release)
+        // Before anything is forgotten: without a sync seam this throws, and DisposeAsync still releases everything.
+        var sync = Realm.IsStarted ? SyncTransport : null;
+        var (release, owned) = Take();
+        try
         {
-            JsEnvelope.Check(SyncTransport.Invoke(release));
+            if (release is not null)
+            {
+                JsEnvelope.Check(sync!.Invoke(release));
+            }
+        }
+        finally
+        {
+            ReleaseCallbacks(owned);
         }
     }
 
     public async ValueTask DisposeAsync()
     {
-        if (Take() is not { } release)
-        {
-            return;
-        }
+        var (release, owned) = Take();
         try
         {
-            JsEnvelope.Check(await Transport.InvokeAsync(release));
+            if (release is not null)
+            {
+                JsEnvelope.Check(await Transport.InvokeAsync(release));
+            }
         }
         catch (JSDisconnectedException)
         {
             // The circuit is gone, and every handle with it.
         }
+        finally
+        {
+            ReleaseCallbacks(owned);
+        }
     }
 
-    // Marks the scope disposed, releases its callbacks, and returns the op that releases its handles (null if none).
-    // A scope that never reached JS (prerendering) touches no transport.
-    private string? Take()
+    // Marks the scope disposed and returns the op that releases its handles (null if none) and its callbacks.
+    // A scope that never reached JS (prerendering) has neither, and touches no transport.
+    private (string? Release, int[] Callbacks) Take()
     {
-        if (disposed)
+        lock (gate)
         {
-            return null;
-        }
-        disposed = true;
-        lock (callbacks)
-        {
-            foreach (var id in callbacks)
+            if (disposed)
             {
-                Transport.Callbacks.Release(id);
+                return (null, []);
             }
+            disposed = true;
+            var handles = Realm.Forget(this);
+            int[] owned = [.. callbacks];
             callbacks.Clear();
+            return (handles.Count == 0 ? null : JsOp.Release(handles), owned);
         }
-        var handles = Realm.Forget(this);
-        return handles.Count == 0 ? null : JsOp.Release(handles);
+    }
+
+    // After the release op: subscriptions are gone first, so JS raises no events into released callbacks (§3.1).
+    private void ReleaseCallbacks(int[] owned)
+    {
+        foreach (var id in owned)
+        {
+            Transport.Callbacks.Release(id);
+        }
     }
 }
