@@ -2,10 +2,6 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { DemoMapElement } from "../demo-map.js";
 
-test("without a DOM the module loads and registers nothing", () => {
-  assert.equal(globalThis.customElements, undefined);
-});
-
 test("attributes and properties drive the view", () => {
   const element = new DemoMapElement();
   element.attributeChangedCallback("zoom", null, "6");

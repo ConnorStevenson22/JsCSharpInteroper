@@ -13,14 +13,33 @@
           "superclass": { "name": "HTMLElement", "package": "global:" },
           "description": "A map view as an element.",
           "attributes": [
-            { "name": "basemap", "type": { "text": "Basemap" }, "fieldName": "basemap", "default": "\"streets\"" },
+            {
+              "name": "basemap",
+              "type": { "text": "Basemap", "references": [{ "name": "Basemap", "module": "MapView.js" }] },
+              "fieldName": "basemap",
+              "default": "\"plain\""
+            },
             { "name": "zoom", "type": { "text": "number" }, "fieldName": "zoom", "default": "1" }
           ],
           "members": [
-            { "kind": "field", "name": "view", "type": { "text": "MapView" }, "readonly": true },
-            { "kind": "field", "name": "basemap", "type": { "text": "Basemap" }, "attribute": "basemap" },
+            {
+              "kind": "field",
+              "name": "view",
+              "type": { "text": "MapView", "references": [{ "name": "MapView", "module": "MapView.js" }] },
+              "readonly": true
+            },
+            {
+              "kind": "field",
+              "name": "basemap",
+              "type": { "text": "Basemap", "references": [{ "name": "Basemap", "module": "MapView.js" }] },
+              "attribute": "basemap"
+            },
             { "kind": "field", "name": "zoom", "type": { "text": "number" }, "attribute": "zoom" },
-            { "kind": "field", "name": "center", "type": { "text": "Point" } },
+            {
+              "kind": "field",
+              "name": "center",
+              "type": { "text": "Point", "references": [{ "name": "Point", "module": "geometry.js" }] }
+            },
             {
               "kind": "method",
               "name": "clickAt",
@@ -32,16 +51,23 @@
             }
           ],
           "events": [
-            { "name": "demo-map-click", "type": { "text": "CustomEvent<DemoMapClickDetail>" } },
-            { "name": "demo-map-zoom-change", "type": { "text": "CustomEvent<{ zoom: number }>" }, "description": "Fires when zoom changes; pairs with `zoom` for two-way binding." },
+            {
+              "name": "demo-map-click",
+              "type": {
+                "text": "CustomEvent<DemoMapClickDetail>",
+                "references": [{ "name": "DemoMapClickDetail", "module": "demo-map.js" }]
+              }
+            },
+            {
+              "name": "demo-map-zoom-change",
+              "type": { "text": "CustomEvent<{ zoom: number }>" },
+              "description": "Fires when zoom changes; pairs with `zoom` for two-way binding."
+            },
             { "name": "demo-map-ready", "type": { "text": "CustomEvent<null>" } }
           ],
           "slots": [
             { "name": "", "description": "Overlay content." },
             { "name": "toolbar", "description": "Controls above the map." }
-          ],
-          "cssParts": [
-            { "name": "surface", "description": "The clickable map area." }
           ]
         }
       ],

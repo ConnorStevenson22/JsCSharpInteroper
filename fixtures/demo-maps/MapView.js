@@ -1,11 +1,11 @@
-import { Collection, Evented } from "./core.js";
+import { Collection, Emitter } from "./core.js";
 import { Point, Shape } from "./geometry.js";
 
-export class MapView extends Evented {
-  static declaredClass = "views.MapView";
+export class MapView extends Emitter {
+  static className = "MapView";
   #markers = new Collection();
 
-  constructor({ center = new Point(), zoom = 1, rotation = 0, basemap = "streets", cursor = "default", title } = {}) {
+  constructor({ center = new Point(), zoom = 1, rotation = 0, basemap = "plain", cursor = "default", title, container = null } = {}) {
     super();
     this.center = center;
     this.zoom = zoom;
@@ -13,6 +13,7 @@ export class MapView extends Evented {
     this.basemap = basemap;
     this.cursor = cursor;
     this.title = title;
+    this.container = container;
     this.selected = null;
   }
 
@@ -32,35 +33,39 @@ export class MapView extends Evented {
   set selected(value) { this._set("selected", value); }
   get markers() { return this.#markers; }
 
+  // The element the map draws into. Only stored, never touched, so the view also runs without a DOM.
+  get container() { return this._get("container"); }
+  set container(value) { this._set("container", value ?? null); }
+
   // Screen offset (pixels from the center) to map coordinates; one pixel is 2^-zoom map units.
-  toMap(x, y) {
+  screenToMap(x, y) {
     const scale = 2 ** this.zoom;
     return new Point({ x: this.center.x + x / scale, y: this.center.y - y / scale });
   }
 
   // Resolves once the view has "moved"; the target is a Shape, an [x, y] pair, Bounds or { center, zoom }.
-  async goTo(target, { duration = 0, signal } = {}) {
+  async flyTo(target, { duration = 0, signal } = {}) {
     signal?.throwIfAborted();
     await new Promise((resolve, reject) => {
       const timer = setTimeout(resolve, duration);
       signal?.addEventListener("abort", () => { clearTimeout(timer); reject(signal.reason); }, { once: true });
     });
     if (target instanceof Shape) {
-      const { xmin, ymin, xmax, ymax } = target.extent;
-      this.center = new Point({ x: (xmin + xmax) / 2, y: (ymin + ymax) / 2 });
+      const { minX, minY, maxX, maxY } = target.bounds;
+      this.center = new Point({ x: (minX + maxX) / 2, y: (minY + maxY) / 2 });
     } else if (Array.isArray(target)) {
       this.center = new Point({ x: target[0], y: target[1] });
     } else if ("center" in target) {
       this.center = new Point({ x: target.center[0], y: target.center[1] });
       this.zoom = target.zoom;
     } else {
-      this.center = new Point({ x: (target.xmin + target.xmax) / 2, y: (target.ymin + target.ymax) / 2 });
+      this.center = new Point({ x: (target.minX + target.maxX) / 2, y: (target.minY + target.maxY) / 2 });
     }
   }
 
   // The first marker within 10 pixels of the screen offset, or null.
-  async hitTest(x, y) {
-    const point = this.toMap(x, y);
+  async markerAt(x, y) {
+    const point = this.screenToMap(x, y);
     const tolerance = 10 / 2 ** this.zoom;
     return this.#markers.find((m) => Math.hypot(m.position.x - point.x, m.position.y - point.y) <= tolerance) ?? null;
   }

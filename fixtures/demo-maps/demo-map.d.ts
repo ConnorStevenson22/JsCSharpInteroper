@@ -9,7 +9,7 @@ export interface DemoMapClickDetail {
 }
 
 /**
- * `<demo-map>`. Attributes: `basemap`, `zoom`. Slots: default, `toolbar`. Part: `surface`.
+ * `<demo-map>`. Attributes: `basemap`, `zoom`. Slots: default, `toolbar`.
  * Events: `demo-map-click`, `demo-map-zoom-change`, `demo-map-ready`.
  */
 export class DemoMapElement extends HTMLElement {

@@ -1,9 +1,9 @@
-import { Collection, Evented } from "./core.js";
+import { Collection, Emitter } from "./core.js";
 import { Bounds, Point, Shape } from "./geometry.js";
 import { Marker } from "./Marker.js";
 
-/** "3d-terrain" starts with a digit on purpose (R25). */
-export type Basemap = "streets" | "satellite" | "dark-gray" | "3d-terrain";
+/** "3d-relief" starts with a digit on purpose (R25). */
+export type Basemap = "plain" | "night" | "relief" | "3d-relief";
 
 /** Open-ended: the known values, or any CSS cursor. */
 export type Cursor = "default" | "pointer" | "crosshair" | (string & {});
@@ -14,12 +14,12 @@ export interface CenterAndZoom {
 }
 
 /** Untagged: told apart by required members only. */
-export type Viewpoint = Bounds | CenterAndZoom;
+export type Camera = Bounds | CenterAndZoom;
 
-/** Mixed: a live object, a tuple, and the nested Viewpoint union. */
-export type GoToTarget = Shape | [number, number] | Viewpoint;
+/** Mixed: a live object, a tuple, and the nested Camera union. */
+export type FlyToTarget = Shape | [number, number] | Camera;
 
-export interface GoToOptions {
+export interface FlyToOptions {
   /** Milliseconds. Defaults to 0. */
   duration?: number;
   signal?: AbortSignal;
@@ -38,11 +38,11 @@ export interface MapViewEvents {
   click: ClickEvent;
 }
 
-export type MapViewProperties = Partial<Pick<MapView, "center" | "zoom" | "rotation" | "basemap" | "cursor" | "title">>;
+export type MapViewOptions = Partial<Pick<MapView, "center" | "zoom" | "rotation" | "basemap" | "cursor" | "title" | "container">>;
 
-export class MapView extends Evented {
-  "@eventTypes": MapViewEvents;
-  constructor(props?: MapViewProperties);
+export class MapView extends Emitter {
+  "$events": MapViewEvents;
+  constructor(options?: MapViewOptions);
   center: Point;
   /** Clamped to 0–20. */
   zoom: number;
@@ -51,9 +51,11 @@ export class MapView extends Evented {
   basemap: Basemap;
   cursor: Cursor;
   title?: string | null;
+  /** The element the map draws into. */
+  container: HTMLElement | null;
   selected: Marker | null;
   readonly markers: Collection<Marker>;
-  toMap(x: number, y: number): Point;
-  goTo(target: GoToTarget, options?: GoToOptions): Promise<void>;
-  hitTest(x: number, y: number): Promise<Marker | null>;
+  screenToMap(x: number, y: number): Point;
+  flyTo(target: FlyToTarget, options?: FlyToOptions): Promise<void>;
+  markerAt(x: number, y: number): Promise<Marker | null>;
 }

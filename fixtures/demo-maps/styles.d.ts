@@ -9,8 +9,6 @@ export interface Rgba {
 /** "#rrggbb" or a color name, [r, g, b, a?], or an Rgba object. */
 export type ColorInput = string | number[] | Rgba;
 
-export type MarkerSize = 8 | 16 | 24 | 32;
-
 export type IconName =
   | "pin-1" | "pin-2" | "pin-3" | "pin-4" | "pin-5" | "pin-6" | "pin-7" | "pin-8" | "pin-9" | "pin-10"
   | "pin-11" | "pin-12" | "pin-13" | "pin-14" | "pin-15" | "pin-16" | "pin-17" | "pin-18" | "pin-19" | "pin-20"
@@ -42,7 +40,6 @@ export interface StrokeStyle {
 export interface IconStyle {
   type: "icon";
   name: IconName;
-  size?: MarkerSize;
   color?: ColorInput | null;
 }
 

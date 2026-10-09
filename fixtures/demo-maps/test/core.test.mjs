@@ -1,31 +1,31 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { Collection, Evented } from "../core.js";
+import { Collection, Emitter } from "../core.js";
 import { Point } from "../geometry.js";
 
 test("watch reports changes with the old value, and only real changes", () => {
   const point = new Point({ x: 1 });
   const seen = [];
-  const handle = point.watch("x", (value, old) => seen.push([value, old]));
+  const subscription = point.watch("x", (value, old) => seen.push([value, old]));
   point.x = 2;
   point.x = 2;
-  handle.remove();
+  subscription.dispose();
   point.x = 3;
   assert.deepEqual(seen, [[2, 1]]);
 });
 
-test("declaredClass is the runtime class name of the most-derived class", () => {
-  assert.equal(new Point().declaredClass, "geometry.Point");
-  assert.equal(new Collection().declaredClass, "core.Collection");
+test("className is the runtime class name of the most-derived class", () => {
+  assert.equal(new Point().className, "geometry.Point");
+  assert.equal(new Collection().className, "core.Collection");
 });
 
-test("on/emit deliver events until the handle is removed", () => {
-  const evented = new Evented();
+test("on/emit deliver events until the subscription is disposed", () => {
+  const emitter = new Emitter();
   const seen = [];
-  const handle = evented.on("ping", (e) => seen.push(e));
-  assert.equal(evented.emit("ping", 1), true);
-  handle.remove();
-  assert.equal(evented.emit("ping", 2), false);
+  const subscription = emitter.on("ping", (e) => seen.push(e));
+  assert.equal(emitter.emit("ping", 1), true);
+  subscription.dispose();
+  assert.equal(emitter.emit("ping", 2), false);
   assert.deepEqual(seen, [1]);
 });
 

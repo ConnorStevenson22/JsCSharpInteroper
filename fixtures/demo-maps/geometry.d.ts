@@ -1,37 +1,39 @@
-import { Accessor } from "./core.js";
+import { Observable } from "./core.js";
 
 export type ShapeType = "point" | "line" | "polygon";
 
 /** A data record: plain JSON, no class behind it. */
 export interface Bounds {
-  xmin: number;
-  ymin: number;
-  xmax: number;
-  ymax: number;
+  minX: number;
+  minY: number;
+  maxX: number;
+  maxY: number;
 }
 
-export abstract class Shape extends Accessor {
+export abstract class Shape extends Observable {
   /** Discriminant: each subclass narrows it to one literal. */
   abstract readonly type: ShapeType;
-  readonly extent: Bounds;
+  /** All zeros when the shape has no coordinates. */
+  readonly bounds: Bounds;
   clone(): this;
 }
 
 export class Point extends Shape {
-  constructor(props?: Partial<Pick<Point, "x" | "y">>);
+  constructor(options?: Partial<Pick<Point, "x" | "y">>);
   readonly type: "point";
   x: number;
   y: number;
 }
 
 export class Line extends Shape {
-  constructor(props?: Partial<Pick<Line, "path">>);
+  constructor(options?: Partial<Pick<Line, "path">>);
   readonly type: "line";
   path: [number, number][];
 }
 
 export class Polygon extends Shape {
-  constructor(props?: Partial<Pick<Polygon, "rings">>);
+  constructor(options?: Partial<Pick<Polygon, "vertices">>);
   readonly type: "polygon";
-  rings: [number, number][][];
+  /** The closing edge from the last vertex back to the first is implied. */
+  vertices: [number, number][];
 }

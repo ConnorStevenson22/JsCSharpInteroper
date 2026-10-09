@@ -1,10 +1,10 @@
 // Compiled by `tsc --noEmit` only: checks that the typings resolve the patterns the way callers use them.
-import { MapView, type GoToTarget } from "../MapView.js";
+import { MapView, type FlyToTarget } from "../MapView.js";
 import { Marker } from "../Marker.js";
 import { Point, type Shape } from "../geometry.js";
 import type { Style } from "../styles.js";
 
-const view = new MapView({ zoom: 3, basemap: "3d-terrain", cursor: "grab" });
+const view = new MapView({ zoom: 3, basemap: "3d-relief", cursor: "grab" });
 view.on("click", (event) => event.mapPoint.x satisfies number);
 // @ts-expect-error: not in MapViewEvents
 view.on("dblclick", () => {});
@@ -17,8 +17,8 @@ const position: Point = marker.position;
 // @ts-expect-error: the getter never returns the setter's tuple form
 const pair: [number, number] = marker.position;
 
-const targets: GoToTarget[] = [position, [0, 0], { xmin: 0, ymin: 0, xmax: 1, ymax: 1 }, { center: [0, 0], zoom: 2 }];
-void Promise.all(targets.map((t) => view.goTo(t)));
+const targets: FlyToTarget[] = [position, [0, 0], { minX: 0, minY: 0, maxX: 1, maxY: 1 }, { center: [0, 0], zoom: 2 }];
+void Promise.all(targets.map((t) => view.flyTo(t)));
 
 function describe(shape: Shape): string {
   switch (shape.type) {

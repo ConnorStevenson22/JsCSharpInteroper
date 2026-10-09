@@ -1,21 +1,21 @@
 // Base classes shared by every live object in the library.
 
 // Properties live in a private map so that `watch` can report every change.
-export class Accessor {
-  static declaredClass = "core.Accessor";
+export class Observable {
+  static className = "core.Observable";
   #values = new Map();
   #watchers = new Map();
 
   // The runtime class name, so callers can find the most-derived type.
-  get declaredClass() {
-    return this.constructor.declaredClass;
+  get className() {
+    return this.constructor.className;
   }
 
   watch(name, callback) {
     const callbacks = this.#watchers.get(name) ?? new Set();
     this.#watchers.set(name, callbacks);
     callbacks.add(callback);
-    return { remove: () => callbacks.delete(callback) };
+    return { dispose: () => callbacks.delete(callback) };
   }
 
   _get(name) {
@@ -30,15 +30,15 @@ export class Accessor {
   }
 }
 
-export class Evented extends Accessor {
-  static declaredClass = "core.Evented";
+export class Emitter extends Observable {
+  static className = "core.Emitter";
   #listeners = new Map();
 
   on(type, listener) {
     const listeners = this.#listeners.get(type) ?? new Set();
     this.#listeners.set(type, listeners);
     listeners.add(listener);
-    return { remove: () => listeners.delete(listener) };
+    return { dispose: () => listeners.delete(listener) };
   }
 
   emit(type, event) {
@@ -48,8 +48,8 @@ export class Evented extends Accessor {
   }
 }
 
-export class Collection extends Evented {
-  static declaredClass = "core.Collection";
+export class Collection extends Emitter {
+  static className = "core.Collection";
   #items = [];
 
   constructor(items = []) {

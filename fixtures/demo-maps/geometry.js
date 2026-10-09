@@ -1,18 +1,21 @@
-import { Accessor } from "./core.js";
+import { Observable } from "./core.js";
 
 // Abstract: only Point, Line and Polygon are constructed.
-export class Shape extends Accessor {
-  static declaredClass = "geometry.Shape";
+export class Shape extends Observable {
+  static className = "geometry.Shape";
 
   constructor() {
     super();
     if (new.target === Shape) throw new TypeError("Shape is abstract");
   }
 
-  get extent() {
-    const xs = this._coordinates().map(([x]) => x);
-    const ys = this._coordinates().map(([, y]) => y);
-    return { xmin: Math.min(...xs), ymin: Math.min(...ys), xmax: Math.max(...xs), ymax: Math.max(...ys) };
+  // A zero box when there are no coordinates.
+  get bounds() {
+    const coordinates = this._coordinates();
+    if (coordinates.length === 0) return { minX: 0, minY: 0, maxX: 0, maxY: 0 };
+    const xs = coordinates.map(([x]) => x);
+    const ys = coordinates.map(([, y]) => y);
+    return { minX: Math.min(...xs), minY: Math.min(...ys), maxX: Math.max(...xs), maxY: Math.max(...ys) };
   }
 
   clone() {
@@ -21,7 +24,7 @@ export class Shape extends Accessor {
 }
 
 export class Point extends Shape {
-  static declaredClass = "geometry.Point";
+  static className = "geometry.Point";
 
   constructor({ x = 0, y = 0 } = {}) {
     super();
@@ -41,7 +44,7 @@ export class Point extends Shape {
 }
 
 export class Line extends Shape {
-  static declaredClass = "geometry.Line";
+  static className = "geometry.Line";
 
   constructor({ path = [] } = {}) {
     super();
@@ -58,18 +61,18 @@ export class Line extends Shape {
 }
 
 export class Polygon extends Shape {
-  static declaredClass = "geometry.Polygon";
+  static className = "geometry.Polygon";
 
-  constructor({ rings = [] } = {}) {
+  constructor({ vertices = [] } = {}) {
     super();
-    this.rings = rings;
+    this.vertices = vertices;
   }
 
   get type() { return "polygon"; }
-  get rings() { return this._get("rings"); }
-  set rings(value) { this._set("rings", value.map((ring) => ring.map(([x, y]) => [x, y]))); }
+  get vertices() { return this._get("vertices"); }
+  set vertices(value) { this._set("vertices", value.map(([x, y]) => [x, y])); }
 
   _coordinates() {
-    return this.rings.flat();
+    return this.vertices;
   }
 }

@@ -1,0 +1,5 @@
+// Module functions. They read fields only, so plain JSON shapes work as well as instances.
+
+export function distance(a, b) {
+  return Math.hypot(b.x - a.x, b.y - a.y);
+}

@@ -1,23 +1,23 @@
-/** Returned by `watch` and `on`; call `remove()` to stop listening. */
-export interface Handle {
-  remove(): void;
+/** Returned by `watch` and `on`; call `dispose()` to stop listening. */
+export interface Subscription {
+  dispose(): void;
 }
 
-export type WatchCallback<T> = (newValue: T, oldValue: T) => void;
+export type ChangeCallback<T> = (newValue: T, oldValue: T) => void;
 
-export class Accessor {
-  /** The runtime class name, e.g. `"geometry.Point"`. */
-  readonly declaredClass: string;
+export class Observable {
+  /** The runtime class name: `"<module>.<Class>"`, or just `"<Class>"` when the module is named after it. */
+  readonly className: string;
   /** Calls `callback` synchronously whenever the property changes. */
-  watch<K extends keyof this & string>(name: K, callback: WatchCallback<this[K]>): Handle;
+  watch<K extends keyof this & string>(name: K, callback: ChangeCallback<this[K]>): Subscription;
 }
 
-export class Evented extends Accessor {
+export class Emitter extends Observable {
   /** Phantom property: never set at runtime, it only declares the event map. */
-  "@eventTypes": object;
-  on<K extends keyof this["@eventTypes"] & string>(type: K, listener: (event: this["@eventTypes"][K]) => void): Handle;
+  "$events": object;
+  on<K extends keyof this["$events"] & string>(type: K, listener: (event: this["$events"][K]) => void): Subscription;
   /** Returns whether any listener ran. */
-  emit<K extends keyof this["@eventTypes"] & string>(type: K, event: this["@eventTypes"][K]): boolean;
+  emit<K extends keyof this["$events"] & string>(type: K, event: this["$events"][K]): boolean;
 }
 
 export interface CollectionChangeEvent<T> {
@@ -29,8 +29,8 @@ export interface CollectionEvents<T> {
   change: CollectionChangeEvent<T>;
 }
 
-export class Collection<T> extends Evented {
-  "@eventTypes": CollectionEvents<T>;
+export class Collection<T> extends Emitter {
+  "$events": CollectionEvents<T>;
   constructor(items?: T[]);
   readonly length: number;
   at(index: number): T | undefined;

@@ -27,10 +27,11 @@ export class DemoMapElement extends Base {
   }
 
   connectedCallback() {
+    this.#view.container = this;
     if (!this.shadowRoot) {
       this.attachShadow({ mode: "open" }).innerHTML =
-        `<slot name="toolbar"></slot><div part="surface" style="min-height:100px"></div><slot></slot>`;
-      this.shadowRoot.querySelector("[part=surface]").addEventListener("click", (e) => {
+        `<slot name="toolbar"></slot><div id="surface" style="min-height:100px"></div><slot></slot>`;
+      this.shadowRoot.getElementById("surface").addEventListener("click", (e) => {
         const rect = e.currentTarget.getBoundingClientRect();
         this.clickAt(e.clientX - rect.left - rect.width / 2, e.clientY - rect.top - rect.height / 2, e.button);
       });
@@ -40,7 +41,7 @@ export class DemoMapElement extends Base {
 
   // Emits the view's click event as if the map were clicked at this offset from its center.
   clickAt(x, y, button = 0) {
-    this.#view.emit("click", { type: "click", x, y, button, mapPoint: this.#view.toMap(x, y) });
+    this.#view.emit("click", { type: "click", x, y, button, mapPoint: this.#view.screenToMap(x, y) });
   }
 
   #fire(type, detail) {

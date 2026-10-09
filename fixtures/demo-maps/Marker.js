@@ -1,8 +1,8 @@
-import { Accessor } from "./core.js";
+import { Observable } from "./core.js";
 import { Point } from "./geometry.js";
 
-export class Marker extends Accessor {
-  static declaredClass = "graphics.Marker";
+export class Marker extends Observable {
+  static className = "Marker";
 
   constructor({ position = new Point(), label, style = { type: "icon", name: "pin-1" }, labelFormatter } = {}) {
     super();
