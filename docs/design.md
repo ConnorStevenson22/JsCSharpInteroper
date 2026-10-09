@@ -86,8 +86,29 @@ await using (scope.BeginBatch())
 - **Batches** travel as one op array.
 - **Errors** become `JsException` with the JS name, message and stack. The profile can map library error classes to typed subclasses.
 
+**Wire protocol** (`src/Interoper.Runtime/wwwroot/interoper.js`). .NET sends one op as a JSON string and gets back a JSON envelope: `{"v": result}`, `{}` when the result is undefined, or `{"e": {"name", "message", "stack"}}`. A thrown non-`Error` becomes `{"name":"Error","message":String(x)}`.
+
+| Op | Fields | Result |
+|---|---|---|
+| `create` | `t` class id, `args` | handle |
+| `get` | `h` or `module`, `name`, `byValue?` | value |
+| `set` | `h` or `module`, `name`, `value` | — |
+| `call` | `h` or `module`, `name`, `args`, `byValue?` | value; a Promise is awaited |
+| `snapshot` | `h` | the class's snapshot members, value-like ones as `$c` data (R17) |
+| `apply` | `h`, `value` (a partial snapshot, set member by member) | — |
+| `subscribe` | `h`, `method` (`on`, `watch`), `name`, `callback` (`$f`) | subscription id, a handle that `release` disposes |
+| `release` | `ids` | — (unknown ids are ignored) |
+| `load` | `modules` | — (imports them; sync mode loads entity modules up front) |
+| `batch` | `ops` | the results array; if any op failed, `BatchError` with `errors: [{index, name, message, stack}]` |
+
+- Results encode class instances as handles; with `byValue`, and always in callback arguments and snapshots, value-like instances go as `$c` data instead. Plain objects and arrays are copied.
+- A handle's `$t` is the id of the runtime class name (the profile's runtime-class property); 0 when the metadata doesn't know it.
+- A batch runs its ops in order, awaits a Promise before the next op, and keeps going after a failure. An unknown `$h` fails while parsing, so it fails the whole batch.
+- Entry points: `invokeSync(json)` for `[JSImport]` (an op that returns a Promise is an error there), `invoke(json)` for `IJSRuntime` and Promise ops (never rejects), `getValue`/`setValue(h, name, v)` as the typed fast paths, and `census()` (live handles).
+- `start(metadataSpecifier, sink)` imports the generated metadata module (`{ classNameProperty, classes: { id: { module, export, name, value?, members } } }`) and the modules of value-like classes. `sink(callbackId, argsJson)` returns the callback's result as JSON (or nothing, or a Promise). `startWithDotNetObject(specifier, ref)` uses `ref.invokeMethodAsync("InvokeCallback", id, argsJson)` as the sink.
+
 ### 3.5 Module loading
-Generated code knows only bare specifiers (`@acme/maps/views/MapView.js`). The runtime `import()`s them, and the app's import map (Blazor's `<ImportMap />`) decides where they come from: `node_modules` copied into `wwwroot`, a CDN, or a bundle. The CLI can print the import-map entries for a package. The modules of value-like classes are imported when the realm starts, so the reviver can construct them synchronously (sync mode included).
+Generated code knows only bare specifiers (`@acme/maps/views/MapView.js`). The runtime `import()`s them, and the app's import map (Blazor's `<ImportMap />`) decides where they come from: `node_modules` copied into `wwwroot`, a CDN, or a bundle. The CLI can print the import-map entries for a package. The modules of value-like classes are imported when the realm starts, so the reviver can construct them synchronously (sync mode included). Other modules are imported on first use; sync mode loads them up front with the `load` op.
 
 ---
 
