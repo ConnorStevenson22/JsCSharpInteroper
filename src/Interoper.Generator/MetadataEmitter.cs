@@ -75,14 +75,19 @@ internal static class MetadataEmitter
                 $"name: {Syntax.Literal(name)}, {(tag is null ? "" : $"tag: {Syntax.Literal(tag)}, ")}{(types.IsValueLike(c) ? "value: true, " : "")}members: [{members}] }},");
         }
         lines.Add("  },");
-        var events = elements.SelectMany(e => e.Element.Events).DistinctBy(e => e.Name).ToList();
+        // One registration per event name, so elements that share a name share its fields: all of theirs, or the whole
+        // detail when one of them has no projection. An element without a detail sends none, whatever is projected.
+        var events = elements.SelectMany(e => e.Element.Events).GroupBy(e => e.Name).ToList();
         if (events.Count > 0)
         {
             lines.Add("  customEvents: [");
             foreach (var e in events)
             {
-                var fields = e.Detail is { } detail && types.Projection(detail) is { } projection ? $", fields: [{string.Join(", ", projection.Select(Syntax.Literal))}]" : "";
-                lines.Add($"    {{ name: {Syntax.Literal(e.Name)}{fields} }},");
+                var projections = e.Where(x => x.Detail is not null).Select(x => types.Projection(x.Detail!)).ToList();
+                var fields = projections.Count > 0 && projections.All(p => p is not null)
+                    ? $", fields: [{string.Join(", ", projections.SelectMany(p => p!).Distinct().Select(Syntax.Literal))}]"
+                    : "";
+                lines.Add($"    {{ name: {Syntax.Literal(e.Key)}{fields} }},");
             }
             lines.Add("  ],");
         }

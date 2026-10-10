@@ -6,6 +6,6 @@ namespace GoldenSlice.Async;
 [global::Microsoft.AspNetCore.Components.EventHandler("ondemo-map-click", typeof(global::Interoper.JsEventArgs), true, true)]
 [global::Microsoft.AspNetCore.Components.EventHandler("ondemo-map-zoom-change", typeof(global::Interoper.JsEventArgs), true, true)]
 [global::Microsoft.AspNetCore.Components.EventHandler("ondemo-map-ready", typeof(global::Interoper.JsEventArgs), true, true)]
-public static partial class DemoMapsEvents
+public static partial class EventHandlers
 {
 }

@@ -129,7 +129,11 @@ public static class JsOp
 
     internal static string Set(int handle, string name, bool value) => Set(handle, name, w => w.WriteBooleanValue(value));
 
-    internal static string Load(IEnumerable<string> modules) => Write(w =>
+    /// <summary>
+    /// Imports modules (through the async seam only, design §3.5): how a component loads its element's module, so
+    /// the element is defined before it's wrapped (R28).
+    /// </summary>
+    public static string Load(IEnumerable<string> modules) => Write(w =>
     {
         w.WriteString("op"u8, "load"u8);
         w.WriteStartArray("modules"u8);

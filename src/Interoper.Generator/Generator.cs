@@ -105,17 +105,24 @@ public static class Generator
             }
             Add(new(ns, name), ComponentEmitter.Component(types, options, diagnostics, element, name));
         }
-        var events = selection.Elements.SelectMany(e => e.Element.Events).Select(e => e.Name).Distinct().ToList();
-        if (events.Count > 0)
-        {
-            Add(new(root, $"{types.Registry}Events"), ComponentEmitter.Events(root, $"{types.Registry}Events", events));
-        }
         var classes = MetadataEmitter.ClassIds(types, selection);
         files.Add(new($"{types.Registry}.cs", MetadataEmitter.Registry(types, options, classes, modules.Select(m => m.Key))));
         files.Add(new(MetadataEmitter.FileName(ir), MetadataEmitter.Module(ir, profile, types, classes, selection.Elements)));
         foreach (var type in types.Owned)
         {
             Add(type.Type, ValueTypeEmitter.Emit(types, type));
+        }
+        // R28: Razor finds custom events' [EventHandler]s only on a class named EventHandlers. It's partial, so the
+        // bindings of two packages in one namespace share it; a type of that name in the root namespace takes it.
+        var events = selection.Elements.SelectMany(e => e.Element.Events).Select(e => e.Name).Distinct().ToList();
+        var eventsPath = Naming.FilePath(root, root, $"{types.Registry}Events");
+        if (events.Count > 0 && (paths.Contains(Naming.FilePath(root, root, "EventHandlers")) || namespaces.Contains($"{root}.EventHandlers") || !paths.Add(eventsPath)))
+        {
+            diagnostics.Add(new(Diagnostic.Renamed, $"{root}.EventHandlers", $"skipped: the custom events' handlers need `{root}.EventHandlers` and `{eventsPath}` (R28)"));
+        }
+        else if (events.Count > 0)
+        {
+            files.Add(new(eventsPath, ComponentEmitter.Events(root, events)));
         }
         types.ReportEnumRenames();
         return new(diagnostics, files);

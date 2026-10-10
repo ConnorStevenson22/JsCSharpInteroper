@@ -8,6 +8,7 @@ public sealed partial class DemoMap : global::Interoper.JsComponentBase
     private readonly global::System.Collections.Generic.HashSet<string> supplied = new(global::System.StringComparer.OrdinalIgnoreCase);
     private global::Microsoft.AspNetCore.Components.ElementReference element;
     private (bool Done, PointSnapshot Value) sentCenter;
+    private readonly global::Interoper.JsEchoes<double> echoesZoom = new();
 
     [global::Microsoft.AspNetCore.Components.Parameter] public Basemap Basemap { get; set; }
     [global::Microsoft.AspNetCore.Components.Parameter] public double Zoom { get; set; }
@@ -19,6 +20,7 @@ public sealed partial class DemoMap : global::Interoper.JsComponentBase
     [global::Microsoft.AspNetCore.Components.Parameter] public global::Microsoft.AspNetCore.Components.RenderFragment? ChildContent { get; set; }
     [global::Microsoft.AspNetCore.Components.Parameter] public global::Microsoft.AspNetCore.Components.RenderFragment? Toolbar { get; set; }
     [global::Microsoft.AspNetCore.Components.Parameter(CaptureUnmatchedValues = true)] public global::System.Collections.Generic.IReadOnlyDictionary<string, object>? AdditionalAttributes { get; set; }
+    [global::Microsoft.AspNetCore.Components.Parameter] public global::Microsoft.AspNetCore.Components.EventCallback<DemoMapElement> OnElementReady { get; set; }
 
     public DemoMapElement? Element { get; private set; }
 
@@ -37,7 +39,11 @@ public sealed partial class DemoMap : global::Interoper.JsComponentBase
         builder.OpenElement(0, "demo-map");
         builder.AddMultipleAttributes(1, AdditionalAttributes);
         if (supplied.Contains(nameof(Basemap))) builder.AddAttribute(2, "basemap", BasemapNames.ToJs(Basemap));
-        if (supplied.Contains(nameof(Zoom))) builder.AddAttribute(3, "zoom", Zoom.ToString(global::System.Globalization.CultureInfo.InvariantCulture));
+        if (supplied.Contains(nameof(Zoom)))
+        {
+            echoesZoom.Sent(Zoom);
+            builder.AddAttribute(3, "zoom", Zoom.ToString(global::System.Globalization.CultureInfo.InvariantCulture));
+        }
         if (OnDemoMapClick.HasDelegate) builder.AddAttribute(4, "ondemo-map-click", global::Microsoft.AspNetCore.Components.EventCallback.Factory.Create<global::Interoper.JsEventArgs>(this, RaiseDemoMapClickAsync));
         if (OnDemoMapZoomChange.HasDelegate || ZoomChanged.HasDelegate) builder.AddAttribute(5, "ondemo-map-zoom-change", global::Microsoft.AspNetCore.Components.EventCallback.Factory.Create<global::Interoper.JsEventArgs>(this, RaiseDemoMapZoomChangeAsync));
         if (OnDemoMapReady.HasDelegate) builder.AddAttribute(6, "ondemo-map-ready", global::Microsoft.AspNetCore.Components.EventCallback.Factory.Create<global::Interoper.JsEventArgs>(this, RaiseDemoMapReadyAsync));
@@ -58,7 +64,7 @@ public sealed partial class DemoMap : global::Interoper.JsComponentBase
     {
         if (firstRender)
         {
-            Element = await Scope.Realm.CallAsync(global::Interoper.JsOp.Wrap(w => global::Interoper.JsElement.Write(w, element)), Scope.Read<DemoMapElement>);
+            Element = await ElementAsync<DemoMapElement>(element, "@acme/demo-maps/demo-map.js");
         }
         if (Element is null)
         {
@@ -66,8 +72,17 @@ public sealed partial class DemoMap : global::Interoper.JsComponentBase
         }
         if (supplied.Contains(nameof(Center)) && !(sentCenter.Done && global::Interoper.JsDiff.Same(sentCenter.Value, Center)))
         {
-            await Scope.Realm.SendAsync(global::Interoper.JsOp.Set(Element.Handle, "center", w => PointSnapshot.Write(w, Center)));
-            sentCenter = (true, Center);
+            var value = Center;
+            await Scope.Realm.SendAsync(global::Interoper.JsOp.Set(Element.Handle, "center", w => PointSnapshot.Write(w, value)));
+            sentCenter = (true, value);
+            if (IsDisposed)
+            {
+                return;
+            }
+        }
+        if (firstRender)
+        {
+            await OnElementReady.InvokeAsync(Element);
         }
     }
 
@@ -77,8 +92,12 @@ public sealed partial class DemoMap : global::Interoper.JsComponentBase
     private async global::System.Threading.Tasks.Task RaiseDemoMapZoomChangeAsync(global::Interoper.JsEventArgs e)
     {
         var detail = e.Read(DemoMapZoomChangeDetail.Read);
+        var echo = echoesZoom.IsEcho(detail.Zoom);
         await OnDemoMapZoomChange.InvokeAsync(detail);
-        await ZoomChanged.InvokeAsync(detail.Zoom);
+        if (!echo)
+        {
+            await ZoomChanged.InvokeAsync(detail.Zoom);
+        }
     }
 
     private global::System.Threading.Tasks.Task RaiseDemoMapReadyAsync(global::Interoper.JsEventArgs e) => OnDemoMapReady.InvokeAsync();

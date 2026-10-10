@@ -182,7 +182,8 @@ public static class JsJson
         return true;
     }
 
-    private static void WriteUndefined(Utf8JsonWriter writer)
+    /// <summary>Writes undefined as a value, where it can't be omitted: <c>{"$u":1}</c>.</summary>
+    public static void WriteUndefined(Utf8JsonWriter writer)
     {
         writer.WriteStartObject();
         writer.WriteNumber(UndefinedMarker, 1);

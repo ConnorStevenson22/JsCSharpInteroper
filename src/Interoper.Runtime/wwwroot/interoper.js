@@ -34,8 +34,8 @@ class BatchError extends Error {
 //     customEvents?: [{ name, fields? }] }
 // sink(callbackId, argsJson) calls a .NET callback and returns its result as JSON text ("null" for null), null or
 // nothing for undefined, or a Promise of either.
-// Value-like classes are imported here so `$c` can be built synchronously, in sync mode too; so are custom elements'
-// classes, whose modules define the elements, so that the elements a component renders are upgraded (R28).
+// Value-like classes are imported here so `$c` can be built synchronously, in sync mode too. A custom element's module
+// is loaded by its component (R28), or by the sync-mode registry's preload list.
 export async function start(metadataSpecifier, sink) {
   meta = (await import(metadataSpecifier)).default;
   const classes = Object.entries(meta.classes);
@@ -43,7 +43,7 @@ export async function start(metadataSpecifier, sink) {
   classIdsByTag = new Map(classes.filter(([, c]) => c.tag).map(([id, c]) => [c.tag, Number(id)]));
   callbackSink = sink;
   registerCustomEvents(meta.customEvents ?? []);
-  const preloaded = new Set(classes.filter(([, c]) => c.value || c.tag).map(([, c]) => c.module));
+  const preloaded = new Set(classes.filter(([, c]) => c.value).map(([, c]) => c.module));
   await Promise.all([...preloaded].map(load));
 }
 
@@ -301,11 +301,11 @@ function classEntry(classId) {
   return entry;
 }
 
-// The most-derived class id: a custom element's by its tag, since a runtime class-name property such as `className`
-// means something else on an element (R28); otherwise from that property; 0 if unknown.
+// The most-derived class id: an element's by its tag, since a runtime class-name property such as `className` means
+// something else on an element (its CSS classes, R28); otherwise from that property; 0 if unknown.
 function classIdOf(object) {
-  const tagged = globalThis.Element && object instanceof globalThis.Element ? classIdsByTag.get(object.localName) : undefined;
-  return tagged ?? classIdsByName.get(object[meta.classNameProperty]) ?? 0;
+  if (globalThis.Element && object instanceof globalThis.Element) return classIdsByTag.get(object.localName) ?? 0;
+  return classIdsByName.get(object[meta.classNameProperty]) ?? 0;
 }
 
 // R13: the element Blazor rendered for an ElementReference, by the capture attribute it gives every @ref element.

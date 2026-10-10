@@ -12,14 +12,15 @@ internal sealed class ComponentEmitter
     private const string Task = "global::System.Threading.Tasks.Task";
 
     /// <summary>
-    /// What a parameter can't be named: the component's own members, and those of <c>JsComponentBase</c> and
-    /// <c>ComponentBase</c> it would hide (CS0108).
+    /// What a parameter can't be named: the component's own members, and those of <c>JsComponentBase</c>,
+    /// <c>ComponentBase</c> and <c>object</c> it would hide (CS0108).
     /// </summary>
     private static readonly string[] Reserved =
     [
-        "Element", "ChildContent", "AdditionalAttributes", "Scope", "DisposeAsync", "SetParametersAsync", "BuildRenderTree",
-        "OnInitialized", "OnInitializedAsync", "OnParametersSet", "OnParametersSetAsync", "OnAfterRender", "OnAfterRenderAsync",
-        "ShouldRender", "StateHasChanged", "InvokeAsync", "DispatchExceptionAsync", "Assets", "AssignedRenderMode", "RendererInfo",
+        "Element", "OnElementReady", "ChildContent", "AdditionalAttributes", "Scope", "IsDisposed", "ElementAsync", "DisposeAsync",
+        "SetParametersAsync", "BuildRenderTree", "OnInitialized", "OnInitializedAsync", "OnParametersSet", "OnParametersSetAsync",
+        "OnAfterRender", "OnAfterRenderAsync", "ShouldRender", "StateHasChanged", "InvokeAsync", "DispatchExceptionAsync", "Assets",
+        "AssignedRenderMode", "RendererInfo", "ToString", "GetHashCode", "Equals", "GetType",
     ];
 
     private readonly TypeMap types;
@@ -41,14 +42,18 @@ internal sealed class ComponentEmitter
 
     /// <summary>
     /// A parameter for an attribute or a writable property. An <paramref name="Attribute"/> one renders as the HTML
-    /// attribute of that name; any other is set on the live element (<paramref name="Js"/>).
+    /// attribute of that name; any other is set on the live element (<paramref name="Js"/>). A null one is JS null
+    /// when the type has null (<paramref name="JsNull"/>), and undefined when it's only optional.
     /// </summary>
-    private sealed record Parameter(string Name, CsType Type, bool Nullable, string Js, string? Attribute)
+    private sealed record Parameter(string Name, CsType Type, bool Nullable, bool JsNull, string Js, string? Attribute)
     {
         /// <summary>No <c>Opt</c>: a parameter the parent doesn't supply is neither rendered nor set.</summary>
         public string TypeName => Nullable && !Type.IsUnion ? Type.Name + "?" : Type.Name;
 
         public string Sent => "sent" + Name;
+
+        /// <summary>The values sent for a bound property, whose change events are echoes (<c>JsEchoes</c>).</summary>
+        public string Echoes => "echoes" + Name;
     }
 
     /// <summary>
@@ -69,15 +74,16 @@ internal sealed class ComponentEmitter
     /// <summary>
     /// The <c>[EventHandler]</c> attribute of each custom event, so markup that imports the namespace can use
     /// <c>@ondemo-map-click</c>: Blazor's own pipeline delivers it, once interoper.js has registered it (design §3.4).
+    /// Razor looks for them only on a class named <c>EventHandlers</c>.
     /// </summary>
-    public static string Events(string ns, string name, IEnumerable<string> events)
+    public static string Events(string ns, IEnumerable<string> events)
     {
         var w = CodeWriter.CSharp(ns);
         foreach (var e in events)
         {
             w.Line($"[{Components}.EventHandler({Syntax.Literal(Attribute(e))}, typeof(global::Interoper.JsEventArgs), true, true)]");
         }
-        using (w.Block($"public static partial class {name}"))
+        using (w.Block("public static partial class EventHandlers"))
         {
         }
         return w.ToString();
@@ -92,10 +98,11 @@ internal sealed class ComponentEmitter
         var element = types.Name(c).In(ns);
         taken.UnionWith([name, .. Reserved]);
         var parameters = Parameters(s, name);
-        var callbacks = Callbacks(s, name, parameters);
         // A parameter named like a type it doesn't have hides that type's static methods: Opt<Cursor>? Cursor (CS0120).
         var hidden = parameters.Where(p => p.TypeName != p.Name).Select(p => p.Name).ToHashSet();
         parameters = [.. parameters.Select(p => p with { Type = p.Type.Unhidden(hidden) })];
+        var callbacks = Callbacks(s, name, parameters, hidden);
+        var bound = callbacks.Where(c => c.Bind is not null).Select(c => c.Bind!.Value.Property.Name).ToHashSet();
         var slots = s.Element.Slots.Where(slot => slot.Name.Length > 0).Select(slot => (slot.Name, Parameter: Claim(Naming.Pascal(slot.Name), $"{name}.{slot.Name}"))).ToList();
 
         using (w.Block($"public sealed partial class {name} : global::Interoper.JsComponentBase"))
@@ -105,6 +112,10 @@ internal sealed class ComponentEmitter
             foreach (var p in parameters.Where(p => p.Attribute is null))
             {
                 w.Line($"private (bool Done, {p.TypeName} Value) {p.Sent};");
+            }
+            foreach (var p in parameters.Where(p => bound.Contains(p.Name)))
+            {
+                w.Line($"private readonly global::Interoper.JsEchoes<{p.TypeName}> {p.Echoes} = new();");
             }
             w.Line();
             foreach (var p in parameters)
@@ -127,6 +138,7 @@ internal sealed class ComponentEmitter
                 w.Line($"[{Components}.Parameter] public {Components}.RenderFragment? {parameter} {{ get; set; }}");
             }
             w.Line($"[{Components}.Parameter(CaptureUnmatchedValues = true)] public global::System.Collections.Generic.IReadOnlyDictionary<string, object>? AdditionalAttributes {{ get; set; }}");
+            w.Line($"[{Components}.Parameter] public {Components}.EventCallback<{element}> OnElementReady {{ get; set; }}");
             w.Line();
             w.Line($"public {element}? Element {{ get; private set; }}");
             w.Line();
@@ -142,9 +154,9 @@ internal sealed class ComponentEmitter
                 w.Line("return base.SetParametersAsync(parameters);");
             }
             w.Line();
-            Render(s.Element.Tag, parameters, callbacks, slots);
+            Render(s.Element.Tag, parameters, callbacks, slots, bound);
             w.Line();
-            AfterRender(element, parameters);
+            AfterRender(element, s.Module, parameters, bound);
             foreach (var callback in callbacks)
             {
                 w.Line();
@@ -173,7 +185,7 @@ internal sealed class ComponentEmitter
             var ownerName = types.Name(owner);
             var (mapped, nullable) = types.Slot(type, ownerName with { Name = Naming.OwnedType(ownerName.Name, p.Name, input: p.WriteType is not null) });
             mapped = mapped.In(ns);
-            return new(Claim(Naming.Pascal(p.Name), $"{component}.{p.Name}"), mapped, nullable || p.Optional, p.Name, mapped.Fast is null ? null : attribute);
+            return new(Claim(Naming.Pascal(p.Name), $"{component}.{p.Name}"), mapped, nullable || p.Optional, HasNull(type), p.Name, mapped.Fast is null ? null : attribute);
         }
         foreach (var a in s.Element.Attributes)
         {
@@ -186,7 +198,7 @@ internal sealed class ComponentEmitter
                 continue;
             }
             var (mapped, nullable) = types.Slot(a.Type!, new(ns, component + Naming.Pascal(a.Name)));
-            result.Add(new(Claim(Naming.Pascal(a.Name), $"{component}.{a.Name}"), mapped.In(ns), nullable, a.Name, a.Name));
+            result.Add(new(Claim(Naming.Pascal(a.Name), $"{component}.{a.Name}"), mapped.In(ns), nullable, HasNull(a.Type!), a.Name, a.Name));
         }
         foreach (var (p, owner) in properties.Where(x => result.All(r => r.Js != x.Property.Name)))
         {
@@ -195,11 +207,14 @@ internal sealed class ComponentEmitter
         return result;
     }
 
+    private static bool HasNull(IrType type) => type is PrimitiveType { Name: "null" } || type is UnionType u && u.Types.Any(HasNull);
+
     /// <summary>
     /// An event's callback, and the property it binds: an event named <c>…-zoom-change</c> or <c>…zoomChange</c>
     /// whose detail has a member <c>zoom</c> of the property's type gives <c>ZoomChanged</c>, for <c>@bind-Zoom</c>.
+    /// The longest property name that matches wins: <c>max-zoom-change</c> binds <c>maxZoom</c> over <c>zoom</c>.
     /// </summary>
-    private List<Callback> Callbacks(SelectedElement s, string component, List<Parameter> parameters)
+    private List<Callback> Callbacks(SelectedElement s, string component, List<Parameter> parameters, IReadOnlySet<string> hidden)
     {
         var result = new List<Callback>();
         var bound = new HashSet<Parameter>();
@@ -215,7 +230,7 @@ internal sealed class ComponentEmitter
                 continue;
             }
             var (mapped, nullable) = types.Slot(detail, new(ns, pascal + "Detail"));
-            mapped = mapped.In(ns);
+            mapped = mapped.In(ns).Unhidden(hidden);
             var opt = nullable && !mapped.IsUnion;
             var reader = opt ? $"{mapped.Static}(ref r) => global::Interoper.JsJson.ReadOpt(ref r, {mapped.Reader(1)})" : mapped.Reader(0);
             var typeName = opt ? $"global::Interoper.Opt<{mapped.Name}>" : mapped.Name;
@@ -223,7 +238,7 @@ internal sealed class ComponentEmitter
             if (!opt && detail is RefType r && types.Declaration(r) is { } record and (InterfaceDeclaration or AliasDeclaration { Type: ObjectType }))
             {
                 var members = types.Fields(record).Where(f => f.Constant is null && !f.Opt).ToList();
-                foreach (var p in parameters.Where(p => !bound.Contains(p) && !p.Nullable && Changes(e.Name, p.Js)))
+                foreach (var p in parameters.Where(p => !bound.Contains(p) && !p.Nullable && Changes(e.Name, p.Js)).OrderByDescending(p => p.Js.Length))
                 {
                     if (members.FirstOrDefault(f => f.JsName == p.Js && f.Type!.FullName == p.Type.FullName) is { } member)
                     {
@@ -251,7 +266,7 @@ internal sealed class ComponentEmitter
     /// element reference; each named slot's content in a <c>div</c> with that slot (<c>display:contents</c>), and the
     /// default slot's.
     /// </summary>
-    private void Render(string tag, List<Parameter> parameters, List<Callback> callbacks, List<(string Name, string Parameter)> slots)
+    private void Render(string tag, List<Parameter> parameters, List<Callback> callbacks, List<(string Name, string Parameter)> slots, HashSet<string> bound)
     {
         using (w.Block($"protected override void BuildRenderTree({Components}.Rendering.RenderTreeBuilder builder)"))
         {
@@ -259,7 +274,17 @@ internal sealed class ComponentEmitter
             w.Line($"builder.AddMultipleAttributes({sequence++}, AdditionalAttributes);");
             foreach (var p in parameters.Where(p => p.Attribute is not null))
             {
-                w.Line($"if (supplied.Contains(nameof({p.Name}))) builder.AddAttribute({sequence++}, {Syntax.Literal(p.Attribute!)}, {AttributeValue(p)});");
+                var add = $"builder.AddAttribute({sequence++}, {Syntax.Literal(p.Attribute!)}, {AttributeValue(p)});";
+                if (!bound.Contains(p.Name))
+                {
+                    w.Line($"if (supplied.Contains(nameof({p.Name}))) {add}");
+                    continue;
+                }
+                using (w.Block($"if (supplied.Contains(nameof({p.Name})))"))
+                {
+                    w.Line($"{p.Echoes}.Sent({p.Name});");
+                    w.Line(add);
+                }
             }
             foreach (var callback in callbacks)
             {
@@ -296,72 +321,101 @@ internal sealed class ComponentEmitter
     };
 
     /// <summary>
-    /// Once interactive: the element's live object, through the async seam in both modes; then each supplied property
-    /// that isn't an attribute, set when it's new or changed (<c>JsDiff.Same</c>), through the mode's seam.
+    /// Once interactive: the element's live object, through the async seam in both modes (async mode loads its module
+    /// first; sync mode preloaded it); then each supplied property that isn't an attribute, set when it's new or
+    /// changed (<c>JsDiff.Same</c>), through the mode's seam; then, the first time, <c>OnElementReady</c>. It stops
+    /// when the component is disposed meanwhile.
     /// </summary>
-    private void AfterRender(string element, List<Parameter> parameters)
+    private void AfterRender(string element, string module, List<Parameter> parameters, HashSet<string> bound)
     {
         using (w.Block($"protected override async {Task} OnAfterRenderAsync(bool firstRender)"))
         {
             using (w.Block("if (firstRender)"))
             {
-                w.Line($"Element = await Scope.Realm.CallAsync(global::Interoper.JsOp.Wrap(w => global::Interoper.JsElement.Write(w, element)), Scope.Read<{element}>);");
+                w.Line($"Element = await ElementAsync<{element}>(element{(async ? ", " + Syntax.Literal(module) : "")});");
             }
-            var properties = parameters.Where(p => p.Attribute is null).ToList();
-            if (properties.Count > 0)
+            using (w.Block("if (Element is null)"))
             {
-                using (w.Block("if (Element is null)"))
-                {
-                    w.Line("return;");
-                }
+                w.Line("return;");
             }
-            foreach (var p in properties)
+            foreach (var p in parameters.Where(p => p.Attribute is null))
             {
                 using (w.Block($"if (supplied.Contains(nameof({p.Name})) && !({p.Sent}.Done && global::Interoper.JsDiff.Same({p.Sent}.Value, {p.Name})))"))
                 {
-                    var op = $"global::Interoper.JsOp.Set(Element.Handle, {Syntax.Literal(p.Js)}, w => {Write(p)})";
+                    const string value = "value";
+                    w.Line($"var {value} = {p.Name};"); // the value sent, whatever the parameter is by the time it's sent
+                    if (bound.Contains(p.Name))
+                    {
+                        w.Line($"{p.Echoes}.Sent({value});");
+                    }
+                    var op = $"global::Interoper.JsOp.Set(Element.Handle, {Syntax.Literal(p.Js)}, w => {Write(p, value)})";
                     w.Line(async ? $"await Scope.Realm.SendAsync({op});" : $"Scope.Realm.Send({op});");
-                    w.Line($"{p.Sent} = (true, {p.Name});");
+                    w.Line($"{p.Sent} = (true, {value});");
+                    if (async)
+                    {
+                        using (w.Block("if (IsDisposed)"))
+                        {
+                            w.Line("return;");
+                        }
+                    }
                 }
+            }
+            using (w.Block("if (firstRender)"))
+            {
+                w.Line("await OnElementReady.InvokeAsync(Element);");
             }
         }
     }
 
-    /// <summary>Writes a parameter's value; a null one as JS null (a union has that state itself, R2).</summary>
-    private static string Write(Parameter p) =>
+    /// <summary>
+    /// Writes a parameter's value; a null one as JS null when its type has null, else as undefined (only optional); a
+    /// union has those states itself (R2).
+    /// </summary>
+    private static string Write(Parameter p, string value) =>
         p.Nullable && !p.Type.IsUnion
-            ? $"{{ if ({p.Name} is {{ }} value) {p.Type.WriteCall("w", "value", 1)}; else w.WriteNullValue(); }}"
-            : p.Type.WriteCall("w", p.Name, 1);
+            ? $"{{ if ({value} is {{ }} v) {p.Type.WriteCall("w", "v", 1)}; else {(p.JsNull ? "w.WriteNullValue()" : "global::Interoper.JsJson.WriteUndefined(w)")}; }}"
+            : p.Type.WriteCall("w", value, 1);
 
-    /// <summary>Raises an event's callback with its detail, read with the component's scope; and the bound property's.</summary>
+    /// <summary>
+    /// Raises an event's callback with its detail, read with the component's scope; and the bound property's, unless
+    /// the event is an echo of a value the component sent (<c>JsEchoes</c>).
+    /// </summary>
     private void Handler(Callback callback)
     {
-        var header = $"private {Task} {callback.Handler}(global::Interoper.JsEventArgs e)";
+        string Header(bool isAsync) => $"private {(isAsync ? "async " : "")}{Task} {callback.Handler}(global::Interoper.JsEventArgs e)";
         if (callback.Detail is null)
         {
-            w.Line($"{header} => {callback.Name}.InvokeAsync();");
+            w.Line($"{Header(false)} => {callback.Name}.InvokeAsync();");
             return;
         }
         if (callback.Bind is null && !callback.Scoped)
         {
-            w.Line($"{header} =>");
+            w.Line($"{Header(false)} =>");
             using (w.Indent())
             {
                 w.Line($"{callback.Name}.InvokeAsync(e.Read({callback.Reader}));");
             }
             return;
         }
-        using (w.Block(header.Replace("private ", "private async ", StringComparison.Ordinal)))
+        using (w.Block(Header(true)))
         {
             if (callback.Scoped)
             {
                 w.Line("var scope = Scope;");
             }
             w.Line($"var detail = e.Read({callback.Reader});");
-            w.Line($"await {callback.Name}.InvokeAsync(detail);");
-            if (callback.Bind is var (_, changed, member))
+            if (callback.Bind is var (property, changed, member))
             {
-                w.Line($"await {changed}.InvokeAsync(detail.{member});");
+                w.Line($"var echo = {property.Echoes}.IsEcho(detail.{member});");
+                w.Line($"await {callback.Name}.InvokeAsync(detail);");
+                using (w.Block("if (!echo)"))
+                {
+                    w.Line($"await {changed}.InvokeAsync(detail.{member});");
+                }
+            }
+            else
+            {
+                w.Line($"await {callback.Name}.InvokeAsync(detail);");
             }
         }
     }

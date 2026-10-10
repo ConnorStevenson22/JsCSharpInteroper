@@ -1,12 +1,14 @@
 @using GoldenSlice.Sync
 @inherits JsComponentBase
 
-<DemoMap @ref="map" @bind-Zoom="zoom" Basemap="Basemap.Night" Center="center" OnDemoMapClick="Clicked" style="display:block">
+<DemoMap @ref="map" @bind-Zoom="zoom" Basemap="Basemap.Night" Center="center" OnDemoMapClick="Clicked" OnElementReady="Ready" id="map" style="display:block">
     <Toolbar><button id="zoom-in" @onclick="() => zoom++">+</button></Toolbar>
     <ChildContent><span id="overlay">overlay</span></ChildContent>
 </DemoMap>
+<demo-map id="raw" @ondemo-map-ready="() => rawReady = true"></demo-map>
 <button id="read-view" @onclick="ReadView">read the view</button>
 <pre id="state">zoom @zoom; clicks @string.Join(" ", clicks); view @view</pre>
+<pre id="raw-state">raw ready @rawReady</pre>
 <pre id="result" data-done="@done">@result</pre>
 
 @code {
@@ -17,27 +19,20 @@
     readonly PointSnapshot center = new() { X = 2, Y = 3 };
     readonly List<string> clicks = [];
     string view = "", result = "";
-    bool done;
+    bool done, rawReady;
 
-    protected override async Task OnAfterRenderAsync(bool firstRender)
+    void Ready(DemoMapElement element)
     {
-        if (!firstRender) return;
         try
         {
-            MapView? live = null;
-            for (var i = 0; i < 200 && (live is null || live.Center != center); i++)
-            {
-                await Task.Delay(50);
-                live = map.Element?.GetView(Scope);
-            }
-            result = $"PASS view zoom {live!.Zoom}, basemap {live.Basemap}, center {live.Center.X},{live.Center.Y}";
+            var live = element.GetView(Scope);
+            result = $"PASS view zoom {live.Zoom}, basemap {live.Basemap}, center {live.Center.X},{live.Center.Y}";
         }
         catch (Exception e)
         {
             result = $"FAIL {e.GetType().Name}: {e.Message}";
         }
         done = true;
-        StateHasChanged();
     }
 
     void Clicked(DemoMapClickDetail detail) => clicks.Add($"{Math.Round(detail.X)},{Math.Round(detail.Y)}");

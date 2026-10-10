@@ -113,23 +113,27 @@ internal sealed class TypeMap
         (package, root) = (ir.Package.Name, ns);
         var emitted = selected.Select(s => (s.Module, s.Declaration.Name)).ToHashSet();
         // R27: sibling modules' types of one name. The first in IR order keeps it; a later one is prefixed with its
-        // module's class name (ops/b.js's Options is BOptions), so both compile, and so do their users.
+        // module's class name (ops/b.js's Options is BOptions), so both compile, and so do their users. The records of
+        // inline event details (R28), which the IR doesn't declare, come last.
         var owners = new Dictionary<(string Namespace, string Name), string>();
-        foreach (var module in ir.Modules)
+        var declared = ir.Modules.SelectMany(m => m.Declarations.Select(d => (Module: m.Specifier, Declaration: d))).ToList();
+        var inIr = declared.Select(x => (x.Module, x.Declaration.Name)).ToHashSet();
+        foreach (var (module, d) in declared.Concat(selected.Where(s => !inIr.Contains((s.Module, s.Declaration.Name))).Select(s => (s.Module, s.Declaration))))
         {
-            foreach (var d in module.Declarations.Where(MakesType))
+            if (!MakesType(d))
             {
-                var key = (Namespace: Namespace(module.Specifier), Name: Naming.Type(d.Name));
-                if (owners.TryAdd(key, module.Specifier) || owners[key] == module.Specifier)
-                {
-                    continue;
-                }
-                var name = LiveEmitter.ModuleClass(module.Specifier) + key.Name;
-                renamed[(module.Specifier, d.Name)] = name;
-                if (emitted.Contains((module.Specifier, d.Name)))
-                {
-                    diagnostics.Add(new(Diagnostic.Renamed, module.Specifier, $"its {key.Item2} is {name}: {owners[key]} has one too (R27)"));
-                }
+                continue;
+            }
+            var key = (Namespace: Namespace(module), Name: Naming.Type(d.Name));
+            if (owners.TryAdd(key, module) || owners[key] == module)
+            {
+                continue;
+            }
+            var name = LiveEmitter.ModuleClass(module) + key.Name;
+            renamed[(module, d.Name)] = name;
+            if (emitted.Contains((module, d.Name)))
+            {
+                diagnostics.Add(new(Diagnostic.Renamed, module, $"its {key.Item2} is {name}: {owners[key]} has one too (R27)"));
             }
         }
         // R27: the namespaces of the emitted types, below the root and with the namespaces they're in. The registry

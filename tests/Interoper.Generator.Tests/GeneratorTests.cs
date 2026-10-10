@@ -626,23 +626,24 @@ public sealed class GeneratorTests
     [InlineData(Api.Async)]
     public void ACustomElementIsAComponent(Api api)
     {
-        var number = """{ "kind": "primitive", "name": "number" }""";
-        var host = """{ "kind": "ref", "name": "HTMLElement" }""";
-        var ir = IrDocument.Parse($$"""
-            { "version": 1, "package": { "name": "@acme/maps", "version": "1" },
-              "modules": [{ "specifier": "@acme/maps/chart.js", "declarations": [
-                { "kind": "class", "name": "ChartElement", "members": [
-                  { "kind": "property", "name": "level", "type": {{number}} },
-                  { "kind": "property", "name": "host", "type": {{host}} },
-                  { "kind": "method", "name": "frame", "signatures": [{ "returns": {{host}} }] }] },
-                { "kind": "class", "name": "XChart" }] }],
-              "elements": [{ "tag": "x-chart", "class": { "kind": "ref", "name": "ChartElement", "module": "@acme/maps/chart.js" },
-                "attributes": [{ "name": "level", "property": "level" }, { "name": "compact", "type": { "kind": "primitive", "name": "boolean" } },
-                  { "name": "data", "type": { "kind": "array", "element": {{number}} } }],
-                "events": [{ "name": "level-change", "detail": { "kind": "object", "members": [{ "kind": "property", "name": "level", "type": {{number}} }] } }],
-                "slots": [] }] }
+        var result = Elements(api, [("chart.js", $$"""
+            { "kind": "class", "name": "ChartElement", "members": [
+              { "kind": "property", "name": "level", "type": {{Number}} },
+              { "kind": "property", "name": "maxLevel", "type": {{Number}} },
+              { "kind": "property", "name": "note", "optional": true, "type": {{String}} },
+              { "kind": "property", "name": "caption", "type": { "kind": "union", "types": [{{String}}, { "kind": "primitive", "name": "null" }] } },
+              { "kind": "property", "name": "host", "type": { "kind": "ref", "name": "HTMLElement" } },
+              { "kind": "method", "name": "frame", "signatures": [{ "returns": { "kind": "ref", "name": "HTMLElement" } }] }] },
+            { "kind": "class", "name": "XChart" }
+            """)], $$"""
+            { "tag": "x-chart", "class": { "kind": "ref", "name": "ChartElement", "module": "@acme/maps/chart.js" },
+              "attributes": [{ "name": "level", "property": "level" }, { "name": "compact", "type": { "kind": "primitive", "name": "boolean" } },
+                { "name": "data", "type": { "kind": "array", "element": {{Number}} } }],
+              "events": [{ "name": "max-level-change", "detail": { "kind": "object", "members": [
+                  { "kind": "property", "name": "level", "type": {{Number}} }, { "kind": "property", "name": "maxLevel", "type": {{Number}} }] } },
+                { "name": "level-change", "detail": { "kind": "object", "members": [{ "kind": "property", "name": "level", "type": {{Number}} }] } }],
+              "slots": [] }
             """);
-        var result = Generator.Generate(ir, new Profile { Package = "@acme/maps" }, new(api, "Acme.Maps"));
 
         Assert.Equal([
             "IOP2007 ChartElement.frame: skipped: uses a DOM element JS returns (R13)",
@@ -655,14 +656,102 @@ public sealed class GeneratorTests
         var component = File(result, "XChart2.cs");
         Assert.Contains("public sealed partial class XChart2 : global::Interoper.JsComponentBase", component);
         Assert.Contains("public bool Compact { get; set; }", component);
+        Assert.Contains("public global::Microsoft.AspNetCore.Components.EventCallback<ChartElement> OnElementReady { get; set; }", component);
         Assert.Contains("""if (supplied.Contains(nameof(Compact))) builder.AddAttribute(3, "compact", Compact);""", component); // present or absent
-        Assert.DoesNotContain("if (Element is null)", component); // no property to set
+        // The longest property wins: max-level-change binds maxLevel, and level-change binds level.
+        Assert.Contains("var echo = echoesMaxLevel.IsEcho(detail.MaxLevel);", component);
+        Assert.Contains("var echo = echoesLevel.IsEcho(detail.Level);", component);
         Assert.Contains("public global::Microsoft.AspNetCore.Components.EventCallback<double> LevelChanged { get; set; }", component);
         Assert.Contains("public global::Microsoft.AspNetCore.Components.EventCallback<LevelChangeDetail> OnLevelChange { get; set; }", component);
-        Assert.Contains("""[global::Microsoft.AspNetCore.Components.EventHandler("onlevel-change", typeof(global::Interoper.JsEventArgs), true, true)]""", File(result, "MapsEvents.cs"));
+        // A null optional property is undefined; a null one whose type has null is JS null.
+        Assert.Contains("""global::Interoper.JsOp.Set(Element.Handle, "note", w => { if (value is { } v) global::Interoper.JsJson.WriteString(w, v); else global::Interoper.JsJson.WriteUndefined(w); })""", component);
+        Assert.Contains("""global::Interoper.JsOp.Set(Element.Handle, "caption", w => { if (value is { } v) global::Interoper.JsJson.WriteString(w, v); else w.WriteNullValue(); })""", component);
+        // Async mode loads the element's module before wrapping the element; sync mode preloads it.
+        Assert.Contains(api == Api.Sync ? "Element = await ElementAsync<ChartElement>(element);" : """Element = await ElementAsync<ChartElement>(element, "@acme/maps/chart.js");""", component);
+        var events = File(result, "MapsEvents.cs");
+        Assert.Contains("""[global::Microsoft.AspNetCore.Components.EventHandler("onlevel-change", typeof(global::Interoper.JsEventArgs), true, true)]""", events);
+        Assert.Contains("public static partial class EventHandlers", events); // the only class Razor looks for them on
         var meta = File(result, "maps.meta.js");
-        Assert.Contains("""tag: "x-chart", members: ["level"] },""", meta);
+        Assert.Contains("""tag: "x-chart", members: ["level", "maxLevel", "note", "caption"] },""", meta);
         Assert.Contains("""{ name: "level-change", fields: ["level"] },""", meta);
+    }
+
+    [Fact] // R28, R24: elements that share an event name share its registration, which sends all their fields
+    public void ElementsSharingAnEventShareItsFields()
+    {
+        var result = Elements(Api.Async, [("a.js", """{ "kind": "class", "name": "AElement" }"""), ("b.js", """{ "kind": "class", "name": "BElement" }""")],
+            $$"""
+            { "tag": "x-a", "class": { "kind": "ref", "name": "AElement", "module": "@acme/maps/a.js" }, "attributes": [], "slots": [],
+              "events": [{ "name": "pick", "detail": { "kind": "object", "members": [{ "kind": "property", "name": "x", "type": {{Number}} }] } }] }
+            """,
+            $$"""
+            { "tag": "x-b", "class": { "kind": "ref", "name": "BElement", "module": "@acme/maps/b.js" }, "attributes": [], "slots": [],
+              "events": [{ "name": "pick", "detail": { "kind": "object", "members": [{ "kind": "property", "name": "x", "type": {{Number}} }, { "kind": "property", "name": "y", "type": {{Number}} }] } }] }
+            """);
+
+        Assert.Contains("""{ name: "pick", fields: ["x", "y"] },""", File(result, "maps.meta.js"));
+        Assert.Single(File(result, "MapsEvents.cs").Split('\n'), l => l.Contains("\"onpick\"", StringComparison.Ordinal));
+    }
+
+    [Fact] // R28, R27: an inline detail's record takes the next free name in its module, and a sibling module's type of its name keeps it
+    public void AnInlineDetailWhoseNameIsTakenGetsASuffix()
+    {
+        var result = Elements(Api.Async, [
+            ("chart.js", $$"""
+                { "kind": "class", "name": "ChartElement" },
+                { "kind": "interface", "name": "LevelChangeDetail", "members": [{ "kind": "property", "name": "other", "type": {{String}} }] }
+                """),
+            ("other.js", $$"""{ "kind": "interface", "name": "ZoomChangeDetail", "members": [{ "kind": "property", "name": "other", "type": {{String}} }] }""")],
+            $$"""
+            { "tag": "x-chart", "class": { "kind": "ref", "name": "ChartElement", "module": "@acme/maps/chart.js" }, "attributes": [], "slots": [],
+              "events": [{ "name": "level-change", "detail": { "kind": "object", "members": [{ "kind": "property", "name": "level", "type": {{Number}} }] } },
+                { "name": "zoom-change", "detail": { "kind": "object", "members": [{ "kind": "property", "name": "zoom", "type": {{Number}} }] } }] }
+            """);
+
+        Assert.Equal([
+            "IOP2006 <x-chart> on:level-change: its detail is LevelChangeDetail2: LevelChangeDetail is taken (R27)",
+            "IOP2006 @acme/maps/chart.js: its ZoomChangeDetail is ChartZoomChangeDetail: @acme/maps/other.js has one too (R27)",
+        ], result.Diagnostics.Select(d => d.ToString()));
+        var component = File(result, "XChart.cs");
+        Assert.Contains("EventCallback<LevelChangeDetail2> OnLevelChange", component);
+        Assert.Contains("OnLevelChange.InvokeAsync(e.Read(LevelChangeDetail2.Read));", component);
+        Assert.Contains("public required double Level { get; init; }", File(result, "LevelChangeDetail2.cs"));
+        Assert.Contains("public required string Other { get; init; }", File(result, "LevelChangeDetail.cs"));
+        Assert.Contains("OnZoomChange.InvokeAsync(e.Read(ChartZoomChangeDetail.Read));", component); // the inline one comes last
+        Assert.Contains("public required string Other { get; init; }", File(result, "ZoomChangeDetail.cs"));
+        var meta = File(result, "maps.meta.js");
+        Assert.Contains("""{ name: "level-change", fields: ["level"] },""", meta);
+        Assert.Contains("""{ name: "zoom-change", fields: ["zoom"] },""", meta);
+    }
+
+    [Fact] // R28, R17: a detail that holds an entity is read with the component's scope, which owns its handles
+    public void ADetailWithAnEntityIsReadWithTheScope()
+    {
+        var result = Elements(Api.Async, [("chart.js", """
+            { "kind": "class", "name": "ChartElement" },
+            { "kind": "interface", "name": "PickDetail", "members": [{ "kind": "property", "name": "target", "type": { "kind": "ref", "name": "ChartElement", "module": "@acme/maps/chart.js" } }] }
+            """)], """
+            { "tag": "x-chart", "class": { "kind": "ref", "name": "ChartElement", "module": "@acme/maps/chart.js" }, "attributes": [], "slots": [],
+              "events": [{ "name": "pick", "detail": { "kind": "ref", "name": "PickDetail", "module": "@acme/maps/chart.js" } }] }
+            """);
+
+        Assert.Empty(result.Diagnostics);
+        var component = File(result, "XChart.cs");
+        Assert.Contains("var scope = Scope;", component);
+        Assert.Contains("var detail = e.Read((ref r) => PickDetail.Read(ref r, scope));", component);
+        Assert.Contains("""{ name: "pick", fields: ["target"] },""", File(result, "maps.meta.js"));
+    }
+
+    private const string Number = """{ "kind": "primitive", "name": "number" }""";
+    private const string String = """{ "kind": "primitive", "name": "string" }""";
+
+
+    /// <summary>The modules of <c>@acme/maps</c>, by their path in it, and its custom elements.</summary>
+    private static GeneratorResult Elements(Api api, (string Path, string Declarations)[] modules, params string[] elements)
+    {
+        var json = string.Join(",\n", modules.Select(m => $$"""{ "specifier": "@acme/maps/{{m.Path}}", "declarations": [{{m.Declarations}}] }"""));
+        var ir = IrDocument.Parse($$"""{ "version": 1, "package": { "name": "@acme/maps", "version": "1" }, "modules": [{{json}}], "elements": [{{string.Join(",", elements)}}] }""");
+        return Generator.Generate(ir, new Profile { Package = "@acme/maps" }, new(api, "Acme.Maps"));
     }
 
     private static GeneratorResult Generate(string declarations, Profile? profile = null)

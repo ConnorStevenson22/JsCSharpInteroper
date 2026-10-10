@@ -12,7 +12,7 @@ class FakeElement extends Element {
   }
 }
 // The element's `className` is its CSS class, which happens to be a runtime class name.
-const rendered = [new FakeElement("demo-map", "a1", "MapView")];
+const rendered = [new FakeElement("demo-map", "a1", "MapView"), new FakeElement("div", "a2", "MapView")];
 const registrations = [];
 Object.assign(globalThis, {
   Element,
@@ -28,6 +28,9 @@ const send = (op) => JSON.parse(interoper.invokeSync(JSON.stringify(op)));
 test("wrap returns an ElementReference's element as a handle, its class id found by its tag (R13, R28)", () => {
   const element = send({ op: "wrap", value: { $e: "a1" } }).v;
   assert.equal(element.$t, ids.DemoMapElement);
+  const untagged = send({ op: "wrap", value: { $e: "a2" } }).v;
+  assert.equal(untagged.$t, 0); // not MapView: an element's className is its CSS class
+  send({ op: "release", ids: [untagged.$h] });
   assert.deepEqual(send({ op: "wrap", value: { $e: "a1" } }).v, element); // one element, one handle
   // Any other value comes back in wire form, as a result would.
   assert.deepEqual(send({ op: "wrap", value: { a: [1, { $u: 1 }] } }).v, { a: [1, { $u: 1 }] });
