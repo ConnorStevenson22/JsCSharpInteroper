@@ -45,7 +45,8 @@ public sealed class SelectionTests
     public void AStarMatchesAnyCharactersSlashesIncluded()
     {
         Assert.Equal(Modules(Selection.Select(Fixture.Ir, Fixture.Profile)), Modules(Select("@acme/*")));
-        Assert.Equal(["measure.js: distance"], Modules(Select("*/measure.js", "*/geometry.js")).Where(m => m.StartsWith("measure", StringComparison.Ordinal)));
+        Assert.Equal(["core.js: Observable", "geometry.js: ShapeType, Bounds, Shape, Point, Line, Polygon", "measure.js: distance"],
+            Modules(Select("*/measure.js", "*/geometry.js")));
     }
 
     [Fact]
@@ -141,6 +142,25 @@ public sealed class SelectionTests
     [InlineData( // §2: a type the generator doesn't map
         """{ "kind": "interface", "name": "T", "members": [{ "kind": "property", "name": "size", "type": { "kind": "object", "members": [] } }] }""",
         "IOP2007", "an inline object type")]
+    [InlineData( // R19 step 2: the discriminant is read as a string
+        """
+        { "kind": "alias", "name": "T", "type": { "kind": "union", "discriminant": "kind", "types": [{ "kind": "ref", "name": "X", "module": "@acme/maps/a.js" }, { "kind": "ref", "name": "Y", "module": "@acme/maps/a.js" }] } },
+        { "kind": "interface", "name": "X", "members": [{ "kind": "property", "name": "kind", "type": { "kind": "literal", "value": 1 } }] },
+        { "kind": "interface", "name": "Y", "members": [{ "kind": "property", "name": "kind", "type": { "kind": "literal", "value": 2 } }] }
+        """,
+        "IOP2007", "the union `T`, whose discriminant `kind` isn't a string on every case (R19)")]
+    [InlineData( // R2, R3: an alias of nothing but null and undefined
+        """{ "kind": "alias", "name": "T", "type": { "kind": "union", "types": [{ "kind": "primitive", "name": "null" }, { "kind": "primitive", "name": "undefined" }] } }""",
+        "IOP2007", "only `null` and `undefined`")]
+    [InlineData( // R2, R3: a member of nothing but null and undefined
+        """{ "kind": "interface", "name": "T", "members": [{ "kind": "property", "name": "x", "type": { "kind": "union", "types": [{ "kind": "primitive", "name": "null" }, { "kind": "primitive", "name": "undefined" }] } }] }""",
+        "IOP2007", "only `null` and `undefined`")]
+    [InlineData( // R2, R3: arrays have no Opt elements
+        """{ "kind": "interface", "name": "T", "members": [{ "kind": "property", "name": "xs", "type": { "kind": "array", "element": { "kind": "union", "types": [{ "kind": "primitive", "name": "string" }, { "kind": "primitive", "name": "null" }] } } }] }""",
+        "IOP2007", "a nullable array or tuple element")]
+    [InlineData( // R5: a tuple is an array of one C# type
+        """{ "kind": "interface", "name": "T", "members": [{ "kind": "property", "name": "pair", "type": { "kind": "tuple", "elements": [{ "kind": "primitive", "name": "string" }, { "kind": "primitive", "name": "number" }] } }] }""",
+        "IOP2007", "a tuple of different types")]
     public void WhatCantBeMappedIsSkippedWithWhatUsesIt(string declaration, string code, string problem)
     {
         var ir = Ir(declaration + """
@@ -156,6 +176,44 @@ public sealed class SelectionTests
             $"{code} f: skipped: uses {problem} (in `T`)",
         ], result.Diagnostics.Select(d => d.ToString()));
         Assert.DoesNotContain(Selection.Select(ir, new Profile { Package = "@acme/maps" }).Declarations, s => s.Declaration.Name is "T" or "Holder" or "f");
+    }
+
+    /// <summary>The counterpart of each refused shape above, which the mapping checks must let through.</summary>
+    [Theory]
+    [InlineData("""{ "kind": "alias", "name": "T", "type": { "kind": "union", "types": [{ "kind": "literal", "value": "auto" }, { "kind": "literal", "value": "none" }] } }""")] // R9
+    [InlineData("""{ "kind": "alias", "name": "T", "type": { "kind": "union", "types": [{ "kind": "primitive", "name": "string" }, { "kind": "array", "element": { "kind": "primitive", "name": "string" } }] } }""")] // R2, R19 step 4
+    [InlineData("""{ "kind": "enum", "name": "T", "members": [{ "name": "a", "value": 1 }, { "name": "b", "value": 2 }] }""")] // §2
+    [InlineData("""{ "kind": "alias", "name": "T", "type": { "kind": "union", "types": [{ "kind": "literal", "value": 0 }, { "kind": "literal", "value": 1 }] } }""")] // §2
+    [InlineData( // R19 step 2
+        """
+        { "kind": "alias", "name": "T", "type": { "kind": "union", "discriminant": "kind", "types": [{ "kind": "ref", "name": "X", "module": "@acme/maps/a.js" }, { "kind": "ref", "name": "Y", "module": "@acme/maps/a.js" }] } },
+        { "kind": "interface", "name": "X", "members": [{ "kind": "property", "name": "kind", "type": { "kind": "literal", "value": "x" } }] },
+        { "kind": "interface", "name": "Y", "members": [{ "kind": "property", "name": "kind", "type": { "kind": "literal", "value": "y" } }] }
+        """)]
+    [InlineData( // R19 step 3
+        """
+        { "kind": "alias", "name": "T", "type": { "kind": "union", "types": [{ "kind": "ref", "name": "X", "module": "@acme/maps/a.js" }, { "kind": "ref", "name": "Y", "module": "@acme/maps/a.js" }] } },
+        { "kind": "interface", "name": "X", "members": [{ "kind": "property", "name": "a", "type": { "kind": "primitive", "name": "number" } }] },
+        { "kind": "interface", "name": "Y", "members": [{ "kind": "property", "name": "b", "type": { "kind": "primitive", "name": "number" } }] }
+        """)]
+    [InlineData("""{ "kind": "interface", "name": "T", "members": [{ "kind": "property", "name": "x", "optional": true, "type": { "kind": "union", "types": [{ "kind": "primitive", "name": "string" }, { "kind": "primitive", "name": "null" }] } }] }""")] // R3
+    [InlineData("""{ "kind": "interface", "name": "T", "members": [{ "kind": "property", "name": "pair", "type": { "kind": "tuple", "elements": [{ "kind": "primitive", "name": "number" }, { "kind": "primitive", "name": "number" }] } }] }""")] // R5
+    [InlineData( // R16: a value-like class in a data record
+        """
+        { "kind": "interface", "name": "T", "members": [{ "kind": "property", "name": "at", "type": { "kind": "ref", "name": "Spot", "module": "@acme/maps/a.js" } }] },
+        { "kind": "class", "name": "Spot" }
+        """)]
+    public void WhatCanBeMappedIsEmittedWithWhatUsesIt(string declaration)
+    {
+        var result = Generator.Generate(Ir(declaration + """
+            ,
+            { "kind": "interface", "name": "Holder", "members": [{ "kind": "property", "name": "t", "type": { "kind": "ref", "name": "T", "module": "@acme/maps/a.js" } }] },
+            { "kind": "function", "name": "f", "signatures": [{ "params": [{ "name": "x", "type": { "kind": "ref", "name": "T", "module": "@acme/maps/a.js" } }] }] }
+            """), new Profile { Package = "@acme/maps", ValueClasses = ["Spot"] }, new(Api.Async, "Acme.Maps"));
+        Assert.Empty(result.Diagnostics);
+        Assert.Contains("T.cs", result.Files.Select(f => f.Path));
+        Assert.Contains("Holder.cs", result.Files.Select(f => f.Path));
+        Assert.Contains("public static Task FAsync(JsRealm realm, ", result.Files.Single(f => f.Path == "A.cs").Text);
     }
 
     [Fact] // R4, R19 step 2: a closed base is read by a string discriminant

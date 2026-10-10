@@ -228,7 +228,7 @@ internal sealed class LiveEmitter
     /// <summary>A signature's result without its Promise (R8): <c>null</c> for none.</summary>
     private (Value? Result, IrType Type, bool Promise) Result(Signature signature, string owner, string? self)
     {
-        var returns = signature.Returns!;
+        var returns = signature.Returns ?? new PrimitiveType("void"); // none, as for a constructor
         var promise = false;
         if (returns is RefType { Module: null, Name: "Promise", Args: [var inner] })
         {

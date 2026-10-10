@@ -10,28 +10,28 @@ namespace Interoper.Generator.Tests;
 public sealed class GoldenSliceTests
 {
     /// <summary>
-    /// What the fixture still doesn't map, per mode, each with the reason. Fixing one removes its entry, so the list is
-    /// the phase's progress meter.
+    /// What the fixture still doesn't map, each with the reason, in one mode (<c>Mode</c>) or both (<c>null</c>). Fixing
+    /// one removes its entry, so the list is the phase's progress meter.
     /// </summary>
-    private static readonly (string Diagnostic, string Reason)[] Remaining =
+    private static readonly (Api? Mode, string Diagnostic, string Reason)[] Remaining =
     [
-        ("IOP2007 FlyToOptions: skipped: uses `AbortSignal` (in `FlyToOptions`)", "AbortSignal (R14) isn't bridged yet"),
-        ("IOP2007 MapViewOptions: skipped: uses `HTMLElement` (in `MapViewOptions`)", "DOM elements (R13) come with the Razor components"),
-        ("IOP2007 MapView.container: skipped: uses `HTMLElement`", "DOM elements (R13) come with the Razor components"),
-        ("IOP2007 MapView.markers: skipped: uses generic `Collection`", "collections come with generic live classes"),
-        ("IOP2007 MapView.flyTo(options): optional parameter dropped (R22): uses `AbortSignal` (in `FlyToOptions`)", "AbortSignal (R14) isn't bridged yet"),
-        ("IOP2007 LabelFormatter: skipped: uses a callback (in `LabelFormatter`)", "callbacks (R21) aren't generated yet"),
-        ("IOP2007 MarkerOptions: skipped: uses a callback (in `LabelFormatter`) (in `MarkerOptions`)", "a data record can't hold a callback"),
-        ("IOP2007 Marker.labelFormatter: skipped: uses a callback (in `LabelFormatter`)", "callbacks (R21) aren't generated yet"),
-        ("IOP2007 Subscription: skipped: uses method `dispose` (in `Subscription`)", "an interface with a method isn't a data record (R15)"),
-        ("IOP2007 ChangeCallback: skipped: uses generic `ChangeCallback` (in `ChangeCallback`)", "a generic callback type has no C# type"),
-        ("IOP2007 Emitter.emit: skipped: uses type parameter `K`", "its payload depends on a type parameter"),
-        ("IOP2007 CollectionChangeEvent: skipped: uses generic `CollectionChangeEvent` (in `CollectionChangeEvent`)", "generic records come with collections"),
-        ("IOP2007 CollectionEvents: skipped: uses generic `CollectionEvents` (in `CollectionEvents`)", "generic records come with collections"),
-        ("IOP2007 Collection: skipped: uses generic `Collection`", "collections come with generic live classes"),
-        ("IOP2007 DemoMapElement.observedAttributes: skipped: a static member", "static members aren't bound"),
-        ("IOP2007 DemoMapElementEventMap: skipped: uses `CustomEvent` (in `DemoMapElementEventMap`)", "custom events come with the Razor components"),
-        ("IOP2007 iconNames: skipped: uses a variable", "variables aren't bound"),
+        (null, "IOP2007 FlyToOptions: skipped: uses `AbortSignal` (in `FlyToOptions`)", "AbortSignal (R14) isn't bridged yet"),
+        (null, "IOP2007 MapViewOptions: skipped: uses `HTMLElement` (in `MapViewOptions`)", "DOM elements (R13) come with the Razor components"),
+        (null, "IOP2007 MapView.container: skipped: uses `HTMLElement`", "DOM elements (R13) come with the Razor components"),
+        (null, "IOP2007 MapView.markers: skipped: uses generic `Collection`", "collections come with generic live classes"),
+        (null, "IOP2007 MapView.flyTo(options): optional parameter dropped (R22): uses `AbortSignal` (in `FlyToOptions`)", "AbortSignal (R14) isn't bridged yet"),
+        (null, "IOP2007 LabelFormatter: skipped: uses a callback (in `LabelFormatter`)", "a named function alias has no C# type (R21)"),
+        (null, "IOP2007 MarkerOptions: skipped: uses a callback (in `LabelFormatter`) (in `MarkerOptions`)", "a data record can't hold a callback"),
+        (null, "IOP2007 Marker.labelFormatter: skipped: uses a callback (in `LabelFormatter`)", "callbacks (R21) aren't generated yet"),
+        (null, "IOP2007 Subscription: skipped: uses method `dispose` (in `Subscription`)", "an interface with a method isn't a data record (R15)"),
+        (null, "IOP2007 ChangeCallback: skipped: uses generic `ChangeCallback` (in `ChangeCallback`)", "a generic callback type has no C# type"),
+        (null, "IOP2007 Emitter.emit: skipped: uses type parameter `K`", "its payload depends on a type parameter"),
+        (null, "IOP2007 CollectionChangeEvent: skipped: uses generic `CollectionChangeEvent` (in `CollectionChangeEvent`)", "generic records come with collections"),
+        (null, "IOP2007 CollectionEvents: skipped: uses generic `CollectionEvents` (in `CollectionEvents`)", "generic records come with collections"),
+        (null, "IOP2007 Collection: skipped: uses generic `Collection`", "collections come with generic live classes"),
+        (null, "IOP2007 DemoMapElement.observedAttributes: skipped: a static member", "static members aren't bound"),
+        (null, "IOP2007 DemoMapElementEventMap: skipped: uses `CustomEvent` (in `DemoMapElementEventMap`)", "custom events come with the Razor components"),
+        (null, "IOP2007 iconNames: skipped: uses a variable", "variables aren't bound"),
     ];
 
     [Fact]
@@ -70,8 +70,10 @@ public sealed class GoldenSliceTests
         Assert.Equal(2, metadata.Count);
         Assert.Equal(metadata[0], metadata[1]);
         Assert.True(changed.Count == 0, $"Regenerated {string.Join(", ", changed)}: review the diff, then rerun.");
-        Assert.Equal(Remaining.Select(r => r.Diagnostic), diagnostics[Api.Sync]);
-        Assert.Equal(Remaining.Select(r => r.Diagnostic), diagnostics[Api.Async]);
+        foreach (var api in new[] { Api.Sync, Api.Async })
+        {
+            Assert.Equal(Remaining.Where(r => (r.Mode ?? api) == api).Select(r => r.Diagnostic), diagnostics[api]);
+        }
     }
 
     private static string GoldenSlice([CallerFilePath] string source = "") =>

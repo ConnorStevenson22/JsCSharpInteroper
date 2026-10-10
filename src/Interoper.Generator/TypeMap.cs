@@ -387,6 +387,10 @@ internal sealed class TypeMap
     };
 
     // --- What can't be mapped (mapping §8) ---
+    //
+    // These checks decide, without mapping anything, what Map, Union, Cases and the union reader (ValueTypeEmitter) would
+    // refuse, so selection can skip it with what uses it. Every branch must mirror theirs; where it can't be exact, it
+    // refuses more, never less. SelectionTests pairs each refused shape with an accepted one.
 
     /// <summary>
     /// Why a type can't be mapped where it is, or null: in a live class's member, parameter, result or payload

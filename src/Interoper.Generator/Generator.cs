@@ -30,20 +30,16 @@ public static class Generator
         var types = new TypeMap(ir, profile, selection.Declarations, diagnostics);
         var ns = options.Namespace;
         var files = new List<GeneratedFile>();
-        var paths = new HashSet<string>();
-        // R27: a second type with a path that's taken gets a numeric suffix, reported as IOP2006.
+        // R27: the registry keeps its name; a later type whose name is taken is skipped, reported as IOP2006.
+        var names = new HashSet<string> { types.Registry };
         void Add(string type, string text)
         {
-            var path = $"{type}.cs";
-            for (var n = 2; !paths.Add(path); n++)
+            if (!names.Add(type))
             {
-                path = $"{type}{n}.cs";
+                diagnostics.Add(new(Diagnostic.Renamed, type, $"skipped: `{type}.cs` is taken (R27)"));
+                return;
             }
-            if (path != $"{type}.cs")
-            {
-                diagnostics.Add(new(Diagnostic.Renamed, type, $"its file is {path}: {type}.cs is taken (R27)"));
-            }
-            files.Add(new(path, text));
+            files.Add(new($"{type}.cs", text));
         }
 
         foreach (var selected in selection.Declarations)
@@ -68,11 +64,20 @@ public static class Generator
         var modules = selection.Declarations.Where(s => s.Declaration is FunctionDeclaration).GroupBy(s => s.Module).ToList();
         foreach (var module in modules)
         {
-            var name = LiveEmitter.ModuleClass(module.Key);
+            // R27: nothing refers to a module's static class, so it takes a free name instead.
+            var (wanted, name) = (LiveEmitter.ModuleClass(module.Key), LiveEmitter.ModuleClass(module.Key));
+            for (var n = 2; names.Contains(name); n++)
+            {
+                name = $"{wanted}{n}";
+            }
+            if (name != wanted)
+            {
+                diagnostics.Add(new(Diagnostic.Renamed, module.Key, $"its functions are {name}: {wanted} is taken (R27)"));
+            }
             Add(name, LiveEmitter.Module(types, profile, options, diagnostics, name, module.Key, module.Select(s => (FunctionDeclaration)s.Declaration)));
         }
         var classes = MetadataEmitter.ClassIds(types, selection);
-        Add(types.Registry, MetadataEmitter.Registry(types, options, classes, modules.Select(m => m.Key)));
+        files.Add(new($"{types.Registry}.cs", MetadataEmitter.Registry(types, options, classes, modules.Select(m => m.Key))));
         files.Add(new(MetadataEmitter.FileName(ir), MetadataEmitter.Module(ir, profile, types, classes)));
         foreach (var type in types.Owned)
         {

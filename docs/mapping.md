@@ -186,7 +186,7 @@ Sync mode needs .NET and JS on one thread, so it runs on WebAssembly only and fa
 - A JS member that collides with a generated member (`getZoom()` next to `zoom` in async mode) or with an `object` member (`toString()`, `equals()`) is renamed (`JsToString`, `JsEquals`) with IOP2006.
 - C# keywords can't collide after PascalCasing.
 
-**R27. Types** keep the TypeScript name in PascalCase. The namespace is the consumer's root namespace plus the module's folder path. Anonymous unions are named after their owner: `Feature.shape` becomes `FeatureShape`, and its setter-only wider type becomes `FeatureShapeInput`. A method's result is named after the method (`Feature.moveTo` → `FeatureMoveTo`), a parameter's after the method and the parameter (`FeatureMoveToTarget`), and an event's payload after the event (`FeatureClick`).
+**R27. Types** keep the TypeScript name in PascalCase. The namespace is the consumer's root namespace plus the module's folder path. Anonymous unions are named after their owner: `Feature.shape` becomes `FeatureShape`, and its setter-only wider type becomes `FeatureShapeInput`. A method's result is named after the method (`Feature.moveTo` → `FeatureMoveTo`), a parameter's after the method and the parameter (`FeatureMoveToTarget`), and an event's payload after the event (`FeatureClick`). When two generated types would share a name, the registry keeps its name and a module's static class takes the next free one (`Measure2`), since nothing refers to it; any other later type is skipped. Both are IOP2006.
 
 ---
 
@@ -214,7 +214,7 @@ Every fallback is reported with a code so consumers can see and tune what didn't
 | IOP2003 | Skipped: an ambiguous union (R19), whose cases can't be told apart, and what uses it. Profile override needed |
 | IOP2004 | Overloads merged after mapping |
 | IOP2005 | Synchronous-result callback not supported in async mode |
-| IOP2006 | Name changed to avoid a collision, or a file path that's taken suffixed |
+| IOP2006 | Name changed to avoid a collision, or a type whose name is taken skipped (R27) |
 | IOP2007 | Skipped: a declaration, member or optional parameter the generator can't map (yet), or that uses one, or a class outside the selection |
 
 ---

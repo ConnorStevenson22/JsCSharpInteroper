@@ -122,15 +122,35 @@ public sealed class GeneratorTests
         ], result.Diagnostics.Select(d => d.ToString()));
     }
 
-    [Fact] // R27: the module a.js's functions are the static class A, so the interface A gets another file
-    public void ATypeWhosePathIsTakenGetsASuffix()
+    [Fact] // R27: nothing refers to a module's static class, so it takes a free name
+    public void AModuleClassWhoseNameIsTakenGetsASuffix()
     {
         var result = Generate("""
             { "kind": "interface", "name": "A" },
             { "kind": "function", "name": "f", "signatures": [{ "params": [], "returns": { "kind": "primitive", "name": "void" } }] }
             """);
         Assert.Equal(["A.cs", "A2.cs", "Maps.cs", "maps.meta.js"], result.Files.Select(f => f.Path));
-        Assert.Equal("IOP2006 A: its file is A2.cs: A.cs is taken (R27)", Assert.Single(result.Diagnostics).ToString());
+        Assert.Contains("public sealed partial record A", File(result, "A.cs"));
+        Assert.Contains("public static partial class A2", File(result, "A2.cs"));
+        Assert.Equal("IOP2006 @acme/maps/a.js: its functions are A2: A is taken (R27)", Assert.Single(result.Diagnostics).ToString());
+    }
+
+    [Fact] // R27: any other type whose name is taken is skipped
+    public void ALaterTypeWhoseNameIsTakenIsSkipped()
+    {
+        var result = Generate("""
+            { "kind": "interface", "name": "LayerSnapshot" },
+            { "kind": "class", "name": "Layer" },
+            { "kind": "interface", "name": "Maps" }
+            """);
+        Assert.Equal(["LayerSnapshot.cs", "Layer.cs", "Maps.cs", "maps.meta.js"], result.Files.Select(f => f.Path));
+        Assert.Contains("public sealed partial record LayerSnapshot", File(result, "LayerSnapshot.cs"));
+        Assert.Contains("public static partial class Maps", File(result, "Maps.cs")); // the registry keeps its name
+        Assert.Equal(
+        [
+            "IOP2006 LayerSnapshot: skipped: `LayerSnapshot.cs` is taken (R27)",
+            "IOP2006 Maps: skipped: `Maps.cs` is taken (R27)",
+        ], result.Diagnostics.Select(d => d.ToString()));
     }
 
     [Fact] // §5: watches
