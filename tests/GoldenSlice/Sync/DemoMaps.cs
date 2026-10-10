@@ -13,6 +13,9 @@ public static partial class DemoMaps
     public const int PolygonId = 4;
     public const int MapViewId = 5;
     public const int MarkerId = 6;
+    public const int ObservableId = 7;
+    public const int EmitterId = 8;
+    public const int DemoMapElementId = 9;
 
     public static JsClassRegistry Classes { get; } = new JsClassRegistry()
         .Add(PointId, static (realm, handle) => new Point(realm, handle))
@@ -20,5 +23,8 @@ public static partial class DemoMaps
         .Add(PolygonId, static (realm, handle) => new Polygon(realm, handle))
         .Add(MapViewId, static (realm, handle) => new MapView(realm, handle))
         .Add(MarkerId, static (realm, handle) => new Marker(realm, handle))
-        .Preload("@acme/demo-maps/geometry.js", "@acme/demo-maps/MapView.js", "@acme/demo-maps/Marker.js", "@acme/demo-maps/measure.js");
+        .Add(ObservableId, static (realm, handle) => new Observable(realm, handle))
+        .Add(EmitterId, static (realm, handle) => new Emitter(realm, handle))
+        .Add(DemoMapElementId, static (realm, handle) => new DemoMapElement(realm, handle))
+        .Preload("@acme/demo-maps/geometry.js", "@acme/demo-maps/MapView.js", "@acme/demo-maps/Marker.js", "@acme/demo-maps/core.js", "@acme/demo-maps/demo-map.js", "@acme/demo-maps/measure.js", "@acme/demo-maps/styles.js");
 }

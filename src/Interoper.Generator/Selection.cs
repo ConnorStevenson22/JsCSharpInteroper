@@ -1,19 +1,21 @@
+using System.Text.RegularExpressions;
 using Interoper.Generator.Ir;
 
 namespace Interoper.Generator;
 
 /// <summary>
-/// A declaration to emit, trimmed to what's included: a class keeps only its included members, events and signatures,
-/// and a dropped optional parameter is gone from its signature (R22).
+/// A declaration to emit, trimmed to what can be mapped: a class keeps only the members, events and signatures that
+/// can be, and a dropped optional parameter is gone from its signature (R22).
 /// </summary>
-/// <param name="Watches">The class's properties to generate <c>WatchX</c> for.</param>
-public sealed record Selected(string Module, Declaration Declaration, IReadOnlyList<PropertyMember> Watches);
+public sealed record Selected(string Module, Declaration Declaration);
 
 /// <summary>
-/// What to emit for an IR and a profile. The profile's <c>include</c> lists live classes, their members, events and
-/// watches, and module functions; absent, it lists everything but watches, which are emitted only where listed. Data types (interfaces, aliases, enums) come in whole
-/// when an included member uses them. A member that uses an unlisted class, or a type that can't be mapped yet, is
-/// skipped with IOP2007; an optional trailing parameter is dropped instead (R22).
+/// What to emit for an IR and a profile. The profile's <c>include</c> lists module specifier globs (absent: every
+/// module); every exported declaration of a matching module is emitted, and so are the bases of emitted classes and the
+/// data types (interfaces, aliases, enums) they use, whole. What can't be mapped is found here, so that a skipped type
+/// takes the members that use it along with it (mapping §8): a member that uses a class outside the selection, or a
+/// type the type map can't map (<see cref="TypeMap.Problem(IrType, bool)"/>), is skipped with IOP2007, or IOP2003 for
+/// an ambiguous union; an optional trailing parameter is dropped instead (R22).
 /// </summary>
 public sealed class Selection
 {
@@ -23,37 +25,52 @@ public sealed class Selection
     private readonly Dictionary<(string Module, string Name), Declaration> byName = [];
     private readonly Dictionary<Declaration, string> moduleOf = new(ReferenceEqualityComparer.Instance);
     private readonly Dictionary<Declaration, Selected> selected = new(ReferenceEqualityComparer.Instance);
+    private readonly IrDocument ir;
+    private readonly List<(string Module, Declaration Declaration)> all;
     private readonly HashSet<ClassDeclaration> classes = new(ReferenceEqualityComparer.Instance);
-    private readonly Dictionary<Declaration, string?> problems = new(ReferenceEqualityComparer.Instance);
+    private readonly Dictionary<ClassDeclaration, Unmappable> skippedClasses = new(ReferenceEqualityComparer.Instance);
+    private readonly Dictionary<Declaration, Unmappable?> problems = new(ReferenceEqualityComparer.Instance);
     private readonly HashSet<Declaration> checking = new(ReferenceEqualityComparer.Instance);
     private readonly List<Diagnostic> diagnostics = [];
+    private readonly TypeMap types;
     private bool recursed;
 
     private Selection(IrDocument ir, Profile profile)
     {
+        this.ir = ir;
         this.profile = profile;
         if (profile.Package != ir.Package.Name)
         {
             throw new InvalidDataException($"The profile is for {profile.Package}, the IR for {ir.Package.Name}.");
         }
-        var all = ir.Modules.SelectMany(m => m.Declarations.Select(d => (m.Specifier, Declaration: d))).ToList();
+        all = [.. ir.Modules.SelectMany(m => m.Declarations.Select(d => (m.Specifier, d)))];
         foreach (var (module, declaration) in all)
         {
             byName[(module, declaration.Name)] = declaration;
             moduleOf[declaration] = module;
         }
 
-        var included = Included(all.Select(x => x.Declaration));
-        foreach (var (declaration, _) in included)
+        var included = Included();
+        var roots = all.Where(x => included.Contains(x.Module)).Select(x => x.Declaration).ToHashSet(ReferenceEqualityComparer.Instance);
+        foreach (var c in roots.OfType<ClassDeclaration>().ToList())
         {
-            if (declaration is ClassDeclaration { TypeParameters.Count: 0 } c)
+            for (var b = Base(c); b is not null; b = Base(b))
             {
-                classes.Add(c);
+                roots.Add(b);
             }
         }
-        foreach (var (declaration, listed) in included)
+        classes.UnionWith(roots.OfType<ClassDeclaration>().Where(c => c.TypeParameters.Count == 0));
+        types = Checker();
+        // R19 step 2: a closed base is read by a string discriminant; without one it's skipped, with what uses it.
+        while (classes.FirstOrDefault(c => types.Problem(c) is not null) is { } closed)
         {
-            Add(declaration, listed);
+            skippedClasses[closed] = types.Problem(closed)!;
+            classes.Remove(closed);
+            types = Checker();
+        }
+        foreach (var (_, declaration) in all.Where(x => roots.Contains(x.Declaration)))
+        {
+            Add(declaration);
         }
         Declarations = [.. all.Where(x => selected.ContainsKey(x.Declaration)).Select(x => selected[x.Declaration])];
     }
@@ -61,94 +78,61 @@ public sealed class Selection
     /// <summary>The declarations to emit, in IR order.</summary>
     public IReadOnlyList<Selected> Declarations { get; }
 
-    /// <summary>What was skipped or dropped (IOP2007), each once.</summary>
+    /// <summary>What was skipped or dropped (IOP2007, IOP2003), each once.</summary>
     public IReadOnlyList<Diagnostic> Diagnostics => diagnostics;
 
     public static Selection Select(IrDocument ir, Profile profile) => new(ir, profile);
 
-    /// <summary>The members, events and watches <c>include</c> lists from a class it doesn't include whole.</summary>
-    private sealed record Listed(HashSet<string> Members, HashSet<string> Events, HashSet<string> Watches);
-
-    /// <summary>The declarations the profile lists, in IR order, each with its listed parts (<c>null</c>: whole).</summary>
-    private List<(Declaration Declaration, Listed? Listed)> Included(IEnumerable<Declaration> all)
+    /// <summary>
+    /// The modules <c>include</c> matches: a glob is a module specifier in which <c>*</c> matches any characters,
+    /// <c>/</c> included. A glob that matches no module is an error.
+    /// </summary>
+    private HashSet<string> Included()
     {
+        var specifiers = ir.Modules.Select(m => m.Specifier).ToList();
         if (profile.Include is not { } include)
         {
-            return [.. all.Select(d => (d, (Listed?)null))];
+            return [.. specifiers];
         }
-        var whole = new HashSet<string>();
-        var parts = new Dictionary<string, Listed>();
-        foreach (var entry in include)
+        var result = new HashSet<string>();
+        foreach (var glob in include)
         {
-            if (entry.Split('.', 2) is not [var name, var part])
+            var pattern = new Regex($"^{Regex.Escape(glob).Replace("\\*", ".*", StringComparison.Ordinal)}$", RegexOptions.CultureInvariant);
+            var matches = specifiers.Where(s => pattern.IsMatch(s)).ToList();
+            if (matches.Count == 0)
             {
-                whole.Add(entry);
-                continue;
+                throw new InvalidDataException($"Profile include: {glob} matches no module of {profile.Package}.");
             }
-            var listed = parts.TryGetValue(name, out var l) ? l : parts[name] = new([], [], []);
-            switch (part.Split(':', 2))
-            {
-                case ["on", var e]:
-                    listed.Events.Add(e);
-                    break;
-                case ["watch", var p]:
-                    listed.Watches.Add(p);
-                    break;
-                default:
-                    listed.Members.Add(part);
-                    break;
-            }
-        }
-        var result = all.Where(d => whole.Contains(d.Name) || parts.ContainsKey(d.Name))
-            .Select(d => (d, whole.Contains(d.Name) ? null : parts[d.Name])).ToList();
-        if (whole.Concat(parts.Keys).Except(result.Select(x => x.d.Name)).FirstOrDefault() is { } unknown)
-        {
-            throw new InvalidDataException($"Profile include: {unknown} isn't a declaration of {profile.Package}.");
-        }
-        foreach (var (declaration, listed) in result)
-        {
-            if (listed is not null)
-            {
-                Validate(declaration, listed);
-            }
+            result.UnionWith(matches);
         }
         return result;
     }
 
-    private static void Validate(Declaration declaration, Listed listed)
-    {
-        if (declaration is not ClassDeclaration c)
-        {
-            throw new InvalidDataException($"Profile include: {declaration.Name} isn't a class, so it's included whole.");
-        }
-        var missing = listed.Members.Where(m => !c.Members.Any(x => x.Name == m))
-            .Concat(listed.Events.Where(e => !c.Events.Any(x => x.Name == e)).Select(e => "on:" + e))
-            .Concat(listed.Watches.Where(p => !c.Members.Any(x => x is PropertyMember && x.Name == p)).Select(p => "watch:" + p));
-        if (missing.FirstOrDefault() is { } name)
-        {
-            throw new InvalidDataException($"Profile include: {c.Name} has no {name}.");
-        }
-    }
+    /// <summary>A type map over the IR and the classes to emit, for its mapping checks.</summary>
+    private TypeMap Checker() =>
+        new(ir, profile, all.Where(x => x.Declaration is ClassDeclaration c && classes.Contains(c)).Select(x => new Selected(x.Module, x.Declaration)), []);
 
-    private void Add(Declaration declaration, Listed? listed)
+    private ClassDeclaration? Base(ClassDeclaration c) => c.Extends is RefType { Module: not null } r ? Find(r) as ClassDeclaration : null;
+
+    private void Add(Declaration declaration)
     {
         switch (declaration)
         {
-            case ClassDeclaration { TypeParameters.Count: > 0 }:
-                Skip(declaration.Name, $"generic `{declaration.Name}`");
+            case ClassDeclaration c when !classes.Contains(c):
+                Skip(c.Name, DeclarationProblem(c)!);
                 break;
             case ClassDeclaration c:
-                AddClass(c, listed);
+                AddClass(c);
                 break;
             case FunctionDeclaration f:
-                var signatures = Signatures(f.Name, f.Signatures);
+                var signatures = Signatures(f.Name, f.Signatures, live: false);
                 if (signatures.Count > 0)
                 {
-                    selected[f] = new(moduleOf[f], f with { Signatures = signatures }, []);
+                    selected[f] = new(moduleOf[f], f with { Signatures = signatures });
                 }
                 break;
             case VariableDeclaration:
-                Skip(declaration.Name, "a variable");
+                Skip(declaration.Name, new("a variable"));
                 break;
             default:
                 if (DeclarationProblem(declaration) is { } problem)
@@ -163,10 +147,10 @@ public sealed class Selection
         }
     }
 
-    private void AddClass(ClassDeclaration c, Listed? listed)
+    private void AddClass(ClassDeclaration c)
     {
         var members = new List<Member>();
-        foreach (var member in c.Members.Where(m => listed?.Members.Contains(m.Name) ?? !IsConvention(m)))
+        foreach (var member in c.Members.Where(m => !IsConvention(m)))
         {
             var subject = $"{c.Name}.{member.Name}";
             if (member.Static)
@@ -176,7 +160,7 @@ public sealed class Selection
             }
             if (member is MethodMember method)
             {
-                var signatures = Signatures(subject, method.Signatures);
+                var signatures = Signatures(subject, method.Signatures, live: true);
                 if (signatures.Count > 0)
                 {
                     members.Add(method with { Signatures = signatures });
@@ -188,27 +172,27 @@ public sealed class Selection
             {
                 continue;
             }
-            var types = property.WriteType is { } writeType ? [property.Type, writeType] : new[] { property.Type };
-            if (FirstProblem(types) is { } problem)
+            var parts = property.WriteType is { } writeType ? [property.Type, writeType] : new[] { property.Type };
+            if ((FirstProblem(parts) ?? types.Problem(property)) is { } problem)
             {
                 Skip(subject, problem);
                 continue;
             }
-            foreach (var type in types)
+            foreach (var type in parts)
             {
                 Collect(type);
             }
             members.Add(property);
         }
         var events = new List<Event>();
-        foreach (var e in c.Events.Where(e => listed?.Events.Contains(e.Name) ?? true))
+        foreach (var e in c.Events)
         {
             if (profile.Events?.Subscribe is null)
             {
                 Report(new(Diagnostic.NotSupported, $"{c.Name}.on:{e.Name}", "skipped: the profile names no subscribe method"));
                 continue;
             }
-            if (Problem(e.Type) is { } problem)
+            if ((Problem(e.Type) ?? types.Problem(e.Type, live: true)) is { } problem)
             {
                 Skip($"{c.Name}.on:{e.Name}", problem);
                 continue;
@@ -216,58 +200,45 @@ public sealed class Selection
             Collect(e.Type);
             events.Add(e);
         }
-        var watches = new List<PropertyMember>();
-        foreach (var p in c.Members.OfType<PropertyMember>().Where(p => listed?.Watches.Contains(p.Name) ?? false))
-        {
-            if (profile.Watch is null)
-            {
-                Report(new(Diagnostic.NotSupported, $"{c.Name}.watch:{p.Name}", "skipped: the profile names no watch method"));
-                continue;
-            }
-            if (Problem(p.Type) is { } problem)
-            {
-                Skip($"{c.Name}.watch:{p.Name}", problem);
-                continue;
-            }
-            Collect(p.Type);
-            watches.Add(p);
-        }
-        selected[c] = new(moduleOf[c], c with { Members = members, Events = events }, watches);
+        selected[c] = new(moduleOf[c], c with { Members = members, Events = events });
     }
 
     /// <summary>
     /// The runtime-class property (never bound) and the event and watch methods (bound as events and watches): left out
-    /// of a whole class without a diagnostic.
+    /// of a class without a diagnostic.
     /// </summary>
     private bool IsConvention(Member member) =>
         member.Name == profile.RuntimeClassProperty || member.Name == profile.Events?.Subscribe || member.Name == profile.Watch;
 
     /// <summary>
     /// A base's discriminant (<c>Shape.type</c>), which each subclass narrows to a literal: the live type says it, so it's
-    /// no member, and its type (<c>ShapeType</c>) isn't emitted for it.
+    /// no member.
     /// </summary>
     private bool IsDiscriminant(ClassDeclaration c, PropertyMember property) =>
         moduleOf.Keys.OfType<ClassDeclaration>().Any(sub =>
             sub.Extends is RefType r && ReferenceEquals(Find(r), c) &&
             sub.Members.Any(m => m is PropertyMember { Type: LiteralType } && m.Name == property.Name));
 
-    /// <summary>The signatures that can be mapped, without a rest parameter or trailing optional ones that can't (R22).</summary>
-    private List<Signature> Signatures(string subject, IEnumerable<Signature> signatures)
+    /// <summary>
+    /// The signatures that can be mapped, without trailing optional parameters that can't (R22). <paramref name="live"/>:
+    /// a live class's method, whose parameters and result can be entities.
+    /// </summary>
+    private List<Signature> Signatures(string subject, IEnumerable<Signature> signatures, bool live)
     {
         var result = new List<Signature>();
         foreach (var signature in signatures)
         {
-            if (Problem(signature) is { } problem)
+            if (Problem(signature, live) is { } problem)
             {
                 Skip(subject, problem);
                 continue;
             }
-            var kept = signature.Params.TakeWhile(p => !p.Rest && Problem(p.Type) is null).ToList();
+            var kept = signature.Params.TakeWhile(p => !p.Rest && ParameterProblem(p, live) is null).ToList();
             if (kept.Count < signature.Params.Count)
             {
                 var dropped = signature.Params[kept.Count];
                 Report(new(Diagnostic.NotSupported, $"{subject}({dropped.Name})",
-                    dropped.Rest ? "rest parameter dropped (R22)" : $"optional parameter dropped (R22): uses {Problem(dropped.Type)}"));
+                    dropped.Rest ? "rest parameter dropped (R22)" : $"optional parameter dropped (R22): uses {ParameterProblem(dropped, live)}"));
             }
             var trimmed = signature with { Params = kept };
             foreach (var type in trimmed.Params.Select(p => p.Type).Append(trimmed.Returns).OfType<IrType>())
@@ -280,13 +251,15 @@ public sealed class Selection
     }
 
     /// <summary>Why a signature can't be mapped: a type parameter, its result, or a required parameter.</summary>
-    private string? Problem(Signature signature) =>
-        signature.TypeParameters.Count > 0 ? $"type parameter `{signature.TypeParameters[0].Name}`"
-        : signature.Returns is { } returns && Problem(returns) is { } problem ? problem
-        : signature.Params.FirstOrDefault(p => Problem(p.Type) is not null) is { Optional: false, Rest: false } required ? Problem(required.Type)
+    private Unmappable? Problem(Signature signature, bool live) =>
+        signature.TypeParameters.Count > 0 ? new($"type parameter `{signature.TypeParameters[0].Name}`")
+        : signature.Returns is { } returns && (Problem(returns) ?? types.ResultProblem(returns, live)) is { } problem ? problem
+        : signature.Params.FirstOrDefault(p => ParameterProblem(p, live) is not null) is { Optional: false, Rest: false } required ? ParameterProblem(required, live)
         : null;
 
-    private void Skip(string subject, string problem) => Report(new(Diagnostic.NotSupported, subject, $"skipped: uses {problem}"));
+    private Unmappable? ParameterProblem(Parameter p, bool live) => Problem(p.Type) ?? types.Problem(p.Type, live);
+
+    private void Skip(string subject, Unmappable problem) => Report(new(problem.Code, subject, $"skipped: uses {problem}"));
 
     /// <summary>Adds a diagnostic unless it's already there, as when two overloads are skipped for the same reason.</summary>
     private void Report(Diagnostic diagnostic)
@@ -297,32 +270,35 @@ public sealed class Selection
         }
     }
 
-    // --- What can be mapped ---
+    // --- What can be reached ---
 
-    /// <summary>Why a type can't be mapped yet, or <c>null</c>.</summary>
-    private string? Problem(IrType type) => type switch
+    /// <summary>
+    /// Why a type can't be used: something outside the selection or the generator, here or in a declaration it names.
+    /// What the types themselves map to is the type map's to check (<see cref="TypeMap.Problem(IrType, bool)"/>).
+    /// </summary>
+    private Unmappable? Problem(IrType type) => type switch
     {
-        PrimitiveType p => SupportedPrimitives.Contains(p.Name) ? null : $"`{p.Name}`",
+        PrimitiveType p => SupportedPrimitives.Contains(p.Name) ? null : new($"`{p.Name}`"),
         LiteralType or ThisType => null,
         RefType { Module: null, Name: "Promise" } r => FirstProblem(r.Args),
-        RefType { Module: null } r => $"`{r.Name}`",
-        RefType r => Find(r) is { } declaration ? DeclarationProblem(declaration) : $"`{r.Name}`",
+        RefType { Module: null } r => new($"`{r.Name}`"),
+        RefType r => Find(r) is { } declaration ? DeclarationProblem(declaration) : new($"`{r.Name}`"),
         ObjectType o => MembersProblem(o.Members, o.CallSignatures.Count + o.ConstructSignatures.Count) ?? FirstProblem(Children(o)),
-        FunctionType => "a callback",
-        TypeParameterType t => $"type parameter `{t.Name}`",
-        UnresolvedType u => $"unresolved `{u.Text}`",
+        FunctionType => new("a callback"),
+        TypeParameterType t => new($"type parameter `{t.Name}`"),
+        UnresolvedType u => new($"unresolved `{u.Text}`"),
         _ => FirstProblem(Children(type)),
     };
 
-    private string? FirstProblem(IEnumerable<IrType> types) => types.Select(Problem).FirstOrDefault(p => p is not null);
+    private Unmappable? FirstProblem(IEnumerable<IrType> types) => types.Select(Problem).FirstOrDefault(p => p is not null);
 
-    private static string? MembersProblem(IEnumerable<Member> members, int callSignatures) =>
-        callSignatures > 0 ? "a callable object"
-        : members.OfType<MethodMember>().FirstOrDefault() is { } method ? $"method `{method.Name}`"
+    private static Unmappable? MembersProblem(IEnumerable<Member> members, int callSignatures) =>
+        callSignatures > 0 ? new("a callable object")
+        : members.OfType<MethodMember>().FirstOrDefault() is { } method ? new($"method `{method.Name}`")
         : null;
 
-    /// <summary>A class can be mapped when it's emitted; a data type when everything in it can be.</summary>
-    private string? DeclarationProblem(Declaration declaration)
+    /// <summary>A class can be used when it's emitted; a data type when everything in it can be, and it maps.</summary>
+    private Unmappable? DeclarationProblem(Declaration declaration)
     {
         if (problems.TryGetValue(declaration, out var known))
         {
@@ -336,16 +312,16 @@ public sealed class Selection
         var problem = declaration switch
         {
             ClassDeclaration c => classes.Contains(c) ? null
-                : c.TypeParameters.Count > 0 ? $"generic `{c.Name}`" : $"unlisted class `{c.Name}`",
-            InterfaceDeclaration { TypeParameters.Count: > 0 } or AliasDeclaration { TypeParameters.Count: > 0 } => $"generic `{declaration.Name}`",
-            InterfaceDeclaration i => MembersProblem(i.Members, i.CallSignatures.Count + i.ConstructSignatures.Count) ?? FirstProblem(Parts(i)),
-            AliasDeclaration a => Problem(a.Type),
-            EnumDeclaration => null,
-            _ => $"`{declaration.Name}`",
+                : skippedClasses.GetValueOrDefault(c) ?? new(c.TypeParameters.Count > 0 ? $"generic `{c.Name}`" : $"class `{c.Name}` outside the selection"),
+            InterfaceDeclaration { TypeParameters.Count: > 0 } or AliasDeclaration { TypeParameters.Count: > 0 } => new($"generic `{declaration.Name}`"),
+            InterfaceDeclaration i => MembersProblem(i.Members, i.CallSignatures.Count + i.ConstructSignatures.Count) ?? FirstProblem(Parts(i)) ?? types.Problem(i),
+            AliasDeclaration a => Problem(a.Type) ?? types.Problem(a),
+            EnumDeclaration e => types.Problem(e),
+            _ => new($"`{declaration.Name}`"),
         };
         if (problem is not null && declaration is not ClassDeclaration)
         {
-            problem = $"{problem} (in `{declaration.Name}`)";
+            problem = problem with { Text = $"{problem.Text} (in `{declaration.Name}`)" };
         }
         checking.Remove(declaration);
         // Inside a recursion, "fine" may only mean the declaration being checked further up wasn't known yet.
@@ -381,7 +357,7 @@ public sealed class Selection
 
     private void AddDataType(Declaration declaration)
     {
-        if (selected.TryAdd(declaration, new(moduleOf[declaration], declaration, [])))
+        if (selected.TryAdd(declaration, new(moduleOf[declaration], declaration)))
         {
             foreach (var type in Parts(declaration))
             {

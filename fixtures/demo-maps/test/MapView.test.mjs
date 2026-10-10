@@ -6,7 +6,7 @@ import { Marker } from "../Marker.js";
 
 test("defaults and constructor bag", () => {
   const view = new MapView({ zoom: 4, basemap: "3d-relief" });
-  assert.deepEqual([view.zoom, view.rotation, view.basemap, view.cursor], [4, 0, "3d-relief", "default"]);
+  assert.deepEqual([view.zoom, view.rotation, view.basemap, view.cursor], [4, 0, "3d-relief", undefined]);
   assert.equal(view.title, undefined);
   assert.equal(view.selected, null);
   assert.equal(view.container, null);

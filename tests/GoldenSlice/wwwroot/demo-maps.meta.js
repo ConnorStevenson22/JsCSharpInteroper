@@ -6,7 +6,10 @@ export default {
     2: { module: "@acme/demo-maps/geometry.js", export: "Point", name: "geometry.Point", value: true, members: ["type", "x", "y"] },
     3: { module: "@acme/demo-maps/geometry.js", export: "Line", name: "geometry.Line", value: true, members: ["type", "path"] },
     4: { module: "@acme/demo-maps/geometry.js", export: "Polygon", name: "geometry.Polygon", value: true, members: ["type", "vertices"] },
-    5: { module: "@acme/demo-maps/MapView.js", export: "MapView", name: "MapView", members: ["center", "zoom", "rotation", "basemap", "title"] },
+    5: { module: "@acme/demo-maps/MapView.js", export: "MapView", name: "MapView", members: ["center", "zoom", "rotation", "basemap", "cursor", "title"] },
     6: { module: "@acme/demo-maps/Marker.js", export: "Marker", name: "Marker", members: ["position", "label", "style"] },
+    7: { module: "@acme/demo-maps/core.js", export: "Observable", name: "core.Observable", members: [] },
+    8: { module: "@acme/demo-maps/core.js", export: "Emitter", name: "core.Emitter", members: [] },
+    9: { module: "@acme/demo-maps/demo-map.js", export: "DemoMapElement", name: "demo-map.DemoMapElement", members: ["basemap", "zoom", "center"] },
   },
 };

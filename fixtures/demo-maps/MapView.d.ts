@@ -52,7 +52,8 @@ export class MapView extends Emitter {
   /** Degrees, normalized to 0–360. */
   rotation: number;
   basemap: Basemap;
-  cursor: Cursor;
+  /** Undefined: the container's own CSS cursor. */
+  cursor?: Cursor;
   title?: string | null;
   /** The element the map draws into. */
   container: HTMLElement | null;

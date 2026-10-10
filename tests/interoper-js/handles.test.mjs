@@ -78,8 +78,7 @@ test("snapshot reads every member: value-like members by value, entities as hand
     zoom: 2,
     rotation: 0,
     basemap: "plain",
-    cursor: "default",
-    selected: null, // title is undefined, so it is omitted (R2)
+    selected: null, // title and cursor are undefined, so they are omitted (R2)
     markers,
   });
   const line = create(ids.Line, { path: [[0, 1], [2, 3]] });

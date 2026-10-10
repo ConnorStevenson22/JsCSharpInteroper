@@ -4,11 +4,20 @@ namespace Interoper.Generator;
 /// <param name="Subject">What it's about: a declaration, <c>Type.member</c>, or <c>Type.method(parameter)</c>.</param>
 public sealed record Diagnostic(string Code, string Subject, string Message)
 {
+    /// <summary>An ambiguous union skipped: its cases can't be told apart (R19).</summary>
+    public const string Ambiguous = "IOP2003";
+
     /// <summary>A name changed to avoid a collision.</summary>
     public const string Renamed = "IOP2006";
 
-    /// <summary>Not supported yet: a declaration, member or optional parameter skipped.</summary>
+    /// <summary>Skipped: a declaration, member or optional parameter the generator can't map (yet).</summary>
     public const string NotSupported = "IOP2007";
 
     public override string ToString() => $"{Code} {Subject}: {Message}";
+}
+
+/// <summary>Why a type or declaration can't be mapped, and the code a skip reports it with.</summary>
+internal sealed record Unmappable(string Text, string Code = Diagnostic.NotSupported)
+{
+    public override string ToString() => Text;
 }
