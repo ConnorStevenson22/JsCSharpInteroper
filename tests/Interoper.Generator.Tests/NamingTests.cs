@@ -68,6 +68,13 @@ public sealed class NamingTests
     public void ANamespaceIsTheRootPlusTheModulesFolders(string specifier, string ns) =>
         Assert.Equal(ns, Naming.Namespace("Acme.Maps", "@acme/maps", specifier));
 
+    [Theory] // R27: another package's modules have its name, without the scope, first
+    [InlineData("@acme/widgets", "Acme.Maps.Widgets")]
+    [InlineData("@acme/widgets/legend", "Acme.Maps.Widgets")]
+    [InlineData("@acme/widgets/dist/support/entry.js", "Acme.Maps.Widgets.Dist.Support")]
+    public void AModuleOfAnotherPackageHasItsNamespace(string specifier, string ns) =>
+        Assert.Equal(ns, Naming.Namespace("Acme.Maps", "@acme/widgets", specifier, otherPackage: true));
+
     [Theory] // R27
     [InlineData("Acme.Maps", "Point", "Point.cs")]
     [InlineData("Acme.Maps.Layers", "TileLayer", "Layers/TileLayer.cs")]

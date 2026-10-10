@@ -26,7 +26,7 @@ dotnet test Interoper.slnx                      # unit + golden tests
 dotnet test tests/Interoper.E2E                 # browser tests (Playwright, Chromium); the slnx builds them but doesn't run them
 dotnet format Interoper.slnx --verify-no-changes
 npm install --prefix src/interoper-extractor --no-audit --no-fund   # once: the extractor's pinned TypeScript
-node --test "tests/interoper-js/*.test.mjs" "fixtures/demo-maps/test/*.test.mjs" "src/interoper-extractor/test/*.test.mjs"   # JS tests (glob form; a bare folder fails on Node 22)
+node --test "tests/interoper-js/*.test.mjs" "fixtures/demo-maps/test/*.test.mjs" "fixtures/demo-widgets/test/*.test.mjs" "src/interoper-extractor/test/*.test.mjs"   # JS tests (glob form; a bare folder fails on Node 22)
 ```
 
 ## Environment

@@ -37,15 +37,20 @@ public static class Naming
     public static string Type(string name) => Pascal(name);
 
     /// <summary>
-    /// R27: a module's namespace is the root namespace plus the module's folder in its package, each segment
-    /// PascalCased: <c>@acme/maps/layers/TileLayer.js</c> is in <c>Acme.Maps.Layers</c>. (A module of another package
-    /// gets that package's segment first with multi-package IRs, D11.)
+    /// R27: a module's namespace is the root namespace plus the module's folders in its package, each segment
+    /// PascalCased: <c>@acme/maps/layers/TileLayer.js</c> is in <c>Acme.Maps.Layers</c>. A module of a package other
+    /// than the IR's (<paramref name="otherPackage"/>) has that package's name without its scope first:
+    /// <c>@acme/widgets/legend</c> is in <c>Acme.Maps.Widgets</c>.
     /// </summary>
-    public static string Namespace(string root, string package, string specifier)
+    public static string Namespace(string root, string package, string specifier, bool otherPackage = false)
     {
-        var path = specifier.StartsWith(package + "/", StringComparison.Ordinal) ? specifier[(package.Length + 1)..] : specifier;
-        return string.Join(".", path.Split('/')[..^1].Select(Pascal).Prepend(root));
+        var folders = PathInPackage(package, specifier).Split('/')[..^1].Select(Pascal);
+        return string.Join(".", (otherPackage ? folders.Prepend(Pascal(package.Split('/')[^1])) : folders).Prepend(root));
     }
+
+    /// <summary>A module's path in its package: <c>layers/TileLayer.js</c>, or empty for the package's root export.</summary>
+    public static string PathInPackage(string package, string specifier) =>
+        specifier == package ? "" : specifier.StartsWith(package + "/", StringComparison.Ordinal) ? specifier[(package.Length + 1)..] : specifier;
 
     /// <summary>
     /// R27: a generated file's path mirrors its namespace below the root namespace: <c>Layers/TileLayer.cs</c> for

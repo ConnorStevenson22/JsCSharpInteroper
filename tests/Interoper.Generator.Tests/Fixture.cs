@@ -3,13 +3,16 @@ using Interoper.Generator.Ir;
 
 namespace Interoper.Generator.Tests;
 
-/// <summary>The demo-maps fixture: the golden IR and the profile.</summary>
+/// <summary>The fixtures' golden IRs, and demo-maps' profile.</summary>
 internal static class Fixture
 {
-    public static IrDocument Ir { get; } = IrDocument.Load(PathOf("demo-maps.ir.json"));
+    public static IrDocument Ir { get; } = IrDocument.Load(PathOf("demo-maps", "demo-maps.ir.json"));
 
-    public static Profile Profile { get; } = Profile.Load(PathOf("profile.json"));
+    /// <summary>demo-maps and demo-widgets in one IR, demo-maps first.</summary>
+    public static IrDocument WithWidgetsIr { get; } = IrDocument.Load(PathOf("demo-widgets", "demo-widgets.ir.json"));
 
-    private static string PathOf(string file, [CallerFilePath] string source = "") =>
-        Path.Combine(Path.GetDirectoryName(source)!, "..", "..", "fixtures", "demo-maps", file);
+    public static Profile Profile { get; } = Profile.Load(PathOf("demo-maps", "profile.json"));
+
+    private static string PathOf(string fixture, string file, [CallerFilePath] string source = "") =>
+        Path.Combine(Path.GetDirectoryName(source)!, "..", "..", "fixtures", fixture, file);
 }

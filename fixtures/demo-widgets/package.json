@@ -1,0 +1,13 @@
+{
+  "name": "@acme/demo-widgets",
+  "version": "0.0.0",
+  "private": true,
+  "description": "A tiny made-up widget package on top of @acme/demo-maps, for Interoper's multi-package extractor tests.",
+  "type": "module",
+  "exports": {
+    ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js", "default": "./dist/index.js" },
+    "./legend": { "types": "./dist/legend.d.ts", "import": "./dist/legend.js", "default": "./dist/legend.js" }
+  },
+  "peerDependencies": { "@acme/demo-maps": "0.0.0" },
+  "customElements": "custom-elements.json"
+}

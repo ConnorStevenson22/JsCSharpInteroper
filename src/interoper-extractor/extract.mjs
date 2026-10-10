@@ -1,8 +1,10 @@
-// Interoper extractor: reads a package's .d.ts files and its Custom Elements Manifest with the TypeScript checker
+// Interoper extractor: reads packages' .d.ts files and their Custom Elements Manifests with the TypeScript checker
 // and writes IR v1 (docs/ir.md).
 //
-//   node extract.mjs <package dir> [--profile profile.json] [--out ir.json]
+//   node extract.mjs <package dir>... [--profile profile.json] [--out ir.json]
 //
+// The first package is the IR's `package`; the others' modules, and those of unlisted packages whose declarations the
+// listed ones reference, say which package they're in.
 // The profile is read only for the event-map property (`events.mapProperty`, R24); everything else in it is the generator's.
 
 import fs from "node:fs";
@@ -22,26 +24,30 @@ const PRIMITIVES = [
 /** Drops undefined values and empty arrays, so absent means "none" and the JSON stays small. */
 const compact = (o) => Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined && !(Array.isArray(v) && !v.length)));
 
-export function extract(packageDir, { eventMap } = {}) {
-  const dir = path.resolve(packageDir);
-  const pkg = JSON.parse(fs.readFileSync(path.join(dir, "package.json"), "utf8"));
-  const files = listDts(dir);
-  const manifest = readManifest(dir, pkg);
-  const program = createProgram(ts, files, Object.fromEntries([...manifest.types.values()].map((t) => [t.file, t.text])));
+/** `packageDirs` is one package's folder or a list of them; the first is the IR's `package`. */
+export function extract(packageDirs, { eventMap } = {}) {
+  const dirs = [packageDirs].flat().map((d) => path.resolve(d));
+  packages.clear(); // package.json files are read once per run
+  const pkg = readPackage(dirs[0]);
+  const files = dirs.flatMap((d) => listDts(d));
+  const manifests = dirs.map((d) => readManifest(d, readPackage(d)));
+  const manifestTypes = new Map(manifests.flatMap((m) => [...m.types]));
+  const virtual = Object.fromEntries([...manifestTypes.values()].map((t) => [t.file, t.text]));
+  // A symlinked package (as in a workspace) resolves its dependencies from where it's linked.
+  const program = createProgram(ts, files, virtual, { preserveSymlinks: true });
   const checker = program.getTypeChecker();
 
   const own = new Set(files);
-  const inPackage = (sym) => sym.declarations?.some((d) => own.has(path.resolve(d.getSourceFile().fileName)));
 
-  // The module specifier of a declaration file: its package's name plus the path of the JS file it describes.
-  // Undefined for the platform's own typings (lib.dom.d.ts).
-  const specifiers = new Map();
-  function moduleOf(decl) {
-    const sf = decl.getSourceFile();
+  // A declaration file's module: its specifier, package and whether it's internal (ir.md). Undefined for the platform's
+  // own typings (lib.dom.d.ts) and the manifests' virtual modules.
+  const infos = new Map();
+  function infoOf(sf) {
     const file = path.resolve(sf.fileName);
-    if (!specifiers.has(file)) specifiers.set(file, isPlatform(sf) ? undefined : specifierOf(file));
-    return specifiers.get(file);
+    if (!infos.has(file)) infos.set(file, isPlatform(sf) || Object.hasOwn(virtual, sf.fileName) ? undefined : moduleInfo(file));
+    return infos.get(file);
   }
+  const moduleOf = (decl) => infoOf(decl.getSourceFile())?.specifier;
   const isPlatform = (node) => program.isSourceFileDefaultLibrary(node.getSourceFile());
 
   /**
@@ -51,13 +57,27 @@ export function extract(packageDir, { eventMap } = {}) {
    */
   const namedBase = (type) =>
     isNamed(type) ? type : type.isIntersection() ? type.types.find((t) => isNamed(t) && t.symbol.flags & F.Class && isExported(t.symbol)) : undefined;
-  const exportsOf = new Map();
   /** Whether its module exports a symbol, under any name. */
-  function isExported(sym) {
-    const moduleSym = sym.declarations?.length && checker.getSymbolAtLocation(sym.declarations[0].getSourceFile());
-    if (!moduleSym) return false;
-    if (!exportsOf.has(moduleSym)) exportsOf.set(moduleSym, new Set(checker.getExportsOfModule(moduleSym).map((e) => (e.flags & F.Alias ? checker.getAliasedSymbol(e) : e))));
-    return exportsOf.get(moduleSym).has(sym);
+  const isExported = (sym) => sym.declarations?.length > 0 && exportsOf(sym.declarations[0].getSourceFile()).has(sym);
+
+  const fileExports = new Map();
+  /**
+   * The declarations a file exports, each with its declaring node and the name it's exported under (ir.md `export`).
+   * An export of a declaration elsewhere in the file (`export default Pin;`, `export { Pin as Marker }`) is an alias:
+   * the declaration is kept once, under its own name when the file exports that too. A re-export of another file's
+   * declaration (`export * from`, `export { X } from`) is that file's.
+   */
+  function exportsOf(sf) {
+    if (fileExports.has(sf)) return fileExports.get(sf);
+    const result = new Map();
+    const moduleSym = checker.getSymbolAtLocation(sf);
+    for (const sym of moduleSym ? checker.getExportsOfModule(moduleSym) : []) {
+      const target = sym.flags & F.Alias ? checker.getAliasedSymbol(sym) : sym;
+      const d = target.declarations?.find((d) => d.getSourceFile() === sf);
+      if (d && (!result.has(target) || sym.name === nameOf(target))) result.set(target, { d, exported: sym.name });
+    }
+    fileExports.set(sf, result);
+    return result;
   }
 
   // --- Declarations ---
@@ -79,7 +99,7 @@ export function extract(packageDir, { eventMap } = {}) {
     if (sym.flags & F.Variable) {
       return compact({ kind: "variable", ...base, readonly: (ts.getCombinedNodeFlags(decl) & ts.NodeFlags.Const) !== 0 || undefined, type: valueType(sym, decl.type) });
     }
-    return undefined; // re-exports and namespaces aren't in IR v1
+    return undefined; // a namespace (`declare namespace`) isn't in IR v1
   }
 
   function classDecl(sym, base) {
@@ -289,12 +309,20 @@ export function extract(packageDir, { eventMap } = {}) {
     return compact({ kind: "object", ...shape });
   }
 
-  /** A named type: `module` says where it's declared, and is absent for the platform's own (Promise, HTMLElement). */
+  /**
+   * A named type: `module` says where it's declared, and is absent for the platform's own (Promise, HTMLElement). A
+   * declaration of a package that isn't listed is added to the IR, under its own module.
+   */
   function ref(sym, args, node) {
     const argNodes = node && ts.isTypeReferenceNode(node) ? node.typeArguments ?? [] : [];
     const decl = sym.declarations?.find(moduleOf);
+    if (decl && !own.has(path.resolve(decl.getSourceFile().fileName))) reached.add(sym);
     return compact({ kind: "ref", name: nameOf(sym), module: decl && moduleOf(decl), args: args?.map((a, i) => typeRef(a, argNodes[i])) });
   }
+  /** Whether a package declares a symbol (an alias of the platform's, such as `Partial`, is resolved in place). */
+  const inPackage = (sym) => sym.declarations?.some(moduleOf);
+  /** The declarations of unlisted packages that the IR references, in the order they're met. */
+  const reached = new Set();
 
   /** R12: a type the checker can't resolve to something concrete (`keyof this`, `this["$events"][K]`). */
   const unresolved = (type) => ({ kind: "unresolved", text: checker.typeToString(type) });
@@ -340,7 +368,7 @@ export function extract(packageDir, { eventMap } = {}) {
 
   /** A manifest type text's node in its virtual module: undefined when it has none, null when the module has errors. */
   function manifestNode(type) {
-    const sf = manifest.types.has(type) && program.getSourceFile(manifest.types.get(type).file);
+    const sf = manifestTypes.has(type) && program.getSourceFile(manifestTypes.get(type).file);
     if (!sf) return undefined;
     if (program.getSyntacticDiagnostics(sf).length || program.getSemanticDiagnostics(sf).length) return null;
     return sf.statements.find(ts.isTypeAliasDeclaration).type;
@@ -354,31 +382,31 @@ export function extract(packageDir, { eventMap } = {}) {
 
   // --- Modules ---
 
-  const modules = [];
+  // Every export of the listed packages' files, then the custom elements, then what they reach in other packages.
+  const listed = new Map();
   for (const sf of program.getSourceFiles()) {
-    const moduleSym = own.has(path.resolve(sf.fileName)) && checker.getSymbolAtLocation(sf);
-    if (!moduleSym) continue;
-    // An export of a declaration elsewhere in the file (`export default Pin;`, `export { Pin as Marker }`) is an alias:
-    // the declaration is kept once, under its own name when the module exports that too. Re-exports of another file's
-    // declarations aren't in IR v1.
-    const exports = new Map();
-    for (const sym of checker.getExportsOfModule(moduleSym)) {
-      const target = sym.flags & F.Alias ? checker.getAliasedSymbol(sym) : sym;
-      const d = target.declarations?.find((d) => d.getSourceFile() === sf);
-      if (d && (!exports.has(target) || sym.name === nameOf(target))) exports.set(target, { d, exported: sym.name });
-    }
-    const declarations = [...exports]
-      .sort(([, a], [, b]) => a.d.pos - b.d.pos)
-      .map(([sym, { d, exported }]) => declaration(sym, d, exported))
-      .filter(Boolean);
-    if (declarations.length) modules.push({ specifier: moduleOf(sf), declarations });
+    if (own.has(path.resolve(sf.fileName))) listed.set(sf, [...exportsOf(sf)].map(([sym, { d, exported }]) => ({ d, decl: declaration(sym, d, exported) })));
+  }
+  const elements = manifests.flatMap((m) => m.elements).sort((a, b) => (a.tag < b.tag ? -1 : 1)).map(element);
+  for (const sym of reached) { // a Set iterates what's added while it does, so this follows references transitively
+    const sf = sym.declarations.find(moduleOf).getSourceFile();
+    const entry = exportsOf(sf).get(sym);
+    if (!entry) continue; // not exported: only its references are in the IR
+    if (!listed.has(sf)) listed.set(sf, []);
+    listed.get(sf).push({ d: entry.d, decl: declaration(sym, entry.d, entry.exported) });
+  }
+  const modules = [];
+  for (const [sf, entries] of listed) {
+    const declarations = entries.filter((e) => e.decl).sort((a, b) => a.d.pos - b.d.pos).map((e) => e.decl);
+    const { specifier, package: name, internal } = infoOf(sf);
+    if (declarations.length) modules.push(compact({ specifier, package: name !== pkg.name ? name : undefined, internal, declarations }));
   }
   modules.sort((a, b) => (a.specifier < b.specifier ? -1 : 1));
-  return compact({ version: 1, package: { name: pkg.name, version: pkg.version }, modules, elements: manifest.elements.map(element) });
+  return compact({ version: 1, package: { name: pkg.name, version: pkg.version }, modules, elements });
 }
 
 /**
- * The elements of the package's Custom Elements Manifest (`customElements` in package.json), sorted by tag. Each type
+ * The elements of the package's Custom Elements Manifest (`customElements` in package.json). Each type
  * text the IR needs becomes a virtual module next to the package, for the checker: it imports the names the text's
  * `references` point at and exports the text as `__type`. `types` maps a manifest type to `{ file, text }`.
  */
@@ -395,7 +423,6 @@ function readManifest(dir, pkg) {
       if (tag) elements.push({ tag, decl, type: { text: decl.name, references: [{ name: decl.name, module: m.path }] } });
     }
   }
-  elements.sort((a, b) => (a.tag < b.tag ? -1 : 1));
 
   const root = dir.split(path.sep).join("/");
   const add = (type) => {
@@ -418,14 +445,53 @@ function manifestDoc(entry) {
   return Object.keys(d).length ? d : undefined;
 }
 
-/** The nearest package.json with a name decides the specifier: `<name>/<path of the .js next to the .d.ts>`. */
-function specifierOf(file) {
+const packages = new Map();
+/** A folder's package.json, or undefined; cached for the run. */
+function readPackage(dir) {
+  const json = path.join(dir, "package.json");
+  if (!packages.has(json)) packages.set(json, fs.existsSync(json) ? JSON.parse(fs.readFileSync(json, "utf8")) : undefined);
+  return packages.get(json);
+}
+
+/**
+ * A declaration file's module (ir.md): the nearest package.json with a name is its package, and its specifier is how
+ * that package's `exports` reach the .js next to the .d.ts (`@acme/widgets/legend`). Without `exports` it's
+ * `<name>/<path of the .js>`, and so it is when no export reaches the file, which is then internal.
+ */
+function moduleInfo(file) {
   for (let d = path.dirname(file); d !== path.dirname(d); d = path.dirname(d)) {
-    const json = path.join(d, "package.json");
-    const name = fs.existsSync(json) && JSON.parse(fs.readFileSync(json, "utf8")).name;
-    if (name) return `${name}/${path.relative(d, file).split(path.sep).join("/").replace(/\.d\.([mc]?)ts$/, ".$1js")}`;
+    const pkg = readPackage(d);
+    if (!pkg?.name) continue;
+    const js = `./${path.relative(d, file).split(path.sep).join("/").replace(/\.d\.([mc]?)ts$/, ".$1js")}`;
+    const subpath = pkg.exports === undefined ? js : exportOf(pkg.exports, js);
+    return compact({ specifier: pkg.name + (subpath ?? js).slice(1), package: pkg.name, internal: subpath === undefined || undefined });
   }
   return undefined;
+}
+
+/**
+ * The subpath of an `exports` map that reaches a file (`./dist/legend.js`), or undefined: the exact keys first, then
+ * the `*` patterns, each in the map's order. `"exports": "./index.js"` and a map of conditions are the `"."` export.
+ */
+function exportOf(exports, file) {
+  const map = typeof exports === "object" && exports && Object.keys(exports).some((k) => k.startsWith(".")) ? exports : { ".": exports };
+  const entries = Object.entries(map).map(([key, value]) => [key, target(value)]).filter(([, t]) => typeof t === "string");
+  const exact = entries.find(([key, t]) => !key.includes("*") && t === file);
+  if (exact) return exact[0];
+  for (const [key, t] of entries.filter(([key, t]) => key.includes("*") && t.includes("*"))) {
+    const [prefix, suffix] = t.split("*");
+    if (file.length >= prefix.length + suffix.length && file.startsWith(prefix) && file.endsWith(suffix)) {
+      return key.replace("*", file.slice(prefix.length, file.length - suffix.length));
+    }
+  }
+  return undefined;
+}
+
+/** What an export resolves to for an `import`: a string, or its first `import` or `default` condition's target. */
+function target(value) {
+  if (typeof value === "string" || value === null || typeof value !== "object" || Array.isArray(value)) return value;
+  const [, chosen] = Object.entries(value).find(([condition]) => condition === "import" || condition === "default") ?? [];
+  return target(chosen);
 }
 
 /** A declaration's own name: the symbol of a default export is named `default` (its `export`, ir.md). */
@@ -437,12 +503,13 @@ const sameSet = (a, b) => a.length === b.length && a.every((x) => b.includes(x))
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const args = process.argv.slice(2);
   const opt = (name) => (args.includes(name) ? args[args.indexOf(name) + 1] : undefined);
-  if (!args[0] || args[0].startsWith("--")) {
-    console.error("usage: node extract.mjs <package dir> [--profile profile.json] [--out ir.json]");
+  const dirs = args.filter((a, i) => !a.startsWith("--") && !args[i - 1]?.startsWith("--"));
+  if (!dirs.length) {
+    console.error("usage: node extract.mjs <package dir>... [--profile profile.json] [--out ir.json]");
     process.exit(2);
   }
   const profile = opt("--profile") ? JSON.parse(fs.readFileSync(opt("--profile"), "utf8")) : {};
-  const json = JSON.stringify(extract(args[0], { eventMap: profile.events?.mapProperty }), null, 2) + "\n";
+  const json = JSON.stringify(extract(dirs, { eventMap: profile.events?.mapProperty }), null, 2) + "\n";
   if (opt("--out")) fs.writeFileSync(opt("--out"), json);
   else process.stdout.write(json);
 }

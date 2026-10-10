@@ -1,0 +1,30 @@
+{
+  "schemaVersion": "2.1.0",
+  "modules": [
+    {
+      "kind": "javascript-module",
+      "path": "dist/index.js",
+      "declarations": [
+        {
+          "kind": "class",
+          "name": "Legend",
+          "tagName": "demo-legend",
+          "customElement": true,
+          "superclass": { "name": "HTMLElement", "package": "global:" },
+          "description": "A view's layers as a list.",
+          "attributes": [{ "name": "heading", "type": { "text": "string" }, "fieldName": "heading", "default": "\"Legend\"" }],
+          "events": [
+            {
+              "name": "demo-legend-select",
+              "type": {
+                "text": "CustomEvent<LegendSelectDetail>",
+                "references": [{ "name": "LegendSelectDetail", "module": "dist/index.js" }]
+              }
+            }
+          ]
+        }
+      ],
+      "exports": [{ "kind": "js", "name": "*", "declaration": { "name": "*", "module": "dist/legend.js" } }]
+    }
+  ]
+}

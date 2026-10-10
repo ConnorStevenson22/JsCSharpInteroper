@@ -28,7 +28,8 @@ public sealed record SelectedElement(string Module, Element Element, ClassDeclar
 /// selection instead (R2). The profile's collection classes are generic live classes, and generic interfaces generic
 /// records; their type parameters are entities (mapping §2). A use of <c>any</c>, <c>unknown</c> or <c>object</c> is
 /// reported as IOP2001. Each custom element of an emitted class gets a component (R28); an element's event map, whose
-/// events the component binds from the manifest, isn't emitted.
+/// events the component binds from the manifest, isn't emitted. An internal module can't be imported, so its classes
+/// have no <c>Create</c> and its functions are skipped (IOP2007).
 /// </summary>
 public sealed class Selection
 {
@@ -169,6 +170,9 @@ public sealed class Selection
             case ClassDeclaration c:
                 AddClass(c);
                 break;
+            case FunctionDeclaration f when types.IsInternal(moduleOf[f]):
+                Report(new(Diagnostic.NotSupported, f.Name, "skipped: its module is internal, so it can't be called"));
+                break;
             case FunctionDeclaration f:
                 var signatures = Signatures(f.Name, f.Signatures);
                 if (signatures.Count > 0)
@@ -198,7 +202,11 @@ public sealed class Selection
     private void AddClass(ClassDeclaration c)
     {
         typeParameters = c.TypeParameters;
-        if (!c.Abstract && !types.Constructible(c))
+        if (!c.Abstract && types.IsInternal(moduleOf[c]))
+        {
+            Report(new(Diagnostic.NotSupported, $"{c.Name}.constructor", "skipped: its module is internal, so there's no Create (R18)"));
+        }
+        else if (!c.Abstract && !types.Constructible(c))
         {
             Report(new(Diagnostic.NotSupported, $"{c.Name}.constructor", "skipped: its parameter isn't a bag, so there's no Create (R18)"));
         }

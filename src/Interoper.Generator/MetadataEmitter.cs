@@ -18,9 +18,11 @@ internal static class MetadataEmitter
     /// <summary>
     /// The class id constants and the registry of live types (R19 step 1); an abstract class has none, and nor has a
     /// generic one, whose readers make it (mapping §2). Sync mode preloads the modules of its classes and module functions
-    /// (design §3.5).
+    /// (design §3.5), except internal ones, which can't be imported, and those of its custom elements, which their
+    /// components need, as async mode's load them (R28).
     /// </summary>
-    public static string Registry(TypeMap types, GeneratorOptions options, IReadOnlyList<Selected> classes, IEnumerable<string> functionModules)
+    public static string Registry(TypeMap types, GeneratorOptions options, IReadOnlyList<Selected> classes, IEnumerable<string> functionModules,
+        IEnumerable<string> elementModules)
     {
         var w = CodeWriter.CSharp(options.Namespace);
         using (w.Block($"public static partial class {types.Registry}"))
@@ -35,7 +37,7 @@ internal static class MetadataEmitter
             }
             var calls = classes.Select(s => (ClassDeclaration)s.Declaration).Where(c => !c.Abstract && c.TypeParameters.Count == 0)
                 .Select(c => $".Add({types.ClassIdName(c)}, static (realm, handle) => new {types.Name(c).In(options.Namespace)}(realm, handle))").ToList();
-            var modules = classes.Select(s => s.Module).Concat(functionModules).Distinct().ToList();
+            var modules = classes.Select(s => s.Module).Where(m => !types.IsInternal(m)).Concat(functionModules).Concat(elementModules).Distinct().ToList();
             if (options.Api == Api.Sync && modules.Count > 0)
             {
                 calls.Add($".Preload({string.Join(", ", modules.Select(Syntax.Literal))})");
@@ -69,7 +71,7 @@ internal static class MetadataEmitter
         {
             var c = (ClassDeclaration)s.Declaration;
             var members = string.Join(", ", types.WireMembers(c).Select(m => Syntax.Literal(m.Name)));
-            var name = profile.RuntimeClassPrefix + RuntimeName(ir.Package.Name, s.Module, c.Name);
+            var name = profile.RuntimeClassPrefix + RuntimeName(types.PackageOf(s.Module), s.Module, c.Name);
             var tag = elements.FirstOrDefault(e => e.Class.Name == c.Name && e.Module == s.Module)?.Element.Tag;
             lines.Add($"    {id}: {{ module: {Syntax.Literal(s.Module)}, export: {Syntax.Literal(c.Export ?? c.Name)}, " +
                 $"name: {Syntax.Literal(name)}, {(tag is null ? "" : $"tag: {Syntax.Literal(tag)}, ")}{(types.IsValueLike(c) ? "value: true, " : "")}members: [{members}] }},");
@@ -99,13 +101,14 @@ internal static class MetadataEmitter
     public static string FileName(IrDocument ir) => ir.Package.Name.Split('/')[^1] + ".meta.js";
 
     /// <summary>
-    /// The runtime class name: the module's path in the package, dotted, plus the declaration's name unless the file is
-    /// named after it (<c>geometry.Point</c>, <c>MapView</c>, <c>layers.TileLayer</c> for a default export).
+    /// The runtime class name: the module's path in its package, dotted, plus the declaration's name unless the file is
+    /// named after it (<c>geometry.Point</c>, <c>MapView</c>, <c>layers.TileLayer</c> for a default export); the name
+    /// alone for the package's root export.
     /// </summary>
     private static string RuntimeName(string package, string specifier, string name)
     {
-        var path = specifier.StartsWith(package + "/", StringComparison.Ordinal) ? specifier[(package.Length + 1)..] : specifier;
+        var path = Naming.PathInPackage(package, specifier);
         path = (path.EndsWith(".js", StringComparison.Ordinal) ? path[..^3] : path).Replace('/', '.');
-        return path.Split('.')[^1] == name ? path : $"{path}.{name}";
+        return path.Length == 0 ? name : path.Split('.')[^1] == name ? path : $"{path}.{name}";
     }
 }

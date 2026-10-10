@@ -61,6 +61,7 @@ internal sealed class TypeMap
     private readonly Dictionary<(string Module, string Name), Declaration> declarations = [];
     private readonly Dictionary<Declaration, string> moduleOf = new(ReferenceEqualityComparer.Instance);
     private readonly Dictionary<ClassDeclaration, string> ids = new(ReferenceEqualityComparer.Instance);
+    private readonly Dictionary<string, IrModule> modules = [];
     private readonly string package, root;
     private readonly List<ClassDeclaration> classes = [];
     private readonly HashSet<string> valueClasses;
@@ -84,6 +85,7 @@ internal sealed class TypeMap
     {
         foreach (var module in ir.Modules)
         {
+            modules[module.Specifier] = module;
             foreach (var declaration in module.Declarations)
             {
                 declarations[(module.Specifier, declaration.Name)] = declaration;
@@ -195,8 +197,16 @@ internal sealed class TypeMap
     /// <summary>R27: the namespace of a declaration's types: the root namespace plus its module's folders.</summary>
     public string Namespace(Declaration declaration) => Namespace(moduleOf[declaration]);
 
-    /// <summary>R27: the namespace of a module's types: the root namespace plus its folders.</summary>
-    public string Namespace(string module) => Naming.Namespace(root, package, module);
+    /// <summary>R27: the namespace of a module's types: the root namespace, another package's name, and its folders.</summary>
+    public string Namespace(string module) => modules.GetValueOrDefault(module)?.Package is { } other
+        ? Naming.Namespace(root, other, module, otherPackage: true)
+        : Naming.Namespace(root, package, module);
+
+    /// <summary>The package a module is in.</summary>
+    public string PackageOf(string module) => modules.GetValueOrDefault(module)?.Package ?? package;
+
+    /// <summary>Whether no export of its package reaches a module, which then can't be imported (ir.md).</summary>
+    public bool IsInternal(string module) => modules.GetValueOrDefault(module)?.Internal ?? false;
 
     /// <summary>The type a declaration becomes, in its namespace (R27).</summary>
     public TypeName Name(Declaration declaration) =>
@@ -239,11 +249,11 @@ internal sealed class TypeMap
     public CsType Self(ClassDeclaration c) => CsType.Live(Name(c), [.. c.TypeParameters.Select(t => CsType.TypeParameter(t.Name))]);
 
     /// <summary>
-    /// Whether a class gets <c>Create</c> (R18): it isn't abstract, and its constructor takes nothing or a bag (an object
-    /// type or a record), whose members its snapshot carries.
+    /// Whether a class gets <c>Create</c> (R18): it isn't abstract, its module isn't internal, and its constructor takes
+    /// nothing or a bag (an object type or a record), whose members its snapshot carries.
     /// </summary>
     public bool Constructible(ClassDeclaration c) =>
-        !c.Abstract && (c.Constructors.Count == 0 || c.Constructors.Any(s => s.Params.Count == 0 || IsBag(s.Params[0].Type)));
+        !c.Abstract && !IsInternal(moduleOf[c]) && (c.Constructors.Count == 0 || c.Constructors.Any(s => s.Params.Count == 0 || IsBag(s.Params[0].Type)));
 
     private bool IsBag(IrType type) => Values(type) is [var bag] &&
         (bag is ObjectType || bag is RefType r && Find(r) is InterfaceDeclaration or AliasDeclaration { Type: ObjectType });

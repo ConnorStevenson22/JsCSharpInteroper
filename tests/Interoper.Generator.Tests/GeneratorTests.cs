@@ -742,6 +742,73 @@ public sealed class GeneratorTests
         Assert.Contains("""{ name: "pick", fields: ["target"] },""", File(result, "maps.meta.js"));
     }
 
+    [Fact] // R27: another package's types are in a namespace named after it, and its runtime names are paths in it
+    public void AnotherPackagesModulesHaveItsNamespace()
+    {
+        var result = Packages(Api.Sync, """
+            { "specifier": "@acme/maps/MapView.js", "declarations": [{ "kind": "class", "name": "MapView" }] },
+            { "specifier": "@acme/widgets", "package": "@acme/widgets", "declarations": [
+              { "kind": "class", "name": "Legend", "members": [{ "kind": "property", "name": "view", "type": { "kind": "ref", "name": "MapView", "module": "@acme/maps/MapView.js" } }] },
+              { "kind": "function", "name": "legendFor", "signatures": [{ "params": [{ "name": "view", "type": { "kind": "ref", "name": "MapView", "module": "@acme/maps/MapView.js" } }],
+                "returns": { "kind": "ref", "name": "Legend", "module": "@acme/widgets" } }] }] },
+            { "specifier": "@acme/widgets/themes/dark.js", "package": "@acme/widgets", "declarations": [{ "kind": "interface", "name": "Theme" }] }
+            """);
+
+        Assert.Equal(["MapView.cs", "MapViewSnapshot.cs", "Widgets/Legend.cs", "Widgets/LegendSnapshot.cs", "Widgets/Themes/Theme.cs", "Widgets/Widgets.cs", "Maps.cs", "maps.meta.js"],
+            result.Files.Select(f => f.Path));
+        var legend = File(result, "Widgets/Legend.cs");
+        Assert.Contains("namespace Acme.Maps.Widgets;", legend);
+        Assert.Contains("public global::Acme.Maps.MapView GetView(global::Interoper.JsScope scope) =>", legend);
+        Assert.Contains("global::Interoper.JsOp.Create(global::Acme.Maps.Maps.LegendId, ", legend);
+        Assert.Contains("public static Legend LegendFor(global::Interoper.JsScope scope, global::Acme.Maps.MapView view) =>", File(result, "Widgets/Widgets.cs"));
+        Assert.Contains("namespace Acme.Maps.Widgets.Themes;", File(result, "Widgets/Themes/Theme.cs"));
+        // The package's root export is named by the declaration alone.
+        Assert.Contains("""2: { module: "@acme/widgets", export: "Legend", name: "Legend", members: [] },""", File(result, "maps.meta.js"));
+        Assert.Empty(result.Diagnostics);
+    }
+
+    [Theory] // R18, R27: an internal module's classes have no Create and its functions are skipped; sync mode doesn't preload it
+    [InlineData(Api.Sync)]
+    [InlineData(Api.Async)]
+    public void AnInternalModuleCantBeImported(Api api)
+    {
+        var result = Packages(api, """
+            { "specifier": "@acme/widgets/legend", "package": "@acme/widgets", "declarations": [
+              { "kind": "class", "name": "Legend", "members": [{ "kind": "property", "name": "swatch", "type": { "kind": "ref", "name": "Swatch", "module": "@acme/widgets/dist/swatch.js" } }] }] },
+            { "specifier": "@acme/widgets/dist/swatch.js", "package": "@acme/widgets", "internal": true, "declarations": [
+              { "kind": "class", "name": "Swatch", "members": [{ "kind": "property", "name": "color", "type": { "kind": "primitive", "name": "string" } }] },
+              { "kind": "function", "name": "describe", "signatures": [{ "returns": { "kind": "primitive", "name": "string" } }] }] }
+            """);
+
+        Assert.Equal(["Widgets/Legend.cs", "Widgets/LegendSnapshot.cs", "Widgets/Dist/Swatch.cs", "Widgets/Dist/SwatchSnapshot.cs", "Maps.cs", "maps.meta.js"],
+            result.Files.Select(f => f.Path));
+        Assert.Contains("global::Interoper.JsOp.Create(", File(result, "Widgets/Legend.cs"));
+        var swatch = File(result, "Widgets/Dist/Swatch.cs");
+        Assert.DoesNotContain("global::Interoper.JsOp.Create(", swatch); // its instances come from JS, read as any other
+        Assert.Contains(api == Api.Sync ? "public string Color" : "public global::System.Threading.Tasks.Task<string> GetColorAsync()", swatch);
+        Assert.Contains(api == Api.Sync ? """.Preload("@acme/widgets/legend");""" : "new global::Interoper.JsClassRegistry()", File(result, "Maps.cs"));
+        Assert.Equal(
+        [
+            "IOP2007 Swatch.constructor: skipped: its module is internal, so there's no Create (R18)",
+            "IOP2007 describe: skipped: its module is internal, so it can't be called",
+        ], result.Diagnostics.Select(d => d.ToString()));
+    }
+
+    [Fact] // R27, R18: the fixtures' IR of two packages: demo-widgets' types are in DemoWidgets, its internal module is skipped where it must be
+    public void TheWidgetsFixtureIsInItsOwnNamespace()
+    {
+        var result = Generator.Generate(Fixture.WithWidgetsIr, Fixture.Profile, new(Api.Async, "Acme.Maps"));
+
+        Assert.Contains("namespace Acme.Maps.DemoWidgets;", File(result, "DemoWidgets/Legend.cs"));
+        Assert.Contains("public async global::System.Threading.Tasks.Task<global::Acme.Maps.MapView> GetViewAsync(global::Interoper.JsScope scope) =>", File(result, "DemoWidgets/Legend.cs"));
+        Assert.Contains("namespace Acme.Maps.DemoWidgets.Dist.Support;", File(result, "DemoWidgets/Dist/Support/LegendEntry.cs"));
+        Assert.Contains("public sealed partial class DemoLegend : global::Interoper.JsComponentBase", File(result, "DemoWidgets/DemoLegend.cs"));
+        Assert.Contains("IOP2007 describe: skipped: its module is internal, so it can't be called", result.Diagnostics.Select(d => d.ToString()));
+        // demo-maps' own types are where they are without demo-widgets.
+        var alone = Generator.Generate(Fixture.Ir, Fixture.Profile, new(Api.Async, "Acme.Maps"));
+        Assert.Empty(alone.Files.Select(f => f.Path).Except(result.Files.Select(f => f.Path)));
+    }
+
     private const string Number = """{ "kind": "primitive", "name": "number" }""";
     private const string String = """{ "kind": "primitive", "name": "string" }""";
 
@@ -772,6 +839,13 @@ public sealed class GeneratorTests
         var json = string.Join(",\n", modules.Select(m => $$"""{ "specifier": "@acme/maps/{{m.Path}}", "declarations": [{{m.Declarations}}] }"""));
         var ir = IrDocument.Parse($$"""{ "version": 1, "package": { "name": "@acme/maps", "version": "1" }, "modules": [{{json}}] }""");
         return Generator.Generate(ir, profile, new(api, "Acme.Maps"));
+    }
+
+    /// <summary>An IR of <c>@acme/maps</c> with the given modules, which may be another package's.</summary>
+    private static GeneratorResult Packages(Api api, string modules)
+    {
+        var ir = IrDocument.Parse($$"""{ "version": 1, "package": { "name": "@acme/maps", "version": "1" }, "modules": [{{modules}}] }""");
+        return Generator.Generate(ir, new Profile { Package = "@acme/maps" }, new(api, "Acme.Maps"));
     }
 
     private static string File(GeneratorResult result, string path) => result.Files.Single(f => f.Path == path).Text;

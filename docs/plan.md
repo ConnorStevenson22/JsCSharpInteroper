@@ -37,7 +37,7 @@ Hand-written bindings for a slice of the fixture, running on every host.
 - [x] Collections, callbacks (R21), module functions, `Diff`, and the chatty-await analyzer.
 - [x] Razor components from the CEM, with custom events, `@bind` and slots.
 - [x] Generator gaps the whole fixture reaches: rest parameters (R22), namespaces from module folders (R27), `new` on members a subclass redeclares, and IOP2007 instead of `NotSupportedException`.
-- [ ] Extractor: default exports, re-exports and namespaces, specifiers through `exports` maps, and declarations for dependency packages' types, as the validation samples need them.
+- [x] Extractor: default exports, several packages in one IR, re-exports, specifiers through `exports` maps, and declarations for dependency packages' types, as the validation samples need them.
 
 **Done when** the whole fixture is generated and passes on all hosts, and the first private validation samples pass.
 
@@ -54,3 +54,4 @@ Hand-written bindings for a slice of the fixture, running on every host.
 - A second, permissively licensed public library bound with only a profile.
 - A WebIDL front end.
 - The TypeScript 7 API, once it is stable.
+- Namespaces in the IR (`export * as ns`, `declare namespace`), which the validation samples don't need.

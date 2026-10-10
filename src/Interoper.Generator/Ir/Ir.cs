@@ -5,7 +5,7 @@ namespace Interoper.Generator.Ir;
 
 // IR v1 (docs/ir.md), as the extractor writes it. Absent lists are empty; absent flags are false.
 
-/// <summary>One package's IR: the generator's input.</summary>
+/// <summary>One or more packages' IR: the generator's input. <see cref="Package"/> is the first one.</summary>
 public sealed record IrDocument
 {
     public required int Version { get; init; }
@@ -27,7 +27,15 @@ public sealed record IrDocument
 
 public sealed record IrPackage(string Name, string Version);
 
-public sealed record IrModule(string Specifier, IReadOnlyList<Declaration> Declarations);
+/// <param name="Specifier">How it's imported: through its package's <c>exports</c>, or its path in the package.</param>
+public sealed record IrModule(string Specifier, IReadOnlyList<Declaration> Declarations)
+{
+    /// <summary>Its package, when that isn't the IR's (<see cref="IrDocument.Package"/>).</summary>
+    public string? Package { get; init; }
+
+    /// <summary>No export of its package reaches it, so it can't be imported by <see cref="Specifier"/>.</summary>
+    public bool Internal { get; init; }
+}
 
 public sealed record Doc(string? Summary = null, string? Default = null, string? Deprecated = null, string? Since = null, IReadOnlyList<string>? See = null);
 

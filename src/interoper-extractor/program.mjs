@@ -22,9 +22,9 @@ export function listDts(dir, { only, skip } = {}) {
 
 /**
  * A program over declaration files, with the DOM in scope and nothing from @types. `virtual` adds in-memory source
- * files, `{ [path]: text }`, with `/` separators.
+ * files, `{ [path]: text }`, with `/` separators; `extra` adds compiler options.
  */
-export function createProgram(ts, files, virtual = {}) {
+export function createProgram(ts, files, virtual = {}, extra = {}) {
   const options = {
     noEmit: true,
     skipLibCheck: true,
@@ -34,6 +34,7 @@ export function createProgram(ts, files, virtual = {}) {
     lib: ["lib.esnext.d.ts", "lib.dom.d.ts", "lib.dom.iterable.d.ts"],
     types: [],
     strict: true,
+    ...extra,
   };
   const host = ts.createCompilerHost(options);
   const { getSourceFile } = host;
