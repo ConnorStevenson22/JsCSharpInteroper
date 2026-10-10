@@ -621,6 +621,50 @@ public sealed class GeneratorTests
         Assert.Contains("""realm.CallAsync(global::Interoper.JsOp.Call(Module, "default"), global::Interoper.JsJson.ReadNumber);""", File(result, "Area.cs"));
     }
 
+    [Theory] // R13, R28: a component's attributes, properties, events and @bind; a DOM element is written only
+    [InlineData(Api.Sync)]
+    [InlineData(Api.Async)]
+    public void ACustomElementIsAComponent(Api api)
+    {
+        var number = """{ "kind": "primitive", "name": "number" }""";
+        var host = """{ "kind": "ref", "name": "HTMLElement" }""";
+        var ir = IrDocument.Parse($$"""
+            { "version": 1, "package": { "name": "@acme/maps", "version": "1" },
+              "modules": [{ "specifier": "@acme/maps/chart.js", "declarations": [
+                { "kind": "class", "name": "ChartElement", "members": [
+                  { "kind": "property", "name": "level", "type": {{number}} },
+                  { "kind": "property", "name": "host", "type": {{host}} },
+                  { "kind": "method", "name": "frame", "signatures": [{ "returns": {{host}} }] }] },
+                { "kind": "class", "name": "XChart" }] }],
+              "elements": [{ "tag": "x-chart", "class": { "kind": "ref", "name": "ChartElement", "module": "@acme/maps/chart.js" },
+                "attributes": [{ "name": "level", "property": "level" }, { "name": "compact", "type": { "kind": "primitive", "name": "boolean" } },
+                  { "name": "data", "type": { "kind": "array", "element": {{number}} } }],
+                "events": [{ "name": "level-change", "detail": { "kind": "object", "members": [{ "kind": "property", "name": "level", "type": {{number}} }] } }],
+                "slots": [] }] }
+            """);
+        var result = Generator.Generate(ir, new Profile { Package = "@acme/maps" }, new(api, "Acme.Maps"));
+
+        Assert.Equal([
+            "IOP2007 ChartElement.frame: skipped: uses a DOM element JS returns (R13)",
+            "IOP2007 <x-chart> data: skipped: an attribute without a property is a string, number, boolean or string enum (R28)",
+            "IOP2006 <x-chart>: its component is XChart2: XChart is taken (R28)",
+        ], result.Diagnostics.Select(d => d.ToString()));
+        var element = File(result, "ChartElement.cs");
+        Assert.Contains(api == Api.Sync ? "public void SetHost(global::Microsoft.AspNetCore.Components.ElementReference value)" : "public global::System.Threading.Tasks.Task SetHostAsync(global::Microsoft.AspNetCore.Components.ElementReference value)", element);
+        Assert.DoesNotContain("GetHost", element);
+        var component = File(result, "XChart2.cs");
+        Assert.Contains("public sealed partial class XChart2 : global::Interoper.JsComponentBase", component);
+        Assert.Contains("public bool Compact { get; set; }", component);
+        Assert.Contains("""if (supplied.Contains(nameof(Compact))) builder.AddAttribute(3, "compact", Compact);""", component); // present or absent
+        Assert.DoesNotContain("if (Element is null)", component); // no property to set
+        Assert.Contains("public global::Microsoft.AspNetCore.Components.EventCallback<double> LevelChanged { get; set; }", component);
+        Assert.Contains("public global::Microsoft.AspNetCore.Components.EventCallback<LevelChangeDetail> OnLevelChange { get; set; }", component);
+        Assert.Contains("""[global::Microsoft.AspNetCore.Components.EventHandler("onlevel-change", typeof(global::Interoper.JsEventArgs), true, true)]""", File(result, "MapsEvents.cs"));
+        var meta = File(result, "maps.meta.js");
+        Assert.Contains("""tag: "x-chart", members: ["level"] },""", meta);
+        Assert.Contains("""{ name: "level-change", fields: ["level"] },""", meta);
+    }
+
     private static GeneratorResult Generate(string declarations, Profile? profile = null)
     {
         var ir = IrDocument.Parse($$"""

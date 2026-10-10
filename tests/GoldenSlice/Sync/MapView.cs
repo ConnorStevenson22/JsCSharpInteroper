@@ -46,6 +46,9 @@ public sealed partial class MapView : Emitter
         set => Realm.Send(global::Interoper.JsOp.Set(Handle, "title", w => global::Interoper.JsJson.WriteValue(w, value, global::Interoper.JsJson.WriteString)));
     }
 
+    public void SetContainer(global::Interoper.Opt<global::Microsoft.AspNetCore.Components.ElementReference> value) =>
+        Realm.Send(global::Interoper.JsOp.Set(Handle, "container", w => global::Interoper.JsJson.WriteValue(w, value, global::Interoper.JsElement.Write)));
+
     public global::Interoper.Opt<Marker> GetSelected(global::Interoper.JsScope scope) =>
         Realm.Call(global::Interoper.JsOp.Get(Handle, "selected"), (ref r) => global::Interoper.JsJson.ReadOpt(ref r, scope.Read<Marker>));
 

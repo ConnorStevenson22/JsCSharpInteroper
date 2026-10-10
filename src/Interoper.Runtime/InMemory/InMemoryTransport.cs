@@ -18,6 +18,7 @@ public sealed class InMemoryTransport : IJsSyncTransport, IJsTransport
     private readonly Dictionary<int, InMemoryClass> classes = [];
     private readonly Dictionary<string, int> classIds = [];
     private readonly Dictionary<string, InMemoryObject> modules = [];
+    private readonly Dictionary<string, InMemoryObject> elements = [];
     private readonly List<string> subscribeOptions = [];
     private int lastId;
     private bool syncOnly; // set while Invoke runs, as invokeSync sets it
@@ -42,6 +43,16 @@ public sealed class InMemoryTransport : IJsSyncTransport, IJsTransport
     public InMemoryTransport DefineModule(string specifier, InMemoryObject exports)
     {
         modules.Add(specifier, exports);
+        return this;
+    }
+
+    /// <summary>
+    /// Registers a fake rendered element: what an <c>ElementReference</c> with this id, <c>{"$e":id}</c>, stands for (R13),
+    /// as interoper.js finds the element with Blazor's capture attribute.
+    /// </summary>
+    public InMemoryTransport DefineElement(string id, InMemoryObject element)
+    {
+        elements.Add(id, element);
         return this;
     }
 
@@ -158,6 +169,8 @@ public sealed class InMemoryTransport : IJsSyncTransport, IJsTransport
                 return Undefined.Value;
             case "batch":
                 return Batch((List<object?>)op["ops"]!, 0, []);
+            case "wrap":
+                return Wire(op.GetValueOrDefault("value", Undefined.Value));
             default:
                 throw InteroperError($"Unknown op: {op.GetValueOrDefault("op")}");
         }
@@ -349,6 +362,10 @@ public sealed class InMemoryTransport : IJsSyncTransport, IJsTransport
                 return handles.TryGetValue(o["$h"]!.GetValue<int>(), out var value) ? value : throw InteroperError($"Unknown handle: {o["$h"]}");
             case JsonObject o when o.ContainsKey("$f"):
                 return Callback(o["$f"]!.GetValue<int>());
+            case JsonObject o when o.ContainsKey("$e"):
+                var id = o["$e"]!.GetValue<string>();
+                return elements.TryGetValue(id, out var element) ? element
+                    : throw InteroperError($"No element has the capture attribute _bl_{id}; send an ElementReference after its first render");
             case JsonObject o when o.ContainsKey("$c"):
                 var entry = ClassEntry(o["$c"]!.GetValue<int>());
                 if (!entry.Value)

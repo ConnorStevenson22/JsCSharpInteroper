@@ -103,6 +103,12 @@ internal sealed class CsType
     public static CsType Any { get; } = new("global::Interoper.JsAny", JsonKind.Object, false, "global::Interoper.JsAny.Write", null,
         read: (r, _) => $"global::Interoper.JsAny.Read(ref {r}, scope)", scoped: true);
 
+    /// <summary>
+    /// A DOM element (R13): Blazor's <c>ElementReference</c>, written as <c>{"$e":id}</c> (in <c>Interoper.Blazor</c>) and
+    /// never read.
+    /// </summary>
+    public static CsType DomElement { get; } = new("global::Microsoft.AspNetCore.Components.ElementReference", JsonKind.Object, true, "global::Interoper.JsElement.Write", null);
+
     /// <summary>An extensible enum (R10): a string wrapper with static <c>Write</c> and <c>Read</c> methods.</summary>
     public static CsType Extensible(TypeName type) =>
         Named(type, [], name => new(name, JsonKind.String, true, $"{name}.Write", $"{name}.Read"));

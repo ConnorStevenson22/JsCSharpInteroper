@@ -1,0 +1,49 @@
+@using GoldenSlice.Async
+@inherits JsComponentBase
+
+<DemoMap @ref="map" @bind-Zoom="zoom" Basemap="Basemap.Night" Center="center" OnDemoMapClick="Clicked" style="display:block">
+    <Toolbar><button id="zoom-in" @onclick="() => zoom++">+</button></Toolbar>
+    <ChildContent><span id="overlay">overlay</span></ChildContent>
+</DemoMap>
+<button id="read-view" @onclick="ReadViewAsync">read the view</button>
+<pre id="state">zoom @zoom; clicks @string.Join(" ", clicks); view @view</pre>
+<pre id="result" data-done="@done">@result</pre>
+
+@code {
+    // The async-mode component (R28) on its host, driven by tests/Interoper.E2E/ComponentTests: once interactive, its
+    // Element is live and Center was set after the first render; then the test clicks through the shadow surface,
+    // and binds Zoom both ways. ComponentsCheckSync is the same in sync mode.
+    DemoMap map = null!;
+    double zoom = 3;
+    readonly PointSnapshot center = new() { X = 2, Y = 3 };
+    readonly List<string> clicks = [];
+    string view = "", result = "";
+    bool done;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        try
+        {
+            // Center is set on the live element after its first render, so the view has it once it's there.
+            MapView? live = null;
+            for (var i = 0; i < 200 && (live is null || await live.GetCenterAsync() != center); i++)
+            {
+                await Task.Delay(50);
+                live = map.Element is { } element ? await element.GetViewAsync(Scope) : null;
+            }
+            var c = await live!.GetCenterAsync();
+            result = $"PASS view zoom {await live.GetZoomAsync()}, basemap {await live.GetBasemapAsync()}, center {c.X},{c.Y}";
+        }
+        catch (Exception e)
+        {
+            result = $"FAIL {e.GetType().Name}: {e.Message}";
+        }
+        done = true;
+        StateHasChanged();
+    }
+
+    void Clicked(DemoMapClickDetail detail) => clicks.Add($"{Math.Round(detail.X)},{Math.Round(detail.Y)}");
+
+    async Task ReadViewAsync() => view = $"zoom {await (await map.Element!.GetViewAsync(Scope)).GetZoomAsync()}";
+}

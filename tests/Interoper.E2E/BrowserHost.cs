@@ -43,21 +43,18 @@ public sealed partial class BrowserHost : IAsyncLifetime
     // error fails the test at once.
     public async Task<string> RunPageAsync(string path)
     {
+        await using var page = await OpenAsync(path);
+        return await page.ResultAsync();
+    }
+
+    // Opens the page in a fresh context, for a test that drives it; browser errors fail the test.
+    public async Task<BrowserPage> OpenAsync(string path)
+    {
         // A fixed locale: .NET on WebAssembly rejects the POSIX one headless Chromium reports on Linux.
-        await using var context = await Browser.NewContextAsync(new() { BaseURL = BaseUrl.ToString(), Locale = "en-US" });
-        var page = await context.NewPageAsync();
-        var error = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
-        page.Console += (_, m) => { if (m.Type == "error") error.TrySetResult(m.Text); };
-        page.PageError += (_, e) => error.TrySetResult(e);
-
-        await page.GotoAsync(path);
-        var done = page.Locator("#result[data-done]").WaitForAsync(new() { Timeout = 60_000 }); // WebAssembly boots first
-        if (await Task.WhenAny(done, error.Task) == error.Task) Assert.Fail($"{path}: {await error.Task}");
-        await done;
-        var result = await page.Locator("#result").TextContentAsync() ?? "";
-
-        if (error.Task.IsCompleted) Assert.Fail($"{path}: {await error.Task}");
-        return result;
+        var context = await Browser.NewContextAsync(new() { BaseURL = BaseUrl.ToString(), Locale = "en-US" });
+        var page = new BrowserPage(path, context, await context.NewPageAsync());
+        await page.Page.GotoAsync(path);
+        return page;
     }
 
     public async ValueTask DisposeAsync()
@@ -100,4 +97,39 @@ public sealed partial class BrowserHost : IAsyncLifetime
 
     [GeneratedRegex(@"Now listening on: (http://\S+)")]
     private static partial Regex ListeningOn();
+}
+
+/// <summary>A page in its own browser context. The first browser error it reports fails the test.</summary>
+public sealed class BrowserPage : IAsyncDisposable
+{
+    private readonly string path;
+    private readonly IBrowserContext context;
+    private readonly TaskCompletionSource<string> error = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    internal BrowserPage(string path, IBrowserContext context, IPage page)
+    {
+        (this.path, this.context, Page) = (path, context, page);
+        page.Console += (_, m) => { if (m.Type == "error") error.TrySetResult(m.Text); };
+        page.PageError += (_, e) => error.TrySetResult(e);
+    }
+
+    public IPage Page { get; }
+
+    // Waits for the page's #result to be done and returns its text.
+    public async Task<string> ResultAsync()
+    {
+        var done = Page.Locator("#result[data-done]").WaitForAsync(new() { Timeout = 60_000 }); // WebAssembly boots first
+        if (await Task.WhenAny(done, error.Task) == error.Task) Assert.Fail($"{path}: {await error.Task}");
+        await done;
+        var result = await Page.Locator("#result").TextContentAsync() ?? "";
+        ThrowIfFailed();
+        return result;
+    }
+
+    public void ThrowIfFailed()
+    {
+        if (error.Task.IsCompleted) Assert.Fail($"{path}: {error.Task.Result}");
+    }
+
+    public ValueTask DisposeAsync() => context.DisposeAsync();
 }

@@ -11,6 +11,13 @@ namespace Interoper.Generator;
 public sealed record Selected(string Module, Declaration Declaration);
 
 /// <summary>
+/// A custom element's component (R28): the element, with the attributes and events that can be bound, and its class as
+/// selected. An event's <see cref="ElementEvent.Detail"/> is null when it has none, and an inline object type is a
+/// record named after the event (<c>DemoMapZoomChangeDetail</c>), among the selected declarations.
+/// </summary>
+public sealed record SelectedElement(string Module, Element Element, ClassDeclaration Class);
+
+/// <summary>
 /// What to emit for an IR and a profile. The profile's <c>include</c> lists module specifier globs (absent: every
 /// module); every exported declaration of a matching module is emitted, and so are the bases of emitted classes and the
 /// data types (interfaces, aliases, enums) they use, whole. What can't be mapped is found here, so that a skipped type
@@ -20,7 +27,8 @@ public sealed record Selected(string Module, Declaration Declaration);
 /// method of an interface that an event delivers (R24). A union that is only written drops its cases outside the
 /// selection instead (R2). The profile's collection classes are generic live classes, and generic interfaces generic
 /// records; their type parameters are entities (mapping §2). A use of <c>any</c>, <c>unknown</c> or <c>object</c> is
-/// reported as IOP2001.
+/// reported as IOP2001. Each custom element of an emitted class gets a component (R28); an element's event map, whose
+/// events the component binds from the manifest, isn't emitted.
 /// </summary>
 public sealed class Selection
 {
@@ -41,6 +49,9 @@ public sealed class Selection
     private readonly HashSet<Declaration> checking = new(ReferenceEqualityComparer.Instance);
     private readonly HashSet<InterfaceDeclaration> payloads = new(ReferenceEqualityComparer.Instance);
     private readonly HashSet<AliasDeclaration> callbacks = new(ReferenceEqualityComparer.Instance);
+    /// <summary>R28: the records of the elements' inline event details, which the IR has no declaration for.</summary>
+    private readonly List<AliasDeclaration> details = [];
+    private readonly List<SelectedElement> elements = [];
     /// <summary>The type parameters of the generic declaration being checked or added, which its types can use (mapping §2).</summary>
     private IReadOnlyList<TypeParameter> typeParameters = [];
     private readonly List<Diagnostic> diagnostics = [];
@@ -96,11 +107,18 @@ public sealed class Selection
         {
             Add(declaration);
         }
-        Declarations = [.. all.Where(x => selected.ContainsKey(x.Declaration)).Select(x => selected[x.Declaration])];
+        foreach (var element in ir.Elements)
+        {
+            AddElement(element);
+        }
+        Declarations = [.. all.Where(x => selected.ContainsKey(x.Declaration)).Select(x => selected[x.Declaration]), .. details.Select(d => selected[d])];
     }
 
-    /// <summary>The declarations to emit, in IR order.</summary>
+    /// <summary>The declarations to emit, in IR order, then the records of inline event details (R28).</summary>
     public IReadOnlyList<Selected> Declarations { get; }
+
+    /// <summary>The custom elements to make components of (R28), in IR order.</summary>
+    public IReadOnlyList<SelectedElement> Elements => elements;
 
     /// <summary>What was skipped or dropped (IOP2007, IOP2003), each once.</summary>
     public IReadOnlyList<Diagnostic> Diagnostics => diagnostics;
@@ -161,6 +179,9 @@ public sealed class Selection
             case VariableDeclaration:
                 Skip(declaration.Name, new("a variable"));
                 break;
+            case InterfaceDeclaration i when IsEventMap(i):
+                break; // R28: the component binds the element's events from the manifest
+
             default:
                 if (DeclarationProblem(declaration) is { } problem)
                 {
@@ -237,6 +258,121 @@ public sealed class Selection
         selected[c] = new(moduleOf[c], c with { Members = members, Events = events });
         typeParameters = [];
     }
+
+    /// <summary>
+    /// R28: an element's component, unless its class isn't emitted (or is generic). An attribute or event that can't be
+    /// bound is skipped (IOP2007), and so is an attribute without a property that isn't a primitive or a string enum; an
+    /// attribute of a property that was skipped goes with it.
+    /// </summary>
+    private void AddElement(Element element)
+    {
+        if (element.Class is not RefType { Module: not null } r || Find(r) is not ClassDeclaration c || !selected.TryGetValue(c, out var s) ||
+            c.TypeParameters.Count > 0)
+        {
+            return;
+        }
+        var component = Naming.Type(element.Tag);
+        var properties = new HashSet<string>();
+        for (var k = c; k is not null; k = Base(k))
+        {
+            if (selected.TryGetValue(k, out var emitted))
+            {
+                properties.UnionWith(((ClassDeclaration)emitted.Declaration).Members.OfType<PropertyMember>().Select(p => p.Name));
+            }
+        }
+        var attributes = new List<ElementAttribute>();
+        foreach (var a in element.Attributes)
+        {
+            if (a.Property is { } property)
+            {
+                if (properties.Contains(property))
+                {
+                    attributes.Add(a);
+                }
+                continue;
+            }
+            var subject = $"<{element.Tag}> {a.Name}";
+            if (a.Type is not { } type)
+            {
+                Report(new(Diagnostic.NotSupported, subject, "skipped: an attribute with neither a property nor a type (R28)"));
+            }
+            else if ((Problem(type) ?? types.Problem(type, Position.Parameter)) is { } problem)
+            {
+                Skip(subject, problem);
+            }
+            else if (!types.IsAttribute(type, new("", component + Naming.Pascal(a.Name))))
+            {
+                Report(new(Diagnostic.NotSupported, subject, "skipped: an attribute without a property is a string, number, boolean or string enum (R28)"));
+            }
+            else
+            {
+                Collect(type);
+                attributes.Add(a);
+            }
+        }
+        var events = new List<ElementEvent>();
+        foreach (var e in element.Events)
+        {
+            var subject = $"<{element.Tag}> on:{e.Name}";
+            var detail = e.Detail is { } d && Flatten(d).Any(t => !IsNullish(t) && t is not PrimitiveType { Name: "void" }) ? d : null;
+            if (detail is ObjectType o)
+            {
+                var record = new AliasDeclaration { Name = Naming.Type(e.Name) + "Detail", Type = o };
+                if ((Problem(o) ?? types.Problem(record) ?? (types.HoldsElement(record) ? new("a DOM element JS returns (R13)") : null)) is { } problem)
+                {
+                    Skip(subject, problem);
+                    continue;
+                }
+                detail = Detail(s.Module, record, subject);
+            }
+            else if (detail is not null && (Problem(detail) ?? types.Problem(detail, Position.Member)) is { } problem)
+            {
+                Skip(subject, problem);
+                continue;
+            }
+            if (detail is not null)
+            {
+                Collect(detail);
+                ReportUntyped(subject, detail);
+            }
+            events.Add(e with { Detail = detail });
+        }
+        elements.Add(new(s.Module, element with { Attributes = attributes, Events = events }, (ClassDeclaration)s.Declaration));
+    }
+
+    /// <summary>
+    /// R28: the record of an inline event detail, in the element's module, and a reference to it. A name that module
+    /// already has gets a numeric suffix (IOP2006).
+    /// </summary>
+    private RefType Detail(string module, AliasDeclaration record, string subject)
+    {
+        var name = record.Name;
+        for (var n = 2; byName.ContainsKey((module, name)); n++)
+        {
+            name = $"{record.Name}{n}";
+        }
+        if (name != record.Name)
+        {
+            Report(new(Diagnostic.Renamed, subject, $"its detail is {name}: {record.Name} is taken (R27)"));
+            record = record with { Name = name };
+        }
+        byName[(module, name)] = record;
+        moduleOf[record] = module;
+        details.Add(record);
+        return new(name, module);
+    }
+
+    /// <summary>
+    /// R28: an element's event map, such as <c>DemoMapElementEventMap</c>: an interface whose members are all events
+    /// of one element. Its types are DOM events (<c>CustomEvent&lt;T&gt;</c>), and the component binds the events from
+    /// the manifest instead.
+    /// </summary>
+    private bool IsEventMap(InterfaceDeclaration i) =>
+        i.Members.Count > 0 && i.Members.All(m => m is PropertyMember { Type: RefType { Module: null } }) &&
+        ir.Elements.Any(e => i.Members.All(m => e.Events.Any(x => x.Name == m.Name)));
+
+    /// <summary>A union's members, with nested unions in their place; any other type as it is.</summary>
+    private static IEnumerable<IrType> Flatten(IrType type) => type is UnionType u ? u.Types.SelectMany(Flatten) : [type];
 
     /// <summary>
     /// The runtime-class property (never bound) and the event and watch methods (bound as events and watches): left out
@@ -327,7 +463,7 @@ public sealed class Selection
         // R2: where a union is only written, a case that is a class outside the selection is dropped; where it's read,
         // the type map refuses it.
         UnionType u when u.Types.Count(t => !IsNullish(t)) > 1 => FirstProblem(u.Types.Where(t => !types.IsUnselected(t))),
-        RefType { Module: null } r => new($"`{r.Name}`"),
+        RefType { Module: null } r => TypeMap.IsElement(r) ? null : new($"`{r.Name}`"), // R13: a DOM element is an ElementReference
         RefType r => Find(r) is { } declaration ? DeclarationProblem(declaration) ?? FirstProblem(r.Args) : new($"`{r.Name}`"),
         ObjectType o => MembersProblem(o.Members, o.CallSignatures.Count + o.ConstructSignatures.Count) ?? FirstProblem(Children(o)),
         TypeParameterType t => typeParameters.Any(p => p.Name == t.Name) ? null : new($"type parameter `{t.Name}`"),

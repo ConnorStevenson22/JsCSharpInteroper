@@ -110,6 +110,17 @@ public static class JsOp
         }
     });
 
+    /// <summary>
+    /// Returns <paramref name="value"/> in wire form, revived as any value is (design §3.4): how a component gets its
+    /// element's handle from an <c>ElementReference</c> (<c>{"$e":id}</c>, R13, R28).
+    /// </summary>
+    public static string Wrap(Action<Utf8JsonWriter> value) => Write(w =>
+    {
+        w.WriteString("op"u8, "wrap"u8);
+        w.WritePropertyName("value"u8);
+        value(w);
+    });
+
     // The typed fast paths as plain ops (JsRuntimeTransport, InMemoryTransport, batches), and a scope's release.
 
     internal static string Set(int handle, string name, double value) => Set(handle, name, w => w.WriteNumberValue(value));

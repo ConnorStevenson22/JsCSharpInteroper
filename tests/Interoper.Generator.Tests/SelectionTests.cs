@@ -12,10 +12,10 @@ public sealed class SelectionTests
 
         Assert.Equal(
         [
-            "MapView.js: Basemap, Cursor, CenterAndZoom, Camera, FlyToTarget, ClickEvent, MapViewEvents, MapView",
+            "MapView.js: Basemap, Cursor, CenterAndZoom, Camera, FlyToTarget, ClickEvent, MapViewEvents, MapViewOptions, MapView",
             "Marker.js: Marker",
             "core.js: Observable, Emitter, CollectionChangeEvent, CollectionEvents, Collection",
-            "demo-map.js: DemoMapClickDetail, DemoMapElement",
+            "demo-map.js: DemoMapClickDetail, DemoMapElement, DemoMapZoomChangeDetail", // R28: not the event map; a record for an inline detail
             "geometry.js: ShapeType, Bounds, Shape, Point, Line, Polygon",
             "layers/Layer.js: Layer",
             "layers/TileLayer.js: TileLayer",
@@ -26,8 +26,8 @@ public sealed class SelectionTests
             "styles.js: Rgba, ColorInput, IconName, FillStyle, StrokeStyle, IconStyle, Style, toRgba",
         ], Modules(selection));
 
-        Assert.Equal(["center", "zoom", "rotation", "basemap", "cursor", "title", "selected", "markers", "layers", "screenToMap", "flyTo", "markerAt"],
-            Members(selection, "MapView"));
+        Assert.Equal(["center", "zoom", "rotation", "basemap", "cursor", "title", "container", "selected", "markers", "layers", "screenToMap", "flyTo", "markerAt"],
+            Members(selection, "MapView")); // R13: the DOM container too
         Assert.Equal(["position", "label", "style", "labelFormatter", "displayLabel"], Members(selection, "Marker")); // R21: no LabelFormatter type
         Assert.Equal(["length", "at", "add", "remove", "find", "forEach", "toArray"], Members(selection, "Collection")); // §2: a generic live class
         Assert.Equal(["change"], Class(selection, "Collection").Events.Select(e => e.Name));
@@ -64,7 +64,7 @@ public sealed class SelectionTests
     {
         var selection = Select("*/MapView.js");
         // R2: flyTo only writes its FlyToTarget, which drops its Shape case; the generator reports that.
-        Assert.Equal(["zoom", "rotation", "basemap", "cursor", "title", "flyTo"], Members(selection, "MapView"));
+        Assert.Equal(["zoom", "rotation", "basemap", "cursor", "title", "container", "flyTo"], Members(selection, "MapView"));
         Assert.Equal(
         [
             "IOP2007 FlyToOptions: skipped: uses `AbortSignal` (in `FlyToOptions`)",
@@ -72,7 +72,6 @@ public sealed class SelectionTests
             "IOP2007 MapViewEvents: skipped: uses class `Point` outside the selection (in `ClickEvent`) (in `MapViewEvents`)",
             "IOP2007 MapViewOptions: skipped: uses class `Point` outside the selection (in `MapViewOptions`)",
             "IOP2007 MapView.center: skipped: uses class `Point` outside the selection",
-            "IOP2007 MapView.container: skipped: uses `HTMLElement`",
             "IOP2007 MapView.selected: skipped: uses class `Marker` outside the selection",
             "IOP2007 MapView.markers: skipped: uses class `Collection` outside the selection",
             "IOP2007 MapView.layers: skipped: uses class `Collection` outside the selection",

@@ -43,6 +43,9 @@ public sealed partial class MapView : Emitter
     public global::System.Threading.Tasks.Task SetTitleAsync(global::Interoper.Opt<string> value) =>
         Realm.SendAsync(global::Interoper.JsOp.Set(Handle, "title", w => global::Interoper.JsJson.WriteValue(w, value, global::Interoper.JsJson.WriteString)));
 
+    public global::System.Threading.Tasks.Task SetContainerAsync(global::Interoper.Opt<global::Microsoft.AspNetCore.Components.ElementReference> value) =>
+        Realm.SendAsync(global::Interoper.JsOp.Set(Handle, "container", w => global::Interoper.JsJson.WriteValue(w, value, global::Interoper.JsElement.Write)));
+
     public global::System.Threading.Tasks.Task<global::Interoper.Opt<Marker>> GetSelectedAsync(global::Interoper.JsScope scope) =>
         Realm.CallAsync(global::Interoper.JsOp.Get(Handle, "selected"), (ref r) => global::Interoper.JsJson.ReadOpt(ref r, scope.Read<Marker>));
 

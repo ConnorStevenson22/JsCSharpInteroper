@@ -8,7 +8,8 @@ internal static class RecordEmitter
 {
     /// <summary>
     /// A data record: plain JSON, its constants written in place (R20). One that holds an entity is read with a scope
-    /// (R17). A generic interface is a generic record whose type parameters are entities (mapping §2).
+    /// (R17); one that holds a DOM element is only written, so it has no reader (R13). A generic interface is a generic
+    /// record whose type parameters are entities (mapping §2).
     /// </summary>
     public static string Data(TypeMap types, Declaration declaration)
     {
@@ -30,8 +31,11 @@ internal static class RecordEmitter
                 WriteFields(w, fields);
                 w.Line("writer.WriteEndObject();");
             }
-            w.Line();
-            Read(w, name, "", fields, types.IsScoped(declaration));
+            if (!types.HoldsElement(declaration))
+            {
+                w.Line();
+                Read(w, name, "", fields, types.IsScoped(declaration));
+            }
         }
         return w.ToString();
     }

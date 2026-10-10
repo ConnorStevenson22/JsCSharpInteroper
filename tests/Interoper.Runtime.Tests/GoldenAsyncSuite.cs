@@ -49,6 +49,7 @@ public static class GoldenAsyncSuite
         ("any is JsAny: data, or a handle the scope owns (§2)", InScope(Any)),
         ("a union with an entity case is a parameter's (R2, R17)", InScope(WrittenUnion)),
         ("same-named types of sibling modules (R27)", InScope(SiblingModules)),
+        ("a custom element drives its live view, and its class is found by its tag (§5, R22, R28)", InScope(CustomElement)),
     ];
 
     private static async Task CreateSnapshotApply(JsScope scope)
@@ -625,6 +626,27 @@ public static class GoldenAsyncSuite
         Equal("polygon", await Measure.DescribeAsync(scope.Realm, new PolygonSnapshot { Vertices = new double[][] { [0, 0], [1, 0], [0, 1] } }));
         Equal("marker m", await Measure.DescribeAsync(scope.Realm, await Marker.CreateAsync(scope, new MarkerSnapshot { Label = "m" })));
         Equal("marker p", await Measure.DescribeAsync(scope.Realm, await Pin.CreateAsync(scope, new PinSnapshot { Label = "p" }))); // a subclass of the case
+    }
+
+    private static async Task CustomElement(JsScope scope)
+    {
+        // A custom element's constructor takes no bag. In the browser its class id comes from its tag, since its
+        // `className` is its CSS class.
+        var element = await DemoMapElement.CreateAsync(scope, new());
+        var view = await element.GetViewAsync(scope);
+        Expect(ReferenceEquals(view, await element.GetViewAsync(scope)), "one live view");
+        await element.SetZoomAsync(3);
+        Equal(3.0, await view.GetZoomAsync());
+
+        var clicks = new List<ClickEvent>();
+        var both = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        await using (await view.OnClickAsync(scope, click => { clicks.Add(click); if (clicks.Count == 2) both.TrySetResult(); }))
+        {
+            await element.ClickAtAsync(8, 0); // the button is optional
+            await element.ClickAtAsync(0, 0, DemoMapElementClickAtButton._2);
+            await both.Task.WaitAsync(Timeout);
+        }
+        Equal("1 _0, 0 _2", string.Join(", ", clicks.Select(c => $"{c.MapPoint.X} {c.Button}")));
     }
 
     private static async Task SiblingModules(JsScope scope)

@@ -247,6 +247,28 @@ internal sealed class TypeMap
     /// <summary>R21: a property typed with a callback, which is setter-only.</summary>
     public bool IsCallback(PropertyMember p) => CallbackOf(p.Type) is not null;
 
+    /// <summary>R13: a property typed with a DOM element (or null), which is setter-only: JS can't hand an element back.</summary>
+    public bool IsElement(PropertyMember p) => ElementOf(p.Type);
+
+    /// <summary>
+    /// R13: a DOM element type, which is an <c>ElementReference</c>: <c>Element</c>, <c>HTMLElement</c>,
+    /// <c>SVGElement</c> and their <c>HTML…Element</c> and <c>SVG…Element</c> subtypes.
+    /// </summary>
+    internal static bool IsElement(IrType type) =>
+        type is RefType { Module: null, Name: var name } &&
+        (name is "Element" or "HTMLElement" or "SVGElement" || (name.StartsWith("HTML", StringComparison.Ordinal) || name.StartsWith("SVG", StringComparison.Ordinal)) && name.EndsWith("Element", StringComparison.Ordinal));
+
+    /// <summary>A DOM element type, or one with null and undefined: a member that is one is written only (R13).</summary>
+    private static bool ElementOf(IrType type) =>
+        IsElement(type) || type is UnionType u && u.Types.Count(t => !IsNullish(t)) == 1 && u.Types.Any(IsElement);
+
+    /// <summary>
+    /// R13: a data record with a member that is a DOM element: it can be written (<c>$e</c>), but not read, so it has
+    /// no <c>Read</c> and is only a parameter's.
+    /// </summary>
+    public bool HoldsElement(Declaration declaration) =>
+        declaration is (InterfaceDeclaration or AliasDeclaration { Type: ObjectType }) && RecordMembers(declaration).Any(p => ElementOf(p.Type));
+
     /// <summary>The closed snapshot record this class's snapshot derives from.</summary>
     public ClassDeclaration? SnapshotBase(ClassDeclaration c) => LiveBase(c) is { } b && IsClosed(b) ? b : null;
 
@@ -283,6 +305,7 @@ internal sealed class TypeMap
         PrimitiveType { Name: "boolean" } => CsType.Boolean,
         PrimitiveType { Name: "any" or "unknown" or "object" } => CsType.Any,
         RefType { Module: not null } r when Find(r) is { } declaration => Named(declaration, r.Args, owner),
+        RefType r when IsElement(r) => CsType.DomElement, // R13
         TypeParameterType t => CsType.TypeParameter(t.Name),
         FunctionType f => Callback(f, owner),
         ArrayType a => CsType.Array(Map(a.Element, owner)),
@@ -330,6 +353,12 @@ internal sealed class TypeMap
         }
         return CsType.Callback(parameters, result);
     }
+
+    /// <summary>
+    /// R28: whether a value renders as an HTML attribute, in prerendering and static SSR too: a string, number or boolean,
+    /// or a string enum (R9), the types with a fast path.
+    /// </summary>
+    public bool IsAttribute(IrType type, TypeName owner) => Slot(type, owner).Type.Fast is not null;
 
     /// <summary>Whether a result mentions a value-like class, so it's read by value (R16, design §3.4 <c>byValue</c>).</summary>
     public bool ByValue(IrType type) => Mentions(type, IsValueLike);
@@ -586,9 +615,12 @@ internal sealed class TypeMap
         return result;
     }
 
-    /// <summary>R18: a writable data member is in the snapshot; R17: one that mentions an entity isn't, nor is a callback (R21).</summary>
+    /// <summary>
+    /// R18: a writable data member is in the snapshot; R17: one that mentions an entity isn't, nor is a callback (R21) or
+    /// a DOM element (R13), which can't be read.
+    /// </summary>
     private bool IsSnapshotMember(PropertyMember p) =>
-        !p.Static && p.Type is not LiteralType && !p.Readonly && !UsesEntity(p.Type) && CallbackOf(p.Type) is null;
+        !p.Static && p.Type is not LiteralType && !p.Readonly && !UsesEntity(p.Type) && CallbackOf(p.Type) is null && !ElementOf(p.Type);
 
     /// <summary>
     /// Whether a type needs a scope to be read (R17): it mentions an entity class, a type parameter (an entity, mapping
@@ -690,11 +722,12 @@ internal sealed class TypeMap
 
     /// <summary>
     /// A live class's property: its getter's and setter's types, and its snapshot member's (R18). A constant is fine
-    /// (R20), and so is a callback that can be set, which is setter-only (R21).
+    /// (R20), and so is a callback or a DOM element that can be set, which is setter-only (R21, R13).
     /// </summary>
     public Unmappable? Problem(PropertyMember p) =>
         p.Type is LiteralType ? null
         : IsCallback(p) ? (p.Readonly ? new("a callback that can't be set (R21)") : Problem(p.WriteType ?? p.Type, Position.Parameter))
+        : IsElement(p) ? (p.Readonly ? new("a DOM element JS returns (R13)") : Problem(p.WriteType ?? p.Type, Position.Parameter))
         : Problem(p.Type, Position.Member)
             ?? (p.WriteType is { } w ? Problem(w, CallbackOf(w) is null ? Position.Parameter : Position.Member) : null) // a setter's is written
             ?? (IsSnapshotMember(p) ? Problem(p.Type, Position.Data) : null);
@@ -763,12 +796,15 @@ internal sealed class TypeMap
         RefType { Module: not null } r when Find(r) is { } d => d switch
         {
             ClassDeclaration c when !IsValueLike(c) => ArgumentsProblem(c.Name, c.TypeParameters, r.Args),
+            InterfaceDeclaration or AliasDeclaration { Type: ObjectType } when !written && HoldsElement(d) =>
+                new($"the record `{d.Name}`, which holds a DOM element JS can't return (R13)"),
             InterfaceDeclaration i => ArgumentsProblem(i.Name, i.TypeParameters, r.Args),
             AliasDeclaration { Type: FunctionType } => new("a callback that isn't a parameter (R21)"),
             AliasDeclaration { Type: not ObjectType } a when !written && Values(a.Type).Count > 1 => UnionProblem(a.Type, a.Name, written: false),
             _ => null,
         },
         TypeParameterType => null, // an entity (mapping §2); selection checks it's the type's own
+        RefType r when IsElement(r) => written ? null : new("a DOM element JS returns (R13)"),
         ArrayType a => MapProblem(a.Element, written),
         TupleType { Required: null, Rest: false, Elements.Count: > 0 } t => t.Elements.Select(e => MapProblem(e, written)).FirstOrDefault(p => p is not null)
             ?? (NameOf(t, full: true) is null ? new("a tuple of different types") : null), // R5
@@ -833,6 +869,10 @@ internal sealed class TypeMap
             {
                 return new($"{label} with `{any.Name}` (§2)");
             }
+            if (IsElement(t))
+            {
+                return new($"{label} with a DOM element (R13)");
+            }
             if (MapProblem(t, written) is { } problem)
             {
                 return problem;
@@ -886,9 +926,10 @@ internal sealed class TypeMap
             ? new($"the non-integer enum value {value}")
             : null;
 
+    /// <summary>A data record's members; one that is a DOM element is written only, and so is the record (R13).</summary>
     private Unmappable? RecordProblem(int indexSignatures, IEnumerable<PropertyMember> members) =>
         indexSignatures > 0 ? new("an index signature")
-        : members.Where(p => !p.Static && p.Type is not LiteralType).Select(p => Problem(p.Type, Position.Data)).FirstOrDefault(p => p is not null);
+        : members.Where(p => !p.Static && p.Type is not LiteralType && !ElementOf(p.Type)).Select(p => Problem(p.Type, Position.Data)).FirstOrDefault(p => p is not null);
 
     /// <summary>The string constants of a record, or a class's own (R20), in order.</summary>
     private List<string> StringConstants(Declaration declaration) =>
@@ -980,6 +1021,9 @@ internal sealed class TypeMap
     };
 
     private Declaration? Find(RefType type) => type.Module is { } module ? declarations.GetValueOrDefault((module, type.Name)) : null;
+
+    /// <summary>The declaration a reference names, as selected; null for the platform's types.</summary>
+    public Declaration? Declaration(RefType type) => Find(type);
 
     /// <summary>What selection skips can't reach the mapping.</summary>
     private static UnreachableException Unreachable(string subject) => new($"{subject}: selection should have skipped this.");

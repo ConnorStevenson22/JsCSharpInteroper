@@ -35,7 +35,7 @@ node --test "fixtures/demo-maps/test/*.test.mjs"
 | Number-literal union | §2 | `ClickEvent.button` (`MapView`) |
 | Homogeneous numeric tuples | R5 | `Line.path`, `Polygon.vertices`, `CenterAndZoom.center` |
 | `null \| undefined` positions | R2, R3 | `MapView.title?: string \| null`, `MapView.cursor?`, `MapView.selected: Marker \| null`, `Marker.label`, `Marker.labelFormatter`, `Style` colors, `Collection.at` |
-| DOM element type | R13 | `MapView.container: HTMLElement \| null` |
+| DOM element type | R13 | `MapView.container: HTMLElement \| null` (setter-only), `MapViewOptions.container` (a record only written) |
 | `Partial<Pick<…>>` constructor bags | R12, R18 | `Point`, `Line`, `Polygon` constructors; `MapViewOptions`; `MarkerOptions` (also extends with a wider `position`) |
 | Promise methods | R8 | `MapView.flyTo`, `MapView.markerAt` |
 | `AbortSignal` parameter | R14 | `FlyToOptions.signal` |
@@ -50,7 +50,7 @@ node --test "fixtures/demo-maps/test/*.test.mjs"
 | Property watch | design §2 | `Observable.watch(name, callback)` returns a `Subscription` (`core`), e.g. `view.watch("zoom", …)` |
 | Collection type (generic) | §2 (generic `T`, a default), R17 | `Collection<T = any>` with a `change` event whose payload holds entities (`core`); `MapView.markers`, and `MapView.layers` of an abstract class |
 | Module functions | §5 | `distance`, `perimeter`, `describe` (`measure`); `toRgba` (`styles`); `execute` (`ops/a`, `ops/b`) |
-| Custom element: attributes, properties, events, slots | design §2 | `<demo-map>` (`demo-map`, `custom-elements.json`): attributes `basemap`, `zoom`; properties `view`, `center`; events `demo-map-click`, `demo-map-zoom-change` (pairs with `zoom` for `@bind`), `demo-map-ready`; slots default and `toolbar` |
+| Custom element: attributes, properties, events, slots | R28, design §2 | `<demo-map>` (`demo-map`, `custom-elements.json`): attributes `basemap`, `zoom`; properties `view`, `center`; events `demo-map-click`, `demo-map-zoom-change` (pairs with `zoom` for `@bind`), `demo-map-ready`; slots default and `toolbar` |
 
 The golden slice (`tests/GoldenSlice`) is the fixture's generated bindings: every declaration the generator can map.
 

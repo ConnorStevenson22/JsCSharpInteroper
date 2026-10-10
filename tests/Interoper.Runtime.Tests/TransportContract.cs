@@ -87,7 +87,22 @@ public static class TransportContract
         ("errors become JsException", Errors),
         ("batch op: failures listed by index, the rest applied", BatchOp),
         ("BeginBatch: N writes are one round trip, a read flushes first", BeginBatch),
+        ("wrap returns its value in wire form (R13, R28)", Wrap),
     ];
+
+    // A component gets its element's handle this way, from {"$e":id}; any value comes back as a result would.
+    private static async Task Wrap(Seam seam)
+    {
+        var baseline = await seam.Census();
+        var h = await Create(seam, MapView);
+        var wrapped = await Value(seam, $$$"""{"op":"wrap","value":{"$h":{{{h}}}}}""");
+        Equal($$"""{"$h":{{h}},"$t":5}""", wrapped); // the same handle
+        Equal("""{"a":[1,{"$u":1}],"b":null}""", await Value(seam, """{"op":"wrap","value":{"a":[1,{"$u":1}],"b":null}}"""));
+        var e = await Throws(() => Value(seam, """{"op":"wrap","value":{"$e":"none"}}"""));
+        Equal(("InteroperError", "No element has the capture attribute _bl_none; send an ElementReference after its first render"), (e.Name, e.Message));
+        await Release(seam, h);
+        Equal(baseline, await seam.Census());
+    }
 
     private static async Task CreateGetSet(Seam seam)
     {

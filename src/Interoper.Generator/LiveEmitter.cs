@@ -124,8 +124,8 @@ internal sealed class LiveEmitter
             {
                 Subscription(name, "On" + Naming.Pascal(e.Name), profile.Events!.Subscribe!, e.Name, e.Type, $"{name}.on:{e.Name}", optional: false, isEvent: true);
             }
-            // §5; a callback can't be read back (R21).
-            foreach (var p in types.HasWatches(c) ? c.Members.OfType<PropertyMember>().Where(p => p.Type is not LiteralType && !types.IsCallback(p)) : [])
+            // §5; a callback or a DOM element can't be read back (R21, R13).
+            foreach (var p in types.HasWatches(c) ? c.Members.OfType<PropertyMember>().Where(p => p.Type is not LiteralType && !types.IsCallback(p) && !types.IsElement(p)) : [])
             {
                 Subscription(name, "Watch" + Naming.Pascal(p.Name), profile.Watch!, p.Name, p.Type, $"{name}.watch:{p.Name}", p.Optional, isEvent: false);
             }
@@ -149,6 +149,14 @@ internal sealed class LiveEmitter
         if (types.IsCallback(p))
         {
             CallbackProperty(subject, js, x, set!);
+            return;
+        }
+        if (types.IsElement(p))
+        {
+            // R13: setter-only, SetX(value), since JS can't hand an element back.
+            var setName = Claim(Mode("Set" + x), subject);
+            var (elementType, elementSetter) = Set(set!, js);
+            Expression($"public {Declare(setName, [set!.Key])}{elementType} {setName}({set.Name} value)", elementSetter);
             return;
         }
         var (getType, getter) = Get(get, js, ByValue(p.Type));

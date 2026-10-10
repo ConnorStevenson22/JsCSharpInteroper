@@ -90,9 +90,29 @@ public static class Generator
             }
             Add(new(ns, name), LiveEmitter.Module(types, profile, options, diagnostics, name, module.Key, module.Select(s => (FunctionDeclaration)s.Declaration)));
         }
+        foreach (var element in selection.Elements)
+        {
+            // R28: nothing refers to a component either, so it takes a free name too.
+            var ns = types.Namespace(element.Class);
+            var (wanted, name) = (Naming.Type(element.Element.Tag), Naming.Type(element.Element.Tag));
+            for (var n = 2; paths.Contains(Naming.FilePath(root, ns, name)) || namespaces.Contains($"{ns}.{name}"); n++)
+            {
+                name = $"{wanted}{n}";
+            }
+            if (name != wanted)
+            {
+                diagnostics.Add(new(Diagnostic.Renamed, $"<{element.Element.Tag}>", $"its component is {name}: {wanted} is taken (R28)"));
+            }
+            Add(new(ns, name), ComponentEmitter.Component(types, options, diagnostics, element, name));
+        }
+        var events = selection.Elements.SelectMany(e => e.Element.Events).Select(e => e.Name).Distinct().ToList();
+        if (events.Count > 0)
+        {
+            Add(new(root, $"{types.Registry}Events"), ComponentEmitter.Events(root, $"{types.Registry}Events", events));
+        }
         var classes = MetadataEmitter.ClassIds(types, selection);
         files.Add(new($"{types.Registry}.cs", MetadataEmitter.Registry(types, options, classes, modules.Select(m => m.Key))));
-        files.Add(new(MetadataEmitter.FileName(ir), MetadataEmitter.Module(ir, profile, types, classes)));
+        files.Add(new(MetadataEmitter.FileName(ir), MetadataEmitter.Module(ir, profile, types, classes, selection.Elements)));
         foreach (var type in types.Owned)
         {
             Add(type.Type, ValueTypeEmitter.Emit(types, type));

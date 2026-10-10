@@ -17,8 +17,6 @@ public sealed class GoldenSliceTests
     private static readonly (Api? Mode, string Diagnostic, string Reason)[] Remaining =
     [
         (null, "IOP2007 FlyToOptions: skipped: uses `AbortSignal` (in `FlyToOptions`)", "AbortSignal (R14) isn't bridged yet"),
-        (null, "IOP2007 MapViewOptions: skipped: uses `HTMLElement` (in `MapViewOptions`)", "DOM elements (R13) come with the Razor components"),
-        (null, "IOP2007 MapView.container: skipped: uses `HTMLElement`", "DOM elements (R13) come with the Razor components"),
         (null, "IOP2007 MapView.flyTo(options): optional parameter dropped (R22): uses `AbortSignal` (in `FlyToOptions`)", "AbortSignal (R14) isn't bridged yet"),
         (null, "IOP2007 MarkerOptions: skipped: uses a callback that isn't a parameter (R21) (in `MarkerOptions`)", "a data record can't hold a callback (R21)"),
         (null, "IOP2007 Subscription: skipped: uses method `dispose` (in `Subscription`)", "an interface with a method isn't a data record (R15)"),
@@ -26,7 +24,6 @@ public sealed class GoldenSliceTests
         (null, "IOP2007 Emitter.emit: skipped: uses type parameter `K`", "its payload depends on a type parameter"),
         (null, "IOP2007 Collection.constructor: skipped: its parameter isn't a bag, so there's no Create (R18)", "a collection comes from its owner"),
         (null, "IOP2007 DemoMapElement.observedAttributes: skipped: a static member", "static members aren't bound"),
-        (null, "IOP2007 DemoMapElementEventMap: skipped: uses `CustomEvent` (in `DemoMapElementEventMap`)", "custom events come with the Razor components"),
         (null, "IOP2001 Pin.meta: `any` is JsAny (§2)", "untyped by design: the app keeps anything there"),
         (null, "IOP2007 iconNames: skipped: uses a variable", "variables aren't bound"),
         (null, "IOP2006 @acme/demo-maps/ops/b.js: its Options is BOptions: @acme/demo-maps/ops/a.js has one too (R27)",
