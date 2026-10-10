@@ -62,6 +62,9 @@ internal sealed class CsType
     /// <summary>A type made of others (an array, a callback): this type with each of them changed, for <see cref="In"/> and <see cref="Unhidden"/>.</summary>
     private Func<Func<CsType, CsType>, CsType>? rebuild;
 
+    /// <summary>A callback's nullable form (<see cref="NullableCallback"/>), given whether its null is JS null.</summary>
+    private Func<bool, CsType>? nullableCallback;
+
     public JsonKind Json { get; }
 
     public bool IsValueType { get; }
@@ -151,9 +154,11 @@ internal sealed class CsType
     /// <summary>
     /// A callback (R21): an <c>Action</c>, or a <c>Func</c> when it has a result, with an argument per parameter (an
     /// optional or nullable one is <c>Opt&lt;T&gt;</c>, R3). It's registered with the caller's scope and written as
-    /// <c>{"$f":id}</c>; a <paramref name="nullable"/> one (<c>Func&lt;…&gt;?</c>) writes null as JS null.
+    /// <c>{"$f":id}</c>; a <paramref name="nullable"/> one (<c>Func&lt;…&gt;?</c>) writes null as JS null, or as undefined
+    /// when <paramref name="jsNull"/> is false (an optional one whose type has no null).
     /// </summary>
-    public static CsType Callback(IReadOnlyList<(CsType Type, bool Opt)> parameters, (CsType Type, bool Opt)? result, bool nullable = false)
+    public static CsType Callback(IReadOnlyList<(CsType Type, bool Opt)> parameters, (CsType Type, bool Opt)? result, bool nullable = false,
+        bool jsNull = true)
     {
         string Spell(IEnumerable<string> types)
         {
@@ -170,21 +175,24 @@ internal sealed class CsType
                 var writer = result is not { } x ? null
                     : x.Opt ? $"static (w{Suffix(d)}, v{Suffix(d)}) => JsJson.WriteValue(w{Suffix(d)}, v{Suffix(d)}, {x.Type.Writer(d + 1)})" : x.Type.Writer(d);
                 var id = $"scope.Callback({string.Join(", ", readers.Append(writer).OfType<string>().Prepend(v))})";
-                return $"JsJson.WriteCallback({w}, {(nullable ? $"{v} is null ? null : {id}" : id)})";
+                return !nullable ? $"JsJson.WriteCallback({w}, {id})"
+                    : $"JsJson.WriteCallback({w}, {v} is null ? null : {id}{(jsNull ? "" : ", undefined: true")})";
             })
         {
             IsCallback = true,
             Returns = result is not null,
             fullName = Spell(all.Select(p => OptName(p, t => t.FullName))),
-            rebuild = change => Callback([.. parameters.Select(p => (change(p.Type), p.Opt))], result is { } x ? (change(x.Type), x.Opt) : null, nullable),
-            nullableCallback = () => Callback(parameters, result, nullable: true),
+            rebuild = change => Callback([.. parameters.Select(p => (change(p.Type), p.Opt))], result is { } x ? (change(x.Type), x.Opt) : null, nullable, jsNull),
+            nullableCallback = isNull => Callback(parameters, result, nullable: true, jsNull: isNull),
         };
     }
 
-    private Func<CsType>? nullableCallback;
-
-    /// <summary>A callback that can be null (<c>Func&lt;…&gt;?</c>), which JS gets as null (R21).</summary>
-    public CsType Nullable() => nullableCallback!();
+    /// <summary>
+    /// This callback as one that can be null (<c>Func&lt;…&gt;?</c>, R21), which JS gets as null when <paramref name="jsNull"/>
+    /// (its type has null), and as undefined otherwise (an optional one).
+    /// </summary>
+    public CsType NullableCallback(bool jsNull) =>
+        nullableCallback is { } make ? make(jsNull) : throw new InvalidOperationException($"`{Name}` isn't a callback");
 
     /// <summary>An array's element type.</summary>
     public CsType? Element { get; private init; }

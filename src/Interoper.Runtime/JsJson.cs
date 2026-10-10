@@ -113,12 +113,22 @@ public static class JsJson
         writer.WriteEndArray();
     }
 
-    /// <summary>A callback (R21) as <c>{"$f":id}</c>, with the id <see cref="JsScope.Callback(Action)"/> returns; null is JS null.</summary>
-    public static void WriteCallback(Utf8JsonWriter writer, int? id)
+    /// <summary>
+    /// A callback (R21) as <c>{"$f":id}</c>, with the id <see cref="JsScope.Callback(Action)"/> returns. No id is JS null,
+    /// or undefined when <paramref name="undefined"/> (an optional callback whose type has no null).
+    /// </summary>
+    public static void WriteCallback(Utf8JsonWriter writer, int? id, bool undefined = false)
     {
         if (id is not { } callback)
         {
-            writer.WriteNullValue();
+            if (undefined)
+            {
+                WriteUndefined(writer);
+            }
+            else
+            {
+                writer.WriteNullValue();
+            }
             return;
         }
         writer.WriteStartObject();

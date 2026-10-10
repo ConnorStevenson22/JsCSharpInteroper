@@ -36,6 +36,7 @@ public static class GoldenSyncSuite
         ("ForEach calls back with each item and its index (R21)", InScope(ForEach)),
         ("a callback property is setter-only, and JS uses its result (R21)", InScope(LabelFormatter)),
         ("callbacks are released with their scope (R21)", InScope(CallbacksAreReleasedWithTheirScope)),
+        ("handles in a callback's arguments that nothing reads are released with its scope (R21)", InScope(UnreadArgumentsAreReleased)),
     ];
 
     private static void CreateSnapshotApply(JsScope scope)
@@ -353,13 +354,37 @@ public static class GoldenSyncSuite
     private static async Task CallbacksAreReleasedWithTheirScope(JsScope scope)
     {
         var markers = MapView.Create(scope, new MapViewSnapshot()).GetMarkers(scope);
-        markers.Add(Marker.Create(scope, new MarkerSnapshot()));
+        using (var setup = new JsScope(scope.Realm))
+        {
+            markers.Add(Marker.Create(setup, new MarkerSnapshot())); // no .NET scope owns the marker any more
+        }
         var baseline = await Count(scope.Realm);
         using (var inner = new JsScope(scope.Realm))
         {
             markers.ForEach(inner, (_, _) => { });
             Expect(markers.Find(inner, (_, _) => true).HasValue, "a marker");
-            Equal(baseline.Callbacks + 2, (await Count(scope.Realm)).Callbacks); // the inner scope owns both
+            // The inner scope owns both callbacks, and the marker they got (forEach also passes the collection, already owned).
+            Equal((baseline.Handles + 1, baseline.Callbacks + 2), await Count(scope.Realm));
+        }
+        Equal(baseline, await Count(scope.Realm));
+    }
+
+    private static async Task UnreadArgumentsAreReleased(JsScope scope)
+    {
+        var view = MapView.Create(scope, new MapViewSnapshot());
+        using (var setup = new JsScope(scope.Realm))
+        {
+            view.SetSelected(Marker.Create(setup, new MarkerSnapshot())); // no .NET scope owns it any more
+        }
+        var baseline = await Count(scope.Realm);
+        using (var inner = new JsScope(scope.Realm))
+        {
+            var seen = new List<bool>();
+            using (view.WatchSelected(inner, selected => seen.Add(selected.IsNull)))
+            {
+                view.SetSelected(null); // JS passes (value, old): nothing reads the old marker
+            }
+            Equal("True", string.Join(",", seen));
         }
         Equal(baseline, await Count(scope.Realm));
     }

@@ -39,13 +39,19 @@ public sealed class JsScope(JsRealm realm) : IDisposable, IAsyncDisposable
     /// The live object for a <c>{"$h","$t"}</c> handle, owned by this scope too: the same C# object for the same JS
     /// object, of the most-derived type registered for the class id (R19), read through any base.
     /// </summary>
-    public T Wrap<T>(int handle, int classId) where T : JsObject
+    public T Wrap<T>(int handle, int classId) where T : JsObject => Wrap<T>(handle, classId, null);
+
+    private T Wrap<T>(int handle, int classId, Func<JsRealm, int, T>? create) where T : JsObject
     {
+        JsObject live;
         lock (gate)
         {
             ThrowIfDisposed(handle);
-            return (T)Realm.Wrap(this, handle, classId);
+            live = Realm.Wrap(this, handle, classId, create);
         }
+        // Still owned, so the scope releases it.
+        return live as T ?? throw new JsException("InteroperError",
+            $"Handle {handle} is a {live.GetType().Name}, not a {typeof(T).Name}.", null);
     }
 
     /// <summary>
@@ -64,12 +70,8 @@ public sealed class JsScope(JsRealm realm) : IDisposable, IAsyncDisposable
     /// </summary>
     public T Read<T>(ref Utf8JsonReader reader, Func<JsRealm, int, T> create) where T : JsObject
     {
-        var (handle, _) = ReadHandle(ref reader);
-        lock (gate)
-        {
-            ThrowIfDisposed(handle);
-            return (T)Realm.Wrap(this, handle, create);
-        }
+        var (handle, classId) = ReadHandle(ref reader);
+        return Wrap(handle, classId, create);
     }
 
     private static (int Handle, int ClassId) ReadHandle(ref Utf8JsonReader reader)
@@ -252,9 +254,46 @@ public sealed class JsScope(JsRealm realm) : IDisposable, IAsyncDisposable
         lock (gate)
         {
             ObjectDisposedException.ThrowIf(disposed, this);
-            var id = Transport.Callbacks.Register(Dispatch is null ? handler : args => Dispatched(handler, args));
+            var run = Dispatch is null ? handler : args => Dispatched(handler, args);
+            var id = Transport.Callbacks.Register(args => OwnHandles(args) ? run(args) : null);
             callbacks.Add(id);
             return id;
+        }
+    }
+
+    // Every handle in a callback's arguments is owned by this scope as it arrives, before anything reads them, so the
+    // ones no reader consumes (arguments past the delegate's arity, members a record skips) are released with it too
+    // (design §3.4). A call that arrives after disposal is dropped, its handles released: JS gets undefined.
+    private bool OwnHandles(string args)
+    {
+        if (!args.Contains("\"$h\"", StringComparison.Ordinal))
+        {
+            return true;
+        }
+        var handles = new List<int>();
+        var reader = new Utf8JsonReader(Encoding.UTF8.GetBytes(args));
+        while (reader.Read())
+        {
+            if (reader.TokenType == JsonTokenType.PropertyName && reader.ValueTextEquals("$h"u8) && reader.Read()
+                && reader.TokenType == JsonTokenType.Number)
+            {
+                handles.Add(reader.GetInt32());
+            }
+        }
+        lock (gate)
+        {
+            foreach (var handle in handles)
+            {
+                if (disposed)
+                {
+                    Realm.Abandon(handle);
+                }
+                else
+                {
+                    Realm.Own(this, handle);
+                }
+            }
+            return !disposed;
         }
     }
 

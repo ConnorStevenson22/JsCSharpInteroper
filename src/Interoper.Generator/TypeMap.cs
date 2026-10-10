@@ -32,8 +32,8 @@ internal sealed record UnionStruct(TypeName Type, IReadOnlyList<UnionCase> Cases
 /// <param name="Declaration">What an object case is read as (R19 steps 2 and 3).</param>
 internal sealed record UnionCase(CsType Type, Declaration? Declaration);
 
-/// <summary>Where a type is, which decides what it can be besides data (mapping §8).</summary>
-public enum Position
+/// <summary>Where a type is, which decides what it can be besides data: an entity (R17), <c>this</c> (§5), a callback (R21).</summary>
+internal enum Position
 {
     /// <summary>A data record's member, an array's element, a callback's argument or result: an entity too (R17).</summary>
     Data,
@@ -372,6 +372,9 @@ internal sealed class TypeMap
         i.Types.Any(t => t is ObjectType { Members.Count: 0, IndexSignatures.Count: 0, CallSignatures.Count: 0, ConstructSignatures.Count: 0 });
 
     private static bool IsNullish(IrType type) => type is PrimitiveType { Name: "null" or "undefined" };
+
+    /// <summary>Whether a type has JS null in it, which a missing callback is sent as; otherwise it's undefined (R21).</summary>
+    public bool HasNull(IrType type) => Flatten(type).Any(t => t is PrimitiveType { Name: "null" });
 
     // --- Records ---
 

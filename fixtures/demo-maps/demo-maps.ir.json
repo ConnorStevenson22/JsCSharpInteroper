@@ -1442,7 +1442,7 @@
                     "name": "void"
                   },
                   "doc": {
-                    "summary": "Calls `callback` for each item, in order; its result is ignored."
+                    "summary": "Calls `callback` for each item, in order; its result is ignored. Like `Array.prototype.forEach`, it also passes\nthe collection, which the type leaves out."
                   }
                 }
               ]

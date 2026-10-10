@@ -360,7 +360,7 @@ internal sealed class LiveEmitter
         var (mapped, nullable) = types.Slot(type, new(ns, owner), self is null ? null : this.self);
         var named = mapped.In(ns).Unhidden(hidden);
         usesSystem |= named.IsCallback; // Action, Func
-        return named.IsCallback ? new(nullable || optional ? named.Nullable() : named, false) : new(named, (nullable || optional) && !mapped.IsUnion);
+        return named.IsCallback ? new(nullable || optional ? named.NullableCallback(jsNull: types.HasNull(type)) : named, false) : new(named, (nullable || optional) && !mapped.IsUnion);
     }
 
     /// <summary>

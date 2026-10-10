@@ -355,6 +355,10 @@ public sealed class RealmTests
         var view = await MapView.CreateAsync(scope, new());
         var json = $$"""{"$t":0,"$h":{{view.Handle}}}""";
         Assert.Same(view, Json.Read(json, (ref r) => scope.Read<MapView>(ref r, static (_, _) => throw new InvalidOperationException())));
+        // Another type is an error, not a cast exception.
+        var error = Assert.Throws<JsException>(() => Json.Read(json, (ref r) => scope.Read<Marker>(ref r, static (_, _) => throw new InvalidOperationException())));
+        Assert.Equal("InteroperError", error.Name);
+        Assert.Throws<JsException>(() => scope.Wrap<Marker>(view.Handle, DemoMaps.MapViewId));
     }
 
     [Fact]

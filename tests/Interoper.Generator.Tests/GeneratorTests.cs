@@ -345,7 +345,8 @@ public sealed class GeneratorTests
               { "kind": "property", "name": "formatter", "optional": true, "type": { "kind": "union", "types": [
                 { "kind": "ref", "name": "Formatter", "module": "@acme/maps/a.js" }, { "kind": "primitive", "name": "null" }] } },
               { "kind": "property", "name": "onLoad", "type": {{Callback(Void)}} },
-              {{Method("each", each, Void)}}, {{Method("pick", pick, Marker)}}, {{Method("many", many, Void)}}] },
+              {{Method("each", each, Void)}}, {{Method("pick", pick, Marker)}}, {{Method("many", many, Void)}},
+              { "kind": "method", "name": "later", "signatures": [{ "params": [{{Parameter("callback", Callback(Void), optional: true)}}, {{Parameter("delay", Number, optional: true)}}], "returns": {{Void}} }] }] },
             { "kind": "function", "name": "visit", "signatures": [{ "params": [{{Parameter("callback", Callback(Void, Parameter("marker", Marker)))}}], "returns": {{Void}} }] }
             """));
 
@@ -356,6 +357,9 @@ public sealed class GeneratorTests
                 public {{(sync ? "void Each" : "Task EachAsync")}}(JsScope scope, Action<Marker, double, Opt<string>> callback) =>
                     Realm.{{(sync ? "Send" : "SendAsync")}}(JsOp.Call(Handle, "each", w => JsJson.WriteCallback(w, scope.Callback(callback, scope.Read<Marker>, JsJson.ReadNumber, static (ref r1) => JsJson.ReadOpt(ref r1, JsJson.ReadString)))));
             """, layer);
+        // An optional callback whose type has no null is sent as undefined when it's missing, here before a later argument.
+        Assert.Contains("if (callback is not null || !delay.IsUndefined) JsJson.WriteCallback(w, callback is null ? null : scope.Callback(callback), undefined: true);", layer);
+        Assert.Contains($"(JsScope scope, Action? callback = default, Opt<double> delay = default)", layer);
         // A callback property is setter-only: JS can't hand the function back.
         Assert.Contains($"public {(sync ? "void SetOnLoad" : "Task SetOnLoadAsync")}(JsScope scope, Action value) =>", layer);
         Assert.DoesNotContain(sync ? " OnLoad " : "GetOnLoadAsync", layer);

@@ -97,7 +97,7 @@ internal class FakeEmitter : FakeObservable
 
 /// <summary>
 /// <c>core.Collection</c>: a live list that emits <c>change</c> on <c>add</c> and <c>remove</c>, and calls back from
-/// <c>find</c> and <c>forEach</c> with each item and its index.
+/// <c>find</c> with each item and its index, and from <c>forEach</c> with the collection too.
 /// </summary>
 internal sealed class FakeCollection(List<object?> items) : FakeEmitter
 {
@@ -132,7 +132,7 @@ internal sealed class FakeCollection(List<object?> items) : FakeEmitter
                 var callback = (JsFunction)args[0]!;
                 foreach (var (item, i) in items.ToList().Select((item, i) => (item, i)))
                 {
-                    callback(item, (double)i);
+                    callback(item, (double)i, this); // the collection too, which the type leaves out
                 }
                 return Undefined.Value;
             case "toArray":

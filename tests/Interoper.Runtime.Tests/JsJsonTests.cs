@@ -33,6 +33,14 @@ public class JsJsonTests
         Assert.Equal(new Rgba { R = 1, G = 2, B = 3 }, value);
     }
 
+    [Fact] // R21: a missing callback is JS null, or undefined when its type has no null
+    public void A_callback_is_its_id_and_a_missing_one_null_or_undefined()
+    {
+        Assert.Equal("""{"$f":3}""", Json.Write<int?>(3, (w, id) => JsJson.WriteCallback(w, id)));
+        Assert.Equal("null", Json.Write<int?>(null, (w, id) => JsJson.WriteCallback(w, id)));
+        Assert.Equal("""{"$u":1}""", Json.Write<int?>(null, (w, id) => JsJson.WriteCallback(w, id, undefined: true)));
+    }
+
     [Fact] // R1: where a value can't be omitted (array elements, arguments), undefined is {"$u":1}
     public void Undefined_value_is_the_marker()
     {

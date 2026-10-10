@@ -41,6 +41,7 @@ public static class GoldenAsyncSuite
         ("a collection of an abstract class reads its items as the most-derived type (R4, R19)", InScope(LayersOfAnAbstractClass)),
         ("ForEach calls back with each item and its index (R21)", InScope(ForEach)),
         ("callbacks are released with their scope (R21)", InScope(CallbacksAreReleasedWithTheirScope)),
+        ("handles in a callback's arguments that nothing reads are released with its scope (R21)", InScope(UnreadArgumentsAreReleased)),
     ];
 
     private static async Task CreateSnapshotApply(JsScope scope)
@@ -506,14 +507,38 @@ public static class GoldenAsyncSuite
     private static async Task CallbacksAreReleasedWithTheirScope(JsScope scope)
     {
         var markers = await (await MapView.CreateAsync(scope, new MapViewSnapshot())).GetMarkersAsync(scope);
-        await markers.AddAsync(await Marker.CreateAsync(scope, new MarkerSnapshot()));
+        await using (var setup = new JsScope(scope.Realm))
+        {
+            await markers.AddAsync(await Marker.CreateAsync(setup, new MarkerSnapshot())); // no .NET scope owns the marker any more
+        }
         var baseline = await Count(scope.Realm);
         var called = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         await using (var inner = new JsScope(scope.Realm))
         {
             await markers.ForEachAsync(inner, (_, _) => called.TrySetResult());
             await called.Task.WaitAsync(Timeout);
-            Equal(baseline.Callbacks + 1, (await Count(scope.Realm)).Callbacks); // the inner scope owns it
+            // The inner scope owns the callback, and the marker it got (forEach also passes the collection, already owned).
+            Equal((baseline.Handles + 1, baseline.Callbacks + 1), await Count(scope.Realm));
+        }
+        Equal(baseline, await Count(scope.Realm));
+    }
+
+    private static async Task UnreadArgumentsAreReleased(JsScope scope)
+    {
+        var view = await MapView.CreateAsync(scope, new MapViewSnapshot());
+        await using (var setup = new JsScope(scope.Realm))
+        {
+            await view.SetSelectedAsync(await Marker.CreateAsync(setup, new MarkerSnapshot())); // no .NET scope owns it any more
+        }
+        var baseline = await Count(scope.Realm);
+        var changed = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        await using (var inner = new JsScope(scope.Realm))
+        {
+            await using (await view.WatchSelectedAsync(inner, selected => changed.TrySetResult(selected.IsNull)))
+            {
+                await view.SetSelectedAsync(null); // JS passes (value, old): nothing reads the old marker
+                Expect(await changed.Task.WaitAsync(Timeout), "the watch to see null");
+            }
         }
         Equal(baseline, await Count(scope.Realm));
     }

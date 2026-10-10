@@ -83,7 +83,7 @@ export class Collection extends Emitter {
   }
 
   forEach(callback) {
-    this.#items.forEach((item, index) => callback(item, index));
+    this.#items.forEach((item, index) => callback(item, index, this));
   }
 
   toArray() {

@@ -38,7 +38,10 @@ export class Collection<T> extends Emitter {
   /** Returns whether the item was found. */
   remove(item: T): boolean;
   find(predicate: (item: T, index: number) => boolean): T | undefined;
-  /** Calls `callback` for each item, in order; its result is ignored. */
+  /**
+   * Calls `callback` for each item, in order; its result is ignored. Like `Array.prototype.forEach`, it also passes
+   * the collection, which the type leaves out.
+   */
   forEach(callback: (item: T, index: number) => void): void;
   toArray(): T[];
 }

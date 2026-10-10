@@ -89,7 +89,7 @@ The nullable bottom case is what makes the compiler demand the `null` arm. With 
 | interface with only data members | data record (keeps the interface's name) | §3 |
 | intersection of data bags (`A & { type: "x" }`) | one flattened record of the checker-resolved members | **R11.** |
 | intersection used as a mixin | C# interfaces on the live class | |
-| generic `T` | C# generic where it's reified at runtime (`Collection<T>`); otherwise the constraint, or `JsAny` | See below |
+| generic `T` | C# generic over entities (`where T : JsObject`) where it's reified at runtime (`Collection<T>`); a constrained type parameter isn't mapped yet (IOP2007) | See below |
 | `this` (return type) | the declaring type | |
 | `keyof`, indexed access, mapped, conditional, `typeof` | the type the checker resolves | **R12.** Unresolvable → `JsAny` + diagnostic IOP2002 |
 | `any`, `unknown`, `object` | `JsAny`: an opaque handle with untyped get/set/call | Diagnostic IOP2001 |
@@ -100,7 +100,7 @@ The nullable bottom case is what makes the compiler demand the `null` arm. With 
 | function type | delegate (`Action<…>` / `Func<…>`) | §5, R21 |
 
 **Generics.** A type parameter without a constraint stands for an entity (`where T : JsObject`), read with the scope like any entity; a constrained one isn't mapped yet (IOP2007).
-- A class the profile lists in `collections` is a live generic class (`Collection<T> : Emitter where T : JsObject` in the fixture). It has no `Create`, since its owner makes it (its constructor isn't a bag, IOP2007), and no registry entry, since the registry can't make an instance of an unknown type argument: what reads one passes `JsScope.Read(ref reader, create)` a factory (`static (realm, handle) => new Collection<Marker>(realm, handle)`), and identity still holds (R19). A use with a type argument that isn't an entity (`Collection<number>`) is skipped (IOP2007).
+- A class the profile lists in `collections` is a live generic class (`Collection<T> : Emitter where T : JsObject` in the fixture). It has no `Create`, since its owner makes it (its constructor isn't a bag, IOP2007), and no registry entry, since the registry can't make an instance of an unknown type argument: what reads one passes `JsScope.Read(ref reader, create)` a factory (`static (realm, handle) => new Collection<Marker>(realm, handle)`), and identity still holds (R19). So a collection is read only through its collection-typed members (`MapView.markers`), never as a `JsObject` or through a base. A use with a type argument that isn't an entity (`Collection<number>`) is skipped (IOP2007).
 - A generic data interface is a generic record (`CollectionChangeEvent<T>`), with the same constraint.
 
 ---
@@ -176,6 +176,7 @@ Sync mode needs .NET and JS on one thread, so it runs on WebAssembly only and fa
 
 **R21. Callbacks** (function-typed parameters) become delegates registered in the runtime's callback registry, owned by the scope, so the member takes a `JsScope` first (§5).
 - **Shape.** A callback returning `void` is an `Action<…>`, any other a `Func<…, R>`, with at most 4 parameters (more is IOP2007). The generated member registers it with `scope.Callback(handler, read1, …, write)` and sends `{"$f":id}`: each argument is read with its reader and the scope, which owns the handles in it, and a missing one is undefined; a `Func`'s result is written back with `write`, an `Action`'s is undefined. A named function alias (`type Formatter = (m: Marker) => string`) has no C# type of its own; its uses are delegates.
+- **Lifetime.** Each call registers a new callback, which lives until its scope is disposed: setting a property to `null` or to another delegate doesn't release the previous one, so use a short-lived scope for repeated calls. A callback JS calls after its scope is disposed is dropped, and JS gets undefined. Every handle in its arguments is owned by its scope as it arrives, including ones no reader consumes (arguments past the delegate's arity, members a record skips). In async mode on Server and Hybrid, JS doesn't wait for .NET, so a void callback can run after the member's `Task` has completed.
 - **Properties.** A callback property is setter-only, `SetX(scope, value)`, since JS can't hand the function back; an optional or nullable one takes `null` to clear it, and it has no watch. A read-only one, or a callback anywhere but a parameter or a property (in a data record, say), is skipped (IOP2007).
 - A callback whose *return value* JS uses synchronously (e.g. a formatter `(v) => string`) works in sync mode.
 - It *can't* work in async mode on Server or Hybrid: JS has moved on before the result arrives. The member is skipped in async mode with IOP2005, and the profile can supply a JS-side implementation instead.
