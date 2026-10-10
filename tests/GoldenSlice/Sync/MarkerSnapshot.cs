@@ -38,4 +38,11 @@ public sealed partial record MarkerSnapshot
         }
         return new MarkerSnapshot { Position = position, Label = label, Style = style };
     }
+
+    public static MarkerSnapshot Diff(MarkerSnapshot before, MarkerSnapshot after) => new()
+    {
+        Position = after.Position.IsUndefined || JsDiff.Same(before.Position, after.Position) ? default : after.Position,
+        Label = after.Label.IsUndefined || JsDiff.Same(before.Label, after.Label) ? default : after.Label,
+        Style = after.Style.IsUndefined || JsDiff.Same(before.Style, after.Style) ? default : after.Style,
+    };
 }

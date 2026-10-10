@@ -17,4 +17,6 @@ public sealed partial record EmitterSnapshot
         reader.Skip();
         return new EmitterSnapshot();
     }
+
+    public static EmitterSnapshot Diff(EmitterSnapshot before, EmitterSnapshot after) => new();
 }

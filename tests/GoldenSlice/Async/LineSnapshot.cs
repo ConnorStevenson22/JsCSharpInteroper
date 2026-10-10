@@ -39,4 +39,9 @@ public sealed partial record LineSnapshot : ShapeSnapshot
         }
         return new LineSnapshot { Path = path };
     }
+
+    public static LineSnapshot Diff(LineSnapshot before, LineSnapshot after) => new()
+    {
+        Path = after.Path.IsUndefined || JsDiff.Same(before.Path, after.Path) ? default : after.Path,
+    };
 }

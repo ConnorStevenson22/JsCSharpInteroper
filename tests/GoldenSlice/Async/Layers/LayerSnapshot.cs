@@ -34,4 +34,10 @@ public sealed partial record LayerSnapshot
         }
         return new LayerSnapshot { Title = title, Visible = visible };
     }
+
+    public static LayerSnapshot Diff(LayerSnapshot before, LayerSnapshot after) => new()
+    {
+        Title = after.Title.IsUndefined || JsDiff.Same(before.Title, after.Title) ? default : after.Title,
+        Visible = after.Visible.IsUndefined || JsDiff.Same(before.Visible, after.Visible) ? default : after.Visible,
+    };
 }

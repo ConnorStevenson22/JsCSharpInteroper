@@ -42,6 +42,7 @@ public static class GoldenAsyncSuite
         ("ForEach calls back with each item and its index (R21)", InScope(ForEach)),
         ("callbacks are released with their scope (R21)", InScope(CallbacksAreReleasedWithTheirScope)),
         ("handles in a callback's arguments that nothing reads are released with its scope (R21)", InScope(UnreadArgumentsAreReleased)),
+        ("Diff: arrays, unions and nested snapshots, then Apply (R18)", InScope(DiffThenApply)),
     ];
 
     private static async Task CreateSnapshotApply(JsScope scope)
@@ -541,6 +542,32 @@ public static class GoldenAsyncSuite
             }
         }
         Equal(baseline, await Count(scope.Realm));
+    }
+
+    private static async Task DiffThenApply(JsScope scope)
+    {
+        var view = await MapView.CreateAsync(scope, new MapViewSnapshot { Center = new PointSnapshot { X = 1, Y = 2 }, Zoom = 3, Title = "a" });
+        var before = await view.SnapshotAsync();
+        // Same zoom, a new center, null for the title, and the rotation unset: a patch can't unset a member.
+        var after = before with { Center = new PointSnapshot { X = 1, Y = 5 }, Title = null, Rotation = default };
+        var patch = MapViewSnapshot.Diff(before, after);
+        Equal(new MapViewSnapshot { Center = new PointSnapshot { X = 1, Y = 5 }, Title = null }, patch);
+        await view.ApplyAsync(patch);
+        Equal(after with { Rotation = before.Rotation }, await view.SnapshotAsync());
+
+        var line = await Line.CreateAsync(scope, new LineSnapshot { Path = new double[][] { [0, 1], [2, 3] } });
+        var path = await line.SnapshotAsync();
+        Equal(new LineSnapshot(), LineSnapshot.Diff(path, new LineSnapshot { Path = new double[][] { [0, 1], [2, 3] } })); // arrays element-wise
+        await line.ApplyAsync(LineSnapshot.Diff(path, new LineSnapshot { Path = new double[][] { [0, 1], [4, 5] } }));
+        Equal("0,1;4,5", Pairs((await line.SnapshotAsync()).Path));
+
+        var marker = await Marker.CreateAsync(scope, new MarkerSnapshot { Label = "m", Style = new FillStyle { Color = "red" } });
+        var style = await marker.SnapshotAsync();
+        Equal(new MarkerSnapshot(), MarkerSnapshot.Diff(style, style with { Style = new FillStyle { Color = "red" } }));
+        var stroke = MarkerSnapshot.Diff(style, style with { Label = "m", Style = new StrokeStyle { Color = "blue", Width = 2 } });
+        Equal(new MarkerSnapshot { Style = new StrokeStyle { Color = "blue", Width = 2 } }, stroke);
+        await marker.ApplyAsync(stroke);
+        Equal(style with { Style = new StrokeStyle { Color = "blue", Width = 2 } }, await marker.SnapshotAsync());
     }
 
     // --- Helpers ---

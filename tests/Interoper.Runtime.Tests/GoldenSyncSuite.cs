@@ -37,6 +37,7 @@ public static class GoldenSyncSuite
         ("a callback property is setter-only, and JS uses its result (R21)", InScope(LabelFormatter)),
         ("callbacks are released with their scope (R21)", InScope(CallbacksAreReleasedWithTheirScope)),
         ("handles in a callback's arguments that nothing reads are released with its scope (R21)", InScope(UnreadArgumentsAreReleased)),
+        ("Diff: arrays, unions and nested snapshots, then Apply (R18)", InScope(DiffThenApply)),
     ];
 
     private static void CreateSnapshotApply(JsScope scope)
@@ -387,6 +388,32 @@ public static class GoldenSyncSuite
             Equal("True", string.Join(",", seen));
         }
         Equal(baseline, await Count(scope.Realm));
+    }
+
+    private static void DiffThenApply(JsScope scope)
+    {
+        var view = MapView.Create(scope, new MapViewSnapshot { Center = new PointSnapshot { X = 1, Y = 2 }, Zoom = 3, Title = "a" });
+        var before = view.Snapshot();
+        // Same zoom, a new center, null for the title, and the rotation unset: a patch can't unset a member.
+        var after = before with { Center = new PointSnapshot { X = 1, Y = 5 }, Title = null, Rotation = default };
+        var patch = MapViewSnapshot.Diff(before, after);
+        Equal(new MapViewSnapshot { Center = new PointSnapshot { X = 1, Y = 5 }, Title = null }, patch);
+        view.Apply(patch);
+        Equal(after with { Rotation = before.Rotation }, view.Snapshot());
+
+        var line = Line.Create(scope, new LineSnapshot { Path = new double[][] { [0, 1], [2, 3] } });
+        var path = line.Snapshot();
+        Equal(new LineSnapshot(), LineSnapshot.Diff(path, new LineSnapshot { Path = new double[][] { [0, 1], [2, 3] } })); // arrays element-wise
+        line.Apply(LineSnapshot.Diff(path, new LineSnapshot { Path = new double[][] { [0, 1], [4, 5] } }));
+        Equal("0,1;4,5", Pairs(line.Snapshot().Path));
+
+        var marker = Marker.Create(scope, new MarkerSnapshot { Label = "m", Style = new FillStyle { Color = "red" } });
+        var style = marker.Snapshot();
+        Equal(new MarkerSnapshot(), MarkerSnapshot.Diff(style, style with { Style = new FillStyle { Color = "red" } }));
+        var stroke = MarkerSnapshot.Diff(style, style with { Label = "m", Style = new StrokeStyle { Color = "blue", Width = 2 } });
+        Equal(new MarkerSnapshot { Style = new StrokeStyle { Color = "blue", Width = 2 } }, stroke);
+        marker.Apply(stroke);
+        Equal(style with { Style = new StrokeStyle { Color = "blue", Width = 2 } }, marker.Snapshot());
     }
 
     // --- Helpers ---

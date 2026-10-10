@@ -42,4 +42,10 @@ public sealed partial record PointSnapshot : ShapeSnapshot
         }
         return new PointSnapshot { X = x, Y = y };
     }
+
+    public static PointSnapshot Diff(PointSnapshot before, PointSnapshot after) => new()
+    {
+        X = after.X.IsUndefined || JsDiff.Same(before.X, after.X) ? default : after.X,
+        Y = after.Y.IsUndefined || JsDiff.Same(before.Y, after.Y) ? default : after.Y,
+    };
 }

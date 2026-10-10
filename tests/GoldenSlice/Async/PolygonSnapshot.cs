@@ -39,4 +39,9 @@ public sealed partial record PolygonSnapshot : ShapeSnapshot
         }
         return new PolygonSnapshot { Vertices = vertices };
     }
+
+    public static PolygonSnapshot Diff(PolygonSnapshot before, PolygonSnapshot after) => new()
+    {
+        Vertices = after.Vertices.IsUndefined || JsDiff.Same(before.Vertices, after.Vertices) ? default : after.Vertices,
+    };
 }

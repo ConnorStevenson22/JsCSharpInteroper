@@ -129,7 +129,10 @@ Sent to JS, a snapshot record of a value-like class arrives as an instance: the 
 - the constructor input for `Create`/`CreateAsync`;
 - the patch for `Apply`/`ApplyAsync`. Unset members are undefined (R2), so a patch is just a partially filled record.
 
-A generated `XSnapshot.Diff(before, after)` produces the minimal patch.
+**Diff.** Every snapshot record except a closed base (`ShapeSnapshot`; its subclasses' records have one) has a generated `static XSnapshot Diff(XSnapshot before, XSnapshot after)`: the patch from `before` to `after`.
+- A member is in the patch when `after` defines it (it isn't undefined) and it differs from `before`'s.
+- Members compare with the runtime's `JsDiff.Same`: `EqualityComparer`, but arrays compare element by element, recursively, also inside an `Opt<T>` or a union case. A nested record uses its own equality, so an array inside one compares by reference, and the member goes into the patch even when it hasn't changed. That's harmless: `apply` sets it to the value it has.
+- **A patch can't unset a member**, since undefined means "leave it as it is". To clear one, set it to `null` in `after`.
 
 Every snapshot record has `WriteMembers` (the members alone: the bag for `create`, the patch for `apply`) and `Read`; a value-like one also has `Write`, which wraps the members as a value with `$c` and the discriminant. The bag and the patch leave both out, because `apply` assigns every member it gets and a discriminant is read-only.
 
@@ -176,7 +179,7 @@ Sync mode needs .NET and JS on one thread, so it runs on WebAssembly only and fa
 
 **R21. Callbacks** (function-typed parameters) become delegates registered in the runtime's callback registry, owned by the scope, so the member takes a `JsScope` first (§5).
 - **Shape.** A callback returning `void` is an `Action<…>`, any other a `Func<…, R>`, with at most 4 parameters (more is IOP2007). The generated member registers it with `scope.Callback(handler, read1, …, write)` and sends `{"$f":id}`: each argument is read with its reader and the scope, which owns the handles in it, and a missing one is undefined; a `Func`'s result is written back with `write`, an `Action`'s is undefined. A named function alias (`type Formatter = (m: Marker) => string`) has no C# type of its own; its uses are delegates.
-- **Lifetime.** Each call registers a new callback, which lives until its scope is disposed: setting a property to `null` or to another delegate doesn't release the previous one, so use a short-lived scope for repeated calls. A callback JS calls after its scope is disposed is dropped, and JS gets undefined. Every handle in its arguments is owned by its scope as it arrives, including ones no reader consumes (arguments past the delegate's arity, members a record skips). In async mode on Server and Hybrid, JS doesn't wait for .NET, so a void callback can run after the member's `Task` has completed.
+- **Lifetime.** Each call registers a new callback, which lives until its scope is disposed: setting a property to `null` or to another delegate doesn't release the previous one, so use a short-lived scope for repeated calls. A callback JS calls after its scope is disposed is dropped, and JS gets undefined. Every handle in its arguments is owned by its scope as it arrives, including ones no reader consumes (arguments past the delegate's arity, members a record skips); a dropped callback's aren't released, though, and stay in JS for the transport's lifetime. In async mode on Server and Hybrid, JS doesn't wait for .NET, so a void callback can run after the member's `Task` has completed.
 - **Properties.** A callback property is setter-only, `SetX(scope, value)`, since JS can't hand the function back; an optional or nullable one takes `null` to clear it, and it has no watch. A read-only one, or a callback anywhere but a parameter or a property (in a data record, say), is skipped (IOP2007).
 - A callback whose *return value* JS uses synchronously (e.g. a formatter `(v) => string`) works in sync mode.
 - It *can't* work in async mode on Server or Hybrid: JS has moved on before the result arrives. The member is skipped in async mode with IOP2005, and the profile can supply a JS-side implementation instead.
@@ -238,6 +241,7 @@ Every fallback is reported with a code so consumers can see and tune what didn't
 | IOP2005 | Skipped in async mode: a member whose callback's result JS uses synchronously (R21) |
 | IOP2006 | Name changed to avoid a collision (R25, R26); a module's static class renamed, or a type skipped, because its path or full name is taken or is a namespace's; a class id prefixed because classes in other namespaces share its name (R27) |
 | IOP2007 | Skipped: a declaration, member or optional parameter the generator can't map (yet), or that uses one, or a class outside the selection |
+| IOP3001 | Analyzer (Info): two or more consecutive awaited writes to live objects outside `await using (scope.BeginBatch())`, each a round trip on Server ([design §3.3](design.md#33-batching-async-mode)). A write is an awaited statement calling an instance method of a `JsObject`-derived type that returns `Task`; reads return `Task<T>` and aren't counted. Reported once per run, on its second statement. A lambda or local function isn't in its method's batch, since it may run later. Info, so builds with `TreatWarningsAsErrors` don't break; raise it with `dotnet_diagnostic.IOP3001.severity = warning` in `.editorconfig` |
 
 ---
 

@@ -17,4 +17,6 @@ public sealed partial record ObservableSnapshot
         reader.Skip();
         return new ObservableSnapshot();
     }
+
+    public static ObservableSnapshot Diff(ObservableSnapshot before, ObservableSnapshot after) => new();
 }

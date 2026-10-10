@@ -38,4 +38,11 @@ public sealed partial record DemoMapElementSnapshot
         }
         return new DemoMapElementSnapshot { Basemap = basemap, Zoom = zoom, Center = center };
     }
+
+    public static DemoMapElementSnapshot Diff(DemoMapElementSnapshot before, DemoMapElementSnapshot after) => new()
+    {
+        Basemap = after.Basemap.IsUndefined || JsDiff.Same(before.Basemap, after.Basemap) ? default : after.Basemap,
+        Zoom = after.Zoom.IsUndefined || JsDiff.Same(before.Zoom, after.Zoom) ? default : after.Zoom,
+        Center = after.Center.IsUndefined || JsDiff.Same(before.Center, after.Center) ? default : after.Center,
+    };
 }

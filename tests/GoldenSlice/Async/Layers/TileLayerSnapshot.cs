@@ -37,4 +37,11 @@ public sealed partial record TileLayerSnapshot
         }
         return new TileLayerSnapshot { Url = url, Title = title, Visible = visible };
     }
+
+    public static TileLayerSnapshot Diff(TileLayerSnapshot before, TileLayerSnapshot after) => new()
+    {
+        Url = after.Url.IsUndefined || JsDiff.Same(before.Url, after.Url) ? default : after.Url,
+        Title = after.Title.IsUndefined || JsDiff.Same(before.Title, after.Title) ? default : after.Title,
+        Visible = after.Visible.IsUndefined || JsDiff.Same(before.Visible, after.Visible) ? default : after.Visible,
+    };
 }

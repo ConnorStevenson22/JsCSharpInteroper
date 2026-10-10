@@ -49,4 +49,14 @@ public sealed partial record MapViewSnapshot
         }
         return new MapViewSnapshot { Center = center, Zoom = zoom, Rotation = rotation, Basemap = basemap, Cursor = cursor, Title = title };
     }
+
+    public static MapViewSnapshot Diff(MapViewSnapshot before, MapViewSnapshot after) => new()
+    {
+        Center = after.Center.IsUndefined || JsDiff.Same(before.Center, after.Center) ? default : after.Center,
+        Zoom = after.Zoom.IsUndefined || JsDiff.Same(before.Zoom, after.Zoom) ? default : after.Zoom,
+        Rotation = after.Rotation.IsUndefined || JsDiff.Same(before.Rotation, after.Rotation) ? default : after.Rotation,
+        Basemap = after.Basemap.IsUndefined || JsDiff.Same(before.Basemap, after.Basemap) ? default : after.Basemap,
+        Cursor = after.Cursor.IsUndefined || JsDiff.Same(before.Cursor, after.Cursor) ? default : after.Cursor,
+        Title = after.Title.IsUndefined || JsDiff.Same(before.Title, after.Title) ? default : after.Title,
+    };
 }

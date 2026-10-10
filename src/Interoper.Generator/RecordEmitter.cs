@@ -61,7 +61,7 @@ internal static class RecordEmitter
         return w.ToString();
     }
 
-    /// <summary>WriteMembers and Read, and for a value-like class Write.</summary>
+    /// <summary>WriteMembers, Read and Diff, and for a value-like class Write.</summary>
     private static void Leaf(CodeWriter w, TypeMap types, ClassDeclaration c, string ns, string name, string modifier, IReadOnlyList<Field> fields)
     {
         if (types.IsValueLike(c))
@@ -82,6 +82,30 @@ internal static class RecordEmitter
         }
         w.Line();
         Read(w, name, modifier, fields);
+        w.Line();
+        Diff(w, name, fields);
+    }
+
+    /// <summary>
+    /// The patch from <c>before</c> to <c>after</c> (R18): each member <c>after</c> defines and that isn't the same
+    /// (<c>JsDiff.Same</c>) in <c>before</c>. Every snapshot member is optional, so undefined is its default.
+    /// </summary>
+    private static void Diff(CodeWriter w, string name, IReadOnlyList<Field> fields)
+    {
+        var header = $"public static {name} Diff({name} before, {name} after) => new()";
+        var members = fields.Where(f => f.Constant is null).ToList();
+        if (members.Count == 0)
+        {
+            w.Line($"{header};");
+            return;
+        }
+        using (w.Block(header, "};"))
+        {
+            foreach (var f in members)
+            {
+                w.Line($"{f.Name} = after.{f.Name}.IsUndefined || JsDiff.Same(before.{f.Name}, after.{f.Name}) ? default : after.{f.Name},");
+            }
+        }
     }
 
     /// <summary>Write and WriteMembers by the subclass, Read by the discriminant.</summary>

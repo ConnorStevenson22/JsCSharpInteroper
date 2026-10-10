@@ -17,4 +17,6 @@ public sealed partial record CollectionSnapshot
         reader.Skip();
         return new CollectionSnapshot();
     }
+
+    public static CollectionSnapshot Diff(CollectionSnapshot before, CollectionSnapshot after) => new();
 }
