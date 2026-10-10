@@ -14,7 +14,7 @@ public sealed class ProfileTests
         Assert.Equal(new ProfileEvents("$events", "on"), profile.Events);
         Assert.Equal("watch", profile.Watch);
         Assert.Equal(["Collection"], profile.Collections);
-        Assert.Contains("MapView.on:click", profile.Include ?? []);
+        Assert.Null(profile.Include); // every module
     }
 
     [Fact]

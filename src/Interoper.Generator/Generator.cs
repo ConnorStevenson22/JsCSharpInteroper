@@ -19,21 +19,31 @@ public sealed record GeneratorResult(IReadOnlyList<Diagnostic> Diagnostics, IRea
 /// <summary>Generates the C# bindings for an IR and a profile (design §4). It writes nothing to disk.</summary>
 public static class Generator
 {
-    /// <exception cref="NotSupportedException">A selected type uses something the generator can't map yet.</exception>
+    /// <summary>
+    /// What it can't map it skips, with a diagnostic (mapping §8); it throws only for a malformed IR or profile
+    /// (<see cref="InvalidDataException"/>).
+    /// </summary>
     public static GeneratorResult Generate(IrDocument ir, Profile profile, GeneratorOptions options)
     {
         var selection = Selection.Select(ir, profile);
         var diagnostics = selection.Diagnostics.ToList();
-        var types = new TypeMap(ir, profile, selection, diagnostics);
+        var types = new TypeMap(ir, profile, selection.Declarations, diagnostics);
         var ns = options.Namespace;
         var files = new List<GeneratedFile>();
+        var paths = new HashSet<string>();
+        // R27: a second type with a path that's taken gets a numeric suffix, reported as IOP2006.
         void Add(string type, string text)
         {
-            if (files.Any(f => f.Path == $"{type}.cs"))
+            var path = $"{type}.cs";
+            for (var n = 2; !paths.Add(path); n++)
             {
-                throw new NotSupportedException($"{type}: two generated types have this name (R27).");
+                path = $"{type}{n}.cs";
             }
-            files.Add(new($"{type}.cs", text));
+            if (path != $"{type}.cs")
+            {
+                diagnostics.Add(new(Diagnostic.Renamed, type, $"its file is {path}: {type}.cs is taken (R27)"));
+            }
+            files.Add(new(path, text));
         }
 
         foreach (var selected in selection.Declarations)

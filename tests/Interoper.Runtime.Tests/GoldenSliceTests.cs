@@ -20,17 +20,42 @@ public sealed class GoldenSliceTests
     public async Task Async(string name) =>
         await GoldenAsyncSuite.Cases.Single(c => c.Name == name).Run(await Realm(GoldenSlice.Async.DemoMaps.Classes));
 
+    // In memory only: in the browser an element's runtime class is found by its tag, which comes with the Razor components.
+    [Fact] // §5, R22
+    public async Task TheElementDrivesItsLiveView()
+    {
+        await using var scope = new JsScope(await Realm(GoldenSlice.Async.DemoMaps.Classes));
+        var element = await GoldenSlice.Async.DemoMapElement.CreateAsync(scope, new()); // a custom element's constructor takes no bag
+        var view = await element.GetViewAsync(scope);
+        Assert.Same(view, await element.GetViewAsync(scope));
+        await element.SetZoomAsync(3);
+        Assert.Equal(3, await view.GetZoomAsync());
+
+        var clicks = new List<GoldenSlice.Async.ClickEvent>();
+        await using (await view.OnClickAsync(scope, clicks.Add))
+        {
+            await element.ClickAtAsync(8, 0); // the button is optional
+            await element.ClickAtAsync(0, 0, GoldenSlice.Async.DemoMapElementClickAtButton._2);
+        }
+        Assert.Equal([(1.0, GoldenSlice.Async.ClickEventButton._0), (0.0, GoldenSlice.Async.ClickEventButton._2)],
+            clicks.Select(c => (c.MapPoint.X.Value, c.Button)));
+    }
+
     [Fact] // design §1: data types are identical in both modes; only live classes, the registry and module functions differ
     public void BothModesHaveTheSameDataTypes()
     {
         var root = Path.Combine(SourceFolder(), "..", "GoldenSlice");
-        string[] live = ["DemoMaps.cs", "Shape.cs", "Point.cs", "Line.cs", "Polygon.cs", "MapView.cs", "Marker.cs", "Measure.cs"];
+        string[] live =
+        [
+            "DemoMaps.cs", "Observable.cs", "Emitter.cs", "Shape.cs", "Point.cs", "Line.cs", "Polygon.cs", "MapView.cs", "Marker.cs", "DemoMapElement.cs",
+            "Measure.cs", "Styles.cs",
+        ];
         var files = Directory.GetFiles(Path.Combine(root, "Async"), "*.cs").Select(Path.GetFileName).Order().ToList();
         Assert.Equal(files, Directory.GetFiles(Path.Combine(root, "Sync"), "*.cs").Select(Path.GetFileName).Order());
         foreach (var file in files.Except(live))
         {
             var async = File.ReadAllText(Path.Combine(root, "Async", file!));
-            Assert.Equal(async.Replace("namespace GoldenSlice.Async;", "namespace GoldenSlice.Sync;"), File.ReadAllText(Path.Combine(root, "Sync", file!)));
+            Assert.Equal(async.Replace("GoldenSlice.Async", "GoldenSlice.Sync"), File.ReadAllText(Path.Combine(root, "Sync", file!)));
         }
     }
 

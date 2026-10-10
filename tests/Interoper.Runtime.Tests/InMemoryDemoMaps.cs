@@ -19,19 +19,25 @@ internal static class InMemoryDemoMaps
         .Define(new(DemoMaps.PolygonId, "geometry.Polygon", args => new FakePolygon(Bag(args))) { Value = true, Members = ["type", "vertices"] })
         .Define(new(DemoMaps.MapViewId, "MapView", args => new FakeMapView(Bag(args)))
         {
-            Members = ["center", "zoom", "rotation", "basemap", "title"],
+            Members = ["center", "zoom", "rotation", "basemap", "cursor", "title"],
         })
         .Define(new(DemoMaps.MarkerId, "Marker", args => new FakeMarker(Bag(args))) { Members = ["position", "label", "style"] })
-        .DefineModule(TransportContract.Measure, new FakeMeasure());
+        .Define(new(DemoMaps.ObservableId, "core.Observable", _ => new FakeObservable()))
+        .Define(new(DemoMaps.EmitterId, "core.Emitter", _ => new FakeEmitter()))
+        .Define(new(DemoMaps.DemoMapElementId, "demo-map.DemoMapElement", _ => new FakeDemoMapElement()) { Members = ["basemap", "zoom", "center"] })
+        .DefineModule(TransportContract.Measure, new FakeMeasure())
+        .DefineModule("@acme/demo-maps/styles.js", new FakeStyles());
 
     // The constructor bag: `new X({ … } = {})`.
     private static Dictionary<string, object?> Bag(object?[] args) => args.FirstOrDefault() as Dictionary<string, object?> ?? [];
 }
 
 /// <summary><c>core.Observable</c>: <c>watch</c> calls back on every change, with the new and the old value.</summary>
-internal abstract class FakeObservable : InMemoryObject
+internal class FakeObservable : InMemoryObject
 {
     private readonly Dictionary<string, List<JsFunction>> watchers = [];
+
+    public override string ClassName => "core.Observable";
 
     public override void Set(string name, object? value)
     {
@@ -61,9 +67,11 @@ internal abstract class FakeObservable : InMemoryObject
 }
 
 /// <summary><c>core.Emitter</c>: <c>on</c> returns a disposable subscription; <c>emit</c> calls the listeners.</summary>
-internal abstract class FakeEmitter : FakeObservable
+internal class FakeEmitter : FakeObservable
 {
     private readonly Dictionary<string, List<JsFunction>> listeners = [];
+
+    public override string ClassName => "core.Emitter";
 
     public override object? Call(string name, object?[] args)
     {
@@ -168,7 +176,7 @@ internal sealed class FakeMapView : FakeEmitter
         Set("zoom", bag.GetValueOrDefault("zoom", 1.0));
         Set("rotation", bag.GetValueOrDefault("rotation", 0.0));
         Set("basemap", bag.GetValueOrDefault("basemap", "plain"));
-        Set("cursor", bag.GetValueOrDefault("cursor", "default"));
+        Set("cursor", bag.GetValueOrDefault("cursor", Undefined.Value));
         Set("title", bag.GetValueOrDefault("title", Undefined.Value));
         Set("container", bag.GetValueOrDefault("container"));
         Set("selected", null);
@@ -191,11 +199,21 @@ internal sealed class FakeMapView : FakeEmitter
             case "flyTo": // the real one resolves after a timer of `duration` ms
                 FlyTo(args[0]);
                 return Task.FromResult<object?>(Undefined.Value);
+            case "screenToMap":
+                return ScreenToMap(args);
             case "markerAt": // the fakes have no markers collection
                 return Task.FromResult<object?>(null);
             default:
                 return base.Call(name, args);
         }
+    }
+
+    // An offset from the center, or an [x, y] pair, in pixels; one pixel is 2^-zoom map units.
+    public FakePoint ScreenToMap(object?[] args)
+    {
+        var (x, y) = args[0] is List<object?> xy ? ((double)xy[0]!, (double)xy[1]!) : ((double)args[0]!, (double)args[1]!);
+        var (center, scale) = ((FakePoint)Get("center")!, Math.Pow(2, (double)Get("zoom")!));
+        return new FakePoint(new() { ["x"] = (double)center.Get("x")! + x / scale, ["y"] = (double)center.Get("y")! - y / scale });
     }
 
     // The target is a Shape, an [x, y] pair, Bounds or { center, zoom }.
@@ -247,6 +265,76 @@ internal sealed class FakeMarker : FakeObservable
     public override object? Get(string name) => name == "displayLabel"
         ? base.Get("labelFormatter") is JsFunction format ? format(this) : base.Get("label") is string label ? label : ""
         : base.Get(name);
+}
+
+/// <summary><c>demo-map.DemoMapElement</c>: its properties are its view's, and <c>clickAt</c> emits the view's click.</summary>
+internal sealed class FakeDemoMapElement : InMemoryObject
+{
+    private readonly FakeMapView view = new([]);
+
+    public override string ClassName => "demo-map.DemoMapElement";
+
+    public override object? Get(string name) => name switch
+    {
+        "view" => view,
+        "basemap" or "zoom" or "center" => view.Get(name),
+        _ => base.Get(name),
+    };
+
+    public override void Set(string name, object? value)
+    {
+        if (name is "basemap" or "zoom" or "center") view.Set(name, value);
+        else base.Set(name, value);
+    }
+
+    public override object? Call(string name, object?[] args)
+    {
+        if (name != "clickAt") return base.Call(name, args);
+        var (x, y) = ((double)args[0]!, (double)args[1]!);
+        var click = new Dictionary<string, object?>
+        {
+            ["type"] = "click",
+            ["x"] = x,
+            ["y"] = y,
+            ["button"] = args.Length > 2 && args[2] is double button ? button : 0.0,
+            ["mapPoint"] = view.ScreenToMap([x, y]),
+        };
+        view.Call("emit", ["click", click]);
+        return Undefined.Value;
+    }
+}
+
+/// <summary>The <c>styles.js</c> module: <c>toRgba</c> for a hex string or a color name, an array or an object.</summary>
+internal sealed class FakeStyles : InMemoryObject
+{
+    private static readonly Dictionary<string, double[]> Named = new()
+    {
+        ["black"] = [0, 0, 0],
+        ["white"] = [255, 255, 255],
+        ["red"] = [255, 0, 0],
+        ["green"] = [0, 128, 0],
+        ["blue"] = [0, 0, 255],
+    };
+
+    public override string ClassName => "styles";
+
+    public override object? Call(string name, object?[] args)
+    {
+        if (name != "toRgba") return base.Call(name, args);
+        switch (args[0])
+        {
+            case string color:
+                var rgb = color is ['#', ..] && color.Length == 7
+                    ? [.. Enumerable.Range(0, 3).Select(i => (double)Convert.ToInt32(color.Substring(1 + (2 * i), 2), 16))]
+                    : Named.GetValueOrDefault(color.ToLowerInvariant()) ?? throw new JsException("RangeError", $"Unknown color: {color}", null);
+                return new Dictionary<string, object?> { ["r"] = rgb[0], ["g"] = rgb[1], ["b"] = rgb[2], ["a"] = 1.0 };
+            case List<object?> rgba:
+                return new Dictionary<string, object?> { ["r"] = rgba[0], ["g"] = rgba[1], ["b"] = rgba[2], ["a"] = rgba.Count > 3 ? rgba[3] : 1.0 };
+            default: // { a: 1, ...color }
+                var rgbaObject = (Dictionary<string, object?>)args[0]!;
+                return new Dictionary<string, object?>(rgbaObject) { ["a"] = rgbaObject.GetValueOrDefault("a", 1.0) };
+        }
+    }
 }
 
 /// <summary>The <c>measure.js</c> module. It reads fields only, so plain objects work as well as instances.</summary>

@@ -27,7 +27,7 @@ node --test "fixtures/demo-maps/test/*.test.mjs"
 | Open-ended literal union | R10 | `Cursor` = known values `\| (string & {})` (`MapView`) |
 | Number-literal union | §2 | `ClickEvent.button` (`MapView`) |
 | Homogeneous numeric tuples | R5 | `Line.path`, `Polygon.vertices`, `CenterAndZoom.center` |
-| `null \| undefined` positions | R2, R3 | `MapView.title?: string \| null`, `MapView.selected: Marker \| null`, `Marker.label`, `Marker.labelFormatter`, `Style` colors, `Collection.at` |
+| `null \| undefined` positions | R2, R3 | `MapView.title?: string \| null`, `MapView.cursor?`, `MapView.selected: Marker \| null`, `Marker.label`, `Marker.labelFormatter`, `Style` colors, `Collection.at` |
 | DOM element type | R13 | `MapView.container: HTMLElement \| null` |
 | `Partial<Pick<…>>` constructor bags | R12, R18 | `Point`, `Line`, `Polygon` constructors; `MapViewOptions`; `MarkerOptions` (also extends with a wider `position`) |
 | Promise methods | R8 | `MapView.flyTo`, `MapView.markerAt` |
@@ -43,7 +43,7 @@ node --test "fixtures/demo-maps/test/*.test.mjs"
 | Module functions | §5 | `distance` (`measure`); `toRgba` (`styles`) |
 | Custom element: attributes, properties, events, slots | design §2 | `<demo-map>` (`demo-map`, `custom-elements.json`): attributes `basemap`, `zoom`; properties `view`, `center`; events `demo-map-click`, `demo-map-zoom-change` (pairs with `zoom` for `@bind`), `demo-map-ready`; slots default and `toolbar` |
 
-The golden slice (`tests/GoldenSlice`) is the profile's `include`.
+The golden slice (`tests/GoldenSlice`) is the fixture's generated bindings: every declaration the generator can map.
 
 ## Node and the browser
 
@@ -61,6 +61,6 @@ Provisional; the generator (plan phase 2) fixes the schema.
 | `runtimeClassProperty` | Instance property holding the runtime class name; maps a JS object to its most-derived C# type. |
 | `valueClasses` | Classes that also get an `XSnapshot` record used by value (R16). Every other class is an entity (R15). |
 | `events` | Event convention: `mapProperty` is the phantom event-map property (`$events`), `subscribe` the method that takes `(type, listener)` and returns a `Subscription` with `dispose()`. |
-| `watch` | Method that takes `(propertyName, callback)` and returns a `Subscription` with `dispose()`. |
+| `watch` | Method that takes `(propertyName, callback)` and returns a `Subscription` with `dispose()`. Every property of a class that has it gets a watch. |
 | `collections` | Generic classes treated as collections of their type argument. |
-| `include` | What to emit: a whole declaration (`"Point"`, `"distance"`), or a class's member (`"MapView.zoom"`), event (`"MapView.on:click"`) or watch (`"MapView.watch:zoom"`). Data types they use come in whole. Watches are emitted only where listed; absent, everything else is. |
+| `include` | What to emit: module specifier globs (`"@acme/demo-maps/geometry.js"`; `*` matches any characters, `/` included). Every exported declaration of a matching module, the bases of its classes and the data types they use are emitted. Absent, as here, means every module. |

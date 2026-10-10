@@ -21,6 +21,12 @@ public static class GoldenAsyncSuite
         ("click event and zoom watch, delivered then released (R24)", InScope(EventAndWatch)),
         ("module function", InScope(ModuleFunction)),
         ("batching: N writes are one round trip", InScope(Batching)),
+        ("extensible enum: known and other values (R10)", InScope(ExtensibleEnum)),
+        ("overloads (R23)", InScope(Overloads)),
+        ("Promise of an optional entity (R8, R3)", InScope(PromiseOfAnEntity)),
+        ("module function over a union (R2, §5)", InScope(UnionModuleFunction)),
+        ("a watch on every property, delivered then released (§5)", InScope(Watches)),
+        ("base classes are live classes (R19)", InScope(Bases)),
     ];
 
     private static async Task CreateSnapshotApply(JsScope scope)
@@ -154,6 +160,94 @@ public static class GoldenAsyncSuite
         }
         Equal(start + 1, scope.Realm.RoundTrips);
         Equal(new MapViewSnapshot { Center = new PointSnapshot { X = 1, Y = 1 }, Zoom = 5, Rotation = 10, Basemap = Basemap.Relief, Title = "batched" }, await view.SnapshotAsync());
+    }
+
+    private static async Task ExtensibleEnum(JsScope scope)
+    {
+        var view = await MapView.CreateAsync(scope, new MapViewSnapshot { Cursor = Cursor.Pointer });
+        Equal<Opt<Cursor>>(Cursor.Pointer, await view.GetCursorAsync());
+        await view.SetCursorAsync(new Cursor("grab")); // any CSS cursor
+        Equal<Opt<Cursor>>(new Cursor("grab"), await view.GetCursorAsync());
+        Equal(new MapViewSnapshot { Center = new PointSnapshot { X = 0, Y = 0 }, Zoom = 1, Rotation = 0, Basemap = Basemap.Plain, Cursor = new Cursor("grab") }, await view.SnapshotAsync());
+        await view.SetCursorAsync(default);
+        Expect((await view.GetCursorAsync()).IsUndefined, "an unset cursor to be undefined");
+    }
+
+    private static async Task Overloads(JsScope scope)
+    {
+        var view = await MapView.CreateAsync(scope, new MapViewSnapshot { Center = new PointSnapshot { X = 1, Y = 2 }, Zoom = 1 });
+        Equal(new PointSnapshot { X = 2, Y = 0 }, await view.ScreenToMapAsync(2, 4)); // one pixel is 2^-zoom map units
+        Equal(new PointSnapshot { X = 2, Y = 0 }, await view.ScreenToMapAsync(new double[] { 2, 4 }));
+    }
+
+    private static async Task PromiseOfAnEntity(JsScope scope)
+    {
+        var view = await MapView.CreateAsync(scope, new MapViewSnapshot());
+        Expect((await view.MarkerAtAsync(scope, 0, 0)).IsNull, "no marker at the center");
+    }
+
+    private static async Task UnionModuleFunction(JsScope scope)
+    {
+        Equal(new Rgba { R = 255, G = 0, B = 0, A = 1 }, await Styles.ToRgbaAsync(scope.Realm, "#ff0000"));
+        Equal(new Rgba { R = 0, G = 0, B = 255, A = 1 }, await Styles.ToRgbaAsync(scope.Realm, "blue"));
+        Equal(new Rgba { R = 1, G = 2, B = 3, A = 0.5 }, await Styles.ToRgbaAsync(scope.Realm, new double[] { 1, 2, 3, 0.5 }));
+        Equal(new Rgba { R = 1, G = 2, B = 3, A = 1 }, await Styles.ToRgbaAsync(scope.Realm, new Rgba { R = 1, G = 2, B = 3 }));
+    }
+
+    private static async Task Watches(JsScope scope)
+    {
+        var view = await MapView.CreateAsync(scope, new MapViewSnapshot());
+        var marker = await Marker.CreateAsync(scope, new MarkerSnapshot());
+        var baseline = await Count(scope.Realm);
+        string[] expected = ["center 1,2", "rotation 40", "basemap Night", "cursor crosshair", "title null", "label a", "style pin-7", "position 3,4"];
+        var seen = new List<string>();
+        var all = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var selected = new TaskCompletionSource<Opt<Marker>>(TaskCreationOptions.RunContinuationsAsynchronously);
+        void Saw(string what)
+        {
+            lock (seen)
+            {
+                seen.Add(what);
+                if (seen.Count == expected.Length) all.TrySetResult();
+            }
+        }
+        await using (await view.WatchCenterAsync(scope, center => Saw($"center {center.X},{center.Y}")))
+        await using (await view.WatchRotationAsync(scope, rotation => Saw($"rotation {rotation}")))
+        await using (await view.WatchBasemapAsync(scope, basemap => Saw($"basemap {basemap}")))
+        await using (await view.WatchCursorAsync(scope, cursor => Saw($"cursor {cursor}")))
+        await using (await view.WatchTitleAsync(scope, title => Saw($"title {title}")))
+        await using (await view.WatchSelectedAsync(scope, value => selected.TrySetResult(value)))
+        await using (await marker.WatchLabelAsync(scope, label => Saw($"label {label}")))
+        await using (await marker.WatchStyleAsync(scope, style => Saw($"style {(style.TryGetValue(out IconStyle? icon) ? icon.Name : style)}")))
+        await using (await marker.WatchPositionAsync(scope, position => Saw($"position {position.X},{position.Y}")))
+        {
+            await view.SetCenterAsync(new PointSnapshot { X = 1, Y = 2 });
+            await view.SetRotationAsync(400);
+            await view.SetBasemapAsync(Basemap.Night);
+            await view.SetCursorAsync(Cursor.Crosshair);
+            await view.SetTitleAsync(null);
+            await view.SetSelectedAsync(marker);
+            await marker.SetLabelAsync("a");
+            await marker.SetStyleAsync(new IconStyle { Name = IconName.Pin7 });
+            await marker.SetPositionAsync(new double[] { 3, 4 });
+            await all.Task.WaitAsync(Timeout);
+            Expect((await selected.Task.WaitAsync(Timeout)).TryGetValue(out Marker? m) && ReferenceEquals(m, marker), "the selected marker to be the marker");
+        }
+        Equal(baseline, await Count(scope.Realm)); // released before the scope
+        await view.SetRotationAsync(10);
+        await view.GetRotationAsync(); // a round trip after the change: a call back would have come first
+        lock (seen)
+        {
+            Equal(string.Join("; ", expected.Order()), string.Join("; ", seen.Order())); // each host delivers them in order, but Server may run them out of it
+        }
+    }
+
+    private static async Task Bases(JsScope scope)
+    {
+        Expect(await MapView.CreateAsync(scope, new MapViewSnapshot()) is Emitter and Observable, "a MapView to be an Emitter and an Observable");
+        Expect(await Emitter.CreateAsync(scope, new EmitterSnapshot()) is Emitter and not MapView, "an Emitter to be just an Emitter");
+        Expect((await Observable.CreateAsync(scope, new ObservableSnapshot())).GetType() == typeof(Observable), "an Observable to be just an Observable");
+        Expect(await Point.CreateAsync(scope, new PointSnapshot()) is Observable, "a Point to be an Observable");
     }
 
     // --- Helpers ---

@@ -18,15 +18,18 @@ public sealed record Profile
 
     public ProfileEvents? Events { get; init; }
 
-    /// <summary>The method that takes <c>(propertyName, callback)</c> and returns a subscription.</summary>
+    /// <summary>
+    /// The method that takes <c>(propertyName, callback)</c> and returns a subscription: every property of a class that
+    /// has it, its own or a base's, gets a watch (mapping §5).
+    /// </summary>
     public string? Watch { get; init; }
 
     /// <summary>Generic classes treated as collections of their type argument.</summary>
     public IReadOnlyList<string> Collections { get; init; } = [];
 
     /// <summary>
-    /// What to emit; absent means everything but watches. <c>"Point"</c> is a whole declaration, <c>"MapView.zoom"</c> one member,
-    /// <c>"MapView.on:click"</c> one event and <c>"MapView.watch:zoom"</c> one property watch (<see cref="Selection"/>).
+    /// The modules to emit, as module specifier globs in which <c>*</c> matches any characters, <c>/</c> included
+    /// (<c>"@acme/maps/layers/*"</c>); absent means every module (<see cref="Selection"/>).
     /// </summary>
     public IReadOnlyList<string>? Include { get; init; }
 

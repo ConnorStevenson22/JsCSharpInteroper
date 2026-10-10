@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text.Json;
 using Interoper.Generator.Ir;
 
@@ -43,9 +44,13 @@ internal sealed class TypeMap
     private readonly Dictionary<string, DataType?> unions = [];
     private readonly Dictionary<Declaration, IReadOnlyList<Field>> fields = new(ReferenceEqualityComparer.Instance);
     private readonly List<DataType> owned = [];
+    private readonly HashSet<ClassDeclaration> watchable = new(ReferenceEqualityComparer.Instance);
 
-    /// <summary>Selected declarations stand for themselves (a class trimmed to its included members).</summary>
-    public TypeMap(IrDocument ir, Profile profile, Selection selection, ICollection<Diagnostic> diagnostics)
+    /// <summary>
+    /// <paramref name="selected"/> stand for themselves (a class trimmed to what can be mapped); its classes are the
+    /// live classes to emit.
+    /// </summary>
+    public TypeMap(IrDocument ir, Profile profile, IEnumerable<Selected> selected, ICollection<Diagnostic> diagnostics)
     {
         foreach (var module in ir.Modules)
         {
@@ -54,10 +59,19 @@ internal sealed class TypeMap
                 declarations[(module.Specifier, declaration.Name)] = declaration;
             }
         }
-        foreach (var selected in selection.Declarations)
+        foreach (var s in selected)
         {
-            declarations[(selected.Module, selected.Declaration.Name)] = selected.Declaration;
-            if (selected.Declaration is ClassDeclaration c)
+            // §5: a class whose own or inherited methods include the profile's watch method has watches.
+            if (s.Declaration is ClassDeclaration c && profile.Watch is { } watch &&
+                Ancestors(declarations.GetValueOrDefault((s.Module, c.Name)) as ClassDeclaration).Any(k => k.Members.Any(m => m is MethodMember && m.Name == watch)))
+            {
+                watchable.Add(c);
+            }
+        }
+        foreach (var s in selected)
+        {
+            declarations[(s.Module, s.Declaration.Name)] = s.Declaration;
+            if (s.Declaration is ClassDeclaration c)
             {
                 classes.Add(c);
             }
@@ -83,6 +97,9 @@ internal sealed class TypeMap
     /// <summary>The emitted live classes, in IR order.</summary>
     public IReadOnlyList<ClassDeclaration> Classes => classes;
 
+    /// <summary>§5: whether the class has the profile's watch method, its own or a base's, so each of its properties gets <c>WatchX</c>.</summary>
+    public bool HasWatches(ClassDeclaration c) => watchable.Contains(c);
+
     /// <summary>The emitted class this class's live class derives from; otherwise it derives from <c>JsObject</c>.</summary>
     public ClassDeclaration? LiveBase(ClassDeclaration c) =>
         c.Extends is RefType r && Find(r) is ClassDeclaration b && classes.Contains(b) ? b : null;
@@ -105,14 +122,12 @@ internal sealed class TypeMap
     }
 
     /// <summary>The string constant every concrete subclass of a closed base declares: <c>type</c> (R19 step 2).</summary>
-    public string Discriminant(ClassDeclaration c)
-    {
-        var subclasses = ConcreteSubclasses(c).Select(Fields).ToList();
-        return subclasses.FirstOrDefault()?.Where(IsStringConstant).Select(f => f.JsName)
-                .FirstOrDefault(name => subclasses.All(s => s.Any(f => f.JsName == name && IsStringConstant(f))))
-            ?? throw new NotSupportedException($"{c.Name}: its subclasses have no string discriminant to read it by (R19, IOP2003).");
+    public string Discriminant(ClassDeclaration c) => DiscriminantOrNull(c) ?? throw Unreachable(c.Name);
 
-        static bool IsStringConstant(Field f) => f.Constant is { ValueKind: JsonValueKind.String };
+    private string? DiscriminantOrNull(ClassDeclaration c)
+    {
+        var subclasses = ConcreteSubclasses(c).Select(StringConstants).ToList();
+        return subclasses.FirstOrDefault()?.FirstOrDefault(name => subclasses.All(s => s.Contains(name)));
     }
 
     // --- Types ---
@@ -128,7 +143,7 @@ internal sealed class TypeMap
         TupleType { Required: null, Rest: false, Elements.Count: > 0 } t
             when t.Elements.Select(e => Map(e, owner).Name).Distinct().Count() == 1 => CsType.Array(Map(t.Elements[0], owner)), // R5
         UnionType u when Union(owner, u) is { } union => Own(union),
-        _ => throw NotSupported(owner, $"the IR type {type.GetType().Name}"),
+        _ => throw Unreachable(owner),
     };
 
     /// <summary>
@@ -164,7 +179,7 @@ internal sealed class TypeMap
         EnumDeclaration e => TypeOf(Enum(e)),
         AliasDeclaration a when Union(Naming.Type(a.Name), a.Type) is { } union => TypeOf(union),
         AliasDeclaration a => Map(Flatten(a.Type).Single(t => !IsNullish(t)), Naming.Type(a.Name)),
-        _ => throw NotSupported(declaration.Name, "an entity in a data position (R17)"),
+        _ => throw Unreachable(declaration.Name),
     };
 
     private static CsType TypeOf(DataType type) => type switch
@@ -196,7 +211,7 @@ internal sealed class TypeMap
         {
             return known;
         }
-        var flat = Flatten(type).Where(t => !IsNullish(t)).ToList();
+        var flat = Values(type);
         var literals = flat.OfType<LiteralType>().Select(l => l.Value).ToList();
         DataType? result =
             flat.Count < 2 ? null
@@ -218,24 +233,14 @@ internal sealed class TypeMap
             return (EnumType)known!;
         }
         var values = e.Members.Select(m => m.Value).ToList();
-        if (values.Select(v => v.ValueKind).Distinct().Count() > 1)
-        {
-            throw NotSupported(e.Name, "an enum of strings and numbers");
-        }
         var result = new EnumType(name, EnumMembers(name, values, e.Members.Select(m => m.Name)), Extensible: false);
         unions[name] = result;
         return result;
     }
 
-    /// <summary>R25: names for the values; numbers must be integers.</summary>
-    private List<(string, JsonElement)> EnumMembers(string type, List<JsonElement> values, IEnumerable<string> names)
-    {
-        if (values.FirstOrDefault(v => v.ValueKind == JsonValueKind.Number && !v.TryGetInt32(out _)) is { ValueKind: JsonValueKind.Number } value)
-        {
-            throw NotSupported(type, $"the non-integer enum value {value}");
-        }
-        return [.. Naming.EnumMembers(names, type, diagnostics).Zip(values)];
-    }
+    /// <summary>R25: names for the values.</summary>
+    private List<(string, JsonElement)> EnumMembers(string type, List<JsonElement> values, IEnumerable<string> names) =>
+        [.. Naming.EnumMembers(names, type, diagnostics).Zip(values)];
 
     /// <summary>The cases of a union, after mapping (R5: one per C# type).</summary>
     private List<UnionCase> Cases(string name, List<IrType> types)
@@ -243,11 +248,7 @@ internal sealed class TypeMap
         var cases = new List<UnionCase>();
         foreach (var type in types)
         {
-            var mapped = type is LiteralType ? throw NotSupported(name, "a literal in a union of other types") : Map(type, name);
-            if (mapped.IsValueType)
-            {
-                throw NotSupported(name, $"the value-type case {mapped.Name} (R2 keeps unions non-boxing)");
-            }
+            var mapped = Map(type, name);
             if (cases.All(c => c.Type.Name != mapped.Name))
             {
                 cases.Add(new(mapped, type is RefType r ? Find(r) : null));
@@ -263,6 +264,9 @@ internal sealed class TypeMap
         RefType { Module: not null } r when Find(r) is AliasDeclaration { Type: UnionType } a => Flatten(a.Type),
         _ => [type],
     };
+
+    /// <summary>A union's members after R6, without null and undefined.</summary>
+    private List<IrType> Values(IrType type) => [.. Flatten(type).Where(t => !IsNullish(t))];
 
     /// <summary>R10: <c>string &amp; {}</c>, which keeps a literal union open-ended.</summary>
     private static bool IsOpenString(IrType type) =>
@@ -290,7 +294,7 @@ internal sealed class TypeMap
             InterfaceDeclaration i when i.IndexSignatures.Count == 0 => DataFields(name, Members(i)),
             AliasDeclaration { Type: ObjectType { IndexSignatures.Count: 0 } o } => DataFields(name, o.Members),
             ClassDeclaration c => SnapshotFields(c),
-            _ => throw NotSupported(declaration.Name, "an index signature"),
+            _ => throw Unreachable(declaration.Name),
         };
         fields[declaration] = result;
         return result;
@@ -348,7 +352,7 @@ internal sealed class TypeMap
             {
                 result.Add(new(p.Name, "", null, Required: true, Constant: constant.Value));
             }
-            else if (!p.Readonly && !UsesEntity(p.Type))
+            else if (IsSnapshotMember(p))
             {
                 var mapped = Slot(p.Type, Naming.OwnedType(type, p.Name)).Type;
                 var name = Naming.Member(taken, Naming.Pascal(p.Name), $"{SnapshotName(c)}.{p.Name}", diagnostics);
@@ -361,6 +365,9 @@ internal sealed class TypeMap
         }
         return result;
     }
+
+    /// <summary>R18: a writable data member is in the snapshot; R17: one that mentions an entity isn't.</summary>
+    private bool IsSnapshotMember(PropertyMember p) => !p.Static && p.Type is not LiteralType && !p.Readonly && !UsesEntity(p.Type);
 
     /// <summary>Whether a type mentions an entity class, which only a scope can read (R17).</summary>
     private bool UsesEntity(IrType type) => Mentions(type, c => !IsValueLike(c));
@@ -379,8 +386,238 @@ internal sealed class TypeMap
         _ => false,
     };
 
+    // --- What can't be mapped (mapping §8) ---
+
+    /// <summary>
+    /// Why a type can't be mapped where it is, or null: in a live class's member, parameter, result or payload
+    /// (<paramref name="live"/>, where an entity or <c>this</c> is a live object), or in a data record or module
+    /// function. It checks what <see cref="Slot"/> would refuse, but not the declarations the type names: selection
+    /// checks each of those itself (<see cref="Problem(Declaration)"/>).
+    /// </summary>
+    public Unmappable? Problem(IrType type, bool live)
+    {
+        if (type is UnionType u && u.Types.Any(IsNullish))
+        {
+            var rest = u.Types.Where(t => !IsNullish(t)).ToList();
+            if (rest.Count == 0)
+            {
+                return new("only `null` and `undefined`");
+            }
+            type = rest.Count == 1 ? rest[0] : u with { Types = rest };
+        }
+        var entity = type is ThisType || type is RefType { Module: not null } r && Find(r) is ClassDeclaration c && !IsValueLike(c);
+        return live && entity ? null : MapProblem(type);
+    }
+
+    /// <summary>A result's, without its Promise (R8); <c>void</c> is none.</summary>
+    public Unmappable? ResultProblem(IrType returns, bool live) => returns switch
+    {
+        RefType { Module: null, Name: "Promise", Args: [var inner] } => ResultProblem(inner, live),
+        PrimitiveType { Name: "void" or "undefined" } => null,
+        _ => Problem(returns, live),
+    };
+
+    /// <summary>A live class's property: its getter's and setter's types, and its snapshot member's (R18). A constant is fine (R20).</summary>
+    public Unmappable? Problem(PropertyMember p) =>
+        p.Type is LiteralType ? null
+        : Problem(p.Type, live: true) ?? (p.WriteType is { } w ? Problem(w, live: true) : null) ?? (IsSnapshotMember(p) ? Problem(p.Type, live: false) : null);
+
+    /// <summary>
+    /// A declaration's own problem, or null: a data record's members (R15), an enum's values, what a union alias becomes
+    /// (R2, R9, R19), and a closed base's discriminant (R19 step 2).
+    /// </summary>
+    public Unmappable? Problem(Declaration declaration) => declaration switch
+    {
+        InterfaceDeclaration i => RecordProblem(i.IndexSignatures.Count, Members(i)),
+        AliasDeclaration { Type: ObjectType o } => RecordProblem(o.IndexSignatures.Count, o.Members.OfType<PropertyMember>()),
+        AliasDeclaration a => Values(a.Type) switch
+        {
+            [] => new("only `null` and `undefined`"),
+            [var single] => MapProblem(single),
+            _ => UnionProblem(a.Type, a.Name),
+        },
+        EnumDeclaration e => e.Members.Select(m => m.Value.ValueKind).Distinct().Count() > 1 ? new("an enum of strings and numbers")
+            : NonInteger(e.Members.Select(m => m.Value)),
+        ClassDeclaration c => IsClosed(c) && DiscriminantOrNull(c) is null ? new($"the closed base `{c.Name}`, whose subclasses have no string discriminant (R19)") : null,
+        _ => null,
+    };
+
+    /// <summary>What <see cref="Map"/> refuses, without the declarations the type names.</summary>
+    private Unmappable? MapProblem(IrType type) => type switch
+    {
+        PrimitiveType { Name: "number" or "string" or "boolean" } => null,
+        RefType { Module: not null } r when Find(r) is { } d =>
+            d is ClassDeclaration c && !IsValueLike(c) ? new($"the entity `{c.Name}` in a data position (R17)") : null,
+        ArrayType a => MapProblem(a.Element),
+        TupleType { Required: null, Rest: false, Elements.Count: > 0 } t => t.Elements.Select(MapProblem).FirstOrDefault(p => p is not null)
+            ?? (NameOf(t) is null ? new("a tuple of different types") : null), // R5
+        UnionType u => Values(u).Count < 2 ? new("a nullable array or tuple element") : UnionProblem(u, null),
+        PrimitiveType p => new($"`{p.Name}` here"),
+        LiteralType => new("a literal here"),
+        ThisType => new("`this` outside a live member"),
+        RefType r => new($"`{r.Name}` here"),
+        ObjectType => new("an inline object type"),
+        TupleType => new("a tuple with optional or rest elements"),
+        IntersectionType => new("an intersection"),
+        _ => new($"the IR type {type.GetType().Name}"),
+    };
+
+    /// <summary>
+    /// What <see cref="Union"/> and the union reader (R19) refuse: a literal next to other types, a value-type case (R2
+    /// keeps unions non-boxing), a non-integer number, a discriminant that isn't a string on every case, or cases it
+    /// can't tell apart, which is IOP2003.
+    /// </summary>
+    private Unmappable? UnionProblem(IrType type, string? name)
+    {
+        var flat = Values(type);
+        var label = name is null ? "a union" : $"the union `{name}`";
+        var ambiguous = name is null ? "an ambiguous union" : $"the ambiguous union `{name}`";
+        if (flat.All(t => t is LiteralType { Value.ValueKind: JsonValueKind.String } || IsOpenString(t)))
+        {
+            return null; // R9, R10
+        }
+        if (flat.All(t => t is LiteralType { Value.ValueKind: JsonValueKind.Number }))
+        {
+            return NonInteger(flat.Select(t => ((LiteralType)t).Value));
+        }
+        if (flat.Any(t => t is LiteralType))
+        {
+            return new($"{label} of a literal and other types");
+        }
+        var cases = new List<(string? Name, JsonKind Json, Declaration? Declaration)>();
+        foreach (var t in flat)
+        {
+            if (MapProblem(t) is { } problem)
+            {
+                return problem;
+            }
+            if (ValueType(t) is { } valueType)
+            {
+                return new($"{label} with the value-type case {valueType} (R2)");
+            }
+            if (NameOf(t) is not { } caseName || cases.All(c => c.Name != caseName)) // R5
+            {
+                cases.Add((NameOf(t), JsonOf(t), t is RefType r ? Find(r) : null));
+            }
+        }
+        if (type is UnionType u && u.Types.Count(t => !IsNullish(t)) == flat.Count && u.Discriminant is { } discriminant) // as Union() reads it
+        {
+            return cases.All(c => c.Declaration is { } d && StringConstants(d).Contains(discriminant)) ? null
+                : new($"{label}, whose discriminant `{discriminant}` isn't a string on every case (R19)");
+        }
+        var objects = cases.Where(c => c.Json == JsonKind.Object).ToList();
+        if (cases.Except(objects).GroupBy(c => c.Json).FirstOrDefault(g => g.Count() > 1) is { } same)
+        {
+            return new($"{ambiguous}: {string.Join(" and ", same.Select(c => c.Name ?? "an anonymous type"))} are both JSON {same.Key} (R19)",
+                Diagnostic.Ambiguous);
+        }
+        foreach (var c in objects.Count > 1 ? objects : [])
+        {
+            var others = objects.Where(o => o != c).Select(o => WireNames(o.Declaration)?.All).ToList();
+            if (WireNames(c.Declaration) is not { } own || others.Any(o => o is null) ||
+                !own.Required.Any(m => others.All(o => !o!.Contains(m))))
+            {
+                return new($"{ambiguous}: {c.Name} has no required member the other cases lack (R19)", Diagnostic.Ambiguous);
+            }
+        }
+        return null;
+    }
+
+    private static Unmappable? NonInteger(IEnumerable<JsonElement> values) =>
+        values.FirstOrDefault(v => v.ValueKind == JsonValueKind.Number && !v.TryGetInt32(out _)) is { ValueKind: JsonValueKind.Number } value
+            ? new($"the non-integer enum value {value}")
+            : null;
+
+    private Unmappable? RecordProblem(int indexSignatures, IEnumerable<PropertyMember> members) =>
+        indexSignatures > 0 ? new("an index signature")
+        : members.Where(p => !p.Static && p.Type is not LiteralType).Select(p => Problem(p.Type, live: false)).FirstOrDefault(p => p is not null);
+
+    /// <summary>The string constants of a record, or a class's own (R20), in order.</summary>
+    private List<string> StringConstants(Declaration declaration) =>
+        [.. RecordMembers(declaration).Where(p => p.Type is LiteralType { Value.ValueKind: JsonValueKind.String }).Select(p => p.Name)];
+
+    /// <summary>
+    /// R19 step 3 without mapping: an object case's required wire members (no more than its record has) and the names
+    /// of all its members and its bases' (no fewer); null when it isn't a record.
+    /// </summary>
+    private (List<string> Required, HashSet<string> All)? WireNames(Declaration? declaration)
+    {
+        if (declaration is not (InterfaceDeclaration or AliasDeclaration { Type: ObjectType } or ClassDeclaration))
+        {
+            return null;
+        }
+        var members = RecordMembers(declaration).ToList();
+        var required = members.Where(p => p.Type is LiteralType || declaration is not ClassDeclaration && !p.Optional).Select(p => p.Name).ToList();
+        if (declaration is ClassDeclaration closed && IsClosed(closed) && DiscriminantOrNull(closed) is { } discriminant)
+        {
+            required.Insert(0, discriminant);
+        }
+        var all = declaration is ClassDeclaration c ? Ancestors(c).SelectMany(RecordMembers) : members;
+        return (required, [.. all.Select(p => p.Name)]);
+    }
+
+    private IEnumerable<PropertyMember> RecordMembers(Declaration declaration) => (declaration switch
+    {
+        InterfaceDeclaration i => Members(i),
+        AliasDeclaration { Type: ObjectType o } => o.Members.OfType<PropertyMember>(),
+        ClassDeclaration c => c.Members.OfType<PropertyMember>(),
+        _ => [],
+    }).Where(p => !p.Static);
+
+    /// <summary>A class and the classes it extends.</summary>
+    private IEnumerable<ClassDeclaration> Ancestors(ClassDeclaration? c)
+    {
+        for (; c is not null; c = c.Extends is RefType r ? Find(r) as ClassDeclaration : null)
+        {
+            yield return c;
+        }
+    }
+
+    /// <summary>The C# type <see cref="Map"/> gives, if it's a value type (R2).</summary>
+    private string? ValueType(IrType type) => type switch
+    {
+        PrimitiveType { Name: "number" } => "double",
+        PrimitiveType { Name: "boolean" } => "bool",
+        RefType { Module: not null } r => Find(r) switch
+        {
+            EnumDeclaration e => Naming.Type(e.Name),
+            AliasDeclaration { Type: not ObjectType } a => Values(a.Type) is [var single] ? ValueType(single) : Naming.Type(a.Name),
+            _ => null,
+        },
+        _ => null,
+    };
+
+    /// <summary>The name of the C# type <see cref="Map"/> gives, or null for an anonymous one.</summary>
+    private string? NameOf(IrType type) => type switch
+    {
+        PrimitiveType { Name: "number" } => "double",
+        PrimitiveType { Name: "string" } => "string",
+        PrimitiveType { Name: "boolean" } => "bool",
+        RefType { Module: not null } r => Find(r) switch
+        {
+            ClassDeclaration c => IsValueLike(c) ? SnapshotName(c) : Naming.Type(c.Name),
+            AliasDeclaration { Type: not ObjectType } a when Values(a.Type) is [var single] => NameOf(single),
+            { } d => Naming.Type(d.Name),
+            null => null,
+        },
+        ArrayType a => NameOf(a.Element) is { } element ? element + "[]" : null,
+        TupleType { Required: null, Rest: false, Elements.Count: > 0 } t =>
+            t.Elements.Select(NameOf).Distinct().ToList() is [{ } element] ? element + "[]" : null,
+        _ => null,
+    };
+
+    /// <summary>The JSON a union case starts with (R19 step 4), once value types are ruled out.</summary>
+    private JsonKind JsonOf(IrType type) => type switch
+    {
+        PrimitiveType => JsonKind.String,
+        ArrayType or TupleType => JsonKind.Array,
+        RefType { Module: not null } r when Find(r) is AliasDeclaration { Type: not ObjectType } a &&
+            Values(a.Type) is [var single] => JsonOf(single),
+        _ => JsonKind.Object,
+    };
+
     private Declaration? Find(RefType type) => type.Module is { } module ? declarations.GetValueOrDefault((module, type.Name)) : null;
 
-    private static NotSupportedException NotSupported(string subject, string what) =>
-        new($"{subject}: {what} isn't supported yet.");
+    /// <summary>What selection skips can't reach the mapping.</summary>
+    private static UnreachableException Unreachable(string subject) => new($"{subject}: selection should have skipped this.");
 }

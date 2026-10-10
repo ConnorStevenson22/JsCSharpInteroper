@@ -43,13 +43,13 @@ internal sealed class LiveEmitter
     }
 
     /// <summary>
-    /// A live class (§5): its properties, methods, events (R24) and watches, <c>Create</c> unless it's abstract (R18), and
+    /// A live class (§5): its properties, methods, events (R24) and a watch per property, <c>Create</c> unless it's abstract (R18), and
     /// <c>Snapshot</c>/<c>Apply</c>. An abstract value-like class is closed (R4).
     /// </summary>
     public static string Class(TypeMap types, Profile profile, GeneratorOptions options, ICollection<Diagnostic> diagnostics, Selected selected)
     {
         var e = new LiveEmitter(types, profile, options, diagnostics);
-        e.ClassBody((ClassDeclaration)selected.Declaration, selected.Watches);
+        e.ClassBody((ClassDeclaration)selected.Declaration);
         return e.File();
     }
 
@@ -71,7 +71,7 @@ internal sealed class LiveEmitter
         return CodeWriter.CSharp(ns, [.. usings.OfType<string>()]) + w.ToString();
     }
 
-    private void ClassBody(ClassDeclaration c, IReadOnlyList<PropertyMember> watches)
+    private void ClassBody(ClassDeclaration c)
     {
         var name = Naming.Type(c.Name);
         var snapshot = TypeMap.SnapshotName(c);
@@ -102,11 +102,11 @@ internal sealed class LiveEmitter
             }
             foreach (var e in c.Events)
             {
-                Subscription(name, "On" + Naming.Pascal(e.Name), profile.Events!.Subscribe!, e.Name, e.Type, $"{name}.on:{e.Name}");
+                Subscription(name, "On" + Naming.Pascal(e.Name), profile.Events!.Subscribe!, e.Name, e.Type, $"{name}.on:{e.Name}", optional: false);
             }
-            foreach (var p in watches)
+            foreach (var p in types.HasWatches(c) ? c.Members.OfType<PropertyMember>().Where(p => p.Type is not LiteralType) : []) // §5
             {
-                Subscription(name, "Watch" + Naming.Pascal(p.Name), profile.Watch!, p.Name, p.Type, $"{name}.watch:{p.Name}");
+                Subscription(name, "Watch" + Naming.Pascal(p.Name), profile.Watch!, p.Name, p.Type, $"{name}.watch:{p.Name}", p.Optional);
             }
             var hide = b is null ? "" : " new";
             var (snapshotType, read) = Run("Realm", "JsOp.Snapshot(Handle)", new(CsType.Record(snapshot), false), async);
@@ -200,9 +200,9 @@ internal sealed class LiveEmitter
     }
 
     /// <summary>R24: an event, or a property watch; the scope owns the subscription.</summary>
-    private void Subscription(string owner, string name, string method, string js, IrType payload, string subject)
+    private void Subscription(string owner, string name, string method, string js, IrType payload, string subject, bool optional)
     {
-        var value = Slot(payload, Naming.OwnedType(owner, js), owner, optional: false);
+        var value = Slot(payload, Naming.OwnedType(owner, js), owner, optional);
         usesSystem = true;
         var (type, subscribe) = async ? ("Task<IAsyncDisposable>", "SubscribeAsync") : ("IDisposable", "Subscribe");
         Expression($"public {type} {Claim(Mode(name), subject)}(JsScope scope, Action<{value.Name}> handler)",

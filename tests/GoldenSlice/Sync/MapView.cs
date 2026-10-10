@@ -7,7 +7,7 @@ using Interoper;
 
 namespace GoldenSlice.Sync;
 
-public sealed partial class MapView : JsObject
+public sealed partial class MapView : Emitter
 {
     internal MapView(JsRealm realm, int handle) : base(realm, handle) { }
 
@@ -38,6 +38,12 @@ public sealed partial class MapView : JsObject
         set => Realm.Set(Handle, "basemap", BasemapNames.ToJs(value));
     }
 
+    public Opt<Cursor> Cursor
+    {
+        get => Realm.Call(JsOp.Get(Handle, "cursor"), static (ref r) => JsJson.ReadOpt(ref r, global::GoldenSlice.Sync.Cursor.Read));
+        set => Realm.Send(JsOp.Set(Handle, "cursor", w => JsJson.WriteValue(w, value, global::GoldenSlice.Sync.Cursor.Write)));
+    }
+
     public Opt<string> Title
     {
         get => Realm.Call(JsOp.Get(Handle, "title"), static (ref r) => JsJson.ReadOpt(ref r, JsJson.ReadString));
@@ -50,16 +56,51 @@ public sealed partial class MapView : JsObject
     public void SetSelected(Opt<Marker> value) =>
         Realm.Send(JsOp.Set(Handle, "selected", w => JsJson.WriteValue(w, value, Marker.Write)));
 
+    public PointSnapshot ScreenToMap(double x, double y) =>
+        Realm.Call(JsOp.Call(Handle, "screenToMap", w =>
+        {
+            JsJson.WriteNumber(w, x);
+            JsJson.WriteNumber(w, y);
+        }, byValue: true), PointSnapshot.Read)!;
+
+    public PointSnapshot ScreenToMap(double[] offset) =>
+        Realm.Call(JsOp.Call(Handle, "screenToMap", w => JsJson.WriteArray(w, offset, JsJson.WriteNumber), byValue: true), PointSnapshot.Read)!;
+
     public Task FlyToAsync(FlyToTarget target) =>
         Realm.SendAsync(JsOp.Call(Handle, "flyTo", w => JsJson.WriteValue(w, target)));
+
+    public Task<Opt<Marker>> MarkerAtAsync(JsScope scope, double x, double y) =>
+        Realm.CallAsync(JsOp.Call(Handle, "markerAt", w =>
+        {
+            JsJson.WriteNumber(w, x);
+            JsJson.WriteNumber(w, y);
+        }), (ref r) => JsJson.ReadOpt(ref r, scope.Read<Marker>));
 
     public IDisposable OnClick(JsScope scope, Action<ClickEvent> handler) =>
         scope.Subscribe(Handle, "on", "click", ClickEvent.Read, handler);
 
+    public IDisposable WatchCenter(JsScope scope, Action<PointSnapshot> handler) =>
+        scope.Subscribe(Handle, "watch", "center", PointSnapshot.Read, handler);
+
     public IDisposable WatchZoom(JsScope scope, Action<double> handler) =>
         scope.Subscribe(Handle, "watch", "zoom", JsJson.ReadNumber, handler);
 
-    public MapViewSnapshot Snapshot() => Realm.Call(JsOp.Snapshot(Handle), MapViewSnapshot.Read)!;
+    public IDisposable WatchRotation(JsScope scope, Action<double> handler) =>
+        scope.Subscribe(Handle, "watch", "rotation", JsJson.ReadNumber, handler);
+
+    public IDisposable WatchBasemap(JsScope scope, Action<Basemap> handler) =>
+        scope.Subscribe(Handle, "watch", "basemap", BasemapNames.Read, handler);
+
+    public IDisposable WatchCursor(JsScope scope, Action<Opt<Cursor>> handler) =>
+        scope.Subscribe(Handle, "watch", "cursor", static (ref r) => JsJson.ReadOpt(ref r, global::GoldenSlice.Sync.Cursor.Read), handler);
+
+    public IDisposable WatchTitle(JsScope scope, Action<Opt<string>> handler) =>
+        scope.Subscribe(Handle, "watch", "title", static (ref r) => JsJson.ReadOpt(ref r, JsJson.ReadString), handler);
+
+    public IDisposable WatchSelected(JsScope scope, Action<Opt<Marker>> handler) =>
+        scope.Subscribe(Handle, "watch", "selected", (ref r) => JsJson.ReadOpt(ref r, scope.Read<Marker>), handler);
+
+    public new MapViewSnapshot Snapshot() => Realm.Call(JsOp.Snapshot(Handle), MapViewSnapshot.Read)!;
 
     public void Apply(MapViewSnapshot patch) =>
         Realm.Send(JsOp.Apply(Handle, w => MapViewSnapshot.WriteMembers(w, patch)));

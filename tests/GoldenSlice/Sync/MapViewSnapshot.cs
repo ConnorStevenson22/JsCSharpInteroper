@@ -12,6 +12,7 @@ public sealed partial record MapViewSnapshot
     public Opt<double> Zoom { get; init; }
     public Opt<double> Rotation { get; init; }
     public Opt<Basemap> Basemap { get; init; }
+    public Opt<Cursor> Cursor { get; init; }
     public Opt<string> Title { get; init; }
 
     public static void WriteMembers(Utf8JsonWriter writer, MapViewSnapshot value)
@@ -20,6 +21,7 @@ public sealed partial record MapViewSnapshot
         JsJson.WriteProperty(writer, "zoom"u8, value.Zoom, JsJson.WriteNumber);
         JsJson.WriteProperty(writer, "rotation"u8, value.Rotation, JsJson.WriteNumber);
         JsJson.WriteProperty(writer, "basemap"u8, value.Basemap, BasemapNames.Write);
+        JsJson.WriteProperty(writer, "cursor"u8, value.Cursor, global::GoldenSlice.Sync.Cursor.Write);
         JsJson.WriteProperty(writer, "title"u8, value.Title, JsJson.WriteString);
     }
 
@@ -28,6 +30,7 @@ public sealed partial record MapViewSnapshot
         Opt<PointSnapshot> center = default;
         Opt<double> zoom = default, rotation = default;
         Opt<Basemap> basemap = default;
+        Opt<Cursor> cursor = default;
         Opt<string> title = default;
         while (reader.Read() && reader.TokenType == JsonTokenType.PropertyName)
         {
@@ -39,10 +42,11 @@ public sealed partial record MapViewSnapshot
                 case "zoom": zoom = JsJson.ReadOpt(ref reader, JsJson.ReadNumber); break;
                 case "rotation": rotation = JsJson.ReadOpt(ref reader, JsJson.ReadNumber); break;
                 case "basemap": basemap = JsJson.ReadOpt(ref reader, BasemapNames.Read); break;
+                case "cursor": cursor = JsJson.ReadOpt(ref reader, global::GoldenSlice.Sync.Cursor.Read); break;
                 case "title": title = JsJson.ReadOpt(ref reader, JsJson.ReadString); break;
                 default: reader.Skip(); break;
             }
         }
-        return new MapViewSnapshot { Center = center, Zoom = zoom, Rotation = rotation, Basemap = basemap, Title = title };
+        return new MapViewSnapshot { Center = center, Zoom = zoom, Rotation = rotation, Basemap = basemap, Cursor = cursor, Title = title };
     }
 }

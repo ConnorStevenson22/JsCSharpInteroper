@@ -433,6 +433,10 @@
             {
               "kind": "property",
               "name": "cursor",
+              "optional": true,
+              "doc": {
+                "summary": "Undefined: the container's own CSS cursor."
+              },
               "type": {
                 "kind": "ref",
                 "name": "Cursor",

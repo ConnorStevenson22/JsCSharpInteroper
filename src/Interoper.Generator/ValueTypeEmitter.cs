@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text.Json;
 
 namespace Interoper.Generator;
@@ -160,10 +161,6 @@ internal static class ValueTypeEmitter
         }
         var objects = u.Cases.Where(c => c.Type.Json == JsonKind.Object).ToList();
         var others = u.Cases.Except(objects).ToList();
-        if (others.GroupBy(c => c.Type.Json).FirstOrDefault(g => g.Count() > 1) is { } ambiguous)
-        {
-            throw new NotSupportedException($"{u.Name}: {string.Join(" and ", ambiguous.Select(c => c.Type.Name))} are both JSON {ambiguous.Key} (R19, IOP2003).");
-        }
         using (w.Block($"{header} => reader.TokenType switch", "};"))
         {
             foreach (var c in others)
@@ -179,11 +176,14 @@ internal static class ValueTypeEmitter
         }
     }
 
-    /// <summary>R19 step 3: the first required member of a case's wire form that no other object case has.</summary>
+    /// <summary>
+    /// R19 step 3: the first required member of a case's wire form that no other object case has. Selection skips a
+    /// union without one, and one whose other cases share a JSON token (IOP2003).
+    /// </summary>
     private static string Distinct(TypeMap types, UnionStruct u, UnionCase c, List<UnionCase> objects)
     {
         var others = objects.Where(o => o != c).SelectMany(o => types.WireMembers(o.Declaration!).Select(m => m.Name)).ToHashSet();
         return types.WireMembers(c.Declaration!).Where(m => m.Required && !others.Contains(m.Name)).Select(m => m.Name).FirstOrDefault()
-            ?? throw new NotSupportedException($"{u.Name}: {c.Type.Name} has no required member the other cases lack (R19, IOP2003).");
+            ?? throw new UnreachableException($"{u.Name}: selection skips an ambiguous union (IOP2003).");
     }
 }

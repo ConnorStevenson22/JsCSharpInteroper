@@ -156,7 +156,7 @@ When JS returns a value for a union position, the runtime must pick the case.
 | method returning `Promise<R>` | `Task<R> FooAsync(A a)` | `Task<R> FooAsync(A a)` |
 | constructor `new X(props)` | `static X Create(JsScope scope, XSnapshot props)` | `static Task<X> CreateAsync(JsScope scope, XSnapshot props)` |
 | event (from an event map) | `IDisposable OnClick(JsScope scope, Action<ClickEvent>)` | `Task<IAsyncDisposable> OnClickAsync(JsScope scope, Action<ClickEvent>)` (`EventOptions` parameter comes in phase 3, R24) |
-| property watch | `IDisposable WatchZoom(JsScope scope, Action<double>)` | `Task<IAsyncDisposable> WatchZoomAsync(JsScope scope, Action<double>)` |
+| property watch, for every property of a class with the profile's watch method (its own or a base's) | `IDisposable WatchZoom(JsScope scope, Action<double>)` | `Task<IAsyncDisposable> WatchZoomAsync(JsScope scope, Action<double>)` |
 | snapshot / patch | `XSnapshot Snapshot()`, `void Apply(XSnapshot)` | `Task<XSnapshot> SnapshotAsync()`, `Task ApplyAsync(XSnapshot)` |
 | module function | static method on a static class per module, same per-mode shape, with a leading `JsRealm realm`, or `JsScope scope` when it returns an entity or takes a callback | |
 
@@ -205,17 +205,17 @@ A syntax walk isn't enough. The extractor asks the TypeScript checker for *resol
 
 ## 8. Diagnostics
 
-Every fallback is reported with a code so consumers can see and tune what didn't map cleanly. Initial set:
+Every fallback is reported with a code so consumers can see and tune what didn't map cleanly. The generator never throws for a shape it can't map: it finds them while selecting what to emit, skips them with what uses them, and reports each. Initial set:
 
 | Code | Meaning |
 |---|---|
 | IOP2001 | `any` / `unknown` / `object` mapped to `JsAny` |
 | IOP2002 | Type the checker couldn't resolve, mapped to `JsAny` |
-| IOP2003 | Ambiguous union; no generated classifier. Profile override needed |
+| IOP2003 | Skipped: an ambiguous union (R19), whose cases can't be told apart, and what uses it. Profile override needed |
 | IOP2004 | Overloads merged after mapping |
 | IOP2005 | Synchronous-result callback not supported in async mode |
-| IOP2006 | Name changed to avoid a collision |
-| IOP2007 | Not supported yet: declaration, member or optional parameter skipped |
+| IOP2006 | Name changed to avoid a collision, or a file path that's taken suffixed |
+| IOP2007 | Skipped: a declaration, member or optional parameter the generator can't map (yet), or that uses one, or a class outside the selection |
 
 ---
 

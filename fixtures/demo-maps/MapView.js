@@ -5,7 +5,7 @@ export class MapView extends Emitter {
   static className = "MapView";
   #markers = new Collection();
 
-  constructor({ center = new Point(), zoom = 1, rotation = 0, basemap = "plain", cursor = "default", title, container = null } = {}) {
+  constructor({ center = new Point(), zoom = 1, rotation = 0, basemap = "plain", cursor, title, container = null } = {}) {
     super();
     this.center = center;
     this.zoom = zoom;
