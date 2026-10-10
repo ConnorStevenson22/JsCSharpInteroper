@@ -38,7 +38,28 @@ internal sealed class RecordingTransport(InMemoryTransport inner) : IJsSyncTrans
 
     public string Invoke(string opJson) => Record(opJson) ? inner.Invoke(opJson) : throw Fail!;
 
-    public Task<string> InvokeAsync(string opJson) => Record(opJson) ? inner.InvokeAsync(opJson) : Task.FromException<string>(Fail!);
+    /// <summary>Async ops sent while it's set wait for this task, then run in order, as ops in flight on a slow connection would.</summary>
+    public Task? Hold { get; set; }
+
+    private Task held = Task.CompletedTask;
+
+    public Task<string> InvokeAsync(string opJson) =>
+        !Record(opJson) ? Task.FromException<string>(Fail!) : Hold is { } hold ? Held(hold, opJson) : inner.InvokeAsync(opJson);
+
+    private Task<string> Held(Task hold, string opJson)
+    {
+        var previous = held;
+        var run = Run();
+        held = run;
+        return run;
+
+        async Task<string> Run()
+        {
+            await hold;
+            await Task.WhenAny(previous); // in order, whether it failed or not
+            return await inner.InvokeAsync(opJson);
+        }
+    }
 
     private bool Record(string opJson)
     {

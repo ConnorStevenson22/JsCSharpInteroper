@@ -181,9 +181,10 @@ function withOptions(callback, o) {
   };
 }
 
-// The named top-level members of an object, so nothing else crosses the wire; any other value as it is.
+// The named top-level members of an object, so nothing else crosses the wire; any other value, an array included, as
+// it is (as InMemoryTransport does).
 function pick(value, names) {
-  if (value === null || typeof value !== "object") return value;
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return value;
   const out = {};
   for (const name of names) out[name] = value[name];
   return out;

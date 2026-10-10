@@ -2,7 +2,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { call, callback, census, create, ids, release, send, sendAsync, value } from "./realm.mjs";
 
-const dom = new URL("./dom.mjs", import.meta.url).href;
+// The browser check's EventTarget fake, served by the E2E client.
+const dom = new URL("../Interoper.E2E.Client/wwwroot/event-target.js", import.meta.url).href;
 
 const subscribe = (h, name, fn, options) => value(send({ op: "subscribe", h: h.$h, method: "on", name, callback: callback(fn), options }));
 const mapPoint = { $c: ids.Point, type: "point", x: 1, y: 2 };
@@ -27,7 +28,8 @@ test("subscribe options: fields project the payload to those top-level members (
   // The method and the live object never cross the wire, so they get no handle.
   const marker = create(ids.Marker);
   call(view, "emit", "click", { x: 1, y: -2, button: 0, mapPoint, marker, preventDefault: callback(() => {}) });
-  assert.deepEqual(clicks, [{ x: 1, y: -2, mapPoint }]);
+  call(view, "emit", "click", [1, 2]); // not an object: as it is
+  assert.deepEqual(clicks, [{ x: 1, y: -2, mapPoint }, [1, 2]]);
   release(subscription, view, marker);
   assert.equal(census(), baseline);
 });

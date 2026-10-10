@@ -18,7 +18,7 @@ public sealed class JsScope(JsRealm realm) : IDisposable, IAsyncDisposable
     private readonly Lock gate = new(); // covers disposed, callbacks and this scope's ownership in the realm
     private readonly List<int> callbacks = [];
     private readonly List<JsBatch> batches = []; // open batches this scope began, flushed before its release
-    private readonly List<Func<bool>> streams = []; // completes each open stream (StreamAsync)
+    private readonly List<Action> streams = []; // completes each open stream (StreamAsync)
     private bool disposed;
 
     public JsRealm Realm { get; } = realm;
@@ -144,7 +144,8 @@ public sealed class JsScope(JsRealm realm) : IDisposable, IAsyncDisposable
     /// this scope; disposing the result releases both sooner. JS applies <paramref name="options"/> first; their
     /// <see cref="EventOptions.Fields"/> replace <paramref name="fields"/>, the generated default projection.
     /// </summary>
-    public IDisposable Subscribe<T>(int handle, string method, string name, JsonRead<T> read, Action<T> handler, EventOptions? options, string[]? fields)
+    public IDisposable Subscribe<T>(int handle, string method, string name, JsonRead<T> read, Action<T> handler, EventOptions? options,
+        IReadOnlyList<string>? fields)
     {
         var listener = Register(Listener(read, handler));
         int subscription;
@@ -162,10 +163,14 @@ public sealed class JsScope(JsRealm realm) : IDisposable, IAsyncDisposable
     }
 
     /// <summary>Subscribes through the async seam (async mode); see <see cref="Subscribe{T}"/>.</summary>
-    public async Task<IAsyncDisposable> SubscribeAsync<T>(int handle, string method, string name, JsonRead<T> read, Action<T> handler,
-        EventOptions? options, string[]? fields)
+    public Task<IAsyncDisposable> SubscribeAsync<T>(int handle, string method, string name, JsonRead<T> read, Action<T> handler,
+        EventOptions? options, IReadOnlyList<string>? fields) =>
+        SubscribeAsync(handle, method, name, Listener(read, handler), options, fields);
+
+    private async Task<IAsyncDisposable> SubscribeAsync(int handle, string method, string name, Func<string, string?> callback,
+        EventOptions? options, IReadOnlyList<string>? fields)
     {
-        var listener = Register(Listener(read, handler));
+        var listener = Register(callback);
         int subscription;
         try
         {
@@ -183,13 +188,14 @@ public sealed class JsScope(JsRealm realm) : IDisposable, IAsyncDisposable
     /// <summary>
     /// The events or changes of <see cref="SubscribeAsync{T}"/> as a stream (async mode, R24). It subscribes when the
     /// enumeration starts, and unsubscribes when it ends: on <c>break</c>, cancellation or disposal. Disposing the scope
-    /// completes it, so <c>await foreach</c> ends normally. JS can't be paused, so values queue without bound until read.
+    /// completes it, even while it subscribes, so <c>await foreach</c> ends normally; a payload that can't be read ends it
+    /// with that error. JS can't be paused, so values queue without bound until read.
     /// </summary>
     public async IAsyncEnumerable<T> StreamAsync<T>(int handle, string method, string name, JsonRead<T> read, EventOptions? options,
-        string[]? fields, [EnumeratorCancellation] CancellationToken cancellationToken = default)
+        IReadOnlyList<string>? fields, [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         var channel = Channel.CreateUnbounded<T>(new() { SingleReader = true });
-        Func<bool> complete = () => channel.Writer.TryComplete();
+        Action complete = () => channel.Writer.TryComplete();
         lock (gate)
         {
             ObjectDisposedException.ThrowIf(disposed, this);
@@ -197,10 +203,33 @@ public sealed class JsScope(JsRealm realm) : IDisposable, IAsyncDisposable
         }
         try
         {
-            await using var subscription = await SubscribeAsync(handle, method, name, read, value => channel.Writer.TryWrite(value), options, fields);
-            await foreach (var value in channel.Reader.ReadAllAsync(cancellationToken))
+            var deliver = Listener<T>(read, value => channel.Writer.TryWrite(value));
+            IAsyncDisposable subscription;
+            try
             {
-                yield return value;
+                subscription = await SubscribeAsync(handle, method, name, args =>
+                {
+                    try
+                    {
+                        return deliver(args);
+                    }
+                    catch (Exception e)
+                    {
+                        channel.Writer.TryComplete(e);
+                        return null;
+                    }
+                }, options, fields);
+            }
+            catch (ObjectDisposedException) when (channel.Reader.Completion.IsCompleted)
+            {
+                yield break; // the scope was disposed while JS subscribed
+            }
+            await using (subscription)
+            {
+                await foreach (var value in channel.Reader.ReadAllAsync(cancellationToken))
+                {
+                    yield return value;
+                }
             }
         }
         finally
@@ -213,7 +242,7 @@ public sealed class JsScope(JsRealm realm) : IDisposable, IAsyncDisposable
     }
 
     // What JS applies before the listener (R24): the options, projecting to the default fields unless they name others.
-    private static EventOptions? Projected(EventOptions? options, string[]? fields) =>
+    private static EventOptions? Projected(EventOptions? options, IReadOnlyList<string>? fields) =>
         options?.Fields is not null || fields is null ? options : (options ?? new()) with { Fields = fields };
 
     // Arguments arrive as a JSON array (R21); events and watches use the first.
@@ -305,7 +334,7 @@ public sealed class JsScope(JsRealm realm) : IDisposable, IAsyncDisposable
     private (string? Release, int[] Callbacks, JsBatch[] Batches) Take()
     {
         (string?, int[], JsBatch[]) taken;
-        Func<bool>[] open;
+        Action[] open;
         lock (gate)
         {
             if (disposed)

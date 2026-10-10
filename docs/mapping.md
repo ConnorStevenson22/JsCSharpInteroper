@@ -107,7 +107,7 @@ The central decision for every class and interface.
 
 **R15. Default classification.**
 - A `class` is an **entity**: a live object with identity, behind a handle.
-- An interface whose members are all data (no methods) is a **data record**. So is an interface that an event delivers: its methods are left out (R24).
+- An interface whose members are all data (no methods) is a **data record**. So is an interface an event names as its payload: its methods are left out (R24).
 
 The profile overrides either way. Getting this wrong is the classic failure mode: a JSON copy of an entity loses identity and methods, and some libraries' `toJSON()` produces a different schema altogether.
 
@@ -181,7 +181,7 @@ Sync mode needs .NET and JS on one thread, so it runs on WebAssembly only and fa
 **R24. Events** come from the checker-resolved event map, including maps declared through a phantom property and an indexed access on `this`.
 - **`EventOptions`** (`Interoper.Runtime`) carry what JS must do before the event reaches .NET, because Server and Hybrid can't call `preventDefault()` in time from .NET: `PreventDefault` and `StopPropagation` call the event's methods of those names when it has them, so library events with them work as DOM events do. `Fields` names the payload's top-level members to send. They travel with the `subscribe` op ([design §3.4](design.md#34-protocol)); watches take none.
 - **Default projection.** When the payload is a data record, the generated member passes the record's wire members, constants included, as the default fields, and `options.Fields` replaces them. What the record doesn't have (DOM values, methods, live objects) never crosses the wire, so payloads stay small and leak no handles. A member that isn't sent is `default` in the record (null for a reference). Any other payload is sent whole.
-- **Payload interfaces.** An interface an event delivers, and its bases, become data records with their methods left out, one IOP2007 per method, instead of being skipped whole.
+- **Payload interfaces.** An interface an event names directly as its payload (not through an alias or a union), and its bases, become data records with their methods left out, one IOP2007 per method, instead of being skipped whole.
 - **Streams** (async mode). `OnXStreamAsync` and `WatchXStreamAsync` (§5) subscribe when the enumeration first moves, and release the subscription when it ends: on `break`, cancellation or disposal. Disposing the scope ends its open streams normally, after what's already queued. JS can't be paused, so there's no backpressure: values queue without bound until they're read, and projection keeps them small.
 
 ---

@@ -1,4 +1,5 @@
-// A library-style subscription over a DOM EventTarget, for the PreventDefault check (not part of demo-maps).
+// A library-style subscription over a DOM EventTarget, for the PreventDefault checks in the browser and in
+// tests/interoper-js (not part of demo-maps).
 export class Target {
   #target = new EventTarget();
 

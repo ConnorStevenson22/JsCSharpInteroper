@@ -71,7 +71,7 @@ public sealed class Selection
             classes.Remove(closed);
             types = Checker();
         }
-        // R24: an interface an emitted class's event delivers, and its bases, are data records without their methods.
+        // R24: an interface an emitted class's event names as its payload, and its bases, are data records without their methods.
         var payloadTypes = new Stack<IrType>(classes.SelectMany(c => c.Events).Select(e => e.Type));
         while (payloadTypes.TryPop(out var type))
         {
@@ -378,8 +378,12 @@ public sealed class Selection
 
     private void AddDataType(Declaration declaration)
     {
+        if (selected.ContainsKey(declaration))
+        {
+            return;
+        }
         var emitted = declaration;
-        if (declaration is InterfaceDeclaration i && payloads.Contains(i) && !selected.ContainsKey(i))
+        if (declaration is InterfaceDeclaration i && payloads.Contains(i))
         {
             foreach (var method in i.Members.OfType<MethodMember>())
             {
@@ -387,12 +391,10 @@ public sealed class Selection
             }
             emitted = i with { Members = [.. i.Members.OfType<PropertyMember>()] };
         }
-        if (selected.TryAdd(declaration, new(moduleOf[declaration], emitted)))
+        selected[declaration] = new(moduleOf[declaration], emitted);
+        foreach (var type in Parts(declaration))
         {
-            foreach (var type in Parts(declaration))
-            {
-                Collect(type);
-            }
+            Collect(type);
         }
     }
 

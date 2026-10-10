@@ -114,6 +114,51 @@ public sealed class RealmTests
     }
 
     [Fact]
+    public async Task AStreamWhoseScopeIsDisposedWhileItSubscribesEndsNormally() // R24
+    {
+        var realm = await StartedRealm();
+        var baseline = (transport.Census(), transport.Callbacks.Count);
+        var scope = new JsScope(realm);
+        var view = await MapView.CreateAsync(scope, new());
+        var zooms = view.WatchZoomStreamAsync(scope, TestContext.Current.CancellationToken).GetAsyncEnumerator(TestContext.Current.CancellationToken);
+
+        var held = new TaskCompletionSource();
+        transport.Hold = held.Task;
+        var next = zooms.MoveNextAsync().AsTask(); // the subscribe op is in flight
+        var disposing = scope.DisposeAsync().AsTask();
+        transport.Hold = null;
+        held.SetResult();
+        await disposing;
+
+        Assert.False(await next);
+        await zooms.DisposeAsync();
+        Assert.Equal(baseline, (transport.Census(), transport.Callbacks.Count)); // the late subscription is released too
+    }
+
+    [Fact]
+    public async Task AStreamEndsWithTheErrorOfAPayloadItCantRead() // R24
+    {
+        var realm = await StartedRealm();
+        var scope = new JsScope(realm);
+        var view = await MapView.CreateAsync(scope, new());
+        var baseline = (transport.Census(), transport.Callbacks.Count);
+        var clicks = view.OnClickStreamAsync(scope, cancellationToken: TestContext.Current.CancellationToken).GetAsyncEnumerator(TestContext.Current.CancellationToken);
+        var next = clicks.MoveNextAsync();
+        await realm.CallAsync(JsOp.Call(view.Handle, "emit", w =>
+        {
+            w.WriteStringValue("click");
+            w.WriteStartObject();
+            w.WriteString("x"u8, "not a number");
+            w.WriteEndObject();
+        }), JsJson.ReadBoolean);
+
+        await Assert.ThrowsAnyAsync<Exception>(async () => await next);
+        await clicks.DisposeAsync();
+        Assert.Equal(baseline, (transport.Census(), transport.Callbacks.Count));
+        await scope.DisposeAsync();
+    }
+
+    [Fact]
     public async Task AFailedSubscribeReleasesItsListener() // R24
     {
         var realm = await StartedRealm();

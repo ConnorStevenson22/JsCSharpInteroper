@@ -34,6 +34,8 @@ public static class GoldenAsyncSuite
         ("click event options: Fields send only those members (R24)", InScope(EventOptionsAndFields)),
         ("event and watch streams: delivered, then released on break (R24)", InScope(Streams)),
         ("a stream ends when its scope is disposed (R24)", InScope(StreamEndsWithItsScope)),
+        ("a stream ends when it's cancelled (R24)", InScope(StreamCancelled)),
+        ("click event: by default only the record's members cross the wire (R24)", InScope(DefaultProjection)),
     ];
 
     private static async Task CreateSnapshotApply(JsScope scope)
@@ -227,6 +229,62 @@ public static class GoldenAsyncSuite
         await reading.WaitAsync(Timeout); // ends normally
         Equal("2", string.Join(",", zooms));
         Equal(baseline, await Count(scope.Realm));
+    }
+
+    private static async Task StreamCancelled(JsScope scope)
+    {
+        var view = await MapView.CreateAsync(scope, new MapViewSnapshot());
+        var baseline = await Count(scope.Realm);
+        using var cancel = new CancellationTokenSource();
+        var zooming = WhenSubscribed(scope.Realm, baseline, () => view.SetZoomAsync(3));
+        var zooms = new List<double>();
+        try
+        {
+            await foreach (var zoom in view.WatchZoomStreamAsync(scope, cancel.Token))
+            {
+                zooms.Add(zoom);
+                await cancel.CancelAsync();
+            }
+            Expect(false, "cancellation to end the stream with OperationCanceledException");
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        await zooming;
+        Equal("3", string.Join(",", zooms));
+        Equal(baseline, await Count(scope.Realm)); // cancellation released the subscription
+    }
+
+    private static async Task DefaultProjection(JsScope scope)
+    {
+        var view = await MapView.CreateAsync(scope, new MapViewSnapshot());
+        var marker = await Marker.CreateAsync(scope, new MarkerSnapshot());
+        var callback = scope.Register(_ => null);
+        var clicked = new TaskCompletionSource<ClickEvent>(TaskCreationOptions.RunContinuationsAsynchronously);
+        await using (await view.OnClickAsync(scope, click => clicked.TrySetResult(click)))
+        {
+            var held = await Count(scope.Realm);
+            // A payload with a live object and a function, which would each come back as a new handle if sent.
+            await scope.Realm.CallAsync(JsOp.Call(view.Handle, "emit", w =>
+            {
+                w.WriteStringValue("click");
+                w.WriteStartObject();
+                w.WriteString("type"u8, "click");
+                w.WriteNumber("x"u8, 1);
+                w.WriteNumber("y"u8, -2);
+                w.WriteNumber("button"u8, 2);
+                w.WritePropertyName("mapPoint"u8);
+                PointSnapshot.Write(w, new PointSnapshot { X = 1, Y = 2 });
+                w.WritePropertyName("marker"u8);
+                JsObject.Write(w, marker);
+                w.WriteStartObject("format"u8);
+                w.WriteNumber("$f"u8, callback);
+                w.WriteEndObject();
+                w.WriteEndObject();
+            }), JsJson.ReadBoolean);
+            Equal(new ClickEvent { X = 1, Y = -2, Button = ClickEventButton._2, MapPoint = new PointSnapshot { X = 1, Y = 2 } }, await clicked.Task.WaitAsync(Timeout));
+            Equal(held, await Count(scope.Realm));
+        }
     }
 
     private static async Task ModuleFunction(JsScope scope) =>
