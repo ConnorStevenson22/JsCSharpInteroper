@@ -7,9 +7,9 @@ namespace Interoper.Generator;
 internal static class RecordEmitter
 {
     /// <summary>A data record: plain JSON, its constants written in place (R20).</summary>
-    public static string Data(TypeMap types, string ns, Declaration declaration)
+    public static string Data(TypeMap types, Declaration declaration)
     {
-        var name = Naming.Type(declaration.Name);
+        var (ns, name) = types.Name(declaration);
         var fields = Unhidden(types.Fields(declaration), ns);
         var w = CodeWriter.CSharp(ns, "System.Text.Json", "Interoper");
         using (w.Block($"public sealed partial record {name}"))
@@ -32,36 +32,36 @@ internal static class RecordEmitter
     /// A class's snapshot record (R18). A value-like one is also written as a value: <c>$c</c> and its constants (R16).
     /// An abstract value-like class's is the closed base of its subclasses', read by their discriminant (R19 step 2).
     /// </summary>
-    public static string Snapshot(TypeMap types, string ns, ClassDeclaration c)
+    public static string Snapshot(TypeMap types, ClassDeclaration c)
     {
-        var name = TypeMap.SnapshotName(c);
+        var (ns, name) = types.Snapshot(c);
         var fields = Unhidden(types.Fields(c), ns);
         var b = types.SnapshotBase(c);
         var w = CodeWriter.CSharp(ns, "System.Text.Json", "Interoper");
-        using (w.Block($"public {(types.IsClosed(c) ? "closed" : "sealed")} partial record {name}{(b is null ? "" : " : " + TypeMap.SnapshotName(b))}"))
+        using (w.Block($"public {(types.IsClosed(c) ? "closed" : "sealed")} partial record {name}{(b is null ? "" : " : " + types.Snapshot(b).In(ns))}"))
         {
             Properties(w, fields, required: false);
             if (types.IsClosed(c))
             {
-                ClosedBase(w, types, c, name, b is null ? "" : "new ");
+                ClosedBase(w, types, c, ns, name, b is null ? "" : "new ");
             }
             else
             {
-                Leaf(w, types, c, name, b is null ? "" : "new ", fields);
+                Leaf(w, types, c, ns, name, b is null ? "" : "new ", fields);
             }
         }
         return w.ToString();
     }
 
     /// <summary>WriteMembers and Read, and for a value-like class Write.</summary>
-    private static void Leaf(CodeWriter w, TypeMap types, ClassDeclaration c, string name, string modifier, IReadOnlyList<Field> fields)
+    private static void Leaf(CodeWriter w, TypeMap types, ClassDeclaration c, string ns, string name, string modifier, IReadOnlyList<Field> fields)
     {
         if (types.IsValueLike(c))
         {
             using (w.Block($"public static void Write(Utf8JsonWriter writer, {name} value)"))
             {
                 w.Line("writer.WriteStartObject();");
-                w.Line($"writer.WriteNumber(\"$c\"u8, {types.Registry}.{Naming.Type(c.Name)}Id);");
+                w.Line($"writer.WriteNumber(\"$c\"u8, {types.ClassId(c, ns)});");
                 WriteConstants(w, fields);
                 w.Line("WriteMembers(writer, value);");
                 w.Line("writer.WriteEndObject();");
@@ -77,7 +77,7 @@ internal static class RecordEmitter
     }
 
     /// <summary>Write and WriteMembers by the subclass, Read by the discriminant.</summary>
-    private static void ClosedBase(CodeWriter w, TypeMap types, ClassDeclaration c, string name, string modifier)
+    private static void ClosedBase(CodeWriter w, TypeMap types, ClassDeclaration c, string ns, string name, string modifier)
     {
         var subclasses = types.ConcreteSubclasses(c);
         foreach (var method in new[] { "Write", "WriteMembers" })
@@ -87,14 +87,14 @@ internal static class RecordEmitter
             {
                 foreach (var sub in subclasses)
                 {
-                    var (type, local) = (TypeMap.SnapshotName(sub), Syntax.Local(Naming.Type(sub.Name), "writer", "value"));
+                    var (type, local) = (types.Snapshot(sub).In(ns), Syntax.Local(Naming.Type(sub.Name), "writer", "value"));
                     w.Line($"case {type} {local}: {type}.{method}(writer, {local}); break;");
                 }
             }
             w.Line();
         }
         var discriminant = types.Discriminant(c);
-        var cases = subclasses.Select(sub => (types.Constant(sub, discriminant), TypeMap.SnapshotName(sub)));
+        var cases = subclasses.Select(sub => (types.Constant(sub, discriminant), types.Snapshot(sub).In(ns)));
         DiscriminantSwitch(w, $"public static {modifier}{name} Read(ref Utf8JsonReader reader)", name, discriminant, cases);
     }
 
@@ -112,11 +112,15 @@ internal static class RecordEmitter
         }
     }
 
-    /// <summary>A property hides a type of its name unless it has that type: <c>Opt&lt;Cursor&gt; Cursor</c> (CS0120).</summary>
+    /// <summary>
+    /// The fields' types as code in namespace <paramref name="ns"/> names them (R27). A property hides a type of its name
+    /// unless it has that type: <c>Opt&lt;Cursor&gt; Cursor</c> (CS0120).
+    /// </summary>
     private static List<Field> Unhidden(IReadOnlyList<Field> fields, string ns)
     {
-        var hidden = fields.Where(f => f.Type is not null && f.TypeName != f.Name).Select(f => f.Name).ToHashSet();
-        return [.. fields.Select(f => f with { Type = f.Type?.Unhidden(hidden, ns) })];
+        var named = fields.Select(f => f with { Type = f.Type?.In(ns) }).ToList();
+        var hidden = named.Where(f => f.Type is not null && f.TypeName != f.Name).Select(f => f.Name).ToHashSet();
+        return [.. named.Select(f => f with { Type = f.Type?.Unhidden(hidden) })];
     }
 
     private static void Properties(CodeWriter w, IReadOnlyList<Field> fields, bool required)

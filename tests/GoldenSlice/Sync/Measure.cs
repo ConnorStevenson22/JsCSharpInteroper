@@ -15,4 +15,10 @@ public static partial class Measure
             PointSnapshot.Write(w, a);
             PointSnapshot.Write(w, b);
         }), JsJson.ReadNumber);
+
+    public static double Perimeter(JsRealm realm, params PointSnapshot[] points) =>
+        realm.Call(JsOp.Call(Module, "perimeter", w =>
+        {
+            foreach (var item in points) PointSnapshot.Write(w, item);
+        }), JsJson.ReadNumber);
 }

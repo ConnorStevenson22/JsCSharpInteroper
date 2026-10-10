@@ -13,6 +13,12 @@ public sealed record Profile
     /// <summary>The instance property holding the runtime class name (R19 step 1); never bound as a member.</summary>
     public string? RuntimeClassProperty { get; init; }
 
+    /// <summary>
+    /// Prepended to every runtime class name in the metadata module (design §2), for libraries whose runtime names start
+    /// with a namespace of their own.
+    /// </summary>
+    public string RuntimeClassPrefix { get; init; } = "";
+
     /// <summary>Classes that also get an <c>XSnapshot</c> record used by value (R16).</summary>
     public IReadOnlyList<string> ValueClasses { get; init; } = [];
 

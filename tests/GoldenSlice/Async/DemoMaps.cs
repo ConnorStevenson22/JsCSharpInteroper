@@ -16,6 +16,8 @@ public static partial class DemoMaps
     public const int ObservableId = 7;
     public const int EmitterId = 8;
     public const int DemoMapElementId = 9;
+    public const int LayerId = 10;
+    public const int TileLayerId = 11;
 
     public static JsClassRegistry Classes { get; } = new JsClassRegistry()
         .Add(PointId, static (realm, handle) => new Point(realm, handle))
@@ -25,5 +27,6 @@ public static partial class DemoMaps
         .Add(MarkerId, static (realm, handle) => new Marker(realm, handle))
         .Add(ObservableId, static (realm, handle) => new Observable(realm, handle))
         .Add(EmitterId, static (realm, handle) => new Emitter(realm, handle))
-        .Add(DemoMapElementId, static (realm, handle) => new DemoMapElement(realm, handle));
+        .Add(DemoMapElementId, static (realm, handle) => new DemoMapElement(realm, handle))
+        .Add(TileLayerId, static (realm, handle) => new global::GoldenSlice.Async.Layers.TileLayer(realm, handle));
 }

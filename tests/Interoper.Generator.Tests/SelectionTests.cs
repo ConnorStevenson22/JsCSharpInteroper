@@ -17,7 +17,9 @@ public sealed class SelectionTests
             "core.js: Observable, Emitter",
             "demo-map.js: DemoMapClickDetail, DemoMapElement",
             "geometry.js: ShapeType, Bounds, Shape, Point, Line, Polygon",
-            "measure.js: distance",
+            "layers/Layer.js: Layer",
+            "layers/TileLayer.js: TileLayer",
+            "measure.js: distance, perimeter",
             "styles.js: Rgba, ColorInput, IconName, FillStyle, StrokeStyle, IconStyle, Style, toRgba",
         ], Modules(selection));
 
@@ -45,8 +47,9 @@ public sealed class SelectionTests
     public void AStarMatchesAnyCharactersSlashesIncluded()
     {
         Assert.Equal(Modules(Selection.Select(Fixture.Ir, Fixture.Profile)), Modules(Select("@acme/*")));
-        Assert.Equal(["core.js: Observable", "geometry.js: ShapeType, Bounds, Shape, Point, Line, Polygon", "measure.js: distance"],
+        Assert.Equal(["core.js: Observable", "geometry.js: ShapeType, Bounds, Shape, Point, Line, Polygon", "measure.js: distance, perimeter"],
             Modules(Select("*/measure.js", "*/geometry.js")));
+        Assert.Equal(["core.js: Observable", "layers/Layer.js: Layer", "layers/TileLayer.js: TileLayer"], Modules(Select("@acme/demo-maps/layers/*")));
     }
 
     [Fact]
@@ -65,6 +68,7 @@ public sealed class SelectionTests
             "IOP2007 MapView.container: skipped: uses `HTMLElement`",
             "IOP2007 MapView.selected: skipped: uses class `Marker` outside the selection",
             "IOP2007 MapView.markers: skipped: uses generic `Collection`",
+            "IOP2007 MapView.layers: skipped: uses generic `Collection`",
             "IOP2007 MapView.screenToMap: skipped: uses class `Point` outside the selection", // once for its two overloads
             "IOP2007 MapView.flyTo: skipped: uses class `Shape` outside the selection (in `FlyToTarget`)",
             "IOP2007 MapView.markerAt: skipped: uses class `Marker` outside the selection",
@@ -214,6 +218,18 @@ public sealed class SelectionTests
         Assert.Contains("T.cs", result.Files.Select(f => f.Path));
         Assert.Contains("Holder.cs", result.Files.Select(f => f.Path));
         Assert.Contains("public static Task FAsync(JsRealm realm, ", result.Files.Single(f => f.Path == "A.cs").Text);
+    }
+
+    [Fact] // R22: a rest parameter is params T[], so one that isn't an array is dropped, as an optional one is
+    public void ARestParameterThatIsntAnArrayIsDropped()
+    {
+        var selection = Selection.Select(Ir("""
+            { "kind": "function", "name": "f", "signatures": [{ "params": [
+              { "name": "a", "type": { "kind": "primitive", "name": "number" } },
+              { "name": "pair", "rest": true, "type": { "kind": "tuple", "elements": [{ "kind": "primitive", "name": "number" }, { "kind": "primitive", "name": "string" }] } }] }] }
+            """), new Profile { Package = "@acme/maps" });
+        Assert.Equal(["a"], Assert.IsType<FunctionDeclaration>(Assert.Single(selection.Declarations).Declaration).Signatures[0].Params.Select(p => p.Name));
+        Assert.Equal("IOP2007 f(pair): rest parameter dropped (R22): uses a type that isn't an array", Assert.Single(selection.Diagnostics).ToString());
     }
 
     [Fact] // R4, R19 step 2: a closed base is read by a string discriminant

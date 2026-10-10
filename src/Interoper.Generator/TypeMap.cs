@@ -14,17 +14,20 @@ internal sealed record Field(string JsName, string Name, CsType? Type, bool Requ
 }
 
 /// <summary>An enum or union struct: what a union type becomes (or a TS enum).</summary>
-internal abstract record DataType(string Name);
+internal abstract record DataType(TypeName Type)
+{
+    public string Name => Type.Name;
+}
 
 /// <summary>A literal union (or TS enum) as an enum: string values with a name map (R9), or more than 64 or open-ended
 /// as an extensible enum (R10), or numbers with explicit values.</summary>
-internal sealed record EnumType(string Name, IReadOnlyList<(string Name, JsonElement Value)> Members, bool Extensible) : DataType(Name)
+internal sealed record EnumType(TypeName Type, IReadOnlyList<(string Name, JsonElement Value)> Members, bool Extensible) : DataType(Type)
 {
     public bool IsNumber => Members.Count > 0 && Members[0].Value.ValueKind == JsonValueKind.Number;
 }
 
 /// <summary>A generated union struct (R2). <see cref="Discriminant"/> is the property its object cases are told apart by (R19 step 2).</summary>
-internal sealed record UnionStruct(string Name, IReadOnlyList<UnionCase> Cases, string? Discriminant) : DataType(Name);
+internal sealed record UnionStruct(TypeName Type, IReadOnlyList<UnionCase> Cases, string? Discriminant) : DataType(Type);
 
 /// <param name="Declaration">What an object case is read as (R19 steps 2 and 3).</param>
 internal sealed record UnionCase(CsType Type, Declaration? Declaration);
@@ -38,25 +41,29 @@ internal sealed class TypeMap
     private const int MaxEnumMembers = 64; // R10
 
     private readonly Dictionary<(string Module, string Name), Declaration> declarations = [];
+    private readonly Dictionary<Declaration, string> moduleOf = new(ReferenceEqualityComparer.Instance);
+    private readonly Dictionary<ClassDeclaration, string> ids = new(ReferenceEqualityComparer.Instance);
+    private readonly string package, root;
     private readonly List<ClassDeclaration> classes = [];
     private readonly HashSet<string> valueClasses;
     private readonly ICollection<Diagnostic> diagnostics;
-    private readonly Dictionary<string, DataType?> unions = [];
+    private readonly Dictionary<TypeName, DataType?> unions = [];
     private readonly Dictionary<Declaration, IReadOnlyList<Field>> fields = new(ReferenceEqualityComparer.Instance);
     private readonly List<DataType> owned = [];
     private readonly HashSet<ClassDeclaration> watchable = new(ReferenceEqualityComparer.Instance);
 
     /// <summary>
     /// <paramref name="selected"/> stand for themselves (a class trimmed to what can be mapped); its classes are the
-    /// live classes to emit.
+    /// live classes to emit. <paramref name="ns"/> is the root namespace (R27); the mapping checks don't need it.
     /// </summary>
-    public TypeMap(IrDocument ir, Profile profile, IEnumerable<Selected> selected, ICollection<Diagnostic> diagnostics)
+    public TypeMap(IrDocument ir, Profile profile, IEnumerable<Selected> selected, ICollection<Diagnostic> diagnostics, string ns = "")
     {
         foreach (var module in ir.Modules)
         {
             foreach (var declaration in module.Declarations)
             {
                 declarations[(module.Specifier, declaration.Name)] = declaration;
+                moduleOf[declaration] = module.Specifier;
             }
         }
         foreach (var s in selected)
@@ -71,6 +78,7 @@ internal sealed class TypeMap
         foreach (var s in selected)
         {
             declarations[(s.Module, s.Declaration.Name)] = s.Declaration;
+            moduleOf[s.Declaration] = s.Module;
             if (s.Declaration is ClassDeclaration c)
             {
                 classes.Add(c);
@@ -78,11 +86,45 @@ internal sealed class TypeMap
         }
         valueClasses = [.. profile.ValueClasses];
         this.diagnostics = diagnostics;
+        (package, root) = (ir.Package.Name, ns);
         Registry = Naming.Type(ir.Package.Name.Split('/')[^1]);
+        // Classes of one name in different namespaces need different class id constants: the later ones get a suffix.
+        var taken = new HashSet<string>();
+        foreach (var c in classes)
+        {
+            var (wanted, id) = (Naming.Type(c.Name), Naming.Type(c.Name));
+            for (var n = 2; !taken.Add(id); n++)
+            {
+                id = $"{wanted}{n}";
+            }
+            if (id != wanted)
+            {
+                diagnostics.Add(new(Diagnostic.Renamed, $"{moduleOf[c]} {c.Name}", $"its class id is {id}Id: {wanted}Id is taken (R27)"));
+            }
+            ids[c] = id + "Id";
+        }
     }
 
-    /// <summary>The generated registry class, named after the package without its scope (<c>DemoMaps</c>).</summary>
+    /// <summary>The generated registry class, named after the package without its scope (<c>DemoMaps</c>), in the root namespace.</summary>
     public string Registry { get; }
+
+    /// <summary>R27: the namespace of a declaration's types: the root namespace plus its module's folders.</summary>
+    public string Namespace(Declaration declaration) => Namespace(moduleOf[declaration]);
+
+    /// <summary>R27: the namespace of a module's types: the root namespace plus its folders.</summary>
+    public string Namespace(string module) => Naming.Namespace(root, package, module);
+
+    /// <summary>The type a declaration becomes, in its namespace (R27).</summary>
+    public TypeName Name(Declaration declaration) => new(Namespace(declaration), Naming.Type(declaration.Name));
+
+    /// <summary>A class's snapshot record (R18), in the class's namespace.</summary>
+    public TypeName Snapshot(ClassDeclaration c) => new(Namespace(c), SnapshotName(c));
+
+    /// <summary>The constant holding a live class's class id (design §2), as code in namespace <paramref name="ns"/> names it.</summary>
+    public string ClassId(ClassDeclaration c, string ns) => $"{new TypeName(root, Registry).In(ns)}.{ClassIdName(c)}";
+
+    /// <summary>The name of that constant in the registry: <c>PointId</c>.</summary>
+    public string ClassIdName(ClassDeclaration c) => ids[c];
 
     /// <summary>Anonymous enums and unions named after their owner (R27), in the order they were met.</summary>
     public IReadOnlyList<DataType> Owned => owned;
@@ -133,7 +175,7 @@ internal sealed class TypeMap
     // --- Types ---
 
     /// <summary>The C# type of a non-nullable position; <paramref name="owner"/> names an anonymous union there (R27).</summary>
-    public CsType Map(IrType type, string owner) => type switch
+    public CsType Map(IrType type, TypeName owner) => type switch
     {
         PrimitiveType { Name: "number" } => CsType.Number,
         PrimitiveType { Name: "string" } => CsType.String,
@@ -143,7 +185,7 @@ internal sealed class TypeMap
         TupleType { Required: null, Rest: false, Elements.Count: > 0 } t
             when t.Elements.Select(e => Map(e, owner).Name).Distinct().Count() == 1 => CsType.Array(Map(t.Elements[0], owner)), // R5
         UnionType u when Union(owner, u) is { } union => Own(union),
-        _ => throw Unreachable(owner),
+        _ => throw Unreachable(owner.Name),
     };
 
     /// <summary>
@@ -151,7 +193,7 @@ internal sealed class TypeMap
     /// <c>Opt&lt;T&gt;</c> (R3), unless it's a union, which has those states itself (R2). A member of a live class
     /// (<paramref name="self"/>) can also be an entity or <c>this</c>: a live object (R16, R17).
     /// </summary>
-    public (CsType Type, bool Nullable) Slot(IrType type, string owner, string? self = null)
+    public (CsType Type, bool Nullable) Slot(IrType type, TypeName owner, TypeName? self = null)
     {
         var nullable = false;
         if (type is UnionType u && u.Types.Any(IsNullish))
@@ -163,7 +205,7 @@ internal sealed class TypeMap
         var mapped = self is null ? null : type switch
         {
             ThisType => CsType.Live(self),
-            RefType { Module: not null } r when Find(r) is ClassDeclaration c && !IsValueLike(c) => CsType.Live(Naming.Type(c.Name)),
+            RefType { Module: not null } r when Find(r) is ClassDeclaration c && !IsValueLike(c) => CsType.Live(Name(c)),
             _ => null,
         };
         return (mapped ?? Map(type, owner), nullable || Flatten(type).Any(IsNullish));
@@ -174,20 +216,20 @@ internal sealed class TypeMap
 
     private CsType Named(Declaration declaration) => declaration switch
     {
-        InterfaceDeclaration or AliasDeclaration { Type: ObjectType } => CsType.Record(Naming.Type(declaration.Name)),
-        ClassDeclaration c when IsValueLike(c) => CsType.Record(SnapshotName(c)), // R16
+        InterfaceDeclaration or AliasDeclaration { Type: ObjectType } => CsType.Record(Name(declaration)),
+        ClassDeclaration c when IsValueLike(c) => CsType.Record(Snapshot(c)), // R16
         EnumDeclaration e => TypeOf(Enum(e)),
-        AliasDeclaration a when Union(Naming.Type(a.Name), a.Type) is { } union => TypeOf(union),
-        AliasDeclaration a => Map(Flatten(a.Type).Single(t => !IsNullish(t)), Naming.Type(a.Name)),
+        AliasDeclaration a when Union(Name(a), a.Type) is { } union => TypeOf(union),
+        AliasDeclaration a => Map(Flatten(a.Type).Single(t => !IsNullish(t)), Name(a)),
         _ => throw Unreachable(declaration.Name),
     };
 
     private static CsType TypeOf(DataType type) => type switch
     {
-        EnumType { Extensible: true } e => CsType.Method(e.Name, JsonKind.String, $"{e.Name}.Write", $"{e.Name}.Read", isValueType: true),
-        EnumType { IsNumber: true } e => CsType.NumberEnum(e.Name),
-        EnumType e => CsType.StringEnum(e.Name),
-        _ => CsType.Union(((UnionStruct)type).Name),
+        EnumType { Extensible: true } e => CsType.Extensible(e.Type),
+        EnumType { IsNumber: true } e => CsType.NumberEnum(e.Type),
+        EnumType e => CsType.StringEnum(e.Type),
+        _ => CsType.Union(type.Type),
     };
 
     private CsType Own(DataType type)
@@ -205,7 +247,7 @@ internal sealed class TypeMap
     /// What a union named <paramref name="name"/> becomes, flattened (R6) and without null and undefined; null when
     /// one type is left.
     /// </summary>
-    public DataType? Union(string name, IrType type)
+    public DataType? Union(TypeName name, IrType type)
     {
         if (unions.TryGetValue(name, out var known))
         {
@@ -216,9 +258,9 @@ internal sealed class TypeMap
         DataType? result =
             flat.Count < 2 ? null
             : flat.All(t => t is LiteralType { Value.ValueKind: JsonValueKind.String } || IsOpenString(t)) ? new EnumType(name,
-                EnumMembers(name, literals, literals.Select(v => v.GetString()!)), literals.Count > MaxEnumMembers || flat.Any(IsOpenString))
+                EnumMembers(name.Name, literals, literals.Select(v => v.GetString()!)), literals.Count > MaxEnumMembers || flat.Any(IsOpenString))
             : flat.All(t => t is LiteralType { Value.ValueKind: JsonValueKind.Number }) ? new EnumType(name,
-                EnumMembers(name, literals, literals.Select(v => v.GetRawText())), Extensible: false)
+                EnumMembers(name.Name, literals, literals.Select(v => v.GetRawText())), Extensible: false)
             : new UnionStruct(name, Cases(name, flat),
                 type is UnionType u && u.Types.Count(t => !IsNullish(t)) == flat.Count ? u.Discriminant : null);
         unions[name] = result;
@@ -227,13 +269,13 @@ internal sealed class TypeMap
 
     public EnumType Enum(EnumDeclaration e)
     {
-        var name = Naming.Type(e.Name);
+        var name = Name(e);
         if (unions.TryGetValue(name, out var known))
         {
             return (EnumType)known!;
         }
         var values = e.Members.Select(m => m.Value).ToList();
-        var result = new EnumType(name, EnumMembers(name, values, e.Members.Select(m => m.Name)), Extensible: false);
+        var result = new EnumType(name, EnumMembers(name.Name, values, e.Members.Select(m => m.Name)), Extensible: false);
         unions[name] = result;
         return result;
     }
@@ -243,7 +285,7 @@ internal sealed class TypeMap
         [.. Naming.EnumMembers(names, type, diagnostics).Zip(values)];
 
     /// <summary>The cases of a union, after mapping (R5: one per C# type).</summary>
-    private List<UnionCase> Cases(string name, List<IrType> types)
+    private List<UnionCase> Cases(TypeName name, List<IrType> types)
     {
         var cases = new List<UnionCase>();
         foreach (var type in types)
@@ -288,11 +330,10 @@ internal sealed class TypeMap
         {
             return known;
         }
-        var name = Naming.Type(declaration.Name);
         var result = declaration switch
         {
-            InterfaceDeclaration i when i.IndexSignatures.Count == 0 => DataFields(name, Members(i)),
-            AliasDeclaration { Type: ObjectType { IndexSignatures.Count: 0 } o } => DataFields(name, o.Members),
+            InterfaceDeclaration i when i.IndexSignatures.Count == 0 => DataFields(Name(declaration), Members(i)),
+            AliasDeclaration { Type: ObjectType { IndexSignatures.Count: 0 } o } => DataFields(Name(declaration), o.Members),
             ClassDeclaration c => SnapshotFields(c),
             _ => throw Unreachable(declaration.Name),
         };
@@ -322,9 +363,9 @@ internal sealed class TypeMap
         return members;
     }
 
-    private List<Field> DataFields(string type, IEnumerable<Member> members)
+    private List<Field> DataFields(TypeName type, IEnumerable<Member> members)
     {
-        var taken = new HashSet<string> { type, "Write", "Read" };
+        var taken = new HashSet<string> { type.Name, "Write", "Read" };
         var result = new List<Field>();
         foreach (var p in members.OfType<PropertyMember>().Where(p => !p.Static))
         {
@@ -333,8 +374,8 @@ internal sealed class TypeMap
                 result.Add(new(p.Name, "", null, Required: true, Constant: constant.Value));
                 continue;
             }
-            var (mapped, nullable) = Slot(p.Type, Naming.OwnedType(type, p.Name));
-            var name = Naming.Member(taken, Naming.Pascal(p.Name), $"{type}.{p.Name}", diagnostics);
+            var (mapped, nullable) = Slot(p.Type, type.Owned(p.Name));
+            var name = Naming.Member(taken, Naming.Pascal(p.Name), $"{type.Name}.{p.Name}", diagnostics);
             result.Add(new(p.Name, name, mapped, Required: !p.Optional, Opt: (nullable || p.Optional) && !mapped.IsUnion));
         }
         return result;
@@ -343,7 +384,7 @@ internal sealed class TypeMap
     /// <summary>A closed base's snapshot declares its members; any other emitted base's are repeated (R18).</summary>
     private List<Field> SnapshotFields(ClassDeclaration c)
     {
-        var type = Naming.Type(c.Name);
+        var type = Name(c);
         var result = SnapshotBase(c) is { } b ? Fields(b).Select(f => f with { Inherited = true }).ToList() : [];
         var taken = new HashSet<string>(result.Select(f => f.Name)) { SnapshotName(c), "Write", "WriteMembers", "Read" };
         foreach (var p in c.Members.OfType<PropertyMember>().Where(p => !p.Static))
@@ -354,7 +395,7 @@ internal sealed class TypeMap
             }
             else if (IsSnapshotMember(p))
             {
-                var mapped = Slot(p.Type, Naming.OwnedType(type, p.Name)).Type;
+                var mapped = Slot(p.Type, type.Owned(p.Name)).Type;
                 var name = Naming.Member(taken, Naming.Pascal(p.Name), $"{SnapshotName(c)}.{p.Name}", diagnostics);
                 result.Add(new(p.Name, name, mapped, Required: false, Opt: !mapped.IsUnion));
             }

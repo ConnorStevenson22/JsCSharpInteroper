@@ -11,8 +11,11 @@ node --test "fixtures/demo-maps/test/*.test.mjs"
 
 | Pattern | Rules ([mapping.md](../../docs/mapping.md)) | Where |
 |---|---|---|
-| Abstract base with subclasses | R4, R15 | `Shape` → `Point`, `Line`, `Polygon` (`geometry`) |
-| Runtime class-name property | R19 (step 1) | `Observable.className` (`core`), e.g. `"geometry.Point"`, `"MapView"` |
+| Abstract base with subclasses | R4, R15 | `Shape` → `Point`, `Line`, `Polygon` (`geometry`); the entity `Layer` → `TileLayer` (`layers/`) |
+| Runtime class-name property | R19 (step 1) | `Observable.className` (`core`), e.g. `"geometry.Point"`, `"MapView"`, `"layers.TileLayer"` |
+| Module folders | R27 | `layers/Layer`, `layers/TileLayer`: the `Layers` namespace |
+| Default export | [IR `export`](../../docs/ir.md#declarations), [design §2](../../docs/design.md#2-what-we-generate) | `export default class TileLayer` (`layers/TileLayer`) |
+| Member a subclass redeclares | R26 (`new`) | `TileLayer.clone(): TileLayer` over `Layer.clone(): Layer` |
 | Value-like classes (live class + snapshot) | R16–R18 | `Shape` and subclasses, via `profile.json` |
 | No autocast: class-typed positions need instances ([design §3.4](../../docs/design.md#34-protocol) `$c`) | R16, R20 | `MapView.center`, `Marker.position`, `MapView.flyTo`; constructors accept a bag that keeps its `type` |
 | Data records | R15, R20 | `Bounds` (`geometry`), `Rgba`, `FillStyle`, … (`styles`), `ClickEvent` (`MapView`) |
@@ -35,12 +38,13 @@ node --test "fixtures/demo-maps/test/*.test.mjs"
 | Overloads | R23 | `MapView.screenToMap(x, y)` and `screenToMap([x, y])` |
 | JSDoc tags | [mapping §7](../../docs/mapping.md#7-what-the-extractor-must-resolve-with-the-checker) | `@default` (`FlyToOptions.duration`, `Rgba.a`); `@since`, `@deprecated`, `@see` on the `screenToMap` overloads |
 | Optional parameters | R22 | `MapView.flyTo(target, options?)`, `DemoMapElement.clickAt(x, y, button?)` |
+| Rest parameter | R22 | `perimeter(...points)` (`measure`) |
 | Callbacks | R21 | `on`, `watch`, `Collection.find` (synchronous `boolean` result) |
 | Callback with a synchronous return value | R21, IOP2005 | `Marker.labelFormatter` (`LabelFormatter`), read by `Marker.displayLabel` |
 | Event map through a phantom property | R24 | `"$events"` + `on<K extends keyof this["$events"]>` (`core`); `MapViewEvents.click` |
 | Property watch | design §2 | `Observable.watch(name, callback)` returns a `Subscription` (`core`), e.g. `view.watch("zoom", …)` |
-| Collection type (generic) | §2 (generic `T`) | `Collection<T>` with a `change` event (`core`); `MapView.markers` |
-| Module functions | §5 | `distance` (`measure`); `toRgba` (`styles`) |
+| Collection type (generic) | §2 (generic `T`) | `Collection<T>` with a `change` event (`core`); `MapView.markers`, and `MapView.layers` of an abstract class |
+| Module functions | §5 | `distance`, `perimeter` (`measure`); `toRgba` (`styles`) |
 | Custom element: attributes, properties, events, slots | design §2 | `<demo-map>` (`demo-map`, `custom-elements.json`): attributes `basemap`, `zoom`; properties `view`, `center`; events `demo-map-click`, `demo-map-zoom-change` (pairs with `zoom` for `@bind`), `demo-map-ready`; slots default and `toolbar` |
 
 The golden slice (`tests/GoldenSlice`) is the fixture's generated bindings: every declaration the generator can map.
@@ -59,6 +63,7 @@ Provisional; the generator (plan phase 2) fixes the schema.
 |---|---|
 | `package` | The npm package the profile applies to. |
 | `runtimeClassProperty` | Instance property holding the runtime class name; maps a JS object to its most-derived C# type. |
+| `runtimeClassPrefix` | Prepended to every runtime class name in the metadata module, for libraries whose names start with a namespace. Absent, as here, means none. |
 | `valueClasses` | Classes that also get an `XSnapshot` record used by value (R16). Every other class is an entity (R15). |
 | `events` | Event convention: `mapProperty` is the phantom event-map property (`$events`), `subscribe` the method that takes `(type, listener)` and returns a `Subscription` with `dispose()`. |
 | `watch` | Method that takes `(propertyName, callback)` and returns a `Subscription` with `dispose()`. Every property of a class that has it gets a watch. |

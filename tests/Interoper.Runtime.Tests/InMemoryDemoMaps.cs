@@ -25,6 +25,8 @@ internal static class InMemoryDemoMaps
         .Define(new(DemoMaps.ObservableId, "core.Observable", _ => new FakeObservable()))
         .Define(new(DemoMaps.EmitterId, "core.Emitter", _ => new FakeEmitter()))
         .Define(new(DemoMaps.DemoMapElementId, "demo-map.DemoMapElement", _ => new FakeDemoMapElement()) { Members = ["basemap", "zoom", "center"] })
+        .Define(new(DemoMaps.LayerId, "layers.Layer", _ => throw new JsException("TypeError", "Layer is abstract", null)) { Members = ["title", "visible"] })
+        .Define(new(DemoMaps.TileLayerId, "layers.TileLayer", args => new FakeTileLayer(Bag(args))) { Members = ["url", "title", "visible"] })
         .DefineModule(TransportContract.Measure, new FakeMeasure())
         .DefineModule("@acme/demo-maps/styles.js", new FakeStyles());
 
@@ -304,6 +306,30 @@ internal sealed class FakeDemoMapElement : InMemoryObject
     }
 }
 
+/// <summary><c>layers.Layer</c>: <c>clone()</c> copies the layer, of its own class.</summary>
+internal abstract class FakeLayer : FakeObservable
+{
+    protected FakeLayer(Dictionary<string, object?> bag)
+    {
+        Set("title", bag.GetValueOrDefault("title"));
+        Set("visible", bag.GetValueOrDefault("visible", true));
+    }
+
+    protected abstract FakeLayer Clone();
+
+    public override object? Call(string name, object?[] args) => name == "clone" ? Clone() : base.Call(name, args);
+}
+
+/// <summary><c>layers.TileLayer</c>, the default export of its module.</summary>
+internal sealed class FakeTileLayer : FakeLayer
+{
+    public FakeTileLayer(Dictionary<string, object?> bag) : base(bag) => Set("url", bag.GetValueOrDefault("url", ""));
+
+    public override string ClassName => "layers.TileLayer";
+
+    protected override FakeLayer Clone() => new FakeTileLayer(new() { ["url"] = Get("url"), ["title"] = Get("title"), ["visible"] = Get("visible") });
+}
+
 /// <summary>The <c>styles.js</c> module: <c>toRgba</c> for a hex string or a color name, an array or an object.</summary>
 internal sealed class FakeStyles : InMemoryObject
 {
@@ -342,12 +368,15 @@ internal sealed class FakeMeasure : InMemoryObject
 {
     public override string ClassName => "measure";
 
-    public override object? Call(string name, object?[] args)
+    public override object? Call(string name, object?[] args) => name switch
     {
-        if (name != "distance") return base.Call(name, args);
-        var (a, b) = (args[0]!, args[1]!);
-        return Math.Sqrt(Math.Pow(Field(b, "x") - Field(a, "x"), 2) + Math.Pow(Field(b, "y") - Field(a, "y"), 2));
-    }
+        "distance" => Distance(args[0]!, args[1]!),
+        "perimeter" => args.Select((point, i) => Distance(point!, args[(i + 1) % args.Length]!)).Sum(), // the closed path through `...points`
+        _ => base.Call(name, args),
+    };
+
+    private static double Distance(object a, object b) =>
+        Math.Sqrt(Math.Pow(Field(b, "x") - Field(a, "x"), 2) + Math.Pow(Field(b, "y") - Field(a, "y"), 2));
 
     private static double Field(object value, string name) =>
         (double)(value is InMemoryObject o ? o.Get(name) : ((Dictionary<string, object?>)value)[name])!;

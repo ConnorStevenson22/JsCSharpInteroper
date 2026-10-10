@@ -6,12 +6,13 @@ namespace Interoper.Generator;
 /// <summary>Enums (R9, numeric), extensible enums (R10) and union structs (R2, R19, R20).</summary>
 internal static class ValueTypeEmitter
 {
-    public static string Emit(TypeMap types, string ns, DataType type) => type switch
+    /// <summary>The type, in its namespace (R27).</summary>
+    public static string Emit(TypeMap types, DataType type) => type switch
     {
-        EnumType { Extensible: true } e => Extensible(ns, e),
-        EnumType { IsNumber: true } e => NumberEnum(ns, e),
-        EnumType e => StringEnum(ns, e),
-        _ => Union(types, ns, (UnionStruct)type),
+        EnumType { Extensible: true } e => Extensible(e.Type.Namespace, e),
+        EnumType { IsNumber: true } e => NumberEnum(e.Type.Namespace, e),
+        EnumType e => StringEnum(e.Type.Namespace, e),
+        _ => Union(types, (UnionStruct)type),
     };
 
     /// <summary>R9: an enum, and a name map between its members and the JS strings.</summary>
@@ -90,9 +91,10 @@ internal static class ValueTypeEmitter
     /// R2: a non-boxing struct with a tag per case (0 undefined, 1 null), written by its tag (R20) and read by R19:
     /// the discriminant's value, or the JSON token, and for several object cases a required member only one has.
     /// </summary>
-    private static string Union(TypeMap types, string ns, UnionStruct u)
+    private static string Union(TypeMap types, UnionStruct u)
     {
-        var name = u.Name;
+        var (ns, name) = u.Type;
+        u = u with { Cases = [.. u.Cases.Select(c => c with { Type = c.Type.In(ns) })] }; // R27
         var cases = u.Cases.Select((c, i) => (c.Type, Tag: i + 2, c.Declaration)).ToList();
         var w = CodeWriter.CSharp(ns, "System", "System.Diagnostics.CodeAnalysis", "System.Runtime.CompilerServices", "System.Text.Json", "Interoper");
         w.Line("[Union]");

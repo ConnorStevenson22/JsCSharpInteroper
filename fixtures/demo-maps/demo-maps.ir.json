@@ -517,6 +517,26 @@
               }
             },
             {
+              "kind": "property",
+              "name": "layers",
+              "doc": {
+                "summary": "Drawn in order, the first at the bottom."
+              },
+              "readonly": true,
+              "type": {
+                "kind": "ref",
+                "name": "Collection",
+                "module": "@acme/demo-maps/core.js",
+                "args": [
+                  {
+                    "kind": "ref",
+                    "name": "Layer",
+                    "module": "@acme/demo-maps/layers/Layer.js"
+                  }
+                ]
+              }
+            },
+            {
               "kind": "method",
               "name": "screenToMap",
               "signatures": [
@@ -1986,6 +2006,171 @@
       ]
     },
     {
+      "specifier": "@acme/demo-maps/layers/Layer.js",
+      "declarations": [
+        {
+          "kind": "class",
+          "name": "Layer",
+          "doc": {
+            "summary": "Abstract: only its subclasses are constructed."
+          },
+          "abstract": true,
+          "extends": {
+            "kind": "ref",
+            "name": "Observable",
+            "module": "@acme/demo-maps/core.js"
+          },
+          "constructors": [
+            {}
+          ],
+          "members": [
+            {
+              "kind": "property",
+              "name": "title",
+              "type": {
+                "kind": "union",
+                "types": [
+                  {
+                    "kind": "primitive",
+                    "name": "string"
+                  },
+                  {
+                    "kind": "primitive",
+                    "name": "null"
+                  }
+                ]
+              }
+            },
+            {
+              "kind": "property",
+              "name": "visible",
+              "type": {
+                "kind": "primitive",
+                "name": "boolean"
+              }
+            },
+            {
+              "kind": "method",
+              "name": "clone",
+              "signatures": [
+                {
+                  "returns": {
+                    "kind": "ref",
+                    "name": "Layer",
+                    "module": "@acme/demo-maps/layers/Layer.js"
+                  },
+                  "doc": {
+                    "summary": "A copy, of the same class."
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "specifier": "@acme/demo-maps/layers/TileLayer.js",
+      "declarations": [
+        {
+          "kind": "class",
+          "name": "TileLayer",
+          "export": "default",
+          "doc": {
+            "summary": "The module's default export, as many libraries' one-class modules have."
+          },
+          "extends": {
+            "kind": "ref",
+            "name": "Layer",
+            "module": "@acme/demo-maps/layers/Layer.js"
+          },
+          "constructors": [
+            {
+              "params": [
+                {
+                  "name": "options",
+                  "type": {
+                    "kind": "object",
+                    "members": [
+                      {
+                        "kind": "property",
+                        "name": "title",
+                        "optional": true,
+                        "inherited": true,
+                        "type": {
+                          "kind": "union",
+                          "types": [
+                            {
+                              "kind": "primitive",
+                              "name": "string"
+                            },
+                            {
+                              "kind": "primitive",
+                              "name": "null"
+                            }
+                          ]
+                        }
+                      },
+                      {
+                        "kind": "property",
+                        "name": "url",
+                        "optional": true,
+                        "inherited": true,
+                        "type": {
+                          "kind": "primitive",
+                          "name": "string"
+                        }
+                      },
+                      {
+                        "kind": "property",
+                        "name": "visible",
+                        "optional": true,
+                        "inherited": true,
+                        "type": {
+                          "kind": "primitive",
+                          "name": "boolean"
+                        }
+                      }
+                    ]
+                  },
+                  "optional": true
+                }
+              ]
+            }
+          ],
+          "members": [
+            {
+              "kind": "property",
+              "name": "url",
+              "doc": {
+                "summary": "The URL template of the tiles."
+              },
+              "type": {
+                "kind": "primitive",
+                "name": "string"
+              }
+            },
+            {
+              "kind": "method",
+              "name": "clone",
+              "signatures": [
+                {
+                  "returns": {
+                    "kind": "ref",
+                    "name": "TileLayer",
+                    "module": "@acme/demo-maps/layers/TileLayer.js"
+                  },
+                  "doc": {
+                    "summary": "Redeclared with the subclass's type."
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
       "specifier": "@acme/demo-maps/measure.js",
       "declarations": [
         {
@@ -2014,6 +2199,35 @@
               "returns": {
                 "kind": "primitive",
                 "name": "number"
+              }
+            }
+          ]
+        },
+        {
+          "kind": "function",
+          "name": "perimeter",
+          "signatures": [
+            {
+              "params": [
+                {
+                  "name": "points",
+                  "type": {
+                    "kind": "array",
+                    "element": {
+                      "kind": "ref",
+                      "name": "Point",
+                      "module": "@acme/demo-maps/geometry.js"
+                    }
+                  },
+                  "rest": true
+                }
+              ],
+              "returns": {
+                "kind": "primitive",
+                "name": "number"
+              },
+              "doc": {
+                "summary": "The length of the closed path through the points: the last joins the first."
               }
             }
           ]

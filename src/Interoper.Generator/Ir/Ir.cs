@@ -42,7 +42,10 @@ public sealed record Doc(string? Summary = null, string? Default = null, string?
 [JsonDerivedType(typeof(VariableDeclaration), "variable")]
 public abstract record Declaration
 {
+    /// <summary>The declaration's own name, which a default export has too.</summary>
     public required string Name { get; init; }
+    /// <summary>The name the module exports it under, when that isn't <see cref="Name"/>: <c>default</c>.</summary>
+    public string? Export { get; init; }
     public Doc? Doc { get; init; }
 }
 

@@ -2,6 +2,7 @@
 // One suite that runs in memory (GoldenSliceTests) and on WebAssembly (tests/Interoper.E2E), and fails fast on Server.
 // Compiled into both, so it has no test framework.
 using GoldenSlice.Sync;
+using GoldenSlice.Sync.Layers;
 using static Interoper.Contract.Check;
 
 namespace Interoper.Contract;
@@ -24,6 +25,9 @@ public static class GoldenSyncSuite
         ("module function over a union (R2, §5)", InScope(UnionModuleFunction)),
         ("a watch on every property, delivered then released (§5)", InScope(Watches)),
         ("base classes are live classes (R19)", InScope(Bases)),
+        ("a default export: create, a redeclared clone and the most-derived type (R4, R19, R26)", InScope(DefaultExport)),
+        ("module function with a rest parameter (R22)", InScope(RestParameter)),
+        ("module folders are namespaces (R27)", InScope(Namespaces)),
     ];
 
     private static void CreateSnapshotApply(JsScope scope)
@@ -209,6 +213,33 @@ public static class GoldenSyncSuite
         Expect(Emitter.Create(scope, new EmitterSnapshot()) is Emitter and not MapView, "an Emitter to be just an Emitter");
         Expect(Observable.Create(scope, new ObservableSnapshot()).GetType() == typeof(Observable), "an Observable to be just an Observable");
         Expect(Point.Create(scope, new PointSnapshot()) is Observable, "a Point to be an Observable");
+    }
+
+    private static void DefaultExport(JsScope scope)
+    {
+        var tile = TileLayer.Create(scope, new TileLayerSnapshot { Url = "u", Title = "Streets" });
+        Equal(new TileLayerSnapshot { Url = "u", Title = "Streets", Visible = true }, tile.Snapshot());
+        TileLayer copy = tile.Clone(scope); // TileLayer's clone hides Layer's
+        Expect(!ReferenceEquals(copy, tile), "a clone to be another object");
+        Equal(new TileLayerSnapshot { Url = "u", Title = "Streets", Visible = true }, copy.Snapshot());
+        Layer layer = tile;
+        Expect(layer.Clone(scope) is TileLayer { Url: "u" }, "a Layer's clone to be a TileLayer");
+    }
+
+    private static void RestParameter(JsScope scope)
+    {
+        Equal(12.0, Measure.Perimeter(scope.Realm, new PointSnapshot { X = 0, Y = 0 }, new PointSnapshot { X = 3, Y = 0 }, new PointSnapshot { X = 3, Y = 4 }));
+        Equal(0.0, Measure.Perimeter(scope.Realm));
+    }
+
+    private static void Namespaces(JsScope scope)
+    {
+        Equal("GoldenSlice.Sync.Layers", typeof(TileLayer).Namespace);
+        var tile = TileLayer.Create(scope, new TileLayerSnapshot());
+        Expect(tile is Layer and Observable, "a TileLayer to be a Layer and an Observable");
+        tile.Title = null;
+        tile.Visible = false;
+        Equal(new TileLayerSnapshot { Url = "", Title = null, Visible = false }, tile.Snapshot());
     }
 
     // --- Helpers ---

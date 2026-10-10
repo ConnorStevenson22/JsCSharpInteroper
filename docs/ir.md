@@ -27,6 +27,9 @@ A **specifier** is the nearest named `package.json` plus the path of the `.js` n
 
 Every declaration has `kind`, `name` and an optional `doc` (a function's are on its signatures).
 
+- `name` is the declaration's own name, also for a default export, and references (`ref`) use it.
+- `export` is the name the module exports it under, when that differs: `"default"` for `export default class TileLayer`.
+
 | `kind` | Fields |
 |---|---|
 | `class` | `abstract`, `typeParameters`, `extends` (one type), `implements`, `constructors` (signatures), `members`, `events` |

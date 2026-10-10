@@ -4,8 +4,9 @@ namespace Interoper.Generator.Tests;
 
 /// <summary>
 /// The golden slice (tests/GoldenSlice) is the fixture's generated bindings: the generator's output for the fixture's
-/// IR and profile, in both modes. On a difference the test rewrites the files, deletes the ones it no longer generates,
-/// and fails, listing them: review the diff, and a rerun passes.
+/// IR and profile, in both modes, with a subfolder per namespace (R27). On a difference the test rewrites the files,
+/// deletes the ones it no longer generates (and folders left empty), and fails, listing them: review the diff, and a
+/// rerun passes.
 /// </summary>
 public sealed class GoldenSliceTests
 {
@@ -19,6 +20,7 @@ public sealed class GoldenSliceTests
         (null, "IOP2007 MapViewOptions: skipped: uses `HTMLElement` (in `MapViewOptions`)", "DOM elements (R13) come with the Razor components"),
         (null, "IOP2007 MapView.container: skipped: uses `HTMLElement`", "DOM elements (R13) come with the Razor components"),
         (null, "IOP2007 MapView.markers: skipped: uses generic `Collection`", "collections come with generic live classes"),
+        (null, "IOP2007 MapView.layers: skipped: uses generic `Collection`", "collections come with generic live classes"),
         (null, "IOP2007 MapView.flyTo(options): optional parameter dropped (R22): uses `AbortSignal` (in `FlyToOptions`)", "AbortSignal (R14) isn't bridged yet"),
         (null, "IOP2007 LabelFormatter: skipped: uses a callback (in `LabelFormatter`)", "a named function alias has no C# type (R21)"),
         (null, "IOP2007 MarkerOptions: skipped: uses a callback (in `LabelFormatter`) (in `MarkerOptions`)", "a data record can't hold a callback"),
@@ -57,14 +59,20 @@ public sealed class GoldenSliceTests
                 }
                 if (!File.Exists(path) || File.ReadAllText(path) != file.Text)
                 {
+                    Directory.CreateDirectory(Path.GetDirectoryName(path)!);
                     File.WriteAllText(path, file.Text);
                     changed.Add(Path.GetRelativePath(root, path));
                 }
             }
-            foreach (var stale in Directory.GetFiles(folder, "*.cs").Where(f => result.Files.All(g => g.Path != Path.GetFileName(f))))
+            var generated = result.Files.Select(f => Path.GetFullPath(Path.Combine(folder, f.Path))).ToHashSet();
+            foreach (var stale in Directory.GetFiles(folder, "*.cs", SearchOption.AllDirectories).Where(f => !generated.Contains(Path.GetFullPath(f))))
             {
                 File.Delete(stale);
                 changed.Add($"{Path.GetRelativePath(root, stale)} (deleted)");
+            }
+            foreach (var empty in Directory.GetDirectories(folder, "*", SearchOption.AllDirectories).OrderDescending().Where(d => !Directory.EnumerateFileSystemEntries(d).Any()))
+            {
+                Directory.Delete(empty);
             }
         }
         Assert.Equal(2, metadata.Count);

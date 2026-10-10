@@ -26,14 +26,14 @@ internal static class MetadataEmitter
         {
             foreach (var (s, id) in classes.Select((s, i) => (s, i + 1)))
             {
-                w.Line($"public const int {Naming.Type(s.Declaration.Name)}Id = {id};");
+                w.Line($"public const int {types.ClassIdName((ClassDeclaration)s.Declaration)} = {id};");
             }
             if (classes.Count > 0)
             {
                 w.Line();
             }
-            var calls = classes.Select(s => (ClassDeclaration)s.Declaration).Where(c => !c.Abstract).Select(c => Naming.Type(c.Name))
-                .Select(name => $".Add({name}Id, static (realm, handle) => new {name}(realm, handle))").ToList();
+            var calls = classes.Select(s => (ClassDeclaration)s.Declaration).Where(c => !c.Abstract)
+                .Select(c => $".Add({types.ClassIdName(c)}, static (realm, handle) => new {types.Name(c).In(options.Namespace)}(realm, handle))").ToList();
             var modules = classes.Select(s => s.Module).Concat(functionModules).Distinct().ToList();
             if (options.Api == Api.Sync && modules.Count > 0)
             {
@@ -52,8 +52,8 @@ internal static class MetadataEmitter
     }
 
     /// <summary>
-    /// Per class id: the module and export that construct it, its runtime class name, whether it's value-like (R16), and
-    /// its snapshot members (R18), a value-like one's with its constants.
+    /// Per class id: the module and export that construct it, its runtime class name (with the profile's prefix), whether
+    /// it's value-like (R16), and its snapshot members (R18), a value-like one's with its constants.
     /// </summary>
     public static string Module(IrDocument ir, Profile profile, TypeMap types, IReadOnlyList<Selected> classes)
     {
@@ -67,8 +67,9 @@ internal static class MetadataEmitter
         {
             var c = (ClassDeclaration)s.Declaration;
             var members = string.Join(", ", types.WireMembers(c).Select(m => Syntax.Literal(m.Name)));
-            lines.Add($"    {id}: {{ module: {Syntax.Literal(s.Module)}, export: {Syntax.Literal(c.Name)}, " +
-                $"name: {Syntax.Literal(RuntimeName(ir.Package.Name, s.Module, c.Name))}, {(types.IsValueLike(c) ? "value: true, " : "")}members: [{members}] }},");
+            var name = profile.RuntimeClassPrefix + RuntimeName(ir.Package.Name, s.Module, c.Name);
+            lines.Add($"    {id}: {{ module: {Syntax.Literal(s.Module)}, export: {Syntax.Literal(c.Export ?? c.Name)}, " +
+                $"name: {Syntax.Literal(name)}, {(types.IsValueLike(c) ? "value: true, " : "")}members: [{members}] }},");
         }
         lines.AddRange(["  },", "};", ""]);
         return string.Join("\n", lines);
@@ -78,13 +79,13 @@ internal static class MetadataEmitter
     public static string FileName(IrDocument ir) => ir.Package.Name.Split('/')[^1] + ".meta.js";
 
     /// <summary>
-    /// The runtime class name: the module's path in the package, dotted, plus the export unless the file is named after
-    /// it (<c>geometry.Point</c>, <c>MapView</c>).
+    /// The runtime class name: the module's path in the package, dotted, plus the declaration's name unless the file is
+    /// named after it (<c>geometry.Point</c>, <c>MapView</c>, <c>layers.TileLayer</c> for a default export).
     /// </summary>
-    private static string RuntimeName(string package, string specifier, string export)
+    private static string RuntimeName(string package, string specifier, string name)
     {
         var path = specifier.StartsWith(package + "/", StringComparison.Ordinal) ? specifier[(package.Length + 1)..] : specifier;
         path = (path.EndsWith(".js", StringComparison.Ordinal) ? path[..^3] : path).Replace('/', '.');
-        return path.Split('.')[^1] == export ? path : $"{path}.{export}";
+        return path.Split('.')[^1] == name ? path : $"{path}.{name}";
     }
 }

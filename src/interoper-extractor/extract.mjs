@@ -47,7 +47,8 @@ export function extract(packageDir, { eventMap } = {}) {
   // --- Declarations ---
 
   function declaration(sym, decl) {
-    const base = { name: sym.name, doc: doc(sym) };
+    const name = nameOf(sym);
+    const base = { name, export: name !== sym.name ? sym.name : undefined, doc: doc(sym) };
     if (sym.flags & F.Class) return classDecl(sym, base);
     if (sym.flags & F.Enum) return enumDecl(sym, base);
     if (sym.flags & F.Interface) {
@@ -57,7 +58,7 @@ export function extract(packageDir, { eventMap } = {}) {
     if (sym.flags & F.TypeAlias) {
       return compact({ kind: "alias", ...base, typeParameters: typeParams(decl.typeParameters?.map((p) => checker.getTypeAtLocation(p.name))), type: typeRef(checker.getTypeFromTypeNode(decl.type), decl.type, { expandAlias: true }) });
     }
-    if (sym.flags & F.Function) return compact({ kind: "function", name: sym.name, signatures: signatures(checker.getTypeOfSymbol(sym), ts.SignatureKind.Call) });
+    if (sym.flags & F.Function) return compact({ kind: "function", name, export: base.export, signatures: signatures(checker.getTypeOfSymbol(sym), ts.SignatureKind.Call) });
     if (sym.flags & F.Variable) {
       return compact({ kind: "variable", ...base, readonly: (ts.getCombinedNodeFlags(decl) & ts.NodeFlags.Const) !== 0 || undefined, type: valueType(sym, decl.type) });
     }
@@ -275,7 +276,7 @@ export function extract(packageDir, { eventMap } = {}) {
   function ref(sym, args, node) {
     const argNodes = node && ts.isTypeReferenceNode(node) ? node.typeArguments ?? [] : [];
     const decl = sym.declarations?.find(moduleOf);
-    return compact({ kind: "ref", name: sym.name, module: decl && moduleOf(decl), args: args?.map((a, i) => typeRef(a, argNodes[i])) });
+    return compact({ kind: "ref", name: nameOf(sym), module: decl && moduleOf(decl), args: args?.map((a, i) => typeRef(a, argNodes[i])) });
   }
 
   /** R12: a type the checker can't resolve to something concrete (`keyof this`, `this["$events"][K]`). */
@@ -403,6 +404,8 @@ function specifierOf(file) {
   return undefined;
 }
 
+/** A declaration's own name: the symbol of a default export is named `default` (its `export`, ir.md). */
+const nameOf = (sym) => sym.declarations?.map((d) => ts.getNameOfDeclaration(d)).find((n) => n && ts.isIdentifier(n))?.text ?? sym.name;
 const isNamed = (type) => type.symbol && type.symbol.flags & (F.Class | F.Interface) && !(type.objectFlags & (ts.ObjectFlags.Anonymous | ts.ObjectFlags.Mapped));
 const hasModifier = (decl, flag) => (decl && (ts.getCombinedModifierFlags(decl) & flag) !== 0) || undefined;
 const sameSet = (a, b) => a.length === b.length && a.every((x) => b.includes(x));

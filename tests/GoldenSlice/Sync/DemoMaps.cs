@@ -16,6 +16,8 @@ public static partial class DemoMaps
     public const int ObservableId = 7;
     public const int EmitterId = 8;
     public const int DemoMapElementId = 9;
+    public const int LayerId = 10;
+    public const int TileLayerId = 11;
 
     public static JsClassRegistry Classes { get; } = new JsClassRegistry()
         .Add(PointId, static (realm, handle) => new Point(realm, handle))
@@ -26,5 +28,6 @@ public static partial class DemoMaps
         .Add(ObservableId, static (realm, handle) => new Observable(realm, handle))
         .Add(EmitterId, static (realm, handle) => new Emitter(realm, handle))
         .Add(DemoMapElementId, static (realm, handle) => new DemoMapElement(realm, handle))
-        .Preload("@acme/demo-maps/geometry.js", "@acme/demo-maps/MapView.js", "@acme/demo-maps/Marker.js", "@acme/demo-maps/core.js", "@acme/demo-maps/demo-map.js", "@acme/demo-maps/measure.js", "@acme/demo-maps/styles.js");
+        .Add(TileLayerId, static (realm, handle) => new global::GoldenSlice.Sync.Layers.TileLayer(realm, handle))
+        .Preload("@acme/demo-maps/geometry.js", "@acme/demo-maps/MapView.js", "@acme/demo-maps/Marker.js", "@acme/demo-maps/core.js", "@acme/demo-maps/demo-map.js", "@acme/demo-maps/layers/Layer.js", "@acme/demo-maps/layers/TileLayer.js", "@acme/demo-maps/measure.js", "@acme/demo-maps/styles.js");
 }

@@ -2,6 +2,8 @@
 import { MapView, type FlyToTarget } from "../MapView.js";
 import { Marker } from "../Marker.js";
 import { Point, type Shape } from "../geometry.js";
+import TileLayer from "../layers/TileLayer.js";
+import { perimeter } from "../measure.js";
 import type { Style } from "../styles.js";
 
 const view = new MapView({ zoom: 3, basemap: "3d-relief", cursor: "grab" });
@@ -31,6 +33,10 @@ function describe(shape: Shape): string {
 function width(style: Style): number | undefined {
   return style.type === "stroke" ? style.width : undefined;
 }
+
+const tile: TileLayer = new TileLayer({ url: "u" }).clone(); // the redeclared clone returns the subclass
+view.layers.add(tile);
+perimeter(position, ...targets.filter((t): t is Point => t instanceof Point)) satisfies number;
 
 void pair;
 void describe;

@@ -170,7 +170,9 @@ Sync mode needs .NET and JS on one thread, so it runs on WebAssembly only and fa
 - A callback whose *return value* JS uses synchronously (e.g. a formatter `(v) => string`) works in sync mode.
 - It *can't* work in async mode on Server or Hybrid. The generator emits IOP2005, and the profile can supply a JS-side implementation instead.
 
-**R22. Optional parameters** use the value model: `Opt<T> p = default` (or a union `= default`), and `default` is undefined. Omitted trailing arguments are omitted on the JS side too. Rest parameters become `params T[]`. An optional trailing parameter whose type isn't supported yet is dropped, with IOP2007, and so is a rest parameter until phase 3; a required one skips the member.
+**R22. Optional parameters** use the value model: `Opt<T> p = default` (or a union `= default`), and `default` is undefined. Omitted trailing arguments are omitted on the JS side too.
+- A rest parameter `...points: Point[]` becomes `params PointSnapshot[] points`, written as one argument per element (a spread). The optional parameters before it are written while a later one is defined or it has elements.
+- An optional trailing parameter or a rest parameter whose type isn't supported yet is dropped, with IOP2007; a rest parameter's type must be an array. A required one skips the member.
 
 **R23. Overloads** map one to one. If two TypeScript overloads collapse to the same C# signature after mapping, they merge into one method with a union or enum parameter (IOP2004).
 
@@ -184,9 +186,14 @@ Sync mode needs .NET and JS on one thread, so it runs on WebAssembly only and fa
 
 **R26. Members** are PascalCased. Async mode appends `Async`.
 - A JS member that collides with a generated member (`getZoom()` next to `zoom` in async mode) or with an `object` member (`toString()`, `equals()`) is renamed (`JsToString`, `JsEquals`) with IOP2006.
+- A member with the C# name and parameter types of a member an emitted base declares (for a property, its name) is `new`, since it hides that one (CS0108): `TileLayer Clone(JsScope scope)` over `Layer Clone(JsScope scope)`, and every subclass's `Snapshot()`. Other parameter types make an overload.
 - C# keywords can't collide after PascalCasing.
 
-**R27. Types** keep the TypeScript name in PascalCase. The namespace is the consumer's root namespace plus the module's folder path. Anonymous unions are named after their owner: `Feature.shape` becomes `FeatureShape`, and its setter-only wider type becomes `FeatureShapeInput`. A method's result is named after the method (`Feature.moveTo` → `FeatureMoveTo`), a parameter's after the method and the parameter (`FeatureMoveToTarget`), and an event's payload after the event (`FeatureClick`). When two generated types would share a name, the registry keeps its name and a module's static class takes the next free one (`Measure2`), since nothing refers to it; any other later type is skipped. Both are IOP2006.
+**R27. Types** keep the TypeScript name in PascalCase.
+- **Namespaces.** A type's namespace is the consumer's root namespace plus its module's folders in the package, each PascalCased: `layers/TileLayer.js` gives `Acme.Maps.Layers`. Its file's path mirrors the namespace (`Layers/TileLayer.cs`). The registry `{Package}.cs` and the metadata module stay at the root.
+- **References.** Generated code names a type in its own namespace plainly, and a type in another namespace by its `global::`-qualified name (`global::Acme.Maps.Geometry.Extent`). In `Acme.Maps.Geometry.Support`, say, `Geometry.Extent` would otherwise mean a member of the class `Acme.Maps.Geometry.Geometry`.
+
+Anonymous unions are named after their owner: `Feature.shape` becomes `FeatureShape`, and its setter-only wider type becomes `FeatureShapeInput`. A method's result is named after the method (`Feature.moveTo` → `FeatureMoveTo`), a parameter's after the method and the parameter (`FeatureMoveToTarget`), and an event's payload after the event (`FeatureClick`). When two generated types would share a path, the registry keeps its name and a module's static class takes the next free one (`Measure2`), since nothing refers to it; any other later type is skipped, and so is a type with the full name of a namespace (`Layers` next to the `layers/` folder). Classes of one name in different namespaces get class id constants with a suffix after the first (`PointId`, `Point2Id`). All of these are IOP2006.
 
 ---
 

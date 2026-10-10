@@ -22,9 +22,18 @@ const pair = { kind: "tuple", elements: [num, num] };
 test("modules are keyed by specifier, declarations keep source order", () => {
   assert.equal(ir.version, 1);
   assert.deepEqual(ir.package, { name: "@acme/demo-maps", version: "0.0.0" });
-  assert.deepEqual(ir.modules.map((m) => m.specifier.slice("@acme/demo-maps/".length)), ["MapView.js", "Marker.js", "core.js", "demo-map.js", "geometry.js", "measure.js", "styles.js"]);
+  assert.deepEqual(ir.modules.map((m) => m.specifier.slice("@acme/demo-maps/".length)), ["MapView.js", "Marker.js", "core.js", "demo-map.js", "geometry.js", "layers/Layer.js", "layers/TileLayer.js", "measure.js", "styles.js"]);
   assert.deepEqual(ir.modules.find((m) => m.specifier.endsWith("/geometry.js")).declarations.map((d) => `${d.kind} ${d.name}`),
     ["alias ShapeType", "interface Bounds", "class Shape", "class Point", "class Line", "class Polygon"]);
+});
+
+test("a default export keeps its declaration's name, and says its export", () => {
+  const tile = decl("layers/TileLayer", "TileLayer");
+  assert.equal(tile.export, "default");
+  assert.equal(decl("layers/Layer", "Layer").export, undefined); // a named export is the declaration's name
+  // References to it use the declaration's name too, its own and other modules' alike.
+  assert.deepEqual(member("layers/TileLayer", "TileLayer", "clone").signatures[0].returns, ref("layers/TileLayer", "TileLayer"));
+  assert.deepEqual(tile.extends, ref("layers/Layer", "Layer"));
 });
 
 test("§5: an accessor pair keeps the getter's and the setter's type", () => {
@@ -125,6 +134,10 @@ test("R21: function types and module functions", () => {
   assert.deepEqual(decl("measure", "distance"), { kind: "function", name: "distance", signatures: [{ params: [{ name: "a", type: ref("geometry", "Point") }, { name: "b", type: ref("geometry", "Point") }], returns: num }] });
 });
 
+test("R22: a rest parameter's type is its array", () => {
+  assert.deepEqual(decl("measure", "perimeter").signatures[0].params, [{ name: "points", type: { kind: "array", element: ref("geometry", "Point") }, rest: true }]);
+});
+
 test("TS enums, and R11: an intersection of object types is resolved", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "extract-"));
   fs.writeFileSync(path.join(dir, "package.json"), JSON.stringify({ name: "@acme/extra", version: "1.0.0" }));
@@ -201,6 +214,15 @@ test("design §2: manifest types the typings don't give, ones that don't resolve
       { name: "x-pin-done" },
     ],
   }]);
+});
+
+test("a default-exported function keeps its own name", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "extract-"));
+  fs.writeFileSync(path.join(dir, "package.json"), JSON.stringify({ name: "@acme/extra", version: "1.0.0" }));
+  fs.writeFileSync(path.join(dir, "area.d.ts"), "export default function area(): number;");
+  const [{ declarations }] = extract(dir).modules;
+  fs.rmSync(dir, { recursive: true });
+  assert.deepEqual(declarations, [{ kind: "function", name: "area", export: "default", signatures: [{ returns: { kind: "primitive", name: "number" } }] }]);
 });
 
 test("a package without a manifest has no elements", () => {

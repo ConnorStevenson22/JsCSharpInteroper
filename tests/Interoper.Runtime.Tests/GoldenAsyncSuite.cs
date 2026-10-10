@@ -2,6 +2,7 @@
 // One suite that runs in memory (GoldenSliceTests) and on every host (tests/Interoper.E2E). Compiled into both, so it
 // has no test framework.
 using GoldenSlice.Async;
+using GoldenSlice.Async.Layers;
 using static Interoper.Contract.Check;
 
 namespace Interoper.Contract;
@@ -27,6 +28,9 @@ public static class GoldenAsyncSuite
         ("module function over a union (R2, §5)", InScope(UnionModuleFunction)),
         ("a watch on every property, delivered then released (§5)", InScope(Watches)),
         ("base classes are live classes (R19)", InScope(Bases)),
+        ("a default export: create, a redeclared clone and the most-derived type (R4, R19, R26)", InScope(DefaultExport)),
+        ("module function with a rest parameter (R22)", InScope(RestParameter)),
+        ("module folders are namespaces (R27)", InScope(Namespaces)),
     ];
 
     private static async Task CreateSnapshotApply(JsScope scope)
@@ -248,6 +252,33 @@ public static class GoldenAsyncSuite
         Expect(await Emitter.CreateAsync(scope, new EmitterSnapshot()) is Emitter and not MapView, "an Emitter to be just an Emitter");
         Expect((await Observable.CreateAsync(scope, new ObservableSnapshot())).GetType() == typeof(Observable), "an Observable to be just an Observable");
         Expect(await Point.CreateAsync(scope, new PointSnapshot()) is Observable, "a Point to be an Observable");
+    }
+
+    private static async Task DefaultExport(JsScope scope)
+    {
+        var tile = await TileLayer.CreateAsync(scope, new TileLayerSnapshot { Url = "u", Title = "Streets" });
+        Equal(new TileLayerSnapshot { Url = "u", Title = "Streets", Visible = true }, await tile.SnapshotAsync());
+        TileLayer copy = await tile.CloneAsync(scope); // TileLayer's clone hides Layer's
+        Expect(!ReferenceEquals(copy, tile), "a clone to be another object");
+        Equal(new TileLayerSnapshot { Url = "u", Title = "Streets", Visible = true }, await copy.SnapshotAsync());
+        Layer layer = tile;
+        Expect(await layer.CloneAsync(scope) is TileLayer, "a Layer's clone to be a TileLayer");
+    }
+
+    private static async Task RestParameter(JsScope scope)
+    {
+        Equal(12.0, await Measure.PerimeterAsync(scope.Realm, new PointSnapshot { X = 0, Y = 0 }, new PointSnapshot { X = 3, Y = 0 }, new PointSnapshot { X = 3, Y = 4 }));
+        Equal(0.0, await Measure.PerimeterAsync(scope.Realm));
+    }
+
+    private static async Task Namespaces(JsScope scope)
+    {
+        Equal("GoldenSlice.Async.Layers", typeof(TileLayer).Namespace);
+        var tile = await TileLayer.CreateAsync(scope, new TileLayerSnapshot());
+        Expect(tile is Layer and Observable, "a TileLayer to be a Layer and an Observable");
+        await tile.SetTitleAsync(null);
+        await tile.SetVisibleAsync(false);
+        Equal(new TileLayerSnapshot { Url = "", Title = null, Visible = false }, await tile.SnapshotAsync());
     }
 
     // --- Helpers ---

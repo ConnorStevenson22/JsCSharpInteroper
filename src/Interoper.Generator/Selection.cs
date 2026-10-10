@@ -5,7 +5,7 @@ namespace Interoper.Generator;
 
 /// <summary>
 /// A declaration to emit, trimmed to what can be mapped: a class keeps only the members, events and signatures that
-/// can be, and a dropped optional parameter is gone from its signature (R22).
+/// can be, and a dropped optional or rest parameter is gone from its signature (R22).
 /// </summary>
 public sealed record Selected(string Module, Declaration Declaration);
 
@@ -15,7 +15,7 @@ public sealed record Selected(string Module, Declaration Declaration);
 /// data types (interfaces, aliases, enums) they use, whole. What can't be mapped is found here, so that a skipped type
 /// takes the members that use it along with it (mapping §8): a member that uses a class outside the selection, or a
 /// type the type map can't map (<see cref="TypeMap.Problem(IrType, bool)"/>), is skipped with IOP2007, or IOP2003 for
-/// an ambiguous union; an optional trailing parameter is dropped instead (R22).
+/// an ambiguous union; an optional trailing parameter or a rest parameter is dropped instead (R22).
 /// </summary>
 public sealed class Selection
 {
@@ -220,8 +220,8 @@ public sealed class Selection
             sub.Members.Any(m => m is PropertyMember { Type: LiteralType } && m.Name == property.Name));
 
     /// <summary>
-    /// The signatures that can be mapped, without trailing optional parameters that can't (R22). <paramref name="live"/>:
-    /// a live class's method, whose parameters and result can be entities.
+    /// The signatures that can be mapped, without trailing optional or rest parameters that can't (R22).
+    /// <paramref name="live"/>: a live class's method, whose parameters and result can be entities.
     /// </summary>
     private List<Signature> Signatures(string subject, IEnumerable<Signature> signatures, bool live)
     {
@@ -233,12 +233,12 @@ public sealed class Selection
                 Skip(subject, problem);
                 continue;
             }
-            var kept = signature.Params.TakeWhile(p => !p.Rest && ParameterProblem(p, live) is null).ToList();
+            var kept = signature.Params.TakeWhile(p => ParameterProblem(p, live) is null).ToList();
             if (kept.Count < signature.Params.Count)
             {
                 var dropped = signature.Params[kept.Count];
                 Report(new(Diagnostic.NotSupported, $"{subject}({dropped.Name})",
-                    dropped.Rest ? "rest parameter dropped (R22)" : $"optional parameter dropped (R22): uses {ParameterProblem(dropped, live)}"));
+                    $"{(dropped.Rest ? "rest" : "optional")} parameter dropped (R22): uses {ParameterProblem(dropped, live)}"));
             }
             var trimmed = signature with { Params = kept };
             foreach (var type in trimmed.Params.Select(p => p.Type).Append(trimmed.Returns).OfType<IrType>())
@@ -257,7 +257,9 @@ public sealed class Selection
         : signature.Params.FirstOrDefault(p => ParameterProblem(p, live) is not null) is { Optional: false, Rest: false } required ? ParameterProblem(required, live)
         : null;
 
-    private Unmappable? ParameterProblem(Parameter p, bool live) => Problem(p.Type) ?? types.Problem(p.Type, live);
+    /// <summary>R22: a rest parameter is <c>params T[]</c>, so its type must be an array.</summary>
+    private Unmappable? ParameterProblem(Parameter p, bool live) =>
+        p.Rest && p.Type is not ArrayType ? new("a type that isn't an array") : Problem(p.Type) ?? types.Problem(p.Type, live);
 
     private void Skip(string subject, Unmappable problem) => Report(new(problem.Code, subject, $"skipped: uses {problem}"));
 

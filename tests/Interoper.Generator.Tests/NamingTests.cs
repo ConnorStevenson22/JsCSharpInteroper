@@ -59,4 +59,19 @@ public sealed class NamingTests
         Assert.Equal("ClickEventButton", Naming.OwnedType("ClickEvent", "button"));
         Assert.Equal("MarkerPositionInput", Naming.OwnedType("Marker", "position", input: true));
     }
+
+    [Theory] // R27
+    [InlineData("@acme/maps/MapView.js", "Acme.Maps")]
+    [InlineData("@acme/maps/layers/TileLayer.js", "Acme.Maps.Layers")]
+    [InlineData("@acme/maps/layers/support/tile-info.js", "Acme.Maps.Layers.Support")]
+    [InlineData("@acme/maps/3d/scene/Scene.js", "Acme.Maps._3d.Scene")]
+    public void ANamespaceIsTheRootPlusTheModulesFolders(string specifier, string ns) =>
+        Assert.Equal(ns, Naming.Namespace("Acme.Maps", "@acme/maps", specifier));
+
+    [Theory] // R27
+    [InlineData("Acme.Maps", "Point", "Point.cs")]
+    [InlineData("Acme.Maps.Layers", "TileLayer", "Layers/TileLayer.cs")]
+    [InlineData("Acme.Maps.Layers.Support", "TileInfo", "Layers/Support/TileInfo.cs")]
+    public void AFilePathMirrorsTheNamespace(string ns, string type, string path) =>
+        Assert.Equal(path, Naming.FilePath("Acme.Maps", ns, type));
 }

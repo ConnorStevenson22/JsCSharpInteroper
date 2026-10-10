@@ -37,6 +37,23 @@ public static class Naming
     public static string Type(string name) => Pascal(name);
 
     /// <summary>
+    /// R27: a module's namespace is the root namespace plus the module's folder in its package, each segment
+    /// PascalCased: <c>@acme/maps/layers/TileLayer.js</c> is in <c>Acme.Maps.Layers</c>.
+    /// </summary>
+    public static string Namespace(string root, string package, string specifier)
+    {
+        var path = specifier.StartsWith(package + "/", StringComparison.Ordinal) ? specifier[(package.Length + 1)..] : specifier;
+        return string.Join(".", path.Split('/')[..^1].Select(Pascal).Prepend(root));
+    }
+
+    /// <summary>
+    /// R27: a generated file's path mirrors its namespace below the root namespace: <c>Layers/TileLayer.cs</c> for
+    /// <c>Acme.Maps.Layers.TileLayer</c>.
+    /// </summary>
+    public static string FilePath(string root, string ns, string type) =>
+        ns == root ? $"{type}.cs" : $"{ns[(root.Length + 1)..].Replace('.', '/')}/{type}.cs";
+
+    /// <summary>
     /// R27: an anonymous type is named after its owner (<c>Feature.shape</c> → <c>FeatureShape</c>), and the wider
     /// type of a setter after it, with <c>Input</c> (<c>FeatureShapeInput</c>).
     /// </summary>
@@ -90,4 +107,14 @@ public static class Naming
         }
         return unique;
     }
+}
+
+/// <summary>A generated type's namespace and name (R27).</summary>
+internal sealed record TypeName(string Namespace, string Name)
+{
+    /// <summary>How code in namespace <paramref name="ns"/> names it: plainly in its own namespace, otherwise <c>global::</c>-qualified.</summary>
+    public string In(string ns) => ns == Namespace ? Name : $"global::{Namespace}.{Name}";
+
+    /// <summary>R27: an anonymous type named after this one (<see cref="Naming.OwnedType"/>), in its namespace.</summary>
+    public TypeName Owned(string member, bool input = false) => this with { Name = Naming.OwnedType(Name, member, input) };
 }

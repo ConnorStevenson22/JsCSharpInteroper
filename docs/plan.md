@@ -36,7 +36,7 @@ Hand-written bindings for a slice of the fixture, running on every host.
 - [ ] Events and watches, with options and projection.
 - [ ] Collections, callbacks (R21), module functions, `Diff`, and the chatty-await analyzer.
 - [ ] Razor components from the CEM, with custom events, `@bind` and slots.
-- [ ] Generator gaps the whole fixture reaches: rest parameters (R22), namespaces from module folders (R27), `new` on members a subclass redeclares, and IOP2007 instead of `NotSupportedException`.
+- [x] Generator gaps the whole fixture reaches: rest parameters (R22), namespaces from module folders (R27), `new` on members a subclass redeclares, and IOP2007 instead of `NotSupportedException`.
 - [ ] Extractor: default exports, re-exports and namespaces, specifiers through `exports` maps, and declarations for dependency packages' types, as the validation samples need them.
 
 **Done when** the whole fixture is generated and passes on all hosts, and the first private validation samples pass.

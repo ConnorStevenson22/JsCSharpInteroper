@@ -3,3 +3,7 @@
 export function distance(a, b) {
   return Math.hypot(b.x - a.x, b.y - a.y);
 }
+
+export function perimeter(...points) {
+  return points.reduce((sum, point, i) => sum + distance(point, points[(i + 1) % points.length]), 0);
+}

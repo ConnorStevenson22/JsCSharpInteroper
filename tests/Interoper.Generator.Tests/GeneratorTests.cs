@@ -48,7 +48,7 @@ public sealed class GeneratorTests
         Assert.Contains("public required Opt<string> Name { get; init; }", File(result, "Tag.cs"));
     }
 
-    [Theory] // design §2, §3.5, R4, R19 step 1
+    [Theory] // design §2, §3.5, R4, R19 step 1, R27
     [InlineData(Api.Sync)]
     [InlineData(Api.Async)]
     public void TheRegistryAndMetadataNumberTheClasses(Api api)
@@ -62,8 +62,8 @@ public sealed class GeneratorTests
             """);
         var result = Generator.Generate(ir, new Profile { Package = "@acme/maps", ValueClasses = ["Length"] }, new(api, "Acme.Maps"));
 
-        Assert.Contains("public abstract partial class Layer : JsObject", File(result, "Layer.cs"));
-        Assert.Contains("public sealed partial class TileLayer : Layer", File(result, "TileLayer.cs"));
+        Assert.Contains("public abstract partial class Layer : JsObject", File(result, "Layers/Layer.cs"));
+        Assert.Contains("public sealed partial class TileLayer : Layer", File(result, "Layers/TileLayer.cs"));
         var registry = File(result, "Maps.cs");
         Assert.Contains("""
                 public const int LengthId = 1;
@@ -72,7 +72,7 @@ public sealed class GeneratorTests
 
                 public static JsClassRegistry Classes { get; } = new JsClassRegistry()
                     .Add(LengthId, static (realm, handle) => new Length(realm, handle))
-                    .Add(TileLayerId, static (realm, handle) => new TileLayer(realm, handle))
+                    .Add(TileLayerId, static (realm, handle) => new global::Acme.Maps.Layers.TileLayer(realm, handle))
             """, registry);
         Assert.Equal(api == Api.Sync, registry.Contains("""        .Preload("@acme/maps/units.js", "@acme/maps/layers/Layer.js");"""));
         Assert.Equal("""
@@ -89,7 +89,7 @@ public sealed class GeneratorTests
     }
 
     [Fact] // R3, R18, R22, R24
-    public void AnEntityRepeatsItsBasesSnapshotMembersAndLeavesOutTrailingUndefinedArguments()
+    public void AnEntityRepeatsItsBasesSnapshotMembersAndLeavesOutTrailingUndefinedArgumentsBeforeASpread()
     {
         const string Number = """{ "kind": "primitive", "name": "number" }""";
         var result = Generate($$"""
@@ -107,19 +107,17 @@ public sealed class GeneratorTests
         Assert.Contains("JsJson.ReadOpt(ref r, global::Acme.Maps.Cursor.Read)", File(result, "Layer.cs"));
         Assert.Contains("case \"cursor\": cursor = JsJson.ReadOpt(ref reader, global::Acme.Maps.Cursor.Read); break;", File(result, "LayerSnapshot.cs"));
         Assert.Contains("public Opt<Cursor> Cursor { get; init; }", File(result, "TileLayerSnapshot.cs"));
+        // R22: the rest parameter is params, and spread after the optional ones, which are written while it has elements.
         Assert.Contains("""
-                public void Refresh(Opt<double> delay = default, Opt<double> retries = default) =>
+                public void Refresh(Opt<double> delay = default, Opt<double> retries = default, params double[] tiles) =>
                     Realm.Send(JsOp.Call(Handle, "refresh", w =>
                     {
-                        if (!delay.IsUndefined || !retries.IsUndefined) JsJson.WriteValue(w, delay, JsJson.WriteNumber);
-                        if (!retries.IsUndefined) JsJson.WriteValue(w, retries, JsJson.WriteNumber);
+                        if (!delay.IsUndefined || !retries.IsUndefined || tiles.Length > 0) JsJson.WriteValue(w, delay, JsJson.WriteNumber);
+                        if (!retries.IsUndefined || tiles.Length > 0) JsJson.WriteValue(w, retries, JsJson.WriteNumber);
+                        foreach (var item in tiles) JsJson.WriteNumber(w, item);
                     }));
             """, File(result, "TileLayer.cs"));
-        Assert.Equal(
-        [
-            "IOP2007 Layer.on:load: skipped: the profile names no subscribe method",
-            "IOP2007 TileLayer.refresh(tiles): rest parameter dropped (R22)",
-        ], result.Diagnostics.Select(d => d.ToString()));
+        Assert.Equal("IOP2007 Layer.on:load: skipped: the profile names no subscribe method", Assert.Single(result.Diagnostics).ToString());
     }
 
     [Fact] // R27: nothing refers to a module's static class, so it takes a free name
@@ -167,6 +165,114 @@ public sealed class GeneratorTests
         Assert.DoesNotContain("Watch", File(result, "Graphic.cs"));
     }
 
+    [Theory] // R27
+    [InlineData(Api.Sync)]
+    [InlineData(Api.Async)]
+    public void ATypeInAnotherNamespaceIsGloballyQualified(Api api)
+    {
+        var result = Generate(api, ("geometry/Geometry.js", """
+            { "kind": "class", "name": "Geometry", "abstract": true },
+            { "kind": "interface", "name": "Extent", "members": [{ "kind": "property", "name": "width", "type": { "kind": "primitive", "name": "number" } }] },
+            { "kind": "class", "name": "Polyline", "extends": { "kind": "ref", "name": "Geometry", "module": "@acme/maps/geometry/Geometry.js" }, "members": [
+              { "kind": "property", "name": "extent", "type": { "kind": "ref", "name": "Extent", "module": "@acme/maps/geometry/Geometry.js" } }] }
+            """), ("View.js", """
+            { "kind": "class", "name": "View", "members": [
+              { "kind": "property", "name": "extent", "type": { "kind": "ref", "name": "Extent", "module": "@acme/maps/geometry/Geometry.js" } },
+              { "kind": "method", "name": "goTo", "signatures": [{ "params": [{ "name": "target", "type": { "kind": "ref", "name": "Geometry", "module": "@acme/maps/geometry/Geometry.js" } }],
+                "returns": { "kind": "primitive", "name": "void" } }] }] }
+            """));
+
+        Assert.Equal(["Geometry/Geometry.cs", "Geometry/GeometrySnapshot.cs", "Geometry/Extent.cs", "Geometry/Polyline.cs", "Geometry/PolylineSnapshot.cs",
+            "View.cs", "ViewSnapshot.cs", "Maps.cs", "maps.meta.js"], result.Files.Select(f => f.Path));
+        // In namespace Acme.Maps.Geometry, `Geometry` alone would be the class, so another namespace's types are qualified.
+        var view = File(result, "View.cs");
+        Assert.Contains("namespace Acme.Maps;", view);
+        Assert.Contains("global::Acme.Maps.Geometry.Extent.Read", view);
+        Assert.Contains("global::Acme.Maps.Geometry.Geometry target", view);
+        Assert.Contains("public Opt<global::Acme.Maps.Geometry.Extent> Extent { get; init; }", File(result, "ViewSnapshot.cs"));
+        // A type in the same namespace keeps its plain name; the registry is in the root namespace.
+        var polyline = File(result, "Geometry/Polyline.cs");
+        Assert.Contains("namespace Acme.Maps.Geometry;", polyline);
+        Assert.Contains("public sealed partial class Polyline : Geometry", polyline);
+        Assert.Contains("JsOp.Create(global::Acme.Maps.Maps.PolylineId, ", polyline);
+        Assert.Contains("Extent.Read", polyline);
+        Assert.DoesNotContain("global::Acme.Maps.Geometry.Extent", polyline);
+        Assert.Empty(result.Diagnostics);
+    }
+
+    [Fact] // R27: class id constants of classes with one name get a suffix; a type named like a namespace is skipped
+    public void NamesThatClashAcrossNamespacesCompile()
+    {
+        var result = Generate(Api.Sync, ("layers/Point.js", """{ "kind": "class", "name": "Point" }"""), ("Point.js", """{ "kind": "class", "name": "Point" }"""),
+            ("Layers.js", """{ "kind": "interface", "name": "Layers" }"""));
+
+        Assert.Equal(["Layers/Point.cs", "Layers/PointSnapshot.cs", "Point.cs", "PointSnapshot.cs", "Maps.cs", "maps.meta.js"], result.Files.Select(f => f.Path));
+        Assert.Contains("""
+                public const int PointId = 1;
+                public const int Point2Id = 2;
+
+                public static JsClassRegistry Classes { get; } = new JsClassRegistry()
+                    .Add(PointId, static (realm, handle) => new global::Acme.Maps.Layers.Point(realm, handle))
+                    .Add(Point2Id, static (realm, handle) => new Point(realm, handle))
+            """, File(result, "Maps.cs"));
+        Assert.Contains("JsOp.Create(Maps.Point2Id, ", File(result, "Point.cs"));
+        Assert.Equal(
+        [
+            "IOP2006 @acme/maps/Point.js Point: its class id is Point2Id: PointId is taken (R27)",
+            "IOP2006 Layers: skipped: `Acme.Maps.Layers` is a namespace (R27)",
+        ], result.Diagnostics.Select(d => d.ToString()));
+    }
+
+    [Theory] // R26
+    [InlineData(Api.Sync)]
+    [InlineData(Api.Async)]
+    public void AMemberThatHidesABasesMemberIsNew(Api api)
+    {
+        const string Number = """{ "kind": "primitive", "name": "number" }""";
+        const string String = """{ "kind": "primitive", "name": "string" }""";
+        string Method(string name, string param, string returns) =>
+            $$"""{ "kind": "method", "name": "{{name}}", "signatures": [{ "params": [{ "name": "x", "type": {{param}} }], "returns": {{returns}} }] }""";
+        var layer = """{ "kind": "ref", "name": "Layer", "module": "@acme/maps/layers/Layer.js" }""";
+        var tile = """{ "kind": "ref", "name": "TileLayer", "module": "@acme/maps/layers/TileLayer.js" }""";
+        var result = Generate(new Profile { Package = "@acme/maps", Watch = "watch" }, api, ("layers/Layer.js", $$"""
+            { "kind": "class", "name": "Layer", "members": [
+              { "kind": "property", "name": "title", "type": {{String}} }, {{Method("clone", Number, layer)}}, {{Method("refresh", Number, Number)}},
+              { "kind": "method", "name": "watch", "signatures": [{ "params": [], "returns": { "kind": "primitive", "name": "void" } }] }] }
+            """), ("layers/TileLayer.js", $$"""
+            { "kind": "class", "name": "TileLayer", "extends": {{layer}}, "members": [
+              { "kind": "property", "name": "title", "type": {{String}} }, {{Method("clone", Number, tile)}}, {{Method("refresh", String, Number)}}] }
+            """), ("views/View.js", $$"""
+            { "kind": "class", "name": "View", "extends": {{tile}}, "members": [{{Method("refresh", String, Number)}}] }
+            """));
+
+        var (m, sync) = (api == Api.Sync ? "" : "Async", api == Api.Sync);
+        var tileLayer = File(result, "Layers/TileLayer.cs");
+        Assert.Contains($"public new {(sync ? "TileLayer" : "async Task<TileLayer>")} Clone{m}(JsScope scope, double x)", tileLayer); // the same parameters
+        Assert.Contains($"public {(sync ? "double" : "Task<double>")} Refresh{m}(string x)", tileLayer); // other parameters: an overload
+        Assert.Contains(sync ? "public new string Title" : "public new Task SetTitleAsync(string value)", tileLayer);
+        Assert.Contains($"public new {(sync ? "IDisposable" : "Task<IAsyncDisposable>")} WatchTitle{m}(JsScope scope, Action<string> handler)", tileLayer);
+        // Through every emitted base, whatever its namespace.
+        var view = File(result, "Views/View.cs");
+        Assert.Contains($"public new {(sync ? "double" : "Task<double>")} Refresh{m}(string x)", view);
+        Assert.Contains($"public new {(sync ? "ViewSnapshot" : "async Task<ViewSnapshot>")} Snapshot{m}()", view);
+        Assert.Contains($"public {(sync ? "void" : "Task")} Apply{m}(ViewSnapshot patch)", view); // another snapshot type
+        Assert.DoesNotContain("public new", File(result, "Layers/Layer.cs"));
+    }
+
+    [Fact] // design §2: a default export is constructed by its export, and named by its declaration
+    public void ADefaultExportKeepsItsNameAndTheRuntimeNameItsPrefix()
+    {
+        var result = Generate(new Profile { Package = "@acme/maps", RuntimeClassPrefix = "acme." }, Api.Async, ("layers/TileLayer.js", """
+            { "kind": "class", "name": "TileLayer", "export": "default" }
+            """), ("area.js", """
+            { "kind": "function", "name": "area", "export": "default", "signatures": [{ "returns": { "kind": "primitive", "name": "number" } }] }
+            """));
+
+        Assert.Contains("public sealed partial class TileLayer : JsObject", File(result, "Layers/TileLayer.cs"));
+        Assert.Contains("""1: { module: "@acme/maps/layers/TileLayer.js", export: "default", name: "acme.layers.TileLayer", members: [] },""", File(result, "maps.meta.js"));
+        Assert.Contains("""realm.CallAsync(JsOp.Call(Module, "default"), JsJson.ReadNumber);""", File(result, "Area.cs"));
+    }
+
     private static GeneratorResult Generate(string declarations, Profile? profile = null)
     {
         var ir = IrDocument.Parse($$"""
@@ -174,6 +280,17 @@ public sealed class GeneratorTests
               "modules": [{ "specifier": "@acme/maps/a.js", "declarations": [{{declarations}}] }] }
             """);
         return Generator.Generate(ir, profile ?? new Profile { Package = "@acme/maps" }, new(Api.Sync, "Acme.Maps"));
+    }
+
+    /// <summary>The modules of <c>@acme/maps</c>, by their path in it.</summary>
+    private static GeneratorResult Generate(Api api, params (string Path, string Declarations)[] modules) =>
+        Generate(new Profile { Package = "@acme/maps" }, api, modules);
+
+    private static GeneratorResult Generate(Profile profile, Api api, params (string Path, string Declarations)[] modules)
+    {
+        var json = string.Join(",\n", modules.Select(m => $$"""{ "specifier": "@acme/maps/{{m.Path}}", "declarations": [{{m.Declarations}}] }"""));
+        var ir = IrDocument.Parse($$"""{ "version": 1, "package": { "name": "@acme/maps", "version": "1" }, "modules": [{{json}}] }""");
+        return Generator.Generate(ir, profile, new(api, "Acme.Maps"));
     }
 
     private static string File(GeneratorResult result, string path) => result.Files.Single(f => f.Path == path).Text;

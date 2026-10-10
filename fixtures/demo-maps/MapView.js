@@ -4,6 +4,7 @@ import { Point, Shape } from "./geometry.js";
 export class MapView extends Emitter {
   static className = "MapView";
   #markers = new Collection();
+  #layers = new Collection();
 
   constructor({ center = new Point(), zoom = 1, rotation = 0, basemap = "plain", cursor, title, container = null } = {}) {
     super();
@@ -32,6 +33,7 @@ export class MapView extends Emitter {
   get selected() { return this._get("selected"); }
   set selected(value) { this._set("selected", value); }
   get markers() { return this.#markers; }
+  get layers() { return this.#layers; }
 
   // The element the map draws into. Only stored, never touched, so the view also runs without a DOM.
   get container() { return this._get("container"); }

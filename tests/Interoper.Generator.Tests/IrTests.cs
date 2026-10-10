@@ -11,7 +11,7 @@ public sealed class IrTests
     {
         var ir = Fixture.Ir;
         Assert.Equal(new IrPackage("@acme/demo-maps", "0.0.0"), ir.Package);
-        Assert.Equal(["MapView", "Marker", "core", "demo-map", "geometry", "measure", "styles"],
+        Assert.Equal(["MapView", "Marker", "core", "demo-map", "geometry", "layers/Layer", "layers/TileLayer", "measure", "styles"],
             ir.Modules.Select(m => m.Specifier["@acme/demo-maps/".Length..^".js".Length]));
 
         var mapView = Declaration<ClassDeclaration>("MapView");
@@ -38,6 +38,9 @@ public sealed class IrTests
         Assert.True(shape.Abstract);
         Assert.True(shape.Members[0] is PropertyMember { Name: "type", Abstract: true, Readonly: true });
         Assert.IsType<ThisType>(Assert.IsType<MethodMember>(shape.Members[2]).Signatures[0].Returns);
+        Assert.Equal("default", Declaration<ClassDeclaration>("TileLayer").Export);
+        Assert.Null(Declaration<ClassDeclaration>("Layer").Export);
+        Assert.True(Assert.Single(Assert.Single(Declaration<FunctionDeclaration>("perimeter").Signatures).Params).Rest); // R22
 
         Assert.Equal("type", Assert.IsType<UnionType>(Declaration<AliasDeclaration>("Style").Type).Discriminant);
         var button = Assert.IsType<UnionType>(Declaration<InterfaceDeclaration>("ClickEvent").Members.OfType<PropertyMember>().Single(m => m.Name == "button").Type);
