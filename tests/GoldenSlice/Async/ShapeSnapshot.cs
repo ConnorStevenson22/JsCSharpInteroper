@@ -2,7 +2,6 @@
 #nullable enable
 
 using System.Text.Json;
-using Interoper;
 
 namespace GoldenSlice.Async;
 
@@ -28,7 +27,7 @@ public closed partial record ShapeSnapshot
         }
     }
 
-    public static ShapeSnapshot Read(ref Utf8JsonReader reader) => JsJson.PeekString(reader, "type"u8) switch
+    public static ShapeSnapshot Read(ref Utf8JsonReader reader) => global::Interoper.JsJson.PeekString(reader, "type"u8) switch
     {
         "point" => PointSnapshot.Read(ref reader),
         "line" => LineSnapshot.Read(ref reader),

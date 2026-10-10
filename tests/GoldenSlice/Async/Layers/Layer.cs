@@ -5,42 +5,41 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
-using Interoper;
 
 namespace GoldenSlice.Async.Layers;
 
 public abstract partial class Layer : global::GoldenSlice.Async.Observable
 {
-    internal Layer(JsRealm realm, int handle) : base(realm, handle) { }
+    internal Layer(global::Interoper.JsRealm realm, int handle) : base(realm, handle) { }
 
-    public Task<Opt<string>> GetTitleAsync() =>
-        Realm.CallAsync(JsOp.Get(Handle, "title"), static (ref r) => JsJson.ReadOpt(ref r, JsJson.ReadString));
+    public Task<global::Interoper.Opt<string>> GetTitleAsync() =>
+        Realm.CallAsync(global::Interoper.JsOp.Get(Handle, "title"), static (ref r) => global::Interoper.JsJson.ReadOpt(ref r, global::Interoper.JsJson.ReadString));
 
-    public Task SetTitleAsync(Opt<string> value) =>
-        Realm.SendAsync(JsOp.Set(Handle, "title", w => JsJson.WriteValue(w, value, JsJson.WriteString)));
+    public Task SetTitleAsync(global::Interoper.Opt<string> value) =>
+        Realm.SendAsync(global::Interoper.JsOp.Set(Handle, "title", w => global::Interoper.JsJson.WriteValue(w, value, global::Interoper.JsJson.WriteString)));
 
     public Task<bool> GetVisibleAsync() => Realm.GetBooleanAsync(Handle, "visible");
 
     public Task SetVisibleAsync(bool value) => Realm.SetAsync(Handle, "visible", value);
 
-    public async Task<Layer> CloneAsync(JsScope scope) =>
-        (await Realm.CallAsync(JsOp.Call(Handle, "clone"), scope.Read<Layer>))!;
+    public async Task<Layer> CloneAsync(global::Interoper.JsScope scope) =>
+        (await Realm.CallAsync(global::Interoper.JsOp.Call(Handle, "clone"), scope.Read<Layer>))!;
 
-    public Task<IAsyncDisposable> WatchTitleAsync(JsScope scope, Action<Opt<string>> handler) =>
-        scope.SubscribeAsync(Handle, "watch", "title", static (ref r) => JsJson.ReadOpt(ref r, JsJson.ReadString), handler, null, null);
+    public Task<IAsyncDisposable> WatchTitleAsync(global::Interoper.JsScope scope, Action<global::Interoper.Opt<string>> handler) =>
+        scope.SubscribeAsync(Handle, "watch", "title", static (ref r) => global::Interoper.JsJson.ReadOpt(ref r, global::Interoper.JsJson.ReadString), handler, null, null);
 
-    public IAsyncEnumerable<Opt<string>> WatchTitleStreamAsync(JsScope scope, CancellationToken cancellationToken = default) =>
-        scope.StreamAsync(Handle, "watch", "title", static (ref r) => JsJson.ReadOpt(ref r, JsJson.ReadString), null, null, cancellationToken);
+    public IAsyncEnumerable<global::Interoper.Opt<string>> WatchTitleStreamAsync(global::Interoper.JsScope scope, CancellationToken cancellationToken = default) =>
+        scope.StreamAsync(Handle, "watch", "title", static (ref r) => global::Interoper.JsJson.ReadOpt(ref r, global::Interoper.JsJson.ReadString), null, null, cancellationToken);
 
-    public Task<IAsyncDisposable> WatchVisibleAsync(JsScope scope, Action<bool> handler) =>
-        scope.SubscribeAsync(Handle, "watch", "visible", JsJson.ReadBoolean, handler, null, null);
+    public Task<IAsyncDisposable> WatchVisibleAsync(global::Interoper.JsScope scope, Action<bool> handler) =>
+        scope.SubscribeAsync(Handle, "watch", "visible", global::Interoper.JsJson.ReadBoolean, handler, null, null);
 
-    public IAsyncEnumerable<bool> WatchVisibleStreamAsync(JsScope scope, CancellationToken cancellationToken = default) =>
-        scope.StreamAsync(Handle, "watch", "visible", JsJson.ReadBoolean, null, null, cancellationToken);
+    public IAsyncEnumerable<bool> WatchVisibleStreamAsync(global::Interoper.JsScope scope, CancellationToken cancellationToken = default) =>
+        scope.StreamAsync(Handle, "watch", "visible", global::Interoper.JsJson.ReadBoolean, null, null, cancellationToken);
 
     public new async Task<LayerSnapshot> SnapshotAsync() =>
-        (await Realm.CallAsync(JsOp.Snapshot(Handle), LayerSnapshot.Read))!;
+        (await Realm.CallAsync(global::Interoper.JsOp.Snapshot(Handle), LayerSnapshot.Read))!;
 
     public Task ApplyAsync(LayerSnapshot patch) =>
-        Realm.SendAsync(JsOp.Apply(Handle, w => LayerSnapshot.WriteMembers(w, patch)));
+        Realm.SendAsync(global::Interoper.JsOp.Apply(Handle, w => LayerSnapshot.WriteMembers(w, patch)));
 }

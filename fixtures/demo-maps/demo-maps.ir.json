@@ -1186,7 +1186,11 @@
           "name": "CollectionChangeEvent",
           "typeParameters": [
             {
-              "name": "T"
+              "name": "T",
+              "default": {
+                "kind": "primitive",
+                "name": "any"
+              }
             }
           ],
           "members": [
@@ -1245,7 +1249,11 @@
           "name": "Collection",
           "typeParameters": [
             {
-              "name": "T"
+              "name": "T",
+              "default": {
+                "kind": "primitive",
+                "name": "any"
+              }
             }
           ],
           "extends": {
@@ -2271,6 +2279,369 @@
               },
               "doc": {
                 "summary": "The length of the closed path through the points: the last joins the first."
+              }
+            }
+          ]
+        },
+        {
+          "kind": "alias",
+          "name": "Measurable",
+          "doc": {
+            "summary": "Value-like shapes and an entity: written, never read back (R2, R17)."
+          },
+          "type": {
+            "kind": "union",
+            "types": [
+              {
+                "kind": "ref",
+                "name": "Point",
+                "module": "@acme/demo-maps/geometry.js"
+              },
+              {
+                "kind": "ref",
+                "name": "Polygon",
+                "module": "@acme/demo-maps/geometry.js"
+              },
+              {
+                "kind": "ref",
+                "name": "Marker",
+                "module": "@acme/demo-maps/Marker.js"
+              }
+            ]
+          }
+        },
+        {
+          "kind": "function",
+          "name": "describe",
+          "signatures": [
+            {
+              "params": [
+                {
+                  "name": "target",
+                  "type": {
+                    "kind": "ref",
+                    "name": "Measurable",
+                    "module": "@acme/demo-maps/measure.js"
+                  }
+                }
+              ],
+              "returns": {
+                "kind": "primitive",
+                "name": "string"
+              },
+              "doc": {
+                "summary": "The shape's `type`, or \"marker\" and its label."
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "specifier": "@acme/demo-maps/ops/a.js",
+      "declarations": [
+        {
+          "kind": "interface",
+          "name": "Options",
+          "doc": {
+            "summary": "Sibling modules `ops/a` and `ops/b` each export an `Options` and an `execute` (R27)."
+          },
+          "members": [
+            {
+              "kind": "property",
+              "name": "scale",
+              "optional": true,
+              "type": {
+                "kind": "primitive",
+                "name": "number"
+              }
+            }
+          ]
+        },
+        {
+          "kind": "function",
+          "name": "execute",
+          "signatures": [
+            {
+              "params": [
+                {
+                  "name": "x",
+                  "type": {
+                    "kind": "primitive",
+                    "name": "number"
+                  }
+                },
+                {
+                  "name": "options",
+                  "type": {
+                    "kind": "ref",
+                    "name": "Options",
+                    "module": "@acme/demo-maps/ops/a.js"
+                  },
+                  "optional": true
+                }
+              ],
+              "returns": {
+                "kind": "primitive",
+                "name": "number"
+              },
+              "doc": {
+                "summary": "`x * options.scale` (1 by default)."
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "specifier": "@acme/demo-maps/ops/b.js",
+      "declarations": [
+        {
+          "kind": "interface",
+          "name": "Options",
+          "doc": {
+            "summary": "The same names as `ops/a`, with other members (R27)."
+          },
+          "members": [
+            {
+              "kind": "property",
+              "name": "offset",
+              "optional": true,
+              "type": {
+                "kind": "primitive",
+                "name": "number"
+              }
+            }
+          ]
+        },
+        {
+          "kind": "function",
+          "name": "execute",
+          "signatures": [
+            {
+              "params": [
+                {
+                  "name": "x",
+                  "type": {
+                    "kind": "primitive",
+                    "name": "number"
+                  }
+                },
+                {
+                  "name": "options",
+                  "type": {
+                    "kind": "ref",
+                    "name": "Options",
+                    "module": "@acme/demo-maps/ops/b.js"
+                  },
+                  "optional": true
+                }
+              ],
+              "returns": {
+                "kind": "primitive",
+                "name": "number"
+              },
+              "doc": {
+                "summary": "`x + options.offset` (0 by default)."
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "specifier": "@acme/demo-maps/pins.js",
+      "declarations": [
+        {
+          "kind": "interface",
+          "name": "PinDragEvent",
+          "members": [
+            {
+              "kind": "property",
+              "name": "dx",
+              "type": {
+                "kind": "primitive",
+                "name": "number"
+              }
+            },
+            {
+              "kind": "property",
+              "name": "dy",
+              "type": {
+                "kind": "primitive",
+                "name": "number"
+              }
+            }
+          ]
+        },
+        {
+          "kind": "interface",
+          "name": "PinEvents",
+          "members": [
+            {
+              "kind": "property",
+              "name": "drag",
+              "type": {
+                "kind": "ref",
+                "name": "PinDragEvent",
+                "module": "@acme/demo-maps/pins.js"
+              }
+            }
+          ]
+        },
+        {
+          "kind": "class",
+          "name": "Pin",
+          "doc": {
+            "summary": "A marker with the `Draggable` mixin: its base is still `Marker`."
+          },
+          "extends": {
+            "kind": "ref",
+            "name": "Marker",
+            "module": "@acme/demo-maps/Marker.js"
+          },
+          "constructors": [
+            {
+              "params": [
+                {
+                  "name": "options",
+                  "type": {
+                    "kind": "ref",
+                    "name": "MarkerOptions",
+                    "module": "@acme/demo-maps/Marker.js"
+                  },
+                  "optional": true
+                }
+              ]
+            }
+          ],
+          "members": [
+            {
+              "kind": "property",
+              "name": "meta",
+              "doc": {
+                "summary": "Anything the app keeps with the pin."
+              },
+              "type": {
+                "kind": "primitive",
+                "name": "any"
+              }
+            },
+            {
+              "kind": "method",
+              "name": "on",
+              "inherited": true,
+              "signatures": [
+                {
+                  "typeParameters": [
+                    {
+                      "name": "K",
+                      "constraint": {
+                        "kind": "intersection",
+                        "types": [
+                          {
+                            "kind": "unresolved",
+                            "text": "keyof this[\"$events\"]"
+                          },
+                          {
+                            "kind": "primitive",
+                            "name": "string"
+                          }
+                        ]
+                      }
+                    }
+                  ],
+                  "params": [
+                    {
+                      "name": "type",
+                      "type": {
+                        "kind": "typeParameter",
+                        "name": "K"
+                      }
+                    },
+                    {
+                      "name": "listener",
+                      "type": {
+                        "kind": "function",
+                        "params": [
+                          {
+                            "name": "event",
+                            "type": {
+                              "kind": "unresolved",
+                              "text": "PinEvents[K]"
+                            }
+                          }
+                        ],
+                        "returns": {
+                          "kind": "primitive",
+                          "name": "void"
+                        }
+                      }
+                    }
+                  ],
+                  "returns": {
+                    "kind": "object",
+                    "members": [
+                      {
+                        "kind": "method",
+                        "name": "remove",
+                        "signatures": [
+                          {
+                            "returns": {
+                              "kind": "primitive",
+                              "name": "void"
+                            }
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  "doc": {
+                    "summary": "Its subscriptions have `remove()`, not `dispose()`."
+                  }
+                }
+              ]
+            },
+            {
+              "kind": "method",
+              "name": "dragBy",
+              "inherited": true,
+              "signatures": [
+                {
+                  "params": [
+                    {
+                      "name": "dx",
+                      "type": {
+                        "kind": "primitive",
+                        "name": "number"
+                      }
+                    },
+                    {
+                      "name": "dy",
+                      "type": {
+                        "kind": "primitive",
+                        "name": "number"
+                      }
+                    }
+                  ],
+                  "returns": {
+                    "kind": "primitive",
+                    "name": "void"
+                  },
+                  "doc": {
+                    "summary": "Moves the position and emits `drag`."
+                  }
+                }
+              ]
+            }
+          ],
+          "events": [
+            {
+              "name": "drag",
+              "type": {
+                "kind": "ref",
+                "name": "PinDragEvent",
+                "module": "@acme/demo-maps/pins.js"
               }
             }
           ]

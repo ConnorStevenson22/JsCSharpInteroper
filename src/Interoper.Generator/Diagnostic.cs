@@ -4,6 +4,9 @@ namespace Interoper.Generator;
 /// <param name="Subject">What it's about: a declaration, <c>Type.member</c>, or <c>Type.method(parameter)</c>.</param>
 public sealed record Diagnostic(string Code, string Subject, string Message)
 {
+    /// <summary><c>any</c>, <c>unknown</c> or <c>object</c> mapped to <c>JsAny</c> (mapping §2).</summary>
+    public const string Untyped = "IOP2001";
+
     /// <summary>An ambiguous union skipped: its cases can't be told apart (R19).</summary>
     public const string Ambiguous = "IOP2003";
 

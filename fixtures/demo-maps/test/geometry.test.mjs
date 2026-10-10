@@ -1,7 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { Line, Point, Polygon, Shape } from "../geometry.js";
-import { distance, perimeter } from "../measure.js";
+import { describe, distance, perimeter } from "../measure.js";
+import { Marker } from "../Marker.js";
 
 test("Shape is abstract; subclasses carry a type discriminant", () => {
   assert.throws(() => new Shape(), TypeError);
@@ -42,4 +43,10 @@ test("distance accepts instances and plain JSON alike", () => {
 test("perimeter takes any number of points and closes the path", () => {
   assert.equal(perimeter(new Point({ x: 0, y: 0 }), new Point({ x: 3, y: 0 }), { type: "point", x: 3, y: 4 }), 12);
   assert.equal(perimeter(), 0);
+});
+
+test("describe takes a value-like shape or an entity", () => {
+  assert.equal(describe(new Point()), "point");
+  assert.equal(describe(new Polygon()), "polygon");
+  assert.equal(describe(new Marker({ label: "m" })), "marker m");
 });

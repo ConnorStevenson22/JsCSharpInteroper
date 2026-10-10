@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import * as interoper from "../../src/Interoper.Runtime/wwwroot/interoper.js";
-import { call, census, create, faulty, get, ids, modules, release, send, sendAsync, set, value } from "./realm.mjs";
+import { call, callback, census, create, faulty, get, ids, modules, release, send, sendAsync, set, value } from "./realm.mjs";
 
 test("create returns a handle with the class id", () => {
   const view = create(ids.MapView, { zoom: 3 });
@@ -144,6 +144,26 @@ test("release releases every id even when a dispose() throws", async () => {
   assert.equal(e.name, "AggregateError");
   assert.equal(census(), baseline);
   assert.equal(send({ op: "release", ids: [a] }).e, undefined);
+});
+
+test("a subscription may have remove() instead of dispose(), which release calls", () => {
+  const baseline = census();
+  const pin = create(ids.Pin);
+  const drags = [];
+  const subscription = value(send({ op: "subscribe", h: pin.$h, method: "on", name: "drag", callback: callback((e) => { drags.push(e); }) }));
+  call(pin, "dragBy", 1, 2);
+  release(subscription);
+  call(pin, "dragBy", 3, 4);
+  assert.deepEqual(drags, [{ dx: 1, dy: 2 }]);
+  release(pin);
+  assert.equal(census(), baseline);
+});
+
+test("subscribe refuses a returned object with neither dispose() nor remove()", async () => {
+  const source = value(await sendAsync({ op: "call", module: faulty, name: "source" }));
+  const { e } = send({ op: "subscribe", h: source.$h, method: "onNothing", name: "x", callback: null });
+  assert.equal(e.message, "onNothing returned no dispose() or remove()");
+  release(source);
 });
 
 test("subscribe refuses a returned object that already has a handle", async () => {

@@ -5,12 +5,11 @@ using System;
 using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
-using Interoper;
 
 namespace GoldenSlice.Sync;
 
 [Union]
-public readonly partial struct ColorInput : IJsUnion<ColorInput>, IEquatable<ColorInput>
+public readonly partial struct ColorInput : global::Interoper.IJsUnion<ColorInput>, IEquatable<ColorInput>
 {
     private readonly object? _ref;
     private readonly byte _tag; // 0 = undefined, 1 = null, 2 = string, 3 = double[], 4 = Rgba
@@ -19,18 +18,18 @@ public readonly partial struct ColorInput : IJsUnion<ColorInput>, IEquatable<Col
     public ColorInput(string value) : this(value, 2) { }
     public ColorInput(double[] value) : this(value, 3) { }
     public ColorInput(Rgba value) : this(value, 4) { }
-    public ColorInput(Undefined? value) : this(null, value is null ? (byte)1 : (byte)0) { }
+    public ColorInput(global::Interoper.Undefined? value) : this(null, value is null ? (byte)1 : (byte)0) { }
 
-    public static implicit operator ColorInput(Undefined? value) => new(value);
+    public static implicit operator ColorInput(global::Interoper.Undefined? value) => new(value);
 
-    public object? Value => _tag switch { 0 => Undefined.Value, 1 => null, _ => _ref };
+    public object? Value => _tag switch { 0 => global::Interoper.Undefined.Value, 1 => null, _ => _ref };
     public bool HasValue => _tag != 1;
     public bool IsUndefined => _tag == 0;
     public bool IsNull => _tag == 1;
 
-    public bool TryGetValue(out Undefined value)
+    public bool TryGetValue(out global::Interoper.Undefined value)
     {
-        value = Undefined.Value;
+        value = global::Interoper.Undefined.Value;
         return _tag == 0;
     }
 
@@ -56,16 +55,16 @@ public readonly partial struct ColorInput : IJsUnion<ColorInput>, IEquatable<Col
     {
         switch (value._tag)
         {
-            case 2: JsJson.WriteString(writer, (string)value._ref!); break;
-            case 3: JsJson.WriteArray(writer, (double[])value._ref!, JsJson.WriteNumber); break;
+            case 2: global::Interoper.JsJson.WriteString(writer, (string)value._ref!); break;
+            case 3: global::Interoper.JsJson.WriteArray(writer, (double[])value._ref!, global::Interoper.JsJson.WriteNumber); break;
             case 4: Rgba.Write(writer, (Rgba)value._ref!); break;
         }
     }
 
     public static ColorInput ReadValue(ref Utf8JsonReader reader) => reader.TokenType switch
     {
-        JsonTokenType.String => JsJson.ReadString(ref reader),
-        JsonTokenType.StartArray => JsJson.ReadArray(ref reader, JsJson.ReadNumber),
+        JsonTokenType.String => global::Interoper.JsJson.ReadString(ref reader),
+        JsonTokenType.StartArray => global::Interoper.JsJson.ReadArray(ref reader, global::Interoper.JsJson.ReadNumber),
         JsonTokenType.StartObject => Rgba.Read(ref reader),
         var token => throw new JsonException($"ColorInput: unexpected {token}"),
     };

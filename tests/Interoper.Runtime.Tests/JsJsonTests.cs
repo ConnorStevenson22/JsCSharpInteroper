@@ -33,6 +33,24 @@ public class JsJsonTests
         Assert.Equal(new Rgba { R = 1, G = 2, B = 3 }, value);
     }
 
+    [Fact] // §2: any is its JSON, read with a typed reader; the scope that reads it owns its handles
+    public async Task Any_is_its_json_and_its_handles_are_the_scopes()
+    {
+        Assert.Equal("""{"a":[1,"b"]}""", Json.Write(JsAny.Parse("""{"a":[1,"b"]}"""), JsAny.Write));
+        Assert.Equal(3, JsAny.From(3.0, JsJson.WriteNumber).Read(JsJson.ReadNumber));
+
+        var transport = InMemoryDemoMaps.Create();
+        var realm = new JsRealm(() => Task.FromResult<IJsTransport>(transport), DemoMaps.Classes);
+        await realm.StartAsync();
+        var marker = transport.Invoke($$"""{"op":"create","t":{{DemoMaps.MarkerId}},"args":[]}""")[5..^1]; // {"v":{"$h":1,"$t":6}}
+        var scope = new JsScope(realm);
+        var any = Json.Read($$"""{"items":[{{marker}}]}""", (ref r) => JsAny.Read(ref r, scope));
+        Assert.Equal(marker, any.Json.GetProperty("items")[0].GetRawText());
+        Assert.Equal(1, transport.Census());
+        await scope.DisposeAsync();
+        Assert.Equal(0, transport.Census()); // released with the scope
+    }
+
     [Fact] // R21: a missing callback is JS null, or undefined when its type has no null
     public void A_callback_is_its_id_and_a_missing_one_null_or_undefined()
     {

@@ -17,12 +17,17 @@ public sealed record Selected(string Module, Declaration Declaration);
 /// takes the members that use it along with it (mapping §8): a member that uses a class outside the selection, or a
 /// type the type map can't map (<see cref="TypeMap.Problem(IrType, Position)"/>), is skipped with IOP2007, or IOP2003
 /// for an ambiguous union; an optional trailing parameter or a rest parameter is dropped instead (R22), and so is a
-/// method of an interface that an event delivers (R24). The profile's collection classes are generic live classes, and
-/// generic interfaces generic records; their type parameters are entities (mapping §2).
+/// method of an interface that an event delivers (R24). A union that is only written drops its cases outside the
+/// selection instead (R2). The profile's collection classes are generic live classes, and generic interfaces generic
+/// records; their type parameters are entities (mapping §2). A use of <c>any</c>, <c>unknown</c> or <c>object</c> is
+/// reported as IOP2001.
 /// </summary>
 public sealed class Selection
 {
-    private static readonly HashSet<string> SupportedPrimitives = ["string", "number", "boolean", "void", "undefined", "null"];
+    /// <summary>The primitives that map to <c>JsAny</c> (mapping §2), each use reported as IOP2001.</summary>
+    private static readonly string[] Untyped = ["any", "unknown", "object"];
+
+    private static readonly HashSet<string> SupportedPrimitives = ["string", "number", "boolean", "void", "undefined", "null", .. Untyped];
 
     private readonly Profile profile;
     private readonly Dictionary<(string Module, string Name), Declaration> byName = [];
@@ -208,6 +213,7 @@ public sealed class Selection
             foreach (var type in parts)
             {
                 Collect(type);
+                ReportUntyped(subject, type);
             }
             members.Add(property);
         }
@@ -225,6 +231,7 @@ public sealed class Selection
                 continue;
             }
             Collect(e.Type);
+            ReportUntyped($"{c.Name}.on:{e.Name}", e.Type);
             events.Add(e);
         }
         selected[c] = new(moduleOf[c], c with { Members = members, Events = events });
@@ -270,6 +277,14 @@ public sealed class Selection
             {
                 Collect(type);
             }
+            foreach (var p in trimmed.Params)
+            {
+                ReportUntyped($"{subject}({p.Name})", p.Type);
+            }
+            if (trimmed.Returns is { } returns)
+            {
+                ReportUntyped(subject, returns);
+            }
             result.Add(trimmed);
         }
         return result;
@@ -309,6 +324,9 @@ public sealed class Selection
         PrimitiveType p => SupportedPrimitives.Contains(p.Name) ? null : new($"`{p.Name}`"),
         LiteralType or ThisType => null,
         RefType { Module: null, Name: "Promise" } r => FirstProblem(r.Args),
+        // R2: where a union is only written, a case that is a class outside the selection is dropped; where it's read,
+        // the type map refuses it.
+        UnionType u when u.Types.Count(t => !IsNullish(t)) > 1 => FirstProblem(u.Types.Where(t => !IsOutside(t))),
         RefType { Module: null } r => new($"`{r.Name}`"),
         RefType r => Find(r) is { } declaration ? DeclarationProblem(declaration) ?? FirstProblem(r.Args) : new($"`{r.Name}`"),
         ObjectType o => MembersProblem(o.Members, o.CallSignatures.Count + o.ConstructSignatures.Count) ?? FirstProblem(Children(o)),
@@ -416,9 +434,37 @@ public sealed class Selection
         {
             Collect(type);
         }
+        var fields = emitted switch
+        {
+            InterfaceDeclaration record => record.Members.OfType<PropertyMember>(),
+            AliasDeclaration { Type: ObjectType o } => o.Members.OfType<PropertyMember>(),
+            _ => [],
+        };
+        foreach (var p in fields)
+        {
+            ReportUntyped($"{declaration.Name}.{p.Name}", p.Type);
+        }
     }
 
     private static bool IsNullish(IrType type) => type is PrimitiveType { Name: "null" or "undefined" };
+
+    /// <summary>A class outside the selection (R2).</summary>
+    private bool IsOutside(IrType type) => type is RefType { Module: not null } r && Find(r) is ClassDeclaration c && !classes.Contains(c);
+
+    /// <summary>
+    /// IOP2001: a member, parameter or result whose type has <c>any</c>, <c>unknown</c> or <c>object</c> in it, which
+    /// is <c>JsAny</c> (mapping §2). The declarations it names report their own.
+    /// </summary>
+    private void ReportUntyped(string subject, IrType type)
+    {
+        if (Primitives(type).FirstOrDefault(Untyped.Contains) is { } name)
+        {
+            Report(new(Diagnostic.Untyped, subject, $"`{name}` is JsAny (§2)"));
+        }
+
+        static IEnumerable<string> Primitives(IrType type) =>
+            type is PrimitiveType p ? [p.Name] : type is RefType { Module: not null } ? [] : Children(type).SelectMany(Primitives);
+    }
 
     private Declaration? Find(RefType type) => byName.GetValueOrDefault((type.Module!, type.Name));
 

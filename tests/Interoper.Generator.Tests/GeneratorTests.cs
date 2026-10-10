@@ -29,24 +29,24 @@ public sealed class GeneratorTests
         var options = File(result, "Options.cs");
         Assert.Contains("""
                 public required double JsOptions { get; init; }
-                public required Opt<bool> Default { get; init; }
+                public required global::Interoper.Opt<bool> Default { get; init; }
                 public required string Id { get; init; }
             """, options);
-        Assert.Contains("case \"default\": @default = JsJson.ReadOpt(ref reader, JsJson.ReadBoolean); break;", options);
+        Assert.Contains("case \"default\": @default = global::Interoper.JsJson.ReadOpt(ref reader, global::Interoper.JsJson.ReadBoolean); break;", options);
         Assert.Contains("string id = null!;", options);
         Assert.Equal("IOP2006 Options.options: JsOptions: Options is taken (R26)", Assert.Single(result.Diagnostics).ToString());
     }
 
-    [Fact] // R18, R26: a snapshot member can't take Diff's name, nor that of the JsDiff it calls
+    [Fact] // R18, R26: a snapshot member can't take Diff's name; the runtime's JsDiff it calls is qualified, so it can take that one
     public void ASnapshotMemberNamedDiffIsRenamed()
     {
         var result = Generate("""
             { "kind": "class", "name": "Track", "members": [{ "kind": "property", "name": "diff", "type": { "kind": "primitive", "name": "number" } }] }
             """);
         var snapshot = File(result, "TrackSnapshot.cs");
-        Assert.Contains("public Opt<double> JsDiff2 { get; init; }", snapshot);
-        Assert.Contains("JsDiff2 = after.JsDiff2.IsUndefined || JsDiff.Same(before.JsDiff2, after.JsDiff2) ? default : after.JsDiff2,", snapshot);
-        Assert.Equal("IOP2006 TrackSnapshot.diff: JsDiff2: Diff is taken (R26)", Assert.Single(result.Diagnostics).ToString());
+        Assert.Contains("public global::Interoper.Opt<double> JsDiff { get; init; }", snapshot);
+        Assert.Contains("JsDiff = after.JsDiff.IsUndefined || global::Interoper.JsDiff.Same(before.JsDiff, after.JsDiff) ? default : after.JsDiff,", snapshot);
+        Assert.Equal("IOP2006 TrackSnapshot.diff: JsDiff: Diff is taken (R26)", Assert.Single(result.Diagnostics).ToString());
     }
 
     [Fact] // R3
@@ -57,7 +57,7 @@ public sealed class GeneratorTests
             { "kind": "interface", "name": "Tag", "members": [{ "kind": "property", "name": "name", "type": { "kind": "ref", "name": "Name", "module": "@acme/maps/a.js" } }] }
             """);
         Assert.Equal(["Tag.cs", "Maps.cs", "maps.meta.js"], result.Files.Select(f => f.Path)); // no Name.cs; the registry and metadata module
-        Assert.Contains("public required Opt<string> Name { get; init; }", File(result, "Tag.cs"));
+        Assert.Contains("public required global::Interoper.Opt<string> Name { get; init; }", File(result, "Tag.cs"));
     }
 
     [Theory] // design §2, §3.5, R4, R19 step 1, R27
@@ -74,7 +74,7 @@ public sealed class GeneratorTests
             """);
         var result = Generator.Generate(ir, new Profile { Package = "@acme/maps", ValueClasses = ["Length"] }, new(api, "Acme.Maps"));
 
-        Assert.Contains("public abstract partial class Layer : JsObject", File(result, "Layers/Layer.cs"));
+        Assert.Contains("public abstract partial class Layer : global::Interoper.JsObject", File(result, "Layers/Layer.cs"));
         Assert.Contains("public sealed partial class TileLayer : Layer", File(result, "Layers/TileLayer.cs"));
         var registry = File(result, "Maps.cs");
         Assert.Contains("""
@@ -82,7 +82,7 @@ public sealed class GeneratorTests
                 public const int LayerId = 2;
                 public const int TileLayerId = 3;
 
-                public static JsClassRegistry Classes { get; } = new JsClassRegistry()
+                public static global::Interoper.JsClassRegistry Classes { get; } = new global::Interoper.JsClassRegistry()
                     .Add(LengthId, static (realm, handle) => new Length(realm, handle))
                     .Add(TileLayerId, static (realm, handle) => new global::Acme.Maps.Layers.TileLayer(realm, handle))
             """, registry);
@@ -116,17 +116,17 @@ public sealed class GeneratorTests
             """);
 
         // Opt<Cursor> Cursor hides the type Cursor, so its methods are called through global:: (CS0120).
-        Assert.Contains("JsJson.ReadOpt(ref r, global::Acme.Maps.Cursor.Read)", File(result, "Layer.cs"));
-        Assert.Contains("case \"cursor\": cursor = JsJson.ReadOpt(ref reader, global::Acme.Maps.Cursor.Read); break;", File(result, "LayerSnapshot.cs"));
-        Assert.Contains("public Opt<Cursor> Cursor { get; init; }", File(result, "TileLayerSnapshot.cs"));
+        Assert.Contains("global::Interoper.JsJson.ReadOpt(ref r, global::Acme.Maps.Cursor.Read)", File(result, "Layer.cs"));
+        Assert.Contains("case \"cursor\": cursor = global::Interoper.JsJson.ReadOpt(ref reader, global::Acme.Maps.Cursor.Read); break;", File(result, "LayerSnapshot.cs"));
+        Assert.Contains("public global::Interoper.Opt<Cursor> Cursor { get; init; }", File(result, "TileLayerSnapshot.cs"));
         // R22: the rest parameter is params, and spread after the optional ones, which are written while it has elements.
         Assert.Contains("""
-                public void Refresh(Opt<double> delay = default, Opt<double> retries = default, params double[] tiles) =>
-                    Realm.Send(JsOp.Call(Handle, "refresh", w =>
+                public void Refresh(global::Interoper.Opt<double> delay = default, global::Interoper.Opt<double> retries = default, params double[] tiles) =>
+                    Realm.Send(global::Interoper.JsOp.Call(Handle, "refresh", w =>
                     {
-                        if (!delay.IsUndefined || !retries.IsUndefined || tiles.Length > 0) JsJson.WriteValue(w, delay, JsJson.WriteNumber);
-                        if (!retries.IsUndefined || tiles.Length > 0) JsJson.WriteValue(w, retries, JsJson.WriteNumber);
-                        foreach (var item in tiles) JsJson.WriteNumber(w, item);
+                        if (!delay.IsUndefined || !retries.IsUndefined || tiles.Length > 0) global::Interoper.JsJson.WriteValue(w, delay, global::Interoper.JsJson.WriteNumber);
+                        if (!retries.IsUndefined || tiles.Length > 0) global::Interoper.JsJson.WriteValue(w, retries, global::Interoper.JsJson.WriteNumber);
+                        foreach (var item in tiles) global::Interoper.JsJson.WriteNumber(w, item);
                     }));
             """, File(result, "TileLayer.cs"));
         Assert.Equal("IOP2007 Layer.on:load: skipped: the profile names no subscribe method", Assert.Single(result.Diagnostics).ToString());
@@ -163,6 +163,101 @@ public sealed class GeneratorTests
         ], result.Diagnostics.Select(d => d.ToString()));
     }
 
+    [Fact] // R27: the registry takes a free name when a folder's namespace has its name
+    public void TheRegistryNamedLikeAFolderGetsASuffix()
+    {
+        var ir = IrDocument.Parse("""
+            { "version": 1, "package": { "name": "@acme/core", "version": "1" }, "modules": [
+              { "specifier": "@acme/core/core/Thing.js", "declarations": [{ "kind": "class", "name": "Thing" }] }] }
+            """);
+        var result = Generator.Generate(ir, new Profile { Package = "@acme/core" }, new(Api.Sync, "Acme"));
+
+        Assert.Equal(["Core/Thing.cs", "Core/ThingSnapshot.cs", "Core2.cs", "core.meta.js"], result.Files.Select(f => f.Path));
+        Assert.Contains("public static partial class Core2", File(result, "Core2.cs")); // next to the namespace Acme.Core
+        Assert.Contains("global::Interoper.JsOp.Create(global::Acme.Core2.ThingId, ", File(result, "Core/Thing.cs"));
+        Assert.Equal("IOP2006 Acme.Core: the registry is Core2: a namespace has its name (R27)", Assert.Single(result.Diagnostics).ToString());
+    }
+
+    [Fact] // R27: sibling modules' types of one name both compile; the later one is prefixed with its module's name
+    public void SameNamedTypesOfSiblingModulesAreBothEmitted()
+    {
+        string Module(string member) => $$"""
+            { "kind": "interface", "name": "Options", "members": [{ "kind": "property", "name": "{{member}}", "optional": true, "type": { "kind": "primitive", "name": "number" } }] },
+            { "kind": "function", "name": "run", "signatures": [{ "params": [{ "name": "options", "type": { "kind": "ref", "name": "Options", "module": "@acme/maps/ops/{{member}}.js" } }],
+              "returns": { "kind": "primitive", "name": "void" } }] }
+            """;
+        var result = Generate(Api.Sync, ("ops/scale.js", Module("scale")), ("ops/offset.js", Module("offset")));
+
+        Assert.Equal(["Ops/Options.cs", "Ops/OffsetOptions.cs", "Ops/Scale.cs", "Ops/Offset.cs", "Maps.cs", "maps.meta.js"], result.Files.Select(f => f.Path));
+        Assert.Contains("public global::Interoper.Opt<double> Scale { get; init; }", File(result, "Ops/Options.cs"));
+        Assert.Contains("public sealed partial record OffsetOptions", File(result, "Ops/OffsetOptions.cs"));
+        Assert.Contains("public static void Run(global::Interoper.JsRealm realm, Options options) =>", File(result, "Ops/Scale.cs"));
+        Assert.Contains("public static void Run(global::Interoper.JsRealm realm, OffsetOptions options) =>", File(result, "Ops/Offset.cs"));
+        Assert.Equal("IOP2006 @acme/maps/ops/offset.js: its Options is OffsetOptions: @acme/maps/ops/scale.js has one too (R27)",
+            Assert.Single(result.Diagnostics).ToString());
+    }
+
+    [Theory] // §2, R3, R17: `any`, `unknown` and `object` are JsAny, whose handles the reading scope owns
+    [InlineData(Api.Sync)]
+    [InlineData(Api.Async)]
+    public void AnyIsJsAny(Api api)
+    {
+        var result = Generate(api, ("a.js", """
+            { "kind": "class", "name": "Graphic", "members": [
+              { "kind": "property", "name": "attributes", "type": { "kind": "primitive", "name": "any" } },
+              { "kind": "method", "name": "send", "signatures": [{ "params": [{ "name": "message", "type": { "kind": "primitive", "name": "unknown" } }],
+                "returns": { "kind": "primitive", "name": "object" } }] }] }
+            """));
+        var graphic = File(result, "Graphic.cs");
+        const string Read = "(ref r) => global::Interoper.JsJson.ReadOpt(ref r, (ref r1) => global::Interoper.JsAny.Read(ref r1, scope))";
+        if (api == Api.Sync)
+        {
+            Assert.Contains($"public global::Interoper.Opt<global::Interoper.JsAny> GetAttributes(global::Interoper.JsScope scope) =>", graphic);
+            Assert.Contains($"Realm.Call(global::Interoper.JsOp.Get(Handle, \"attributes\"), {Read});", graphic);
+            Assert.Contains("public void SetAttributes(global::Interoper.Opt<global::Interoper.JsAny> value) =>", graphic);
+            Assert.Contains("public global::Interoper.JsAny Send(global::Interoper.JsScope scope, global::Interoper.Opt<global::Interoper.JsAny> message) =>", graphic);
+        }
+        else
+        {
+            Assert.Contains("public Task<global::Interoper.Opt<global::Interoper.JsAny>> GetAttributesAsync(global::Interoper.JsScope scope) =>", graphic);
+        }
+        Assert.DoesNotContain("Attributes", File(result, "GraphicSnapshot.cs")); // R17: it may hold a handle
+        Assert.Equal(
+        [
+            "IOP2001 Graphic.attributes: `any` is JsAny (§2)",
+            "IOP2001 Graphic.send(message): `unknown` is JsAny (§2)",
+            "IOP2001 Graphic.send: `object` is JsAny (§2)",
+        ], result.Diagnostics.Select(d => d.ToString()));
+    }
+
+    [Fact] // R25: a rename is reported once, however many owners repeat the anonymous union that has it
+    public void AnEnumMemberRenameIsReportedOnce()
+    {
+        const string Kind = """{ "kind": "union", "types": [{ "kind": "literal", "value": "a-b" }, { "kind": "literal", "value": "a_b" }] }""";
+        var result = Generate($$"""
+            { "kind": "interface", "name": "Fill", "members": [{ "kind": "property", "name": "kind", "type": {{Kind}} }] },
+            { "kind": "interface", "name": "Stroke", "members": [{ "kind": "property", "name": "kind", "type": {{Kind}} }] },
+            { "kind": "interface", "name": "Icon", "members": [{ "kind": "property", "name": "kind", "type": {{Kind}} }] }
+            """);
+        Assert.Contains("    AB,\n    AB2,\n", File(result, "StrokeKind.cs"));
+        Assert.Equal("IOP2006 FillKind: \"a_b\" is AB2: AB is taken (R25), and in 2 other enums", Assert.Single(result.Diagnostics).ToString());
+    }
+
+    [Fact] // R27: generated code names the runtime's types with global::, so a member of their name hides none of them
+    public void RuntimeTypesAreGloballyQualified()
+    {
+        var result = Generate("""
+            { "kind": "interface", "name": "Options", "members": [
+              { "kind": "property", "name": "jsJson", "optional": true, "type": { "kind": "primitive", "name": "number" } },
+              { "kind": "property", "name": "opt", "optional": true, "type": { "kind": "primitive", "name": "string" } }] }
+            """);
+        var options = File(result, "Options.cs");
+        Assert.Contains("public global::Interoper.Opt<double> JsJson { get; init; }", options);
+        Assert.Contains("global::Interoper.JsJson.WriteProperty(writer, \"jsJson\"u8, value.JsJson, global::Interoper.JsJson.WriteNumber);", options);
+        Assert.Contains("public global::Interoper.Opt<string> Opt { get; init; }", options);
+        Assert.DoesNotContain("using Interoper;", options);
+    }
+
     [Fact] // §5: watches
     public void WithoutTheWatchMethodThereAreNoWatches()
     {
@@ -173,7 +268,7 @@ public sealed class GeneratorTests
             { "kind": "class", "name": "Graphic", "members": [
               { "kind": "property", "name": "opacity", "type": { "kind": "primitive", "name": "number" } }] }
             """, new Profile { Package = "@acme/maps", Watch = "watch" });
-        Assert.Contains("public IDisposable WatchOpacity(JsScope scope, Action<double> handler) =>", File(result, "Layer.cs"));
+        Assert.Contains("public IDisposable WatchOpacity(global::Interoper.JsScope scope, Action<double> handler) =>", File(result, "Layer.cs"));
         Assert.DoesNotContain("Watch", File(result, "Graphic.cs"));
     }
 
@@ -213,26 +308,26 @@ public sealed class GeneratorTests
         if (api == Api.Sync)
         {
             Assert.Contains($"""
-                    public IDisposable OnPointer(JsScope scope, Action<PointerEvent> handler, EventOptions? options = null) =>
+                    public IDisposable OnPointer(global::Interoper.JsScope scope, Action<PointerEvent> handler, global::Interoper.EventOptions? options = null) =>
                         scope.Subscribe(Handle, "on", "pointer", PointerEvent.Read, handler, options, {Fields});
                 """, layer);
             Assert.Contains("""
-                    public IDisposable WatchOpacity(JsScope scope, Action<double> handler) =>
-                        scope.Subscribe(Handle, "watch", "opacity", JsJson.ReadNumber, handler, null, null);
+                    public IDisposable WatchOpacity(global::Interoper.JsScope scope, Action<double> handler) =>
+                        scope.Subscribe(Handle, "watch", "opacity", global::Interoper.JsJson.ReadNumber, handler, null, null);
                 """, layer);
             Assert.DoesNotContain("StreamAsync", layer);
             return;
         }
         Assert.Contains($"""
-                public Task<IAsyncDisposable> OnPointerAsync(JsScope scope, Action<PointerEvent> handler, EventOptions? options = null) =>
+                public Task<IAsyncDisposable> OnPointerAsync(global::Interoper.JsScope scope, Action<PointerEvent> handler, global::Interoper.EventOptions? options = null) =>
                     scope.SubscribeAsync(Handle, "on", "pointer", PointerEvent.Read, handler, options, {Fields});
 
-                public IAsyncEnumerable<PointerEvent> OnPointerStreamAsync(JsScope scope, EventOptions? options = null, CancellationToken cancellationToken = default) =>
+                public IAsyncEnumerable<PointerEvent> OnPointerStreamAsync(global::Interoper.JsScope scope, global::Interoper.EventOptions? options = null, CancellationToken cancellationToken = default) =>
                     scope.StreamAsync(Handle, "on", "pointer", PointerEvent.Read, options, {Fields}, cancellationToken);
             """, layer);
         Assert.Contains("""
-                public IAsyncEnumerable<double> WatchOpacityStreamAsync(JsScope scope, CancellationToken cancellationToken = default) =>
-                    scope.StreamAsync(Handle, "watch", "opacity", JsJson.ReadNumber, null, null, cancellationToken);
+                public IAsyncEnumerable<double> WatchOpacityStreamAsync(global::Interoper.JsScope scope, CancellationToken cancellationToken = default) =>
+                    scope.StreamAsync(Handle, "watch", "opacity", global::Interoper.JsJson.ReadNumber, null, null, cancellationToken);
             """, layer);
     }
 
@@ -260,12 +355,12 @@ public sealed class GeneratorTests
         Assert.Contains("namespace Acme.Maps;", view);
         Assert.Contains("global::Acme.Maps.Geometry.Extent.Read", view);
         Assert.Contains("global::Acme.Maps.Geometry.Geometry target", view);
-        Assert.Contains("public Opt<global::Acme.Maps.Geometry.Extent> Extent { get; init; }", File(result, "ViewSnapshot.cs"));
+        Assert.Contains("public global::Interoper.Opt<global::Acme.Maps.Geometry.Extent> Extent { get; init; }", File(result, "ViewSnapshot.cs"));
         // A type in the same namespace keeps its plain name; the registry is in the root namespace.
         var polyline = File(result, "Geometry/Polyline.cs");
         Assert.Contains("namespace Acme.Maps.Geometry;", polyline);
         Assert.Contains("public sealed partial class Polyline : Geometry", polyline);
-        Assert.Contains("JsOp.Create(global::Acme.Maps.Maps.PolylineId, ", polyline);
+        Assert.Contains("global::Interoper.JsOp.Create(global::Acme.Maps.Maps.PolylineId, ", polyline);
         Assert.Contains("Extent.Read", polyline);
         Assert.DoesNotContain("global::Acme.Maps.Geometry.Extent", polyline);
         Assert.Empty(result.Diagnostics);
@@ -285,11 +380,11 @@ public sealed class GeneratorTests
                 public const int LayersPointId = 1;
                 public const int PointId = 2;
 
-                public static JsClassRegistry Classes { get; } = new JsClassRegistry()
+                public static global::Interoper.JsClassRegistry Classes { get; } = new global::Interoper.JsClassRegistry()
                     .Add(LayersPointId, static (realm, handle) => new global::Acme.Maps.Layers.Point(realm, handle))
                     .Add(PointId, static (realm, handle) => new Point(realm, handle))
             """, File(result, "Maps.cs"));
-        Assert.Contains("JsOp.Create(global::Acme.Maps.Maps.LayersPointId, ", File(result, "Layers/Point.cs"));
+        Assert.Contains("global::Interoper.JsOp.Create(global::Acme.Maps.Maps.LayersPointId, ", File(result, "Layers/Point.cs"));
         Assert.Contains("public static partial class Layers2", File(result, "Layers2.cs")); // a module's functions take a free name
         Assert.Equal(
         [
@@ -325,7 +420,7 @@ public sealed class GeneratorTests
             """);
         Assert.Contains("""
                 public void Add(params Marker[] markers) =>
-                    Realm.Send(JsOp.Call(Handle, "add", w =>
+                    Realm.Send(global::Interoper.JsOp.Call(Handle, "add", w =>
                     {
                         foreach (var item in markers) Marker.Write(w, item);
                     }));
@@ -366,28 +461,28 @@ public sealed class GeneratorTests
         var (layer, sync) = (File(result, "Layer.cs"), api == Api.Sync);
         Assert.Contains("using System;", layer);
         Assert.Contains($$"""
-                public {{(sync ? "void Each" : "Task EachAsync")}}(JsScope scope, Action<Marker, double, Opt<string>> callback) =>
-                    Realm.{{(sync ? "Send" : "SendAsync")}}(JsOp.Call(Handle, "each", w => JsJson.WriteCallback(w, scope.Callback(callback, scope.Read<Marker>, JsJson.ReadNumber, static (ref r1) => JsJson.ReadOpt(ref r1, JsJson.ReadString)))));
+                public {{(sync ? "void Each" : "Task EachAsync")}}(global::Interoper.JsScope scope, Action<Marker, double, global::Interoper.Opt<string>> callback) =>
+                    Realm.{{(sync ? "Send" : "SendAsync")}}(global::Interoper.JsOp.Call(Handle, "each", w => global::Interoper.JsJson.WriteCallback(w, scope.Callback(callback, scope.Read<Marker>, global::Interoper.JsJson.ReadNumber, static (ref r1) => global::Interoper.JsJson.ReadOpt(ref r1, global::Interoper.JsJson.ReadString)))));
             """, layer);
         // An optional callback whose type has no null is sent as undefined when it's missing, here before a later argument.
-        Assert.Contains("if (callback is not null || !delay.IsUndefined) JsJson.WriteCallback(w, callback is null ? null : scope.Callback(callback), undefined: true);", layer);
-        Assert.Contains($"(JsScope scope, Action? callback = default, Opt<double> delay = default)", layer);
+        Assert.Contains("if (callback is not null || !delay.IsUndefined) global::Interoper.JsJson.WriteCallback(w, callback is null ? null : scope.Callback(callback), undefined: true);", layer);
+        Assert.Contains($"(global::Interoper.JsScope scope, Action? callback = default, global::Interoper.Opt<double> delay = default)", layer);
         // A callback property is setter-only: JS can't hand the function back.
-        Assert.Contains($"public {(sync ? "void SetOnLoad" : "Task SetOnLoadAsync")}(JsScope scope, Action value) =>", layer);
+        Assert.Contains($"public {(sync ? "void SetOnLoad" : "Task SetOnLoadAsync")}(global::Interoper.JsScope scope, Action value) =>", layer);
         Assert.DoesNotContain(sync ? " OnLoad " : "GetOnLoadAsync", layer);
         // A module function with a callback takes the scope instead of the realm.
-        Assert.Contains($"public static {(sync ? "void Visit" : "Task VisitAsync")}(JsScope scope, Action<Marker> callback) =>", File(result, "A.cs"));
+        Assert.Contains($"public static {(sync ? "void Visit" : "Task VisitAsync")}(global::Interoper.JsScope scope, Action<Marker> callback) =>", File(result, "A.cs"));
         Assert.DoesNotContain(result.Files, f => f.Path == "Formatter.cs"); // a callback alias has no C# type
         string[] skipped = ["IOP2007 Layer.many: skipped: uses a callback with more than 4 parameters (R21)"];
         if (sync)
         {
             Assert.Contains("""
-                    public void SetFormatter(JsScope scope, Func<Marker, string>? value) =>
-                        Realm.Send(JsOp.Set(Handle, "formatter", w => JsJson.WriteCallback(w, value is null ? null : scope.Callback(value, scope.Read<Marker>, JsJson.WriteString))));
+                    public void SetFormatter(global::Interoper.JsScope scope, Func<Marker, string>? value) =>
+                        Realm.Send(global::Interoper.JsOp.Set(Handle, "formatter", w => global::Interoper.JsJson.WriteCallback(w, value is null ? null : scope.Callback(value, scope.Read<Marker>, global::Interoper.JsJson.WriteString))));
                 """, layer);
             Assert.Contains("""
-                    public Marker Pick(JsScope scope, Func<Marker, Opt<bool>> callback) =>
-                        Realm.Call(JsOp.Call(Handle, "pick", w => JsJson.WriteCallback(w, scope.Callback(callback, scope.Read<Marker>, static (w1, v1) => JsJson.WriteValue(w1, v1, JsJson.WriteBoolean)))), scope.Read<Marker>)!;
+                    public Marker Pick(global::Interoper.JsScope scope, Func<Marker, global::Interoper.Opt<bool>> callback) =>
+                        Realm.Call(global::Interoper.JsOp.Call(Handle, "pick", w => global::Interoper.JsJson.WriteCallback(w, scope.Callback(callback, scope.Read<Marker>, static (w1, v1) => global::Interoper.JsJson.WriteValue(w1, v1, global::Interoper.JsJson.WriteBoolean)))), scope.Read<Marker>)!;
                 """, layer);
             Assert.Equal(skipped, result.Diagnostics.Select(d => d.ToString()));
             return;
@@ -428,24 +523,24 @@ public sealed class GeneratorTests
         var sync = api == Api.Sync;
         // The collection is generic over entities, with no Create and no registry entry: it comes from its owner.
         var list = File(result, "List.cs");
-        Assert.Contains("public sealed partial class List<T> : JsObject where T : JsObject", list);
+        Assert.Contains("public sealed partial class List<T> : global::Interoper.JsObject where T : global::Interoper.JsObject", list);
         Assert.DoesNotContain("Create", list);
-        Assert.Contains(sync ? "public Opt<T> First(JsScope scope) =>" : "public Task<Opt<T>> FirstAsync(JsScope scope) =>", list);
-        Assert.Contains("(ref r) => JsJson.ReadOpt(ref r, scope.Read<T>)", list);
+        Assert.Contains(sync ? "public global::Interoper.Opt<T> First(global::Interoper.JsScope scope) =>" : "public Task<global::Interoper.Opt<T>> FirstAsync(global::Interoper.JsScope scope) =>", list);
+        Assert.Contains("(ref r) => global::Interoper.JsJson.ReadOpt(ref r, scope.Read<T>)", list);
         var maps = File(result, "Maps.cs");
         Assert.Contains("public const int ListId = 2;", maps);
         Assert.DoesNotContain(".Add(ListId", maps);
         // Its owner reads it with a factory, as the registry can't make one of a type argument.
         var view = File(result, "View.cs");
-        Assert.Contains(sync ? "public List<Marker> GetMarkers(JsScope scope) =>" : "public async Task<List<Marker>> GetMarkersAsync(JsScope scope) =>", view);
+        Assert.Contains(sync ? "public List<Marker> GetMarkers(global::Interoper.JsScope scope) =>" : "public async Task<List<Marker>> GetMarkersAsync(global::Interoper.JsScope scope) =>", view);
         Assert.Contains("(ref r) => scope.Read(ref r, static (realm, handle) => new List<Marker>(realm, handle))", view);
         // A generic data interface is a generic record; a record holding an entity is read with a scope.
-        Assert.Contains("public sealed partial record Change<T> where T : JsObject", File(result, "Change.cs"));
+        Assert.Contains("public sealed partial record Change<T> where T : global::Interoper.JsObject", File(result, "Change.cs"));
         var hit = File(result, "Hit.cs");
-        Assert.Contains("public static Hit Read(ref Utf8JsonReader reader, JsScope scope)", hit);
+        Assert.Contains("public static Hit Read(ref Utf8JsonReader reader, global::Interoper.JsScope scope)", hit);
         Assert.Contains("""case "marker": marker = scope.Read<Marker>(ref reader); break;""", hit);
         Assert.Contains("(ref r) => Hit.Read(ref r, scope)", view);
-        Assert.Contains(sync ? "public static Hit LastHit(JsScope scope) =>" : "public static async Task<Hit> LastHitAsync(JsScope scope) =>", File(result, "A.cs"));
+        Assert.Contains(sync ? "public static Hit LastHit(global::Interoper.JsScope scope) =>" : "public static async Task<Hit> LastHitAsync(global::Interoper.JsScope scope) =>", File(result, "A.cs"));
         Assert.Equal(
         [
             "IOP2007 List.constructor: skipped: its parameter isn't a bag, so there's no Create (R18)",
@@ -477,10 +572,10 @@ public sealed class GeneratorTests
 
         var (m, sync) = (api == Api.Sync ? "" : "Async", api == Api.Sync);
         var tileLayer = File(result, "Layers/TileLayer.cs");
-        Assert.Contains($"public new {(sync ? "TileLayer" : "async Task<TileLayer>")} Clone{m}(JsScope scope, double x)", tileLayer); // the same parameters
+        Assert.Contains($"public new {(sync ? "TileLayer" : "async Task<TileLayer>")} Clone{m}(global::Interoper.JsScope scope, double x)", tileLayer); // the same parameters
         Assert.Contains($"public {(sync ? "double" : "Task<double>")} Refresh{m}(string x)", tileLayer); // other parameters: an overload
         Assert.Contains(sync ? "public new string Title" : "public new Task SetTitleAsync(string value)", tileLayer);
-        Assert.Contains($"public new {(sync ? "IDisposable" : "Task<IAsyncDisposable>")} WatchTitle{m}(JsScope scope, Action<string> handler)", tileLayer);
+        Assert.Contains($"public new {(sync ? "IDisposable" : "Task<IAsyncDisposable>")} WatchTitle{m}(global::Interoper.JsScope scope, Action<string> handler)", tileLayer);
         // Through every emitted base, whatever its namespace.
         var view = File(result, "Views/View.cs");
         Assert.Contains($"public new {(sync ? "double" : "Task<double>")} Refresh{m}(string x)", view);
@@ -498,9 +593,9 @@ public sealed class GeneratorTests
             { "kind": "function", "name": "area", "export": "default", "signatures": [{ "returns": { "kind": "primitive", "name": "number" } }] }
             """));
 
-        Assert.Contains("public sealed partial class TileLayer : JsObject", File(result, "Layers/TileLayer.cs"));
+        Assert.Contains("public sealed partial class TileLayer : global::Interoper.JsObject", File(result, "Layers/TileLayer.cs"));
         Assert.Contains("""1: { module: "@acme/maps/layers/TileLayer.js", export: "default", name: "acme.layers.TileLayer", members: [] },""", File(result, "maps.meta.js"));
-        Assert.Contains("""realm.CallAsync(JsOp.Call(Module, "default"), JsJson.ReadNumber);""", File(result, "Area.cs"));
+        Assert.Contains("""realm.CallAsync(global::Interoper.JsOp.Call(Module, "default"), global::Interoper.JsJson.ReadNumber);""", File(result, "Area.cs"));
     }
 
     private static GeneratorResult Generate(string declarations, Profile? profile = null)

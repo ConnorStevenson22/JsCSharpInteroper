@@ -2,27 +2,27 @@
 #nullable enable
 
 using System;
-using Interoper;
 
 namespace GoldenSlice.Sync;
 
 public sealed partial class Line : Shape
 {
-    internal Line(JsRealm realm, int handle) : base(realm, handle) { }
+    internal Line(global::Interoper.JsRealm realm, int handle) : base(realm, handle) { }
 
-    public static Line Create(JsScope scope, LineSnapshot props) =>
-        scope.Realm.Call(JsOp.Create(DemoMaps.LineId, w => LineSnapshot.WriteMembers(w, props)), scope.Read<Line>)!;
+    public static Line Create(global::Interoper.JsScope scope, LineSnapshot props) =>
+        scope.Realm.Call(global::Interoper.JsOp.Create(DemoMaps.LineId, w => LineSnapshot.WriteMembers(w, props)), scope.Read<Line>)!;
 
     public double[][] Path
     {
-        get => Realm.Call(JsOp.Get(Handle, "path"), static (ref r) => JsJson.ReadArray(ref r, static (ref r1) => JsJson.ReadArray(ref r1, JsJson.ReadNumber)))!;
-        set => Realm.Send(JsOp.Set(Handle, "path", w => JsJson.WriteArray(w, value, static (w1, v1) => JsJson.WriteArray(w1, v1, JsJson.WriteNumber))));
+        get => Realm.Call(global::Interoper.JsOp.Get(Handle, "path"), static (ref r) => global::Interoper.JsJson.ReadArray(ref r, static (ref r1) => global::Interoper.JsJson.ReadArray(ref r1, global::Interoper.JsJson.ReadNumber)))!;
+        set => Realm.Send(global::Interoper.JsOp.Set(Handle, "path", w => global::Interoper.JsJson.WriteArray(w, value, static (w1, v1) => global::Interoper.JsJson.WriteArray(w1, v1, global::Interoper.JsJson.WriteNumber))));
     }
 
-    public IDisposable WatchPath(JsScope scope, Action<double[][]> handler) =>
-        scope.Subscribe(Handle, "watch", "path", static (ref r) => JsJson.ReadArray(ref r, static (ref r1) => JsJson.ReadArray(ref r1, JsJson.ReadNumber)), handler, null, null);
+    public IDisposable WatchPath(global::Interoper.JsScope scope, Action<double[][]> handler) =>
+        scope.Subscribe(Handle, "watch", "path", static (ref r) => global::Interoper.JsJson.ReadArray(ref r, static (ref r1) => global::Interoper.JsJson.ReadArray(ref r1, global::Interoper.JsJson.ReadNumber)), handler, null, null);
 
-    public new LineSnapshot Snapshot() => Realm.Call(JsOp.Snapshot(Handle), LineSnapshot.Read)!;
+    public new LineSnapshot Snapshot() => Realm.Call(global::Interoper.JsOp.Snapshot(Handle), LineSnapshot.Read)!;
 
-    public void Apply(LineSnapshot patch) => Realm.Send(JsOp.Apply(Handle, w => LineSnapshot.WriteMembers(w, patch)));
+    public void Apply(LineSnapshot patch) =>
+        Realm.Send(global::Interoper.JsOp.Apply(Handle, w => LineSnapshot.WriteMembers(w, patch)));
 }

@@ -32,10 +32,11 @@ public static class Generator
         var types = new TypeMap(ir, profile, selection.Declarations, diagnostics, options.Namespace);
         var root = options.Namespace;
         var files = new List<GeneratedFile>();
-        // R27: the registry keeps its name; a later type whose path is taken, or whose name is a namespace's, is skipped,
-        // reported as IOP2006. What uses it isn't, so its code won't compile until a profile rename (mapping R27).
+        // R27: the registry keeps its path (the type map has given it a name no namespace has); a later type whose path is
+        // taken, or whose name is a namespace's, is skipped, reported as IOP2006. What uses it isn't, so its code won't
+        // compile until a profile rename (mapping R27). The type map has renamed a sibling module's type of the same name.
         var paths = new HashSet<string> { $"{types.Registry}.cs" };
-        var namespaces = selection.Declarations.Select(s => types.Namespace(s.Module)).SelectMany(Parents).ToHashSet();
+        var namespaces = types.Namespaces;
         var declared = new Dictionary<ClassDeclaration, IReadOnlySet<string>>(ReferenceEqualityComparer.Instance); // R26, per class
         void Add(TypeName type, string text)
         {
@@ -96,15 +97,7 @@ public static class Generator
         {
             Add(type.Type, ValueTypeEmitter.Emit(types, type));
         }
+        types.ReportEnumRenames();
         return new(diagnostics, files);
-
-        // A module's namespace and the ones it's in, below the root: Root.A.B gives Root.A.B and Root.A.
-        IEnumerable<string> Parents(string ns)
-        {
-            for (; ns.Length > root.Length; ns = ns[..ns.LastIndexOf('.')])
-            {
-                yield return ns;
-            }
-        }
     }
 }

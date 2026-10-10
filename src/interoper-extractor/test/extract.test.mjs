@@ -22,7 +22,7 @@ const pair = { kind: "tuple", elements: [num, num] };
 test("modules are keyed by specifier, declarations keep source order", () => {
   assert.equal(ir.version, 1);
   assert.deepEqual(ir.package, { name: "@acme/demo-maps", version: "0.0.0" });
-  assert.deepEqual(ir.modules.map((m) => m.specifier.slice("@acme/demo-maps/".length)), ["MapView.js", "Marker.js", "core.js", "demo-map.js", "geometry.js", "layers/Layer.js", "layers/TileLayer.js", "measure.js", "styles.js"]);
+  assert.deepEqual(ir.modules.map((m) => m.specifier.slice("@acme/demo-maps/".length)), ["MapView.js", "Marker.js", "core.js", "demo-map.js", "geometry.js", "layers/Layer.js", "layers/TileLayer.js", "measure.js", "ops/a.js", "ops/b.js", "pins.js", "styles.js"]);
   assert.deepEqual(ir.modules.find((m) => m.specifier.endsWith("/geometry.js")).declarations.map((d) => `${d.kind} ${d.name}`),
     ["alias ShapeType", "interface Bounds", "class Shape", "class Point", "class Line", "class Polygon"]);
 });
@@ -107,12 +107,22 @@ test("classes: base, abstract, own members, generics, statics", () => {
   // Members a named base declares stay with it; `this` stays `this`.
   assert.deepEqual(decl("geometry", "Point").members.map((m) => m.name), ["type", "x", "y"]);
   assert.deepEqual(member("geometry", "Shape", "clone").signatures[0].returns, { kind: "this" });
-  assert.deepEqual(decl("core", "Collection").typeParameters, [{ name: "T" }]);
+  assert.deepEqual(decl("core", "Collection").typeParameters, [{ name: "T", default: { kind: "primitive", name: "any" } }]);
   assert.deepEqual(member("MapView", "MapView", "markers").type, ref("core", "Collection", [ref("Marker", "Marker")]));
   // Members declared outside the package (HTMLElement's) are left out; the base is a platform reference.
   const element = decl("demo-map", "DemoMapElement");
   assert.deepEqual(element.extends, { kind: "ref", name: "HTMLElement" });
   assert.deepEqual(element.members.map((m) => `${m.static ? "static " : ""}${m.name}`), ["view", "basemap", "zoom", "center", "clickAt", "static observedAttributes"]);
+});
+
+test("a mixin's base: the class it starts with, and the mixin's members as inherited", () => {
+  // `class Pin extends PinSuperclass`, where `PinSuperclass: typeof Marker & typeof Draggable`.
+  const pin = decl("pins", "Pin");
+  assert.deepEqual(pin.extends, ref("Marker", "Marker"));
+  assert.deepEqual(pin.members.map((m) => `${m.name}${m.inherited ? " (inherited)" : ""}`), ["meta", "on (inherited)", "dragBy (inherited)"]);
+  assert.deepEqual(pin.events, [{ name: "drag", type: ref("pins", "PinDragEvent") }]);
+  // The mixin class and the constant aren't exported.
+  assert.deepEqual(ir.modules.find((m) => m.specifier.endsWith("/pins.js")).declarations.map((d) => d.name), ["PinDragEvent", "PinEvents", "Pin"]);
 });
 
 test("R8, R22: Promise returns and optional parameters", () => {

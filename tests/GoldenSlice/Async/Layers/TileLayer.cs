@@ -5,33 +5,32 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
-using Interoper;
 
 namespace GoldenSlice.Async.Layers;
 
 public sealed partial class TileLayer : Layer
 {
-    internal TileLayer(JsRealm realm, int handle) : base(realm, handle) { }
+    internal TileLayer(global::Interoper.JsRealm realm, int handle) : base(realm, handle) { }
 
-    public static async Task<TileLayer> CreateAsync(JsScope scope, TileLayerSnapshot props) =>
-        (await scope.Realm.CallAsync(JsOp.Create(global::GoldenSlice.Async.DemoMaps.TileLayerId, w => TileLayerSnapshot.WriteMembers(w, props)), scope.Read<TileLayer>))!;
+    public static async Task<TileLayer> CreateAsync(global::Interoper.JsScope scope, TileLayerSnapshot props) =>
+        (await scope.Realm.CallAsync(global::Interoper.JsOp.Create(global::GoldenSlice.Async.DemoMaps.TileLayerId, w => TileLayerSnapshot.WriteMembers(w, props)), scope.Read<TileLayer>))!;
 
     public Task<string> GetUrlAsync() => Realm.GetStringAsync(Handle, "url");
 
     public Task SetUrlAsync(string value) => Realm.SetAsync(Handle, "url", value);
 
-    public new async Task<TileLayer> CloneAsync(JsScope scope) =>
-        (await Realm.CallAsync(JsOp.Call(Handle, "clone"), scope.Read<TileLayer>))!;
+    public new async Task<TileLayer> CloneAsync(global::Interoper.JsScope scope) =>
+        (await Realm.CallAsync(global::Interoper.JsOp.Call(Handle, "clone"), scope.Read<TileLayer>))!;
 
-    public Task<IAsyncDisposable> WatchUrlAsync(JsScope scope, Action<string> handler) =>
-        scope.SubscribeAsync(Handle, "watch", "url", JsJson.ReadString, handler, null, null);
+    public Task<IAsyncDisposable> WatchUrlAsync(global::Interoper.JsScope scope, Action<string> handler) =>
+        scope.SubscribeAsync(Handle, "watch", "url", global::Interoper.JsJson.ReadString, handler, null, null);
 
-    public IAsyncEnumerable<string> WatchUrlStreamAsync(JsScope scope, CancellationToken cancellationToken = default) =>
-        scope.StreamAsync(Handle, "watch", "url", JsJson.ReadString, null, null, cancellationToken);
+    public IAsyncEnumerable<string> WatchUrlStreamAsync(global::Interoper.JsScope scope, CancellationToken cancellationToken = default) =>
+        scope.StreamAsync(Handle, "watch", "url", global::Interoper.JsJson.ReadString, null, null, cancellationToken);
 
     public new async Task<TileLayerSnapshot> SnapshotAsync() =>
-        (await Realm.CallAsync(JsOp.Snapshot(Handle), TileLayerSnapshot.Read))!;
+        (await Realm.CallAsync(global::Interoper.JsOp.Snapshot(Handle), TileLayerSnapshot.Read))!;
 
     public Task ApplyAsync(TileLayerSnapshot patch) =>
-        Realm.SendAsync(JsOp.Apply(Handle, w => TileLayerSnapshot.WriteMembers(w, patch)));
+        Realm.SendAsync(global::Interoper.JsOp.Apply(Handle, w => TileLayerSnapshot.WriteMembers(w, patch)));
 }

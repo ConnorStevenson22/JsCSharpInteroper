@@ -2,16 +2,15 @@
 #nullable enable
 
 using System;
-using Interoper;
 
 namespace GoldenSlice.Sync.Layers;
 
 public sealed partial class TileLayer : Layer
 {
-    internal TileLayer(JsRealm realm, int handle) : base(realm, handle) { }
+    internal TileLayer(global::Interoper.JsRealm realm, int handle) : base(realm, handle) { }
 
-    public static TileLayer Create(JsScope scope, TileLayerSnapshot props) =>
-        scope.Realm.Call(JsOp.Create(global::GoldenSlice.Sync.DemoMaps.TileLayerId, w => TileLayerSnapshot.WriteMembers(w, props)), scope.Read<TileLayer>)!;
+    public static TileLayer Create(global::Interoper.JsScope scope, TileLayerSnapshot props) =>
+        scope.Realm.Call(global::Interoper.JsOp.Create(global::GoldenSlice.Sync.DemoMaps.TileLayerId, w => TileLayerSnapshot.WriteMembers(w, props)), scope.Read<TileLayer>)!;
 
     public string Url
     {
@@ -19,13 +18,15 @@ public sealed partial class TileLayer : Layer
         set => Realm.Set(Handle, "url", value);
     }
 
-    public new TileLayer Clone(JsScope scope) => Realm.Call(JsOp.Call(Handle, "clone"), scope.Read<TileLayer>)!;
+    public new TileLayer Clone(global::Interoper.JsScope scope) =>
+        Realm.Call(global::Interoper.JsOp.Call(Handle, "clone"), scope.Read<TileLayer>)!;
 
-    public IDisposable WatchUrl(JsScope scope, Action<string> handler) =>
-        scope.Subscribe(Handle, "watch", "url", JsJson.ReadString, handler, null, null);
+    public IDisposable WatchUrl(global::Interoper.JsScope scope, Action<string> handler) =>
+        scope.Subscribe(Handle, "watch", "url", global::Interoper.JsJson.ReadString, handler, null, null);
 
-    public new TileLayerSnapshot Snapshot() => Realm.Call(JsOp.Snapshot(Handle), TileLayerSnapshot.Read)!;
+    public new TileLayerSnapshot Snapshot() =>
+        Realm.Call(global::Interoper.JsOp.Snapshot(Handle), TileLayerSnapshot.Read)!;
 
     public void Apply(TileLayerSnapshot patch) =>
-        Realm.Send(JsOp.Apply(Handle, w => TileLayerSnapshot.WriteMembers(w, patch)));
+        Realm.Send(global::Interoper.JsOp.Apply(Handle, w => TileLayerSnapshot.WriteMembers(w, patch)));
 }

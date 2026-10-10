@@ -22,7 +22,7 @@ internal static class MetadataEmitter
     /// </summary>
     public static string Registry(TypeMap types, GeneratorOptions options, IReadOnlyList<Selected> classes, IEnumerable<string> functionModules)
     {
-        var w = CodeWriter.CSharp(options.Namespace, "Interoper");
+        var w = CodeWriter.CSharp(options.Namespace);
         using (w.Block($"public static partial class {types.Registry}"))
         {
             foreach (var (s, id) in classes.Select((s, i) => (s, i + 1)))
@@ -40,7 +40,7 @@ internal static class MetadataEmitter
             {
                 calls.Add($".Preload({string.Join(", ", modules.Select(Syntax.Literal))})");
             }
-            w.Line($"public static JsClassRegistry Classes {{ get; }} = new JsClassRegistry(){(calls.Count == 0 ? ";" : "")}");
+            w.Line($"public static global::Interoper.JsClassRegistry Classes {{ get; }} = new global::Interoper.JsClassRegistry(){(calls.Count == 0 ? ";" : "")}");
             using (w.Indent())
             {
                 foreach (var call in calls)

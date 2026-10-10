@@ -220,9 +220,10 @@ public sealed class InMemoryTransport : IJsSyncTransport, IJsTransport
             subscribeOptions.Add(((JsonNode)Wire(options)!).ToJsonString());
             callback = WithOptions((JsFunction)callback!, options);
         }
-        if (target.Call(method, [name, callback]) is not IDisposable subscription)
+        var subscription = target.Call(method, [name, callback]);
+        if (subscription is null || DisposerOf(subscription) is null)
         {
-            throw InteroperError($"{method} returned no dispose()");
+            throw InteroperError($"{method} returned no dispose() or remove()");
         }
         if (ids.ContainsKey(subscription))
         {
@@ -263,7 +264,17 @@ public sealed class InMemoryTransport : IJsSyncTransport, IJsTransport
     private static object? Pick(object? value, IEnumerable<string> names) =>
         value is Dictionary<string, object?> or InMemoryObject ? names.ToDictionary(name => name, name => Member(value, name)) : value;
 
-    // Releases every id, even when a Dispose() throws; then reports what failed.
+    // What ends a subscription, as interoper.js finds it: an IDisposable's Dispose(), or a plain object's dispose() or
+    // else remove(), as some libraries name it.
+    private static Action? DisposerOf(object subscription) => subscription switch
+    {
+        IDisposable disposable => disposable.Dispose,
+        Dictionary<string, object?> bag when (bag.GetValueOrDefault("dispose") as JsFunction ?? bag.GetValueOrDefault("remove") as JsFunction) is { } end =>
+            () => end(),
+        _ => null,
+    };
+
+    // Releases every id, even when a Dispose() (or remove()) throws; then reports what failed.
     private void ReleaseAll(List<object?> list)
     {
         var errors = new List<Exception>();
@@ -280,7 +291,7 @@ public sealed class InMemoryTransport : IJsSyncTransport, IJsTransport
             }
             try
             {
-                ((IDisposable)value).Dispose();
+                DisposerOf(value)!();
             }
             catch (Exception e)
             {

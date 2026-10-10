@@ -2,20 +2,19 @@
 #nullable enable
 
 using System.Threading.Tasks;
-using Interoper;
 
 namespace GoldenSlice.Async;
 
-public partial class Observable : JsObject
+public partial class Observable : global::Interoper.JsObject
 {
-    internal Observable(JsRealm realm, int handle) : base(realm, handle) { }
+    internal Observable(global::Interoper.JsRealm realm, int handle) : base(realm, handle) { }
 
-    public static async Task<Observable> CreateAsync(JsScope scope, ObservableSnapshot props) =>
-        (await scope.Realm.CallAsync(JsOp.Create(DemoMaps.ObservableId, w => ObservableSnapshot.WriteMembers(w, props)), scope.Read<Observable>))!;
+    public static async Task<Observable> CreateAsync(global::Interoper.JsScope scope, ObservableSnapshot props) =>
+        (await scope.Realm.CallAsync(global::Interoper.JsOp.Create(DemoMaps.ObservableId, w => ObservableSnapshot.WriteMembers(w, props)), scope.Read<Observable>))!;
 
     public async Task<ObservableSnapshot> SnapshotAsync() =>
-        (await Realm.CallAsync(JsOp.Snapshot(Handle), ObservableSnapshot.Read))!;
+        (await Realm.CallAsync(global::Interoper.JsOp.Snapshot(Handle), ObservableSnapshot.Read))!;
 
     public Task ApplyAsync(ObservableSnapshot patch) =>
-        Realm.SendAsync(JsOp.Apply(Handle, w => ObservableSnapshot.WriteMembers(w, patch)));
+        Realm.SendAsync(global::Interoper.JsOp.Apply(Handle, w => ObservableSnapshot.WriteMembers(w, patch)));
 }

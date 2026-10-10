@@ -5,28 +5,28 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
-using Interoper;
 
 namespace GoldenSlice.Async;
 
 public closed partial class Shape : Observable
 {
-    internal Shape(JsRealm realm, int handle) : base(realm, handle) { }
+    internal Shape(global::Interoper.JsRealm realm, int handle) : base(realm, handle) { }
 
-    public async Task<Bounds> GetBoundsAsync() => (await Realm.CallAsync(JsOp.Get(Handle, "bounds"), Bounds.Read))!;
+    public async Task<Bounds> GetBoundsAsync() =>
+        (await Realm.CallAsync(global::Interoper.JsOp.Get(Handle, "bounds"), Bounds.Read))!;
 
-    public async Task<Shape> CloneAsync(JsScope scope) =>
-        (await Realm.CallAsync(JsOp.Call(Handle, "clone"), scope.Read<Shape>))!;
+    public async Task<Shape> CloneAsync(global::Interoper.JsScope scope) =>
+        (await Realm.CallAsync(global::Interoper.JsOp.Call(Handle, "clone"), scope.Read<Shape>))!;
 
-    public Task<IAsyncDisposable> WatchBoundsAsync(JsScope scope, Action<Bounds> handler) =>
+    public Task<IAsyncDisposable> WatchBoundsAsync(global::Interoper.JsScope scope, Action<Bounds> handler) =>
         scope.SubscribeAsync(Handle, "watch", "bounds", Bounds.Read, handler, null, null);
 
-    public IAsyncEnumerable<Bounds> WatchBoundsStreamAsync(JsScope scope, CancellationToken cancellationToken = default) =>
+    public IAsyncEnumerable<Bounds> WatchBoundsStreamAsync(global::Interoper.JsScope scope, CancellationToken cancellationToken = default) =>
         scope.StreamAsync(Handle, "watch", "bounds", Bounds.Read, null, null, cancellationToken);
 
     public new async Task<ShapeSnapshot> SnapshotAsync() =>
-        (await Realm.CallAsync(JsOp.Snapshot(Handle), ShapeSnapshot.Read))!;
+        (await Realm.CallAsync(global::Interoper.JsOp.Snapshot(Handle), ShapeSnapshot.Read))!;
 
     public Task ApplyAsync(ShapeSnapshot patch) =>
-        Realm.SendAsync(JsOp.Apply(Handle, w => ShapeSnapshot.WriteMembers(w, patch)));
+        Realm.SendAsync(global::Interoper.JsOp.Apply(Handle, w => ShapeSnapshot.WriteMembers(w, patch)));
 }

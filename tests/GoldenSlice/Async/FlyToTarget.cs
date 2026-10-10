@@ -5,12 +5,11 @@ using System;
 using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
-using Interoper;
 
 namespace GoldenSlice.Async;
 
 [Union]
-public readonly partial struct FlyToTarget : IJsUnion<FlyToTarget>, IEquatable<FlyToTarget>
+public readonly partial struct FlyToTarget : global::Interoper.IJsUnion<FlyToTarget>, IEquatable<FlyToTarget>
 {
     private readonly object? _ref;
     private readonly byte _tag; // 0 = undefined, 1 = null, 2 = ShapeSnapshot, 3 = double[], 4 = Bounds, 5 = CenterAndZoom
@@ -20,18 +19,18 @@ public readonly partial struct FlyToTarget : IJsUnion<FlyToTarget>, IEquatable<F
     public FlyToTarget(double[] value) : this(value, 3) { }
     public FlyToTarget(Bounds value) : this(value, 4) { }
     public FlyToTarget(CenterAndZoom value) : this(value, 5) { }
-    public FlyToTarget(Undefined? value) : this(null, value is null ? (byte)1 : (byte)0) { }
+    public FlyToTarget(global::Interoper.Undefined? value) : this(null, value is null ? (byte)1 : (byte)0) { }
 
-    public static implicit operator FlyToTarget(Undefined? value) => new(value);
+    public static implicit operator FlyToTarget(global::Interoper.Undefined? value) => new(value);
 
-    public object? Value => _tag switch { 0 => Undefined.Value, 1 => null, _ => _ref };
+    public object? Value => _tag switch { 0 => global::Interoper.Undefined.Value, 1 => null, _ => _ref };
     public bool HasValue => _tag != 1;
     public bool IsUndefined => _tag == 0;
     public bool IsNull => _tag == 1;
 
-    public bool TryGetValue(out Undefined value)
+    public bool TryGetValue(out global::Interoper.Undefined value)
     {
-        value = Undefined.Value;
+        value = global::Interoper.Undefined.Value;
         return _tag == 0;
     }
 
@@ -64,7 +63,7 @@ public readonly partial struct FlyToTarget : IJsUnion<FlyToTarget>, IEquatable<F
         switch (value._tag)
         {
             case 2: ShapeSnapshot.Write(writer, (ShapeSnapshot)value._ref!); break;
-            case 3: JsJson.WriteArray(writer, (double[])value._ref!, JsJson.WriteNumber); break;
+            case 3: global::Interoper.JsJson.WriteArray(writer, (double[])value._ref!, global::Interoper.JsJson.WriteNumber); break;
             case 4: Bounds.Write(writer, (Bounds)value._ref!); break;
             case 5: CenterAndZoom.Write(writer, (CenterAndZoom)value._ref!); break;
         }
@@ -72,10 +71,10 @@ public readonly partial struct FlyToTarget : IJsUnion<FlyToTarget>, IEquatable<F
 
     public static FlyToTarget ReadValue(ref Utf8JsonReader reader) => reader.TokenType switch
     {
-        JsonTokenType.StartArray => JsJson.ReadArray(ref reader, JsJson.ReadNumber),
-        JsonTokenType.StartObject when JsJson.HasProperty(reader, "type"u8) => ShapeSnapshot.Read(ref reader),
-        JsonTokenType.StartObject when JsJson.HasProperty(reader, "minX"u8) => Bounds.Read(ref reader),
-        JsonTokenType.StartObject when JsJson.HasProperty(reader, "center"u8) => CenterAndZoom.Read(ref reader),
+        JsonTokenType.StartArray => global::Interoper.JsJson.ReadArray(ref reader, global::Interoper.JsJson.ReadNumber),
+        JsonTokenType.StartObject when global::Interoper.JsJson.HasProperty(reader, "type"u8) => ShapeSnapshot.Read(ref reader),
+        JsonTokenType.StartObject when global::Interoper.JsJson.HasProperty(reader, "minX"u8) => Bounds.Read(ref reader),
+        JsonTokenType.StartObject when global::Interoper.JsJson.HasProperty(reader, "center"u8) => CenterAndZoom.Read(ref reader),
         var token => throw new JsonException($"FlyToTarget: unexpected {token}"),
     };
 

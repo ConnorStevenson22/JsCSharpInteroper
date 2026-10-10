@@ -2,11 +2,10 @@
 #nullable enable
 
 using System.Text.Json;
-using Interoper;
 
 namespace GoldenSlice.Async;
 
-public sealed partial record CollectionEvents<T> where T : JsObject
+public sealed partial record CollectionEvents<T> where T : global::Interoper.JsObject
 {
     public required CollectionChangeEvent<T> Change { get; init; }
 
@@ -18,7 +17,7 @@ public sealed partial record CollectionEvents<T> where T : JsObject
         writer.WriteEndObject();
     }
 
-    public static CollectionEvents<T> Read(ref Utf8JsonReader reader, JsScope scope)
+    public static CollectionEvents<T> Read(ref Utf8JsonReader reader, global::Interoper.JsScope scope)
     {
         CollectionChangeEvent<T> change = null!;
         while (reader.Read() && reader.TokenType == JsonTokenType.PropertyName)

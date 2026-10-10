@@ -28,7 +28,10 @@ internal static class InMemoryDemoMaps
         .Define(new(DemoMaps.DemoMapElementId, "demo-map.DemoMapElement", _ => new FakeDemoMapElement()) { Members = ["basemap", "zoom", "center"] })
         .Define(new(DemoMaps.LayerId, "layers.Layer", _ => throw new JsException("TypeError", "Layer is abstract", null)) { Members = ["title", "visible"] })
         .Define(new(DemoMaps.TileLayerId, "layers.TileLayer", args => new FakeTileLayer(Bag(args))) { Members = ["url", "title", "visible"] })
+        .Define(new(DemoMaps.PinId, "pins.Pin", args => new FakePin(Bag(args))) { Members = ["position", "label", "style"] })
         .DefineModule(TransportContract.Measure, new FakeMeasure())
+        .DefineModule("@acme/demo-maps/ops/a.js", new FakeExecute((x, options) => x * (double)options.GetValueOrDefault("scale", 1.0)!))
+        .DefineModule("@acme/demo-maps/ops/b.js", new FakeExecute((x, options) => x + (double)options.GetValueOrDefault("offset", 0.0)!))
         .DefineModule("@acme/demo-maps/styles.js", new FakeStyles());
 
     // The constructor bag: `new X({ … } = {})`.
@@ -322,7 +325,7 @@ internal sealed class FakeMapView : FakeEmitter
     });
 }
 
-internal sealed class FakeMarker : FakeObservable
+internal class FakeMarker : FakeObservable
 {
     public FakeMarker(Dictionary<string, object?> bag)
     {
@@ -342,6 +345,39 @@ internal sealed class FakeMarker : FakeObservable
     public override object? Get(string name) => name == "displayLabel"
         ? base.Get("labelFormatter") is JsFunction format ? format(this) : base.Get("label") is string label ? label : ""
         : base.Get(name);
+}
+
+/// <summary>
+/// <c>pins.Pin</c>: a Marker with the Draggable mixin, whose <c>on</c> returns a subscription with <c>remove()</c>, not
+/// <c>dispose()</c>; <c>dragBy</c> moves the position and emits <c>drag</c>.
+/// </summary>
+internal sealed class FakePin(Dictionary<string, object?> bag) : FakeMarker(bag)
+{
+    private readonly List<JsFunction> drags = [];
+
+    public override string ClassName => "pins.Pin";
+
+    public override object? Call(string name, object?[] args)
+    {
+        switch (name)
+        {
+            case "on" when args[0] is "drag":
+                var listener = (JsFunction)args[1]!;
+                drags.Add(listener);
+                return new Dictionary<string, object?> { ["remove"] = new JsFunction(_ => drags.Remove(listener)) };
+            case "dragBy":
+                var (dx, dy) = ((double)args[0]!, (double)args[1]!);
+                var position = (FakePoint)Get("position")!;
+                Set("position", new FakePoint(new() { ["x"] = (double)position.Get("x")! + dx, ["y"] = (double)position.Get("y")! + dy }));
+                foreach (var drag in drags.ToList())
+                {
+                    drag(new Dictionary<string, object?> { ["dx"] = dx, ["dy"] = dy });
+                }
+                return Undefined.Value;
+            default:
+                return base.Call(name, args);
+        }
+    }
 }
 
 /// <summary><c>demo-map.DemoMapElement</c>: its properties are its view's, and <c>clickAt</c> emits the view's click.</summary>
@@ -447,6 +483,7 @@ internal sealed class FakeMeasure : InMemoryObject
     {
         "distance" => Distance(args[0]!, args[1]!),
         "perimeter" => args.Select((point, i) => Distance(point!, args[(i + 1) % args.Length]!)).Sum(), // the closed path through `...points`
+        "describe" => args[0] is FakeShape shape ? shape.Get("type") : $"marker {((InMemoryObject)args[0]!).Get("displayLabel")}",
         _ => base.Call(name, args),
     };
 
@@ -455,4 +492,13 @@ internal sealed class FakeMeasure : InMemoryObject
 
     private static double Field(object value, string name) =>
         (double)(value is InMemoryObject o ? o.Get(name) : ((Dictionary<string, object?>)value)[name])!;
+}
+
+/// <summary>The <c>ops/a.js</c> and <c>ops/b.js</c> modules: <c>execute(x, options?)</c>, each with its own options.</summary>
+internal sealed class FakeExecute(Func<double, Dictionary<string, object?>, double> execute) : InMemoryObject
+{
+    public override string ClassName => "ops";
+
+    public override object? Call(string name, object?[] args) =>
+        name == "execute" ? execute((double)args[0]!, args.ElementAtOrDefault(1) as Dictionary<string, object?> ?? []) : base.Call(name, args);
 }

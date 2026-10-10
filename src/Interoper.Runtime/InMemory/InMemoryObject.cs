@@ -6,7 +6,8 @@ namespace Interoper;
 /// <c>Dictionary&lt;string, object?&gt;</c> (plain objects), <see cref="JsFunction"/> (functions, such as
 /// callbacks), <see cref="Task"/> or <c>Task&lt;object?&gt;</c> (Promises) and other in-memory objects.
 /// Override <see cref="Get"/>, <see cref="Set"/> and <see cref="Call"/> for accessors and methods; throw
-/// <see cref="JsException"/> for a JS error. A method that subscribes returns an <see cref="IDisposable"/>.
+/// <see cref="JsException"/> for a JS error. A method that subscribes returns an <see cref="IDisposable"/>, or a plain
+/// object with a <c>dispose</c> or <c>remove</c> function.
 /// </summary>
 public abstract class InMemoryObject
 {

@@ -2,18 +2,17 @@
 #nullable enable
 
 using System;
-using Interoper;
 
 namespace GoldenSlice.Sync.Layers;
 
 public abstract partial class Layer : global::GoldenSlice.Sync.Observable
 {
-    internal Layer(JsRealm realm, int handle) : base(realm, handle) { }
+    internal Layer(global::Interoper.JsRealm realm, int handle) : base(realm, handle) { }
 
-    public Opt<string> Title
+    public global::Interoper.Opt<string> Title
     {
-        get => Realm.Call(JsOp.Get(Handle, "title"), static (ref r) => JsJson.ReadOpt(ref r, JsJson.ReadString));
-        set => Realm.Send(JsOp.Set(Handle, "title", w => JsJson.WriteValue(w, value, JsJson.WriteString)));
+        get => Realm.Call(global::Interoper.JsOp.Get(Handle, "title"), static (ref r) => global::Interoper.JsJson.ReadOpt(ref r, global::Interoper.JsJson.ReadString));
+        set => Realm.Send(global::Interoper.JsOp.Set(Handle, "title", w => global::Interoper.JsJson.WriteValue(w, value, global::Interoper.JsJson.WriteString)));
     }
 
     public bool Visible
@@ -22,15 +21,17 @@ public abstract partial class Layer : global::GoldenSlice.Sync.Observable
         set => Realm.Set(Handle, "visible", value);
     }
 
-    public Layer Clone(JsScope scope) => Realm.Call(JsOp.Call(Handle, "clone"), scope.Read<Layer>)!;
+    public Layer Clone(global::Interoper.JsScope scope) =>
+        Realm.Call(global::Interoper.JsOp.Call(Handle, "clone"), scope.Read<Layer>)!;
 
-    public IDisposable WatchTitle(JsScope scope, Action<Opt<string>> handler) =>
-        scope.Subscribe(Handle, "watch", "title", static (ref r) => JsJson.ReadOpt(ref r, JsJson.ReadString), handler, null, null);
+    public IDisposable WatchTitle(global::Interoper.JsScope scope, Action<global::Interoper.Opt<string>> handler) =>
+        scope.Subscribe(Handle, "watch", "title", static (ref r) => global::Interoper.JsJson.ReadOpt(ref r, global::Interoper.JsJson.ReadString), handler, null, null);
 
-    public IDisposable WatchVisible(JsScope scope, Action<bool> handler) =>
-        scope.Subscribe(Handle, "watch", "visible", JsJson.ReadBoolean, handler, null, null);
+    public IDisposable WatchVisible(global::Interoper.JsScope scope, Action<bool> handler) =>
+        scope.Subscribe(Handle, "watch", "visible", global::Interoper.JsJson.ReadBoolean, handler, null, null);
 
-    public new LayerSnapshot Snapshot() => Realm.Call(JsOp.Snapshot(Handle), LayerSnapshot.Read)!;
+    public new LayerSnapshot Snapshot() => Realm.Call(global::Interoper.JsOp.Snapshot(Handle), LayerSnapshot.Read)!;
 
-    public void Apply(LayerSnapshot patch) => Realm.Send(JsOp.Apply(Handle, w => LayerSnapshot.WriteMembers(w, patch)));
+    public void Apply(LayerSnapshot patch) =>
+        Realm.Send(global::Interoper.JsOp.Apply(Handle, w => LayerSnapshot.WriteMembers(w, patch)));
 }

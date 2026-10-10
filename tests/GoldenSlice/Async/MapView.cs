@@ -5,22 +5,21 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
-using Interoper;
 
 namespace GoldenSlice.Async;
 
 public sealed partial class MapView : Emitter
 {
-    internal MapView(JsRealm realm, int handle) : base(realm, handle) { }
+    internal MapView(global::Interoper.JsRealm realm, int handle) : base(realm, handle) { }
 
-    public static async Task<MapView> CreateAsync(JsScope scope, MapViewSnapshot props) =>
-        (await scope.Realm.CallAsync(JsOp.Create(DemoMaps.MapViewId, w => MapViewSnapshot.WriteMembers(w, props)), scope.Read<MapView>))!;
+    public static async Task<MapView> CreateAsync(global::Interoper.JsScope scope, MapViewSnapshot props) =>
+        (await scope.Realm.CallAsync(global::Interoper.JsOp.Create(DemoMaps.MapViewId, w => MapViewSnapshot.WriteMembers(w, props)), scope.Read<MapView>))!;
 
     public async Task<PointSnapshot> GetCenterAsync() =>
-        (await Realm.CallAsync(JsOp.Get(Handle, "center", byValue: true), PointSnapshot.Read))!;
+        (await Realm.CallAsync(global::Interoper.JsOp.Get(Handle, "center", byValue: true), PointSnapshot.Read))!;
 
     public Task SetCenterAsync(PointSnapshot value) =>
-        Realm.SendAsync(JsOp.Set(Handle, "center", w => PointSnapshot.Write(w, value)));
+        Realm.SendAsync(global::Interoper.JsOp.Set(Handle, "center", w => PointSnapshot.Write(w, value)));
 
     public Task<double> GetZoomAsync() => Realm.GetNumberAsync(Handle, "zoom");
 
@@ -34,113 +33,113 @@ public sealed partial class MapView : Emitter
 
     public Task SetBasemapAsync(Basemap value) => Realm.SetAsync(Handle, "basemap", BasemapNames.ToJs(value));
 
-    public Task<Opt<Cursor>> GetCursorAsync() =>
-        Realm.CallAsync(JsOp.Get(Handle, "cursor"), static (ref r) => JsJson.ReadOpt(ref r, Cursor.Read));
+    public Task<global::Interoper.Opt<Cursor>> GetCursorAsync() =>
+        Realm.CallAsync(global::Interoper.JsOp.Get(Handle, "cursor"), static (ref r) => global::Interoper.JsJson.ReadOpt(ref r, Cursor.Read));
 
-    public Task SetCursorAsync(Opt<Cursor> value) =>
-        Realm.SendAsync(JsOp.Set(Handle, "cursor", w => JsJson.WriteValue(w, value, Cursor.Write)));
+    public Task SetCursorAsync(global::Interoper.Opt<Cursor> value) =>
+        Realm.SendAsync(global::Interoper.JsOp.Set(Handle, "cursor", w => global::Interoper.JsJson.WriteValue(w, value, Cursor.Write)));
 
-    public Task<Opt<string>> GetTitleAsync() =>
-        Realm.CallAsync(JsOp.Get(Handle, "title"), static (ref r) => JsJson.ReadOpt(ref r, JsJson.ReadString));
+    public Task<global::Interoper.Opt<string>> GetTitleAsync() =>
+        Realm.CallAsync(global::Interoper.JsOp.Get(Handle, "title"), static (ref r) => global::Interoper.JsJson.ReadOpt(ref r, global::Interoper.JsJson.ReadString));
 
-    public Task SetTitleAsync(Opt<string> value) =>
-        Realm.SendAsync(JsOp.Set(Handle, "title", w => JsJson.WriteValue(w, value, JsJson.WriteString)));
+    public Task SetTitleAsync(global::Interoper.Opt<string> value) =>
+        Realm.SendAsync(global::Interoper.JsOp.Set(Handle, "title", w => global::Interoper.JsJson.WriteValue(w, value, global::Interoper.JsJson.WriteString)));
 
-    public Task<Opt<Marker>> GetSelectedAsync(JsScope scope) =>
-        Realm.CallAsync(JsOp.Get(Handle, "selected"), (ref r) => JsJson.ReadOpt(ref r, scope.Read<Marker>));
+    public Task<global::Interoper.Opt<Marker>> GetSelectedAsync(global::Interoper.JsScope scope) =>
+        Realm.CallAsync(global::Interoper.JsOp.Get(Handle, "selected"), (ref r) => global::Interoper.JsJson.ReadOpt(ref r, scope.Read<Marker>));
 
-    public Task SetSelectedAsync(Opt<Marker> value) =>
-        Realm.SendAsync(JsOp.Set(Handle, "selected", w => JsJson.WriteValue(w, value, Marker.Write)));
+    public Task SetSelectedAsync(global::Interoper.Opt<Marker> value) =>
+        Realm.SendAsync(global::Interoper.JsOp.Set(Handle, "selected", w => global::Interoper.JsJson.WriteValue(w, value, Marker.Write)));
 
-    public async Task<Collection<Marker>> GetMarkersAsync(JsScope scope) =>
-        (await Realm.CallAsync(JsOp.Get(Handle, "markers"), (ref r) => scope.Read(ref r, static (realm, handle) => new Collection<Marker>(realm, handle))))!;
+    public async Task<Collection<Marker>> GetMarkersAsync(global::Interoper.JsScope scope) =>
+        (await Realm.CallAsync(global::Interoper.JsOp.Get(Handle, "markers"), (ref r) => scope.Read(ref r, static (realm, handle) => new Collection<Marker>(realm, handle))))!;
 
-    public async Task<Collection<global::GoldenSlice.Async.Layers.Layer>> GetLayersAsync(JsScope scope) =>
-        (await Realm.CallAsync(JsOp.Get(Handle, "layers"), (ref r) => scope.Read(ref r, static (realm, handle) => new Collection<global::GoldenSlice.Async.Layers.Layer>(realm, handle))))!;
+    public async Task<Collection<global::GoldenSlice.Async.Layers.Layer>> GetLayersAsync(global::Interoper.JsScope scope) =>
+        (await Realm.CallAsync(global::Interoper.JsOp.Get(Handle, "layers"), (ref r) => scope.Read(ref r, static (realm, handle) => new Collection<global::GoldenSlice.Async.Layers.Layer>(realm, handle))))!;
 
     public async Task<PointSnapshot> ScreenToMapAsync(double x, double y) =>
-        (await Realm.CallAsync(JsOp.Call(Handle, "screenToMap", w =>
+        (await Realm.CallAsync(global::Interoper.JsOp.Call(Handle, "screenToMap", w =>
         {
-            JsJson.WriteNumber(w, x);
-            JsJson.WriteNumber(w, y);
+            global::Interoper.JsJson.WriteNumber(w, x);
+            global::Interoper.JsJson.WriteNumber(w, y);
         }, byValue: true), PointSnapshot.Read))!;
 
     public async Task<PointSnapshot> ScreenToMapAsync(double[] offset) =>
-        (await Realm.CallAsync(JsOp.Call(Handle, "screenToMap", w => JsJson.WriteArray(w, offset, JsJson.WriteNumber), byValue: true), PointSnapshot.Read))!;
+        (await Realm.CallAsync(global::Interoper.JsOp.Call(Handle, "screenToMap", w => global::Interoper.JsJson.WriteArray(w, offset, global::Interoper.JsJson.WriteNumber), byValue: true), PointSnapshot.Read))!;
 
     public Task FlyToAsync(FlyToTarget target) =>
-        Realm.SendAsync(JsOp.Call(Handle, "flyTo", w => JsJson.WriteValue(w, target)));
+        Realm.SendAsync(global::Interoper.JsOp.Call(Handle, "flyTo", w => global::Interoper.JsJson.WriteValue(w, target)));
 
-    public Task<Opt<Marker>> MarkerAtAsync(JsScope scope, double x, double y) =>
-        Realm.CallAsync(JsOp.Call(Handle, "markerAt", w =>
+    public Task<global::Interoper.Opt<Marker>> MarkerAtAsync(global::Interoper.JsScope scope, double x, double y) =>
+        Realm.CallAsync(global::Interoper.JsOp.Call(Handle, "markerAt", w =>
         {
-            JsJson.WriteNumber(w, x);
-            JsJson.WriteNumber(w, y);
-        }), (ref r) => JsJson.ReadOpt(ref r, scope.Read<Marker>));
+            global::Interoper.JsJson.WriteNumber(w, x);
+            global::Interoper.JsJson.WriteNumber(w, y);
+        }), (ref r) => global::Interoper.JsJson.ReadOpt(ref r, scope.Read<Marker>));
 
-    public Task<IAsyncDisposable> OnClickAsync(JsScope scope, Action<ClickEvent> handler, EventOptions? options = null) =>
+    public Task<IAsyncDisposable> OnClickAsync(global::Interoper.JsScope scope, Action<ClickEvent> handler, global::Interoper.EventOptions? options = null) =>
         scope.SubscribeAsync(Handle, "on", "click", ClickEvent.Read, handler, options, ["type", "x", "y", "button", "mapPoint"]);
 
-    public IAsyncEnumerable<ClickEvent> OnClickStreamAsync(JsScope scope, EventOptions? options = null, CancellationToken cancellationToken = default) =>
+    public IAsyncEnumerable<ClickEvent> OnClickStreamAsync(global::Interoper.JsScope scope, global::Interoper.EventOptions? options = null, CancellationToken cancellationToken = default) =>
         scope.StreamAsync(Handle, "on", "click", ClickEvent.Read, options, ["type", "x", "y", "button", "mapPoint"], cancellationToken);
 
-    public Task<IAsyncDisposable> WatchCenterAsync(JsScope scope, Action<PointSnapshot> handler) =>
+    public Task<IAsyncDisposable> WatchCenterAsync(global::Interoper.JsScope scope, Action<PointSnapshot> handler) =>
         scope.SubscribeAsync(Handle, "watch", "center", PointSnapshot.Read, handler, null, null);
 
-    public IAsyncEnumerable<PointSnapshot> WatchCenterStreamAsync(JsScope scope, CancellationToken cancellationToken = default) =>
+    public IAsyncEnumerable<PointSnapshot> WatchCenterStreamAsync(global::Interoper.JsScope scope, CancellationToken cancellationToken = default) =>
         scope.StreamAsync(Handle, "watch", "center", PointSnapshot.Read, null, null, cancellationToken);
 
-    public Task<IAsyncDisposable> WatchZoomAsync(JsScope scope, Action<double> handler) =>
-        scope.SubscribeAsync(Handle, "watch", "zoom", JsJson.ReadNumber, handler, null, null);
+    public Task<IAsyncDisposable> WatchZoomAsync(global::Interoper.JsScope scope, Action<double> handler) =>
+        scope.SubscribeAsync(Handle, "watch", "zoom", global::Interoper.JsJson.ReadNumber, handler, null, null);
 
-    public IAsyncEnumerable<double> WatchZoomStreamAsync(JsScope scope, CancellationToken cancellationToken = default) =>
-        scope.StreamAsync(Handle, "watch", "zoom", JsJson.ReadNumber, null, null, cancellationToken);
+    public IAsyncEnumerable<double> WatchZoomStreamAsync(global::Interoper.JsScope scope, CancellationToken cancellationToken = default) =>
+        scope.StreamAsync(Handle, "watch", "zoom", global::Interoper.JsJson.ReadNumber, null, null, cancellationToken);
 
-    public Task<IAsyncDisposable> WatchRotationAsync(JsScope scope, Action<double> handler) =>
-        scope.SubscribeAsync(Handle, "watch", "rotation", JsJson.ReadNumber, handler, null, null);
+    public Task<IAsyncDisposable> WatchRotationAsync(global::Interoper.JsScope scope, Action<double> handler) =>
+        scope.SubscribeAsync(Handle, "watch", "rotation", global::Interoper.JsJson.ReadNumber, handler, null, null);
 
-    public IAsyncEnumerable<double> WatchRotationStreamAsync(JsScope scope, CancellationToken cancellationToken = default) =>
-        scope.StreamAsync(Handle, "watch", "rotation", JsJson.ReadNumber, null, null, cancellationToken);
+    public IAsyncEnumerable<double> WatchRotationStreamAsync(global::Interoper.JsScope scope, CancellationToken cancellationToken = default) =>
+        scope.StreamAsync(Handle, "watch", "rotation", global::Interoper.JsJson.ReadNumber, null, null, cancellationToken);
 
-    public Task<IAsyncDisposable> WatchBasemapAsync(JsScope scope, Action<Basemap> handler) =>
+    public Task<IAsyncDisposable> WatchBasemapAsync(global::Interoper.JsScope scope, Action<Basemap> handler) =>
         scope.SubscribeAsync(Handle, "watch", "basemap", BasemapNames.Read, handler, null, null);
 
-    public IAsyncEnumerable<Basemap> WatchBasemapStreamAsync(JsScope scope, CancellationToken cancellationToken = default) =>
+    public IAsyncEnumerable<Basemap> WatchBasemapStreamAsync(global::Interoper.JsScope scope, CancellationToken cancellationToken = default) =>
         scope.StreamAsync(Handle, "watch", "basemap", BasemapNames.Read, null, null, cancellationToken);
 
-    public Task<IAsyncDisposable> WatchCursorAsync(JsScope scope, Action<Opt<Cursor>> handler) =>
-        scope.SubscribeAsync(Handle, "watch", "cursor", static (ref r) => JsJson.ReadOpt(ref r, Cursor.Read), handler, null, null);
+    public Task<IAsyncDisposable> WatchCursorAsync(global::Interoper.JsScope scope, Action<global::Interoper.Opt<Cursor>> handler) =>
+        scope.SubscribeAsync(Handle, "watch", "cursor", static (ref r) => global::Interoper.JsJson.ReadOpt(ref r, Cursor.Read), handler, null, null);
 
-    public IAsyncEnumerable<Opt<Cursor>> WatchCursorStreamAsync(JsScope scope, CancellationToken cancellationToken = default) =>
-        scope.StreamAsync(Handle, "watch", "cursor", static (ref r) => JsJson.ReadOpt(ref r, Cursor.Read), null, null, cancellationToken);
+    public IAsyncEnumerable<global::Interoper.Opt<Cursor>> WatchCursorStreamAsync(global::Interoper.JsScope scope, CancellationToken cancellationToken = default) =>
+        scope.StreamAsync(Handle, "watch", "cursor", static (ref r) => global::Interoper.JsJson.ReadOpt(ref r, Cursor.Read), null, null, cancellationToken);
 
-    public Task<IAsyncDisposable> WatchTitleAsync(JsScope scope, Action<Opt<string>> handler) =>
-        scope.SubscribeAsync(Handle, "watch", "title", static (ref r) => JsJson.ReadOpt(ref r, JsJson.ReadString), handler, null, null);
+    public Task<IAsyncDisposable> WatchTitleAsync(global::Interoper.JsScope scope, Action<global::Interoper.Opt<string>> handler) =>
+        scope.SubscribeAsync(Handle, "watch", "title", static (ref r) => global::Interoper.JsJson.ReadOpt(ref r, global::Interoper.JsJson.ReadString), handler, null, null);
 
-    public IAsyncEnumerable<Opt<string>> WatchTitleStreamAsync(JsScope scope, CancellationToken cancellationToken = default) =>
-        scope.StreamAsync(Handle, "watch", "title", static (ref r) => JsJson.ReadOpt(ref r, JsJson.ReadString), null, null, cancellationToken);
+    public IAsyncEnumerable<global::Interoper.Opt<string>> WatchTitleStreamAsync(global::Interoper.JsScope scope, CancellationToken cancellationToken = default) =>
+        scope.StreamAsync(Handle, "watch", "title", static (ref r) => global::Interoper.JsJson.ReadOpt(ref r, global::Interoper.JsJson.ReadString), null, null, cancellationToken);
 
-    public Task<IAsyncDisposable> WatchSelectedAsync(JsScope scope, Action<Opt<Marker>> handler) =>
-        scope.SubscribeAsync(Handle, "watch", "selected", (ref r) => JsJson.ReadOpt(ref r, scope.Read<Marker>), handler, null, null);
+    public Task<IAsyncDisposable> WatchSelectedAsync(global::Interoper.JsScope scope, Action<global::Interoper.Opt<Marker>> handler) =>
+        scope.SubscribeAsync(Handle, "watch", "selected", (ref r) => global::Interoper.JsJson.ReadOpt(ref r, scope.Read<Marker>), handler, null, null);
 
-    public IAsyncEnumerable<Opt<Marker>> WatchSelectedStreamAsync(JsScope scope, CancellationToken cancellationToken = default) =>
-        scope.StreamAsync(Handle, "watch", "selected", (ref r) => JsJson.ReadOpt(ref r, scope.Read<Marker>), null, null, cancellationToken);
+    public IAsyncEnumerable<global::Interoper.Opt<Marker>> WatchSelectedStreamAsync(global::Interoper.JsScope scope, CancellationToken cancellationToken = default) =>
+        scope.StreamAsync(Handle, "watch", "selected", (ref r) => global::Interoper.JsJson.ReadOpt(ref r, scope.Read<Marker>), null, null, cancellationToken);
 
-    public Task<IAsyncDisposable> WatchMarkersAsync(JsScope scope, Action<Collection<Marker>> handler) =>
+    public Task<IAsyncDisposable> WatchMarkersAsync(global::Interoper.JsScope scope, Action<Collection<Marker>> handler) =>
         scope.SubscribeAsync(Handle, "watch", "markers", (ref r) => scope.Read(ref r, static (realm, handle) => new Collection<Marker>(realm, handle)), handler, null, null);
 
-    public IAsyncEnumerable<Collection<Marker>> WatchMarkersStreamAsync(JsScope scope, CancellationToken cancellationToken = default) =>
+    public IAsyncEnumerable<Collection<Marker>> WatchMarkersStreamAsync(global::Interoper.JsScope scope, CancellationToken cancellationToken = default) =>
         scope.StreamAsync(Handle, "watch", "markers", (ref r) => scope.Read(ref r, static (realm, handle) => new Collection<Marker>(realm, handle)), null, null, cancellationToken);
 
-    public Task<IAsyncDisposable> WatchLayersAsync(JsScope scope, Action<Collection<global::GoldenSlice.Async.Layers.Layer>> handler) =>
+    public Task<IAsyncDisposable> WatchLayersAsync(global::Interoper.JsScope scope, Action<Collection<global::GoldenSlice.Async.Layers.Layer>> handler) =>
         scope.SubscribeAsync(Handle, "watch", "layers", (ref r) => scope.Read(ref r, static (realm, handle) => new Collection<global::GoldenSlice.Async.Layers.Layer>(realm, handle)), handler, null, null);
 
-    public IAsyncEnumerable<Collection<global::GoldenSlice.Async.Layers.Layer>> WatchLayersStreamAsync(JsScope scope, CancellationToken cancellationToken = default) =>
+    public IAsyncEnumerable<Collection<global::GoldenSlice.Async.Layers.Layer>> WatchLayersStreamAsync(global::Interoper.JsScope scope, CancellationToken cancellationToken = default) =>
         scope.StreamAsync(Handle, "watch", "layers", (ref r) => scope.Read(ref r, static (realm, handle) => new Collection<global::GoldenSlice.Async.Layers.Layer>(realm, handle)), null, null, cancellationToken);
 
     public new async Task<MapViewSnapshot> SnapshotAsync() =>
-        (await Realm.CallAsync(JsOp.Snapshot(Handle), MapViewSnapshot.Read))!;
+        (await Realm.CallAsync(global::Interoper.JsOp.Snapshot(Handle), MapViewSnapshot.Read))!;
 
     public Task ApplyAsync(MapViewSnapshot patch) =>
-        Realm.SendAsync(JsOp.Apply(Handle, w => MapViewSnapshot.WriteMembers(w, patch)));
+        Realm.SendAsync(global::Interoper.JsOp.Apply(Handle, w => MapViewSnapshot.WriteMembers(w, patch)));
 }

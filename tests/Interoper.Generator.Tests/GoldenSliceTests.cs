@@ -27,7 +27,10 @@ public sealed class GoldenSliceTests
         (null, "IOP2007 Collection.constructor: skipped: its parameter isn't a bag, so there's no Create (R18)", "a collection comes from its owner"),
         (null, "IOP2007 DemoMapElement.observedAttributes: skipped: a static member", "static members aren't bound"),
         (null, "IOP2007 DemoMapElementEventMap: skipped: uses `CustomEvent` (in `DemoMapElementEventMap`)", "custom events come with the Razor components"),
+        (null, "IOP2001 Pin.meta: `any` is JsAny (§2)", "untyped by design: the app keeps anything there"),
         (null, "IOP2007 iconNames: skipped: uses a variable", "variables aren't bound"),
+        (null, "IOP2006 @acme/demo-maps/ops/b.js: its Options is BOptions: @acme/demo-maps/ops/a.js has one too (R27)",
+            "sibling modules declare the same name; the later one is renamed so both compile"),
         (Api.Async, "IOP2005 Marker.labelFormatter: skipped in async mode: JS uses its callback's result (R21)", "JS reads the result synchronously"),
         (Api.Async, "IOP2005 Collection.find: skipped in async mode: JS uses its callback's result (R21)", "JS reads the result synchronously"),
     ];

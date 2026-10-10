@@ -2,22 +2,23 @@
 #nullable enable
 
 using System;
-using Interoper;
 
 namespace GoldenSlice.Sync;
 
 public closed partial class Shape : Observable
 {
-    internal Shape(JsRealm realm, int handle) : base(realm, handle) { }
+    internal Shape(global::Interoper.JsRealm realm, int handle) : base(realm, handle) { }
 
-    public Bounds Bounds => Realm.Call(JsOp.Get(Handle, "bounds"), Bounds.Read)!;
+    public Bounds Bounds => Realm.Call(global::Interoper.JsOp.Get(Handle, "bounds"), Bounds.Read)!;
 
-    public Shape Clone(JsScope scope) => Realm.Call(JsOp.Call(Handle, "clone"), scope.Read<Shape>)!;
+    public Shape Clone(global::Interoper.JsScope scope) =>
+        Realm.Call(global::Interoper.JsOp.Call(Handle, "clone"), scope.Read<Shape>)!;
 
-    public IDisposable WatchBounds(JsScope scope, Action<Bounds> handler) =>
+    public IDisposable WatchBounds(global::Interoper.JsScope scope, Action<Bounds> handler) =>
         scope.Subscribe(Handle, "watch", "bounds", Bounds.Read, handler, null, null);
 
-    public new ShapeSnapshot Snapshot() => Realm.Call(JsOp.Snapshot(Handle), ShapeSnapshot.Read)!;
+    public new ShapeSnapshot Snapshot() => Realm.Call(global::Interoper.JsOp.Snapshot(Handle), ShapeSnapshot.Read)!;
 
-    public void Apply(ShapeSnapshot patch) => Realm.Send(JsOp.Apply(Handle, w => ShapeSnapshot.WriteMembers(w, patch)));
+    public void Apply(ShapeSnapshot patch) =>
+        Realm.Send(global::Interoper.JsOp.Apply(Handle, w => ShapeSnapshot.WriteMembers(w, patch)));
 }

@@ -2,7 +2,6 @@
 #nullable enable
 
 using System.Text.Json;
-using Interoper;
 
 namespace GoldenSlice.Sync;
 

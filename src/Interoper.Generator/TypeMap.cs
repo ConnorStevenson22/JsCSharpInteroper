@@ -10,7 +10,7 @@ namespace Interoper.Generator;
 /// <param name="Inherited">Declared by the base snapshot record (R16).</param>
 internal sealed record Field(string JsName, string Name, CsType? Type, bool Required, bool Opt = false, JsonElement? Constant = null, bool Inherited = false)
 {
-    public string TypeName => Opt ? $"Opt<{Type!.Name}>" : Type!.Name;
+    public string TypeName => Opt ? $"global::Interoper.Opt<{Type!.Name}>" : Type!.Name;
 }
 
 /// <summary>An enum or union struct: what a union type becomes (or a TS enum).</summary>
@@ -26,8 +26,12 @@ internal sealed record EnumType(TypeName Type, IReadOnlyList<(string Name, JsonE
     public bool IsNumber => Members.Count > 0 && Members[0].Value.ValueKind == JsonValueKind.Number;
 }
 
-/// <summary>A generated union struct (R2). <see cref="Discriminant"/> is the property its object cases are told apart by (R19 step 2).</summary>
-internal sealed record UnionStruct(TypeName Type, IReadOnlyList<UnionCase> Cases, string? Discriminant) : DataType(Type);
+/// <summary>
+/// A generated union struct (R2). <see cref="Discriminant"/> is the property its object cases are told apart by (R19
+/// step 2). A <see cref="WrittenOnly"/> one is a parameter's that has an entity case or had a case outside the selection:
+/// it's never read, so R19 doesn't apply.
+/// </summary>
+internal sealed record UnionStruct(TypeName Type, IReadOnlyList<UnionCase> Cases, string? Discriminant, bool WrittenOnly = false) : DataType(Type);
 
 /// <param name="Declaration">What an object case is read as (R19 steps 2 and 3).</param>
 internal sealed record UnionCase(CsType Type, Declaration? Declaration);
@@ -41,7 +45,7 @@ internal enum Position
     /// <summary>A live member's type or result, or an event's payload: also <c>this</c>.</summary>
     Member,
 
-    /// <summary>A parameter, or a property's setter: also a callback (R21).</summary>
+    /// <summary>A parameter, or a property's setter: also a callback (R21), and a union that is only written (R2).</summary>
     Parameter,
 }
 
@@ -67,6 +71,10 @@ internal sealed class TypeMap
     private readonly HashSet<ClassDeclaration> watchable = new(ReferenceEqualityComparer.Instance);
     private readonly Dictionary<Declaration, bool> scoped = new(ReferenceEqualityComparer.Instance);
     private readonly HashSet<Declaration> scoping = new(ReferenceEqualityComparer.Instance);
+    /// <summary>R27: the names of declarations a sibling module's type of the same name has taken (<c>BOptions</c>).</summary>
+    private readonly Dictionary<(string Module, string Name), string> renamed = [];
+    /// <summary>R25: each distinct enum member rename, the enum it was first met in, and how many others have it.</summary>
+    private readonly OrderedDictionary<string, (string Subject, int Others)> enumRenames = [];
 
     /// <summary>
     /// <paramref name="selected"/> stand for themselves (a class trimmed to what can be mapped); its classes are the
@@ -103,10 +111,43 @@ internal sealed class TypeMap
         valueClasses = [.. profile.ValueClasses];
         this.diagnostics = diagnostics;
         (package, root) = (ir.Package.Name, ns);
-        Registry = Naming.Type(ir.Package.Name.Split('/')[^1]);
+        var emitted = selected.Select(s => (s.Module, s.Declaration.Name)).ToHashSet();
+        // R27: sibling modules' types of one name. The first in IR order keeps it; a later one is prefixed with its
+        // module's class name (ops/b.js's Options is BOptions), so both compile, and so do their users.
+        var owners = new Dictionary<(string Namespace, string Name), string>();
+        foreach (var module in ir.Modules)
+        {
+            foreach (var d in module.Declarations.Where(MakesType))
+            {
+                var key = (Namespace(module.Specifier), Naming.Type(d.Name));
+                if (owners.TryAdd(key, module.Specifier) || owners[key] == module.Specifier)
+                {
+                    continue;
+                }
+                var name = LiveEmitter.ModuleClass(module.Specifier) + key.Item2;
+                renamed[(module.Specifier, d.Name)] = name;
+                if (emitted.Contains((module.Specifier, d.Name)))
+                {
+                    diagnostics.Add(new(Diagnostic.Renamed, module.Specifier, $"its {key.Item2} is {name}: {owners[key]} has one too (R27)"));
+                }
+            }
+        }
+        // R27: the namespaces of the emitted types, below the root and with the namespaces they're in. The registry
+        // takes the next free name when one of them has its name (Core2 next to a core/ folder).
+        Namespaces = selected.Select(s => Namespace(s.Module)).SelectMany(Parents).ToHashSet();
+        var registry = Naming.Type(ir.Package.Name.Split('/')[^1]);
+        Registry = registry;
+        for (var n = 2; Namespaces.Contains($"{root}.{Registry}"); n++)
+        {
+            Registry = $"{registry}{n}";
+        }
+        if (Registry != registry)
+        {
+            diagnostics.Add(new(Diagnostic.Renamed, $"{root}.{registry}", $"the registry is {Registry}: a namespace has its name (R27)"));
+        }
         // R27: classes of one name in different namespaces need different class id constants. Each one outside the root
         // namespace gets its namespace below the root as a prefix (LayersPointId), whatever the IR order.
-        foreach (var group in classes.GroupBy(c => Naming.Type(c.Name)))
+        foreach (var group in classes.GroupBy(c => Name(c).Name))
         {
             foreach (var c in group)
             {
@@ -121,8 +162,31 @@ internal sealed class TypeMap
         }
     }
 
-    /// <summary>The generated registry class, named after the package without its scope (<c>DemoMaps</c>), in the root namespace.</summary>
+    /// <summary>
+    /// The generated registry class, named after the package without its scope (<c>DemoMaps</c>), in the root namespace;
+    /// with a numeric suffix when a namespace has that name (R27).
+    /// </summary>
     public string Registry { get; }
+
+    /// <summary>The namespaces of the emitted types below the root, and the namespaces they're in (R27).</summary>
+    public IReadOnlySet<string> Namespaces { get; }
+
+    /// <summary>A namespace and the ones it's in, below the root: Root.A.B gives Root.A.B and Root.A.</summary>
+    private IEnumerable<string> Parents(string ns)
+    {
+        for (; ns.Length > root.Length; ns = ns[..ns.LastIndexOf('.')])
+        {
+            yield return ns;
+        }
+    }
+
+    /// <summary>Whether a declaration becomes a C# type of its name: a record, a live class, an enum or a union.</summary>
+    private bool MakesType(Declaration d) => d switch
+    {
+        InterfaceDeclaration or EnumDeclaration or ClassDeclaration or AliasDeclaration { Type: ObjectType } => true,
+        AliasDeclaration { Type: not FunctionType } a => Values(a.Type).Count > 1,
+        _ => false,
+    };
 
     /// <summary>R27: the namespace of a declaration's types: the root namespace plus its module's folders.</summary>
     public string Namespace(Declaration declaration) => Namespace(moduleOf[declaration]);
@@ -131,7 +195,8 @@ internal sealed class TypeMap
     public string Namespace(string module) => Naming.Namespace(root, package, module);
 
     /// <summary>The type a declaration becomes, in its namespace (R27).</summary>
-    public TypeName Name(Declaration declaration) => new(Namespace(declaration), Naming.Type(declaration.Name));
+    public TypeName Name(Declaration declaration) =>
+        new(Namespace(declaration), renamed.GetValueOrDefault((moduleOf[declaration], declaration.Name)) ?? Naming.Type(declaration.Name));
 
     /// <summary>A class's snapshot record (R18), in the class's namespace.</summary>
     public TypeName Snapshot(ClassDeclaration c) => new(Namespace(c), SnapshotName(c));
@@ -145,7 +210,7 @@ internal sealed class TypeMap
     /// <summary>Anonymous enums and unions named after their owner (R27), in the order they were met.</summary>
     public IReadOnlyList<DataType> Owned => owned;
 
-    public static string SnapshotName(ClassDeclaration c) => Naming.Type(c.Name) + "Snapshot";
+    public string SnapshotName(ClassDeclaration c) => Name(c).Name + "Snapshot";
 
     public bool IsValueLike(ClassDeclaration c) => valueClasses.Contains(c.Name);
 
@@ -164,7 +229,7 @@ internal sealed class TypeMap
 
     /// <summary>The live class a class derives from, with its type arguments, as code in namespace <paramref name="ns"/> names it.</summary>
     public string LiveBaseName(ClassDeclaration c, string ns) =>
-        LiveBase(c) is { } b ? CsType.Live(Name(b), [.. ((RefType)c.Extends!).Args.Select(a => Map(a, Name(c)))]).In(ns).Name : "JsObject";
+        LiveBase(c) is { } b ? CsType.Live(Name(b), [.. ((RefType)c.Extends!).Args.Select(a => Map(a, Name(c)))]).In(ns).Name : "global::Interoper.JsObject";
 
     /// <summary>A live class as its own members name it, for <c>this</c>: with its type parameters (mapping §2).</summary>
     public CsType Self(ClassDeclaration c) => CsType.Live(Name(c), [.. c.TypeParameters.Select(t => CsType.TypeParameter(t.Name))]);
@@ -216,6 +281,7 @@ internal sealed class TypeMap
         PrimitiveType { Name: "number" } => CsType.Number,
         PrimitiveType { Name: "string" } => CsType.String,
         PrimitiveType { Name: "boolean" } => CsType.Boolean,
+        PrimitiveType { Name: "any" or "unknown" or "object" } => CsType.Any,
         RefType { Module: not null } r when Find(r) is { } declaration => Named(declaration, r.Args, owner),
         TypeParameterType t => CsType.TypeParameter(t.Name),
         FunctionType f => Callback(f, owner),
@@ -241,7 +307,7 @@ internal sealed class TypeMap
             nullable = true;
         }
         var mapped = type is ThisType && self is not null ? self : Map(type, owner);
-        return (mapped, nullable || Flatten(type).Any(IsNullish));
+        return (mapped, nullable || Flatten(type).Any(t => IsNullish(t) || t is PrimitiveType { Name: "any" or "unknown" }));
     }
 
     /// <summary>
@@ -309,16 +375,24 @@ internal sealed class TypeMap
         {
             return known;
         }
-        var flat = Values(type);
+        var all = Values(type);
+        // R2: a parameter's union drops its cases outside the selection, and is then only written.
+        var flat = all.Where(t => !IsUnselected(t)).ToList();
+        foreach (var dropped in all.Except(flat).OfType<RefType>())
+        {
+            diagnostics.Add(new(Diagnostic.NotSupported, name.Name, $"case `{dropped.Name}` dropped: a class outside the selection, so it's only written (R2)"));
+        }
         var literals = flat.OfType<LiteralType>().Select(l => l.Value).ToList();
+        var cases = new Lazy<List<UnionCase>>(() => Cases(name, flat));
         DataType? result =
             flat.Count < 2 ? null
             : flat.All(t => t is LiteralType { Value.ValueKind: JsonValueKind.String } || IsOpenString(t)) ? new EnumType(name,
                 EnumMembers(name.Name, literals, literals.Select(v => v.GetString()!)), literals.Count > MaxEnumMembers || flat.Any(IsOpenString))
             : flat.All(t => t is LiteralType { Value.ValueKind: JsonValueKind.Number }) ? new EnumType(name,
                 EnumMembers(name.Name, literals, literals.Select(v => v.GetRawText())), Extensible: false)
-            : new UnionStruct(name, Cases(name, flat),
-                type is UnionType u && u.Types.Count(t => !IsNullish(t)) == flat.Count ? u.Discriminant : null);
+            : new UnionStruct(name, cases.Value,
+                type is UnionType u && u.Types.Count(t => !IsNullish(t)) == all.Count ? u.Discriminant : null,
+                WrittenOnly: flat.Count < all.Count || cases.Value.Any(c => c.Type.Scoped));
         unions[name] = result;
         return result;
     }
@@ -336,9 +410,35 @@ internal sealed class TypeMap
         return result;
     }
 
-    /// <summary>R25: names for the values.</summary>
-    private List<(string, JsonElement)> EnumMembers(string type, List<JsonElement> values, IEnumerable<string> names) =>
-        [.. Naming.EnumMembers(names, type, diagnostics).Zip(values)];
+    /// <summary>
+    /// R25: names for the values. A rename is reported once, for the first enum it's met in: an anonymous union that
+    /// many types repeat makes an enum for each.
+    /// </summary>
+    private List<(string, JsonElement)> EnumMembers(string type, List<JsonElement> values, IEnumerable<string> names)
+    {
+        var renames = new List<Diagnostic>();
+        var members = Naming.EnumMembers(names, type, renames);
+        foreach (var rename in renames)
+        {
+            enumRenames[rename.Message] = enumRenames.TryGetValue(rename.Message, out var known) ? known with { Others = known.Others + 1 } : (type, 0);
+        }
+        return [.. members.Zip(values)];
+    }
+
+    /// <summary>R25: reports each enum member rename once, with how many other enums have it too.</summary>
+    public void ReportEnumRenames()
+    {
+        foreach (var (message, (subject, others)) in enumRenames)
+        {
+            diagnostics.Add(new(Diagnostic.Renamed, subject, others switch
+            {
+                0 => message,
+                1 => $"{message}, and in 1 other enum",
+                _ => $"{message}, and in {others} other enums",
+            }));
+        }
+        enumRenames.Clear();
+    }
 
     /// <summary>The cases of a union, after mapping (R5: one per C# type).</summary>
     private List<UnionCase> Cases(TypeName name, List<IrType> types)
@@ -372,6 +472,9 @@ internal sealed class TypeMap
         i.Types.Any(t => t is ObjectType { Members.Count: 0, IndexSignatures.Count: 0, CallSignatures.Count: 0, ConstructSignatures.Count: 0 });
 
     private static bool IsNullish(IrType type) => type is PrimitiveType { Name: "null" or "undefined" };
+
+    /// <summary>A class outside the selection: a parameter's union drops it as a case (R2).</summary>
+    private bool IsUnselected(IrType type) => type is RefType { Module: not null } r && Find(r) is ClassDeclaration c && !classes.Contains(c);
 
     /// <summary>Whether a type has JS null in it, which a missing callback is sent as; otherwise it's undefined (R21).</summary>
     public bool HasNull(IrType type) => Flatten(type).Any(t => t is PrimitiveType { Name: "null" });
@@ -454,8 +557,7 @@ internal sealed class TypeMap
     {
         var type = Name(c);
         var result = SnapshotBase(c) is { } b ? Fields(b).Select(f => f with { Inherited = true }).ToList() : [];
-        // Diff's code names the runtime's JsDiff, which a member of that name would hide.
-        var taken = new HashSet<string>(result.Select(f => f.Name)) { SnapshotName(c), "Write", "WriteMembers", "Read", "Diff", "JsDiff" };
+        var taken = new HashSet<string>(result.Select(f => f.Name)) { SnapshotName(c), "Write", "WriteMembers", "Read", "Diff" };
         foreach (var p in c.Members.OfType<PropertyMember>().Where(p => !p.Static))
         {
             if (p.Type is LiteralType constant)
@@ -482,11 +584,12 @@ internal sealed class TypeMap
 
     /// <summary>
     /// Whether a type needs a scope to be read (R17): it mentions an entity class, a type parameter (an entity, mapping
-    /// §2), <c>this</c>, or a record that does.
+    /// §2), <c>this</c>, <c>any</c> (a <c>JsAny</c>), or a record that does.
     /// </summary>
     private bool UsesEntity(IrType type) => type switch
     {
         TypeParameterType or ThisType => true,
+        PrimitiveType { Name: "any" or "unknown" or "object" } => true, // a JsAny, whose handles the scope owns
         RefType { Module: not null } r => Find(r) switch
         {
             ClassDeclaration c => !IsValueLike(c),
@@ -566,7 +669,7 @@ internal sealed class TypeMap
         }
         return CallbackOf(type) is { } callback ? (position == Position.Parameter ? CallbackProblem(callback) : new("a callback that isn't a parameter (R21)"))
             : type is ThisType && position != Position.Data ? null
-            : MapProblem(type);
+            : MapProblem(type, written: position == Position.Parameter);
     }
 
     /// <summary>A result's, without its Promise (R8); <c>void</c> is none.</summary>
@@ -584,7 +687,8 @@ internal sealed class TypeMap
     public Unmappable? Problem(PropertyMember p) =>
         p.Type is LiteralType ? null
         : IsCallback(p) ? (p.Readonly ? new("a callback that can't be set (R21)") : Problem(p.WriteType ?? p.Type, Position.Parameter))
-        : Problem(p.Type, Position.Member) ?? (p.WriteType is { } w ? Problem(w, Position.Member) : null)
+        : Problem(p.Type, Position.Member)
+            ?? (p.WriteType is { } w ? Problem(w, CallbackOf(w) is null ? Position.Parameter : Position.Member) : null) // a setter's is written
             ?? (IsSnapshotMember(p) ? Problem(p.Type, Position.Data) : null);
 
     /// <summary>
@@ -601,7 +705,7 @@ internal sealed class TypeMap
         {
             [] => new("only `null` and `undefined`"),
             [var single] => MapProblem(single),
-            _ => UnionProblem(a.Type, a.Name),
+            _ => UnionProblem(a.Type, a.Name, written: true), // where it's read, its use is checked again (MapProblem)
         },
         EnumDeclaration e => e.Members.Select(m => m.Value.ValueKind).Distinct().Count() > 1 ? new("an enum of strings and numbers")
             : NonInteger(e.Members.Select(m => m.Value)),
@@ -610,11 +714,12 @@ internal sealed class TypeMap
         _ => null,
     };
 
-    /// <summary>A generic type's type parameters are entities (<c>where T : JsObject</c>), so they take no constraint or default (mapping §2).</summary>
+    /// <summary>
+    /// A generic type's type parameters are entities (<c>where T : JsObject</c>), so they take no constraint (mapping §2).
+    /// A default doesn't matter: C# always has the type argument.
+    /// </summary>
     private static Unmappable? TypeParametersProblem(IEnumerable<TypeParameter> parameters) =>
-        parameters.FirstOrDefault(t => t.Constraint is not null || t.Default is not null) is { } t
-            ? new($"the type parameter `{t.Name}` with a constraint or a default (§2)")
-            : null;
+        parameters.FirstOrDefault(t => t.Constraint is not null) is { } t ? new($"the type parameter `{t.Name}` with a constraint (§2)") : null;
 
     /// <summary>
     /// R21: a callback's arguments are read and its result written as data, with up to
@@ -640,22 +745,26 @@ internal sealed class TypeMap
         _ => null,
     };
 
-    /// <summary>What <see cref="Map"/> refuses, without the declarations the type names.</summary>
-    private Unmappable? MapProblem(IrType type) => type switch
+    /// <summary>
+    /// What <see cref="Map"/> refuses, without the declarations the type names; a union alias's use is checked where it's
+    /// read, since a parameter's may be only written (<paramref name="written"/>, R2).
+    /// </summary>
+    private Unmappable? MapProblem(IrType type, bool written = false) => type switch
     {
-        PrimitiveType { Name: "number" or "string" or "boolean" } => null,
+        PrimitiveType { Name: "number" or "string" or "boolean" or "any" or "unknown" or "object" } => null,
         RefType { Module: not null } r when Find(r) is { } d => d switch
         {
             ClassDeclaration c when !IsValueLike(c) => ArgumentsProblem(c.Name, c.TypeParameters, r.Args),
             InterfaceDeclaration i => ArgumentsProblem(i.Name, i.TypeParameters, r.Args),
             AliasDeclaration { Type: FunctionType } => new("a callback that isn't a parameter (R21)"),
+            AliasDeclaration { Type: not ObjectType } a when !written && Values(a.Type).Count > 1 => UnionProblem(a.Type, a.Name, written: false),
             _ => null,
         },
         TypeParameterType => null, // an entity (mapping §2); selection checks it's the type's own
-        ArrayType a => MapProblem(a.Element),
-        TupleType { Required: null, Rest: false, Elements.Count: > 0 } t => t.Elements.Select(MapProblem).FirstOrDefault(p => p is not null)
+        ArrayType a => MapProblem(a.Element, written),
+        TupleType { Required: null, Rest: false, Elements.Count: > 0 } t => t.Elements.Select(e => MapProblem(e, written)).FirstOrDefault(p => p is not null)
             ?? (NameOf(t, full: true) is null ? new("a tuple of different types") : null), // R5
-        UnionType u => Values(u).Count < 2 ? new("a nullable array or tuple element") : UnionProblem(u, null),
+        UnionType u => Values(u).Count < 2 ? new("a nullable array or tuple element") : UnionProblem(u, null, written),
         FunctionType => new("a callback that isn't a parameter (R21)"),
         PrimitiveType p => new($"`{p.Name}` here"),
         LiteralType => new("a literal here"),
@@ -671,7 +780,7 @@ internal sealed class TypeMap
     private Unmappable? ArgumentsProblem(string name, IReadOnlyList<TypeParameter> parameters, IReadOnlyList<IrType> args) =>
         args.Count != parameters.Count ? new($"`{name}` with {args.Count} type arguments for {parameters.Count} type parameters")
         : args.Any(a => !IsEntity(a)) ? new($"`{name}` of a type that isn't an entity (§2)")
-        : args.Select(MapProblem).FirstOrDefault(p => p is not null);
+        : args.Select(a => MapProblem(a)).FirstOrDefault(p => p is not null);
 
     /// <summary>A live object as data: an entity class, or a type parameter, which is one (mapping §2).</summary>
     private bool IsEntity(IrType type) =>
@@ -680,13 +789,19 @@ internal sealed class TypeMap
     /// <summary>
     /// What <see cref="Union"/> and the union reader (R19) refuse: a literal next to other types, a value-type case (R2
     /// keeps unions non-boxing), a non-integer number, a discriminant that isn't a string on every case, or cases it
-    /// can't tell apart, which is IOP2003.
+    /// can't tell apart, which is IOP2003. A union that is only <paramref name="written"/> (a parameter's, R2) may have an
+    /// entity case, which needs no scope to be written, and drops its cases outside the selection; it's never read.
     /// </summary>
-    private Unmappable? UnionProblem(IrType type, string? name)
+    private Unmappable? UnionProblem(IrType type, string? name, bool written)
     {
-        var flat = Values(type);
+        var all = Values(type);
         var label = name is null ? "a union" : $"the union `{name}`";
         var ambiguous = name is null ? "an ambiguous union" : $"the ambiguous union `{name}`";
+        if (!written && all.FirstOrDefault(IsUnselected) is RefType unselected)
+        {
+            return new($"class `{unselected.Name}` outside the selection");
+        }
+        var flat = all.Where(t => !IsUnselected(t)).ToList(); // as Union() drops them
         if (flat.All(t => t is LiteralType { Value.ValueKind: JsonValueKind.String } || IsOpenString(t)))
         {
             return null; // R9, R10
@@ -699,10 +814,19 @@ internal sealed class TypeMap
         {
             return new($"{label} of a literal and other types");
         }
+        if (flat.Count < 2)
+        {
+            return new($"{label}, whose other cases are outside the selection");
+        }
         var cases = new List<(string? Name, string? FullName, JsonKind Json, Declaration? Declaration)>();
+        var writtenOnly = flat.Count < all.Count;
         foreach (var t in flat)
         {
-            if (MapProblem(t) is { } problem)
+            if (t is PrimitiveType { Name: "any" or "unknown" or "object" } any)
+            {
+                return new($"{label} with `{any.Name}` (§2)");
+            }
+            if (MapProblem(t, written) is { } problem)
             {
                 return problem;
             }
@@ -710,16 +834,24 @@ internal sealed class TypeMap
             {
                 return new($"{label} with the value-type case {valueType} (R2)");
             }
-            if (IsEntity(t) || t is RefType { Module: not null } record && Find(record) is { } d && IsScoped(d))
+            if (UsesEntity(t))
             {
-                return new($"{label} with the case {NameOf(t) ?? ((TypeParameterType)t).Name}, which needs a scope to be read (R17, R19)");
+                if (!written)
+                {
+                    return new($"{label} with the case {NameOf(t) ?? (t as TypeParameterType)?.Name ?? "`this`"}, which needs a scope to be read (R17, R19)");
+                }
+                writtenOnly = true;
             }
             if (NameOf(t, full: true) is not { } caseName || cases.All(c => c.FullName != caseName)) // R5, as Cases dedupes
             {
                 cases.Add((NameOf(t), NameOf(t, full: true), JsonOf(t), t is RefType r ? Find(r) : null));
             }
         }
-        if (type is UnionType u && u.Types.Count(t => !IsNullish(t)) == flat.Count && u.Discriminant is { } discriminant) // as Union() reads it
+        if (writtenOnly)
+        {
+            return null; // never read, so R19 doesn't apply
+        }
+        if (type is UnionType u && u.Types.Count(t => !IsNullish(t)) == all.Count && u.Discriminant is { } discriminant) // as Union() reads it
         {
             return cases.All(c => c.Declaration is { } d && StringConstants(d).Contains(discriminant)) ? null
                 : new($"{label}, whose discriminant `{discriminant}` isn't a string on every case (R19)");
@@ -799,8 +931,8 @@ internal sealed class TypeMap
         PrimitiveType { Name: "boolean" } => "bool",
         RefType { Module: not null } r => Find(r) switch
         {
-            EnumDeclaration e => Naming.Type(e.Name),
-            AliasDeclaration { Type: not ObjectType } a => Values(a.Type) is [var single] ? ValueType(single) : Naming.Type(a.Name),
+            EnumDeclaration e => Name(e).Name,
+            AliasDeclaration { Type: not ObjectType } a => Values(a.Type) is [var single] ? ValueType(single) : Name(a).Name,
             _ => null,
         },
         _ => null,

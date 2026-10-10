@@ -2,37 +2,36 @@
 #nullable enable
 
 using System.Text.Json;
-using Interoper;
 
 namespace GoldenSlice.Sync;
 
 public sealed partial record DemoMapElementSnapshot
 {
-    public Opt<Basemap> Basemap { get; init; }
-    public Opt<double> Zoom { get; init; }
-    public Opt<PointSnapshot> Center { get; init; }
+    public global::Interoper.Opt<Basemap> Basemap { get; init; }
+    public global::Interoper.Opt<double> Zoom { get; init; }
+    public global::Interoper.Opt<PointSnapshot> Center { get; init; }
 
     public static void WriteMembers(Utf8JsonWriter writer, DemoMapElementSnapshot value)
     {
-        JsJson.WriteProperty(writer, "basemap"u8, value.Basemap, BasemapNames.Write);
-        JsJson.WriteProperty(writer, "zoom"u8, value.Zoom, JsJson.WriteNumber);
-        JsJson.WriteProperty(writer, "center"u8, value.Center, PointSnapshot.Write);
+        global::Interoper.JsJson.WriteProperty(writer, "basemap"u8, value.Basemap, BasemapNames.Write);
+        global::Interoper.JsJson.WriteProperty(writer, "zoom"u8, value.Zoom, global::Interoper.JsJson.WriteNumber);
+        global::Interoper.JsJson.WriteProperty(writer, "center"u8, value.Center, PointSnapshot.Write);
     }
 
     public static DemoMapElementSnapshot Read(ref Utf8JsonReader reader)
     {
-        Opt<Basemap> basemap = default;
-        Opt<double> zoom = default;
-        Opt<PointSnapshot> center = default;
+        global::Interoper.Opt<Basemap> basemap = default;
+        global::Interoper.Opt<double> zoom = default;
+        global::Interoper.Opt<PointSnapshot> center = default;
         while (reader.Read() && reader.TokenType == JsonTokenType.PropertyName)
         {
             var property = reader.GetString();
             reader.Read();
             switch (property)
             {
-                case "basemap": basemap = JsJson.ReadOpt(ref reader, BasemapNames.Read); break;
-                case "zoom": zoom = JsJson.ReadOpt(ref reader, JsJson.ReadNumber); break;
-                case "center": center = JsJson.ReadOpt(ref reader, PointSnapshot.Read); break;
+                case "basemap": basemap = global::Interoper.JsJson.ReadOpt(ref reader, BasemapNames.Read); break;
+                case "zoom": zoom = global::Interoper.JsJson.ReadOpt(ref reader, global::Interoper.JsJson.ReadNumber); break;
+                case "center": center = global::Interoper.JsJson.ReadOpt(ref reader, PointSnapshot.Read); break;
                 default: reader.Skip(); break;
             }
         }
@@ -41,8 +40,8 @@ public sealed partial record DemoMapElementSnapshot
 
     public static DemoMapElementSnapshot Diff(DemoMapElementSnapshot before, DemoMapElementSnapshot after) => new()
     {
-        Basemap = after.Basemap.IsUndefined || JsDiff.Same(before.Basemap, after.Basemap) ? default : after.Basemap,
-        Zoom = after.Zoom.IsUndefined || JsDiff.Same(before.Zoom, after.Zoom) ? default : after.Zoom,
-        Center = after.Center.IsUndefined || JsDiff.Same(before.Center, after.Center) ? default : after.Center,
+        Basemap = after.Basemap.IsUndefined || global::Interoper.JsDiff.Same(before.Basemap, after.Basemap) ? default : after.Basemap,
+        Zoom = after.Zoom.IsUndefined || global::Interoper.JsDiff.Same(before.Zoom, after.Zoom) ? default : after.Zoom,
+        Center = after.Center.IsUndefined || global::Interoper.JsDiff.Same(before.Center, after.Center) ? default : after.Center,
     };
 }

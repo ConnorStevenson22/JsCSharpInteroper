@@ -19,7 +19,10 @@ public sealed class SelectionTests
             "geometry.js: ShapeType, Bounds, Shape, Point, Line, Polygon",
             "layers/Layer.js: Layer",
             "layers/TileLayer.js: TileLayer",
-            "measure.js: distance, perimeter",
+            "measure.js: distance, perimeter, Measurable, describe",
+            "ops/a.js: Options, execute",
+            "ops/b.js: Options, execute",
+            "pins.js: PinDragEvent, PinEvents, Pin",
             "styles.js: Rgba, ColorInput, IconName, FillStyle, StrokeStyle, IconStyle, Style, toRgba",
         ], Modules(selection));
 
@@ -51,7 +54,7 @@ public sealed class SelectionTests
     public void AStarMatchesAnyCharactersSlashesIncluded()
     {
         Assert.Equal(Modules(Selection.Select(Fixture.Ir, Fixture.Profile)), Modules(Select("@acme/*")));
-        Assert.Equal(["core.js: Observable", "geometry.js: ShapeType, Bounds, Shape, Point, Line, Polygon", "measure.js: distance, perimeter"],
+        Assert.Equal(["core.js: Observable", "geometry.js: ShapeType, Bounds, Shape, Point, Line, Polygon", "measure.js: distance, perimeter, Measurable, describe"],
             Modules(Select("*/measure.js", "*/geometry.js")));
         Assert.Equal(["core.js: Observable", "layers/Layer.js: Layer", "layers/TileLayer.js: TileLayer"], Modules(Select("@acme/demo-maps/layers/*")));
     }
@@ -60,10 +63,10 @@ public sealed class SelectionTests
     public void AMemberThatUsesAClassOutsideTheSelectionIsSkipped()
     {
         var selection = Select("*/MapView.js");
-        Assert.Equal(["zoom", "rotation", "basemap", "cursor", "title"], Members(selection, "MapView"));
+        // R2: flyTo only writes its FlyToTarget, which drops its Shape case; the generator reports that.
+        Assert.Equal(["zoom", "rotation", "basemap", "cursor", "title", "flyTo"], Members(selection, "MapView"));
         Assert.Equal(
         [
-            "IOP2007 FlyToTarget: skipped: uses class `Shape` outside the selection (in `FlyToTarget`)",
             "IOP2007 FlyToOptions: skipped: uses `AbortSignal` (in `FlyToOptions`)",
             "IOP2007 ClickEvent: skipped: uses class `Point` outside the selection (in `ClickEvent`)",
             "IOP2007 MapViewEvents: skipped: uses class `Point` outside the selection (in `ClickEvent`) (in `MapViewEvents`)",
@@ -74,7 +77,7 @@ public sealed class SelectionTests
             "IOP2007 MapView.markers: skipped: uses class `Collection` outside the selection",
             "IOP2007 MapView.layers: skipped: uses class `Collection` outside the selection",
             "IOP2007 MapView.screenToMap: skipped: uses class `Point` outside the selection", // once for its two overloads
-            "IOP2007 MapView.flyTo: skipped: uses class `Shape` outside the selection (in `FlyToTarget`)",
+            "IOP2007 MapView.flyTo(options): optional parameter dropped (R22): uses `AbortSignal` (in `FlyToOptions`)",
             "IOP2007 MapView.markerAt: skipped: uses class `Marker` outside the selection",
             "IOP2007 MapView.on:click: skipped: uses class `Point` outside the selection (in `ClickEvent`)",
             "IOP2007 Emitter.emit: skipped: uses type parameter `K`",
@@ -141,19 +144,6 @@ public sealed class SelectionTests
     [InlineData( // R15: a data record
         """{ "kind": "interface", "name": "T", "indexSignatures": [{ "key": { "kind": "primitive", "name": "string" }, "type": { "kind": "primitive", "name": "number" } }] }""",
         "IOP2007", "an index signature")]
-    [InlineData( // R17, R19: a union is read without a scope, so no case holds an entity
-        """
-        { "kind": "alias", "name": "T", "type": { "kind": "union", "types": [{ "kind": "ref", "name": "X", "module": "@acme/maps/a.js" }, { "kind": "primitive", "name": "string" }] } },
-        { "kind": "interface", "name": "X", "members": [{ "kind": "property", "name": "layer", "type": { "kind": "ref", "name": "Layer", "module": "@acme/maps/a.js" } }] },
-        { "kind": "class", "name": "Layer" }
-        """,
-        "IOP2007", "the union `T` with the case X, which needs a scope to be read (R17, R19)")]
-    [InlineData( // R17, R19: nor is a case an entity
-        """
-        { "kind": "alias", "name": "T", "type": { "kind": "union", "types": [{ "kind": "ref", "name": "Layer", "module": "@acme/maps/a.js" }, { "kind": "primitive", "name": "string" }] } },
-        { "kind": "class", "name": "Layer" }
-        """,
-        "IOP2007", "the union `T` with the case Layer, which needs a scope to be read (R17, R19)")]
     [InlineData( // R21: a callback is a parameter's, never a data record's
         """{ "kind": "interface", "name": "T", "members": [{ "kind": "property", "name": "f", "type": { "kind": "function", "params": [], "returns": { "kind": "primitive", "name": "void" } } }] }""",
         "IOP2007", "a callback that isn't a parameter (R21)")]
@@ -167,7 +157,7 @@ public sealed class SelectionTests
         "IOP2007", "a callback with more than 4 parameters (R21)")]
     [InlineData( // §2: a generic record's type parameters are entities
         """{ "kind": "interface", "name": "T", "typeParameters": [{ "name": "U", "constraint": { "kind": "primitive", "name": "string" } }], "members": [{ "kind": "property", "name": "u", "type": { "kind": "typeParameter", "name": "U" } }] }""",
-        "IOP2007", "the type parameter `U` with a constraint or a default (§2)")]
+        "IOP2007", "the type parameter `U` with a constraint (§2)")]
     [InlineData( // §2: so are its type arguments
         """
         { "kind": "alias", "name": "T", "type": { "kind": "ref", "name": "Box", "module": "@acme/maps/a.js", "args": [{ "kind": "primitive", "name": "number" }] } },
@@ -244,6 +234,12 @@ public sealed class SelectionTests
         { "kind": "interface", "name": "Box", "typeParameters": [{ "name": "U" }], "members": [{ "kind": "property", "name": "items", "type": { "kind": "array", "element": { "kind": "typeParameter", "name": "U" } } }] },
         { "kind": "class", "name": "Layer" }
         """)]
+    [InlineData( // §2: a type parameter's default doesn't matter, since C# always has the type argument
+        """
+        { "kind": "interface", "name": "T", "members": [{ "kind": "property", "name": "box", "type": { "kind": "ref", "name": "Box", "module": "@acme/maps/a.js", "args": [{ "kind": "ref", "name": "Layer", "module": "@acme/maps/a.js" }] } }] },
+        { "kind": "interface", "name": "Box", "typeParameters": [{ "name": "U", "default": { "kind": "primitive", "name": "any" } }], "members": [{ "kind": "property", "name": "items", "type": { "kind": "array", "element": { "kind": "typeParameter", "name": "U" } } }] },
+        { "kind": "class", "name": "Layer" }
+        """)]
     [InlineData( // R16: a value-like class in a data record
         """
         { "kind": "interface", "name": "T", "members": [{ "kind": "property", "name": "at", "type": { "kind": "ref", "name": "Spot", "module": "@acme/maps/a.js" } }] },
@@ -259,7 +255,55 @@ public sealed class SelectionTests
         Assert.Empty(result.Diagnostics);
         Assert.Contains("T.cs", result.Files.Select(f => f.Path));
         Assert.Contains("Holder.cs", result.Files.Select(f => f.Path));
-        Assert.Contains("public static Task FAsync(JsRealm realm, ", result.Files.Single(f => f.Path == "A.cs").Text);
+        Assert.Contains("public static Task FAsync(global::Interoper.JsRealm realm, ", result.Files.Single(f => f.Path == "A.cs").Text);
+    }
+
+    /// <summary>
+    /// R2, R17: a union with a case that needs a scope to be read (an entity, or a record that holds one) can still be
+    /// written, so a parameter takes it; what reads it, such as a record holding it, is skipped.
+    /// </summary>
+    [Theory]
+    [InlineData("""{ "kind": "ref", "name": "Layer", "module": "@acme/maps/a.js" }""", "Layer")]
+    [InlineData("""{ "kind": "ref", "name": "X", "module": "@acme/maps/a.js" }""", "X")]
+    public void AUnionWithAnEntityCaseIsOnlyWritten(string entityCase, string name)
+    {
+        var result = Generator.Generate(Ir($$"""
+            { "kind": "alias", "name": "T", "type": { "kind": "union", "types": [{{entityCase}}, { "kind": "primitive", "name": "string" }] } },
+            { "kind": "interface", "name": "X", "members": [{ "kind": "property", "name": "layer", "type": { "kind": "ref", "name": "Layer", "module": "@acme/maps/a.js" } }] },
+            { "kind": "class", "name": "Layer" },
+            { "kind": "interface", "name": "Holder", "members": [{ "kind": "property", "name": "t", "type": { "kind": "ref", "name": "T", "module": "@acme/maps/a.js" } }] },
+            { "kind": "function", "name": "f", "signatures": [{ "params": [{ "name": "x", "type": { "kind": "ref", "name": "T", "module": "@acme/maps/a.js" } }] }] }
+            """), new Profile { Package = "@acme/maps" }, new(Api.Sync, "Acme.Maps"));
+        Assert.Equal($"IOP2007 Holder: skipped: uses the union `T` with the case {name}, which needs a scope to be read (R17, R19) (in `Holder`)",
+            Assert.Single(result.Diagnostics).ToString());
+        Assert.DoesNotContain("Holder.cs", result.Files.Select(f => f.Path));
+        Assert.Contains("public static void F(global::Interoper.JsRealm realm, T x) =>", result.Files.Single(f => f.Path == "A.cs").Text);
+        Assert.Contains("public static T ReadValue(ref Utf8JsonReader reader) => throw new JsonException(\"T is only written (R2)\");",
+            result.Files.Single(f => f.Path == "T.cs").Text);
+    }
+
+    [Fact] // R2: where a union is only written, a case outside the selection is dropped; where it's read, it's still skipped
+    public void AUnionDropsACaseOutsideTheSelectionWhereItsOnlyWritten()
+    {
+        var ir = Ir("""
+            { "kind": "alias", "name": "Target", "type": { "kind": "union", "types": [
+              { "kind": "ref", "name": "Layer", "module": "@acme/maps/b.js" }, { "kind": "primitive", "name": "string" },
+              { "kind": "array", "element": { "kind": "primitive", "name": "number" } }] } },
+            { "kind": "class", "name": "View", "members": [
+              { "kind": "property", "name": "target", "type": { "kind": "ref", "name": "Target", "module": "@acme/maps/a.js" } },
+              { "kind": "method", "name": "goTo", "signatures": [{ "params": [{ "name": "target", "type": { "kind": "ref", "name": "Target", "module": "@acme/maps/a.js" } }],
+                "returns": { "kind": "primitive", "name": "void" } }] }] }
+            """, """{ "kind": "class", "name": "Layer" }""");
+        var result = Generator.Generate(ir, new Profile { Package = "@acme/maps", Include = ["@acme/maps/a.js"] }, new(Api.Sync, "Acme.Maps"));
+        Assert.Equal(
+        [
+            "IOP2007 View.target: skipped: uses class `Layer` outside the selection",
+            "IOP2007 Target: case `Layer` dropped: a class outside the selection, so it's only written (R2)",
+        ], result.Diagnostics.Select(d => d.ToString()));
+        Assert.Contains("public void GoTo(Target target) =>", result.Files.Single(f => f.Path == "View.cs").Text);
+        var target = result.Files.Single(f => f.Path == "Target.cs").Text;
+        Assert.Contains("private readonly byte _tag; // 0 = undefined, 1 = null, 2 = string, 3 = double[]", target);
+        Assert.Contains("throw new JsonException(\"Target is only written (R2)\")", target);
     }
 
     [Fact] // R22: a rest parameter is params T[], so one that isn't an array is dropped, as an optional one is

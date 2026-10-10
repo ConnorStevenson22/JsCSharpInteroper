@@ -5,12 +5,11 @@ using System;
 using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
-using Interoper;
 
 namespace GoldenSlice.Sync;
 
 [Union]
-public readonly partial struct Style : IJsUnion<Style>, IEquatable<Style>
+public readonly partial struct Style : global::Interoper.IJsUnion<Style>, IEquatable<Style>
 {
     private readonly object? _ref;
     private readonly byte _tag; // 0 = undefined, 1 = null, 2 = FillStyle, 3 = StrokeStyle, 4 = IconStyle
@@ -19,18 +18,18 @@ public readonly partial struct Style : IJsUnion<Style>, IEquatable<Style>
     public Style(FillStyle value) : this(value, 2) { }
     public Style(StrokeStyle value) : this(value, 3) { }
     public Style(IconStyle value) : this(value, 4) { }
-    public Style(Undefined? value) : this(null, value is null ? (byte)1 : (byte)0) { }
+    public Style(global::Interoper.Undefined? value) : this(null, value is null ? (byte)1 : (byte)0) { }
 
-    public static implicit operator Style(Undefined? value) => new(value);
+    public static implicit operator Style(global::Interoper.Undefined? value) => new(value);
 
-    public object? Value => _tag switch { 0 => Undefined.Value, 1 => null, _ => _ref };
+    public object? Value => _tag switch { 0 => global::Interoper.Undefined.Value, 1 => null, _ => _ref };
     public bool HasValue => _tag != 1;
     public bool IsUndefined => _tag == 0;
     public bool IsNull => _tag == 1;
 
-    public bool TryGetValue(out Undefined value)
+    public bool TryGetValue(out global::Interoper.Undefined value)
     {
-        value = Undefined.Value;
+        value = global::Interoper.Undefined.Value;
         return _tag == 0;
     }
 
@@ -62,7 +61,7 @@ public readonly partial struct Style : IJsUnion<Style>, IEquatable<Style>
         }
     }
 
-    public static Style ReadValue(ref Utf8JsonReader reader) => JsJson.PeekString(reader, "type"u8) switch
+    public static Style ReadValue(ref Utf8JsonReader reader) => global::Interoper.JsJson.PeekString(reader, "type"u8) switch
     {
         "fill" => FillStyle.Read(ref reader),
         "stroke" => StrokeStyle.Read(ref reader),

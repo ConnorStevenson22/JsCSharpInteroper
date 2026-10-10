@@ -150,7 +150,7 @@ const ops = {
   subscribe: (op) => {
     const listener = op.options ? withOptions(op.callback, op.options) : op.callback;
     const subscription = target(op.h)[op.method](op.name, listener);
-    if (typeof subscription?.dispose !== "function") throw new InteroperError(`${op.method} returned no dispose()`);
+    if (!disposerOf(subscription)) throw new InteroperError(`${op.method} returned no dispose() or remove()`);
     // An object .NET already holds is not a subscription; releasing it must not dispose it.
     if (ids.has(subscription)) throw new InteroperError(`${op.method} returned an object that already has a handle`);
     const id = handleOf(subscription);
@@ -219,7 +219,7 @@ function runBatch(list) {
   return next(0);
 }
 
-// Releases every id, even when a subscription's dispose() throws; then reports what failed.
+// Releases every id, even when a subscription's dispose() (or remove()) throws; then reports what failed.
 function releaseAll(list) {
   const errors = [];
   for (const id of list) {
@@ -229,13 +229,20 @@ function releaseAll(list) {
     ids.delete(object);
     if (!subscriptions.delete(id)) continue;
     try {
-      object.dispose();
+      disposerOf(object).call(object);
     } catch (e) {
       errors.push(e);
     }
   }
   if (errors.length === 1) throw errors[0];
   if (errors.length > 1) throw new AggregateError(errors, `${errors.length} dispose() calls failed`);
+}
+
+// What ends a subscription: its dispose(), or else its remove(), as some libraries name it; undefined if neither.
+function disposerOf(subscription) {
+  if (typeof subscription?.dispose === "function") return subscription.dispose;
+  if (typeof subscription?.remove === "function") return subscription.remove;
+  return undefined;
 }
 
 // --- Handles and classes ---

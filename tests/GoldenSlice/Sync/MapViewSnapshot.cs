@@ -2,48 +2,47 @@
 #nullable enable
 
 using System.Text.Json;
-using Interoper;
 
 namespace GoldenSlice.Sync;
 
 public sealed partial record MapViewSnapshot
 {
-    public Opt<PointSnapshot> Center { get; init; }
-    public Opt<double> Zoom { get; init; }
-    public Opt<double> Rotation { get; init; }
-    public Opt<Basemap> Basemap { get; init; }
-    public Opt<Cursor> Cursor { get; init; }
-    public Opt<string> Title { get; init; }
+    public global::Interoper.Opt<PointSnapshot> Center { get; init; }
+    public global::Interoper.Opt<double> Zoom { get; init; }
+    public global::Interoper.Opt<double> Rotation { get; init; }
+    public global::Interoper.Opt<Basemap> Basemap { get; init; }
+    public global::Interoper.Opt<Cursor> Cursor { get; init; }
+    public global::Interoper.Opt<string> Title { get; init; }
 
     public static void WriteMembers(Utf8JsonWriter writer, MapViewSnapshot value)
     {
-        JsJson.WriteProperty(writer, "center"u8, value.Center, PointSnapshot.Write);
-        JsJson.WriteProperty(writer, "zoom"u8, value.Zoom, JsJson.WriteNumber);
-        JsJson.WriteProperty(writer, "rotation"u8, value.Rotation, JsJson.WriteNumber);
-        JsJson.WriteProperty(writer, "basemap"u8, value.Basemap, BasemapNames.Write);
-        JsJson.WriteProperty(writer, "cursor"u8, value.Cursor, global::GoldenSlice.Sync.Cursor.Write);
-        JsJson.WriteProperty(writer, "title"u8, value.Title, JsJson.WriteString);
+        global::Interoper.JsJson.WriteProperty(writer, "center"u8, value.Center, PointSnapshot.Write);
+        global::Interoper.JsJson.WriteProperty(writer, "zoom"u8, value.Zoom, global::Interoper.JsJson.WriteNumber);
+        global::Interoper.JsJson.WriteProperty(writer, "rotation"u8, value.Rotation, global::Interoper.JsJson.WriteNumber);
+        global::Interoper.JsJson.WriteProperty(writer, "basemap"u8, value.Basemap, BasemapNames.Write);
+        global::Interoper.JsJson.WriteProperty(writer, "cursor"u8, value.Cursor, global::GoldenSlice.Sync.Cursor.Write);
+        global::Interoper.JsJson.WriteProperty(writer, "title"u8, value.Title, global::Interoper.JsJson.WriteString);
     }
 
     public static MapViewSnapshot Read(ref Utf8JsonReader reader)
     {
-        Opt<PointSnapshot> center = default;
-        Opt<double> zoom = default, rotation = default;
-        Opt<Basemap> basemap = default;
-        Opt<Cursor> cursor = default;
-        Opt<string> title = default;
+        global::Interoper.Opt<PointSnapshot> center = default;
+        global::Interoper.Opt<double> zoom = default, rotation = default;
+        global::Interoper.Opt<Basemap> basemap = default;
+        global::Interoper.Opt<Cursor> cursor = default;
+        global::Interoper.Opt<string> title = default;
         while (reader.Read() && reader.TokenType == JsonTokenType.PropertyName)
         {
             var property = reader.GetString();
             reader.Read();
             switch (property)
             {
-                case "center": center = JsJson.ReadOpt(ref reader, PointSnapshot.Read); break;
-                case "zoom": zoom = JsJson.ReadOpt(ref reader, JsJson.ReadNumber); break;
-                case "rotation": rotation = JsJson.ReadOpt(ref reader, JsJson.ReadNumber); break;
-                case "basemap": basemap = JsJson.ReadOpt(ref reader, BasemapNames.Read); break;
-                case "cursor": cursor = JsJson.ReadOpt(ref reader, global::GoldenSlice.Sync.Cursor.Read); break;
-                case "title": title = JsJson.ReadOpt(ref reader, JsJson.ReadString); break;
+                case "center": center = global::Interoper.JsJson.ReadOpt(ref reader, PointSnapshot.Read); break;
+                case "zoom": zoom = global::Interoper.JsJson.ReadOpt(ref reader, global::Interoper.JsJson.ReadNumber); break;
+                case "rotation": rotation = global::Interoper.JsJson.ReadOpt(ref reader, global::Interoper.JsJson.ReadNumber); break;
+                case "basemap": basemap = global::Interoper.JsJson.ReadOpt(ref reader, BasemapNames.Read); break;
+                case "cursor": cursor = global::Interoper.JsJson.ReadOpt(ref reader, global::GoldenSlice.Sync.Cursor.Read); break;
+                case "title": title = global::Interoper.JsJson.ReadOpt(ref reader, global::Interoper.JsJson.ReadString); break;
                 default: reader.Skip(); break;
             }
         }
@@ -52,11 +51,11 @@ public sealed partial record MapViewSnapshot
 
     public static MapViewSnapshot Diff(MapViewSnapshot before, MapViewSnapshot after) => new()
     {
-        Center = after.Center.IsUndefined || JsDiff.Same(before.Center, after.Center) ? default : after.Center,
-        Zoom = after.Zoom.IsUndefined || JsDiff.Same(before.Zoom, after.Zoom) ? default : after.Zoom,
-        Rotation = after.Rotation.IsUndefined || JsDiff.Same(before.Rotation, after.Rotation) ? default : after.Rotation,
-        Basemap = after.Basemap.IsUndefined || JsDiff.Same(before.Basemap, after.Basemap) ? default : after.Basemap,
-        Cursor = after.Cursor.IsUndefined || JsDiff.Same(before.Cursor, after.Cursor) ? default : after.Cursor,
-        Title = after.Title.IsUndefined || JsDiff.Same(before.Title, after.Title) ? default : after.Title,
+        Center = after.Center.IsUndefined || global::Interoper.JsDiff.Same(before.Center, after.Center) ? default : after.Center,
+        Zoom = after.Zoom.IsUndefined || global::Interoper.JsDiff.Same(before.Zoom, after.Zoom) ? default : after.Zoom,
+        Rotation = after.Rotation.IsUndefined || global::Interoper.JsDiff.Same(before.Rotation, after.Rotation) ? default : after.Rotation,
+        Basemap = after.Basemap.IsUndefined || global::Interoper.JsDiff.Same(before.Basemap, after.Basemap) ? default : after.Basemap,
+        Cursor = after.Cursor.IsUndefined || global::Interoper.JsDiff.Same(before.Cursor, after.Cursor) ? default : after.Cursor,
+        Title = after.Title.IsUndefined || global::Interoper.JsDiff.Same(before.Title, after.Title) ? default : after.Title,
     };
 }

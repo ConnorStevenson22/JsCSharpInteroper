@@ -2,14 +2,13 @@
 #nullable enable
 
 using System.Text.Json;
-using Interoper;
 
 namespace GoldenSlice.Sync;
 
 public sealed partial record PointSnapshot : ShapeSnapshot
 {
-    public Opt<double> X { get; init; }
-    public Opt<double> Y { get; init; }
+    public global::Interoper.Opt<double> X { get; init; }
+    public global::Interoper.Opt<double> Y { get; init; }
 
     public static void Write(Utf8JsonWriter writer, PointSnapshot value)
     {
@@ -22,21 +21,21 @@ public sealed partial record PointSnapshot : ShapeSnapshot
 
     public static void WriteMembers(Utf8JsonWriter writer, PointSnapshot value)
     {
-        JsJson.WriteProperty(writer, "x"u8, value.X, JsJson.WriteNumber);
-        JsJson.WriteProperty(writer, "y"u8, value.Y, JsJson.WriteNumber);
+        global::Interoper.JsJson.WriteProperty(writer, "x"u8, value.X, global::Interoper.JsJson.WriteNumber);
+        global::Interoper.JsJson.WriteProperty(writer, "y"u8, value.Y, global::Interoper.JsJson.WriteNumber);
     }
 
     public static new PointSnapshot Read(ref Utf8JsonReader reader)
     {
-        Opt<double> x = default, y = default;
+        global::Interoper.Opt<double> x = default, y = default;
         while (reader.Read() && reader.TokenType == JsonTokenType.PropertyName)
         {
             var property = reader.GetString();
             reader.Read();
             switch (property)
             {
-                case "x": x = JsJson.ReadOpt(ref reader, JsJson.ReadNumber); break;
-                case "y": y = JsJson.ReadOpt(ref reader, JsJson.ReadNumber); break;
+                case "x": x = global::Interoper.JsJson.ReadOpt(ref reader, global::Interoper.JsJson.ReadNumber); break;
+                case "y": y = global::Interoper.JsJson.ReadOpt(ref reader, global::Interoper.JsJson.ReadNumber); break;
                 default: reader.Skip(); break;
             }
         }
@@ -45,7 +44,7 @@ public sealed partial record PointSnapshot : ShapeSnapshot
 
     public static PointSnapshot Diff(PointSnapshot before, PointSnapshot after) => new()
     {
-        X = after.X.IsUndefined || JsDiff.Same(before.X, after.X) ? default : after.X,
-        Y = after.Y.IsUndefined || JsDiff.Same(before.Y, after.Y) ? default : after.Y,
+        X = after.X.IsUndefined || global::Interoper.JsDiff.Same(before.X, after.X) ? default : after.X,
+        Y = after.Y.IsUndefined || global::Interoper.JsDiff.Same(before.Y, after.Y) ? default : after.Y,
     };
 }

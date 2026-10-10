@@ -11,7 +11,7 @@ public sealed class IrTests
     {
         var ir = Fixture.Ir;
         Assert.Equal(new IrPackage("@acme/demo-maps", "0.0.0"), ir.Package);
-        Assert.Equal(["MapView", "Marker", "core", "demo-map", "geometry", "layers/Layer", "layers/TileLayer", "measure", "styles"],
+        Assert.Equal(["MapView", "Marker", "core", "demo-map", "geometry", "layers/Layer", "layers/TileLayer", "measure", "ops/a", "ops/b", "pins", "styles"],
             ir.Modules.Select(m => m.Specifier["@acme/demo-maps/".Length..^".js".Length]));
 
         var mapView = Declaration<ClassDeclaration>("MapView");
@@ -41,6 +41,11 @@ public sealed class IrTests
         Assert.Equal("default", Declaration<ClassDeclaration>("TileLayer").Export);
         Assert.Null(Declaration<ClassDeclaration>("Layer").Export);
         Assert.True(Assert.Single(Assert.Single(Declaration<FunctionDeclaration>("perimeter").Signatures).Params).Rest); // R22
+        Assert.Equal(new PrimitiveType("any"), Declaration<ClassDeclaration>("Collection").TypeParameters[0].Default); // §2
+        var pin = Declaration<ClassDeclaration>("Pin"); // a mixin's base is the class it starts with
+        Assert.Equal(new RefType("Marker", "@acme/demo-maps/Marker.js"), pin.Extends);
+        Assert.Equal(["meta", "on", "dragBy"], pin.Members.Select(m => m.Name));
+        Assert.Equal([false, true, true], pin.Members.Select(m => m.Inherited)); // the mixin's
 
         Assert.Equal("type", Assert.IsType<UnionType>(Declaration<AliasDeclaration>("Style").Type).Discriminant);
         var button = Assert.IsType<UnionType>(Declaration<InterfaceDeclaration>("ClickEvent").Members.OfType<PropertyMember>().Single(m => m.Name == "button").Type);

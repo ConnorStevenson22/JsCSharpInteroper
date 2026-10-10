@@ -96,9 +96,9 @@ internal static class ValueTypeEmitter
         var (ns, name) = u.Type;
         u = u with { Cases = [.. u.Cases.Select(c => c with { Type = c.Type.In(ns) })] }; // R27
         var cases = u.Cases.Select((c, i) => (c.Type, Tag: i + 2, c.Declaration)).ToList();
-        var w = CodeWriter.CSharp(ns, "System", "System.Diagnostics.CodeAnalysis", "System.Runtime.CompilerServices", "System.Text.Json", "Interoper");
+        var w = CodeWriter.CSharp(ns, "System", "System.Diagnostics.CodeAnalysis", "System.Runtime.CompilerServices", "System.Text.Json");
         w.Line("[Union]");
-        using (w.Block($"public readonly partial struct {name} : IJsUnion<{name}>, IEquatable<{name}>"))
+        using (w.Block($"public readonly partial struct {name} : global::Interoper.IJsUnion<{name}>, IEquatable<{name}>"))
         {
             w.Line("private readonly object? _ref;");
             w.Line($"private readonly byte _tag; // 0 = undefined, 1 = null, {string.Join(", ", cases.Select(c => $"{c.Tag} = {c.Type.Name}"))}");
@@ -108,18 +108,18 @@ internal static class ValueTypeEmitter
             {
                 w.Line($"public {name}({type.Name} value) : this(value, {tag}) {{ }}");
             }
-            w.Line($"public {name}(Undefined? value) : this(null, value is null ? (byte)1 : (byte)0) {{ }}");
+            w.Line($"public {name}(global::Interoper.Undefined? value) : this(null, value is null ? (byte)1 : (byte)0) {{ }}");
             w.Line();
-            w.Line($"public static implicit operator {name}(Undefined? value) => new(value);");
+            w.Line($"public static implicit operator {name}(global::Interoper.Undefined? value) => new(value);");
             w.Line();
-            w.Line("public object? Value => _tag switch { 0 => Undefined.Value, 1 => null, _ => _ref };");
+            w.Line("public object? Value => _tag switch { 0 => global::Interoper.Undefined.Value, 1 => null, _ => _ref };");
             w.Line("public bool HasValue => _tag != 1;");
             w.Line("public bool IsUndefined => _tag == 0;");
             w.Line("public bool IsNull => _tag == 1;");
             w.Line();
-            using (w.Block("public bool TryGetValue(out Undefined value)"))
+            using (w.Block("public bool TryGetValue(out global::Interoper.Undefined value)"))
             {
-                w.Line("value = Undefined.Value;");
+                w.Line("value = global::Interoper.Undefined.Value;");
                 w.Line("return _tag == 0;");
             }
             foreach (var (type, tag, _) in cases)
@@ -151,10 +151,19 @@ internal static class ValueTypeEmitter
         return w.ToString();
     }
 
-    /// <summary>R19: by the discriminant (step 2), or by the JSON token (step 4), objects last, told apart by a required member (step 3).</summary>
+    /// <summary>
+    /// R19: by the discriminant (step 2), or by the JSON token (step 4), objects last, told apart by a required member
+    /// (step 3). A union that is only written can't be read.
+    /// </summary>
     private static void ReadValue(CodeWriter w, TypeMap types, UnionStruct u)
     {
         var header = $"public static {u.Name} ReadValue(ref Utf8JsonReader reader)";
+        if (u.WrittenOnly)
+        {
+            // R2: it has an entity case or dropped a case outside the selection, so it's only a parameter's.
+            w.Line($"{header} => throw new JsonException(\"{u.Name} is only written (R2)\");");
+            return;
+        }
         if (u.Discriminant is { } discriminant)
         {
             var cases = u.Cases.Select(c => (types.Constant(c.Declaration!, discriminant), c.Type.Name));
@@ -171,7 +180,7 @@ internal static class ValueTypeEmitter
             }
             foreach (var c in objects)
             {
-                var when = objects.Count == 1 ? "" : $" when JsJson.HasProperty(reader, {Syntax.Utf8(Distinct(types, u, c, objects))})";
+                var when = objects.Count == 1 ? "" : $" when global::Interoper.JsJson.HasProperty(reader, {Syntax.Utf8(Distinct(types, u, c, objects))})";
                 w.Line($"JsonTokenType.StartObject{when} => {c.Type.ReadCall("reader", 0)},");
             }
             w.Line($"var token => throw new JsonException($\"{u.Name}: unexpected {{token}}\"),");

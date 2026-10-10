@@ -36,14 +36,14 @@ internal sealed class LiveEmitter
     /// <summary>A value as a member, parameter or result has it: <c>Opt&lt;T&gt;</c> when it can be undefined or null (R3).</summary>
     private sealed record Value(CsType Type, bool Opt)
     {
-        public string Name => Opt ? $"Opt<{Type.Name}>" : Type.Name;
+        public string Name => Opt ? $"global::Interoper.Opt<{Type.Name}>" : Type.Name;
 
         /// <summary>The type as it tells members apart (R26), spelled the same in every namespace.</summary>
-        public string Key => Opt ? $"Opt<{Type.FullName}>" : Type.FullName;
+        public string Key => Opt ? $"global::Interoper.Opt<{Type.FullName}>" : Type.FullName;
 
-        public string Reader => Opt ? $"{Type.Static}(ref r) => JsJson.ReadOpt(ref r, {Type.Reader(1)})" : Type.Reader(0);
+        public string Reader => Opt ? $"{Type.Static}(ref r) => global::Interoper.JsJson.ReadOpt(ref r, {Type.Reader(1)})" : Type.Reader(0);
 
-        public string Write(string value) => Opt ? $"JsJson.WriteValue(w, {value}, {Type.Writer(1)})" : Type.WriteCall("w", value, 1);
+        public string Write(string value) => Opt ? $"global::Interoper.JsJson.WriteValue(w, {value}, {Type.Writer(1)})" : Type.WriteCall("w", value, 1);
 
         /// <summary>The realm reads a <c>T?</c>; a non-null reference type needs a <c>!</c>.</summary>
         public bool MaybeNull => !Opt && !Type.IsValueType;
@@ -92,15 +92,15 @@ internal sealed class LiveEmitter
         var usings = new[]
         {
             usesSystem ? "System" : null, usesStreams ? "System.Collections.Generic" : null, usesStreams ? "System.Threading" : null,
-            usesTask ? "System.Threading.Tasks" : null, "Interoper",
+            usesTask ? "System.Threading.Tasks" : null,
         };
         return CodeWriter.CSharp(ns, [.. usings.OfType<string>()]) + w.ToString();
     }
 
     private void ClassBody(ClassDeclaration c)
     {
-        var name = Naming.Type(c.Name);
-        var snapshot = TypeMap.SnapshotName(c);
+        var name = types.Name(c).Name;
+        var snapshot = types.SnapshotName(c);
         var snapshotKey = CsType.Record(new(ns, snapshot)).FullName;
         self = types.Self(c);
         var modifier = types.IsClosed(c) ? "closed " : c.Abstract ? "abstract " : types.HasSubclasses(c) ? "" : "sealed ";
@@ -110,16 +110,16 @@ internal sealed class LiveEmitter
             Hide(c);
         }
         // Mapping §2: a generic class's type parameters are entities.
-        var constraints = string.Concat(c.TypeParameters.Select(t => $" where {t.Name} : JsObject"));
+        var constraints = string.Concat(c.TypeParameters.Select(t => $" where {t.Name} : global::Interoper.JsObject"));
         using (w.Block($"public {modifier}partial class {self.Name} : {types.LiveBaseName(c, ns)}{constraints}"))
         {
             Separate();
-            w.Line($"internal {name}(JsRealm realm, int handle) : base(realm, handle) {{ }}");
+            w.Line($"internal {name}(global::Interoper.JsRealm realm, int handle) : base(realm, handle) {{ }}");
             if (types.Constructible(c))
             {
-                var (type, body) = Run("scope.Realm", $"JsOp.Create({types.ClassId(c, ns)}, w => {snapshot}.WriteMembers(w, props))", new(self, false), async);
+                var (type, body) = Run("scope.Realm", $"global::Interoper.JsOp.Create({types.ClassId(c, ns)}, w => {snapshot}.WriteMembers(w, props))", new(self, false), async);
                 var create = Claim(Mode("Create"), c.Name);
-                Expression($"public static {Declare(create, ["JsScope", snapshotKey])}{type} {create}(JsScope scope, {snapshot} props)", body);
+                Expression($"public static {Declare(create, ["global::Interoper.JsScope", snapshotKey])}{type} {create}(global::Interoper.JsScope scope, {snapshot} props)", body);
             }
             foreach (var p in c.Members.OfType<PropertyMember>().Where(p => p.Type is not LiteralType)) // R20: a constant is no property
             {
@@ -138,9 +138,9 @@ internal sealed class LiveEmitter
             {
                 Subscription(name, "Watch" + Naming.Pascal(p.Name), profile.Watch!, p.Name, p.Type, $"{name}.watch:{p.Name}", p.Optional, isEvent: false);
             }
-            var (snapshotType, read) = Run("Realm", "JsOp.Snapshot(Handle)", new(CsType.Record(new(ns, snapshot)), false), async);
+            var (snapshotType, read) = Run("Realm", "global::Interoper.JsOp.Snapshot(Handle)", new(CsType.Record(new(ns, snapshot)), false), async);
             Expression($"public {Declare(Mode("Snapshot"), [])}{snapshotType} {Mode("Snapshot")}()", read);
-            var (applyType, apply) = Run("Realm", $"JsOp.Apply(Handle, w => {snapshot}.WriteMembers(w, patch))", null, async);
+            var (applyType, apply) = Run("Realm", $"global::Interoper.JsOp.Apply(Handle, w => {snapshot}.WriteMembers(w, patch))", null, async);
             Expression($"public {Declare(Mode("Apply"), [snapshotKey])}{applyType} {Mode("Apply")}({snapshot} patch)", apply);
         }
     }
@@ -164,8 +164,8 @@ internal sealed class LiveEmitter
         var (setType, setter) = set is null ? default : Set(set, js);
         if (async || get.Type.Scoped)
         {
-            var (getName, scope) = (Claim(Mode("Get" + x), subject), get.Type.Scoped ? "JsScope scope" : "");
-            Expression($"public {Declare(getName, get.Type.Scoped ? ["JsScope"] : [])}{getType} {getName}({scope})", getter);
+            var (getName, scope) = (Claim(Mode("Get" + x), subject), get.Type.Scoped ? "global::Interoper.JsScope scope" : "");
+            Expression($"public {Declare(getName, get.Type.Scoped ? ["global::Interoper.JsScope"] : [])}{getType} {getName}({scope})", getter);
             if (set is not null)
             {
                 var setName = Claim(Mode("Set" + x), subject);
@@ -206,8 +206,8 @@ internal sealed class LiveEmitter
             return;
         }
         var setName = Claim(Mode("Set" + x), subject);
-        var (setType, setter) = Run("Realm", $"JsOp.Set(Handle, {js}, w => {set.Write("value")})", null, async);
-        Expression($"public {Declare(setName, ["JsScope", set.Key])}{setType} {setName}(JsScope scope, {set.Name} value)", setter);
+        var (setType, setter) = Run("Realm", $"global::Interoper.JsOp.Set(Handle, {js}, w => {set.Write("value")})", null, async);
+        Expression($"public {Declare(setName, ["global::Interoper.JsScope", set.Key])}{setType} {setName}(global::Interoper.JsScope scope, {set.Name} value)", setter);
     }
 
     /// <summary>R21: a member with a callback whose result JS uses, which async mode can't give it, is skipped there.</summary>
@@ -224,7 +224,7 @@ internal sealed class LiveEmitter
     {
         if (value.Opt || value.Type.Fast is not { } fast)
         {
-            return Run("Realm", $"JsOp.Get(Handle, {js}{byValue})", value, async);
+            return Run("Realm", $"global::Interoper.JsOp.Get(Handle, {js}{byValue})", value, async);
         }
         var call = $"Realm.Get{fast}{(async ? "Async" : "")}(Handle, {js})";
         return value.Type.Names is not { } names ? (async ? $"Task<{value.Name}>" : value.Name, call)
@@ -236,7 +236,7 @@ internal sealed class LiveEmitter
     {
         if (value.Opt || value.Type.Fast is null)
         {
-            return Run("Realm", $"JsOp.Set(Handle, {js}, w => {value.Write("value")})", null, async);
+            return Run("Realm", $"global::Interoper.JsOp.Set(Handle, {js}, w => {value.Write("value")})", null, async);
         }
         var converted = value.Type.Names is { } names ? $"{names}.ToJs(value)" : "value";
         return async ? ("Task", $"Realm.SetAsync(Handle, {js}, {converted})") : ("void", $"Realm.Set(Handle, {js}, {converted})");
@@ -263,9 +263,9 @@ internal sealed class LiveEmitter
             var name = Mode(Naming.Pascal(js), promise);
             name = names.TryGetValue(name, out var claimed) ? claimed : names[name] = Claim(name, $"{owner}.{js}");
             var scoped = result?.Type.Scoped == true || callbacks.Count > 0;
-            var op = $"JsOp.Call({(self is null ? "Module" : "Handle")}, {Syntax.Literal(export ?? js)}{args}{ByValue(returns)})";
+            var op = $"global::Interoper.JsOp.Call({(self is null ? "Module" : "Handle")}, {Syntax.Literal(export ?? js)}{args}{ByValue(returns)})";
             var (type, body) = Run(self is not null ? "Realm" : scoped ? "scope.Realm" : "realm", op, result, async || promise);
-            var (first, firstType) = scoped ? ("JsScope scope", "JsScope") : self is null ? ("JsRealm realm", "JsRealm") : (null, null);
+            var (first, firstType) = scoped ? ("global::Interoper.JsScope scope", "global::Interoper.JsScope") : self is null ? ("global::Interoper.JsRealm realm", "global::Interoper.JsRealm") : (null, null);
             var hides = Declare(name, firstType is null ? keys : keys.Prepend(firstType));
             Expression($"public {(self is null ? "static " : "")}{hides}{type} {name}({Join(first, parameters)})", body);
         }
@@ -282,16 +282,16 @@ internal sealed class LiveEmitter
         usesSystem = true;
         var (type, subscribe) = async ? ("Task<IAsyncDisposable>", "SubscribeAsync") : ("IDisposable", "Subscribe");
         var fields = isEvent && types.Projection(payload) is { } projection ? $"[{string.Join(", ", projection.Select(Syntax.Literal))}]" : "null";
-        var (options, optionsKey, sent) = isEvent ? (", EventOptions? options = null", new[] { "EventOptions" }, "options") : ("", [], "null");
+        var (options, optionsKey, sent) = isEvent ? (", global::Interoper.EventOptions? options = null", new[] { "global::Interoper.EventOptions" }, "options") : ("", [], "null");
         var target = $"Handle, {Syntax.Literal(method)}, {Syntax.Literal(js)}, {value.Reader}";
         var subscription = Claim(Mode(name), subject);
-        Expression($"public {Declare(subscription, ["JsScope", $"Action<{value.Key}>", .. optionsKey])}{type} {subscription}(JsScope scope, Action<{value.Name}> handler{options})",
+        Expression($"public {Declare(subscription, ["global::Interoper.JsScope", $"Action<{value.Key}>", .. optionsKey])}{type} {subscription}(global::Interoper.JsScope scope, Action<{value.Name}> handler{options})",
             $"scope.{subscribe}({target}, handler, {sent}, {fields})");
         if (async)
         {
             usesStreams = true;
             var stream = Claim(name + "StreamAsync", subject);
-            Expression($"public {Declare(stream, ["JsScope", .. optionsKey, "CancellationToken"])}IAsyncEnumerable<{value.Name}> {stream}(JsScope scope{options}, CancellationToken cancellationToken = default)",
+            Expression($"public {Declare(stream, ["global::Interoper.JsScope", .. optionsKey, "CancellationToken"])}IAsyncEnumerable<{value.Name}> {stream}(global::Interoper.JsScope scope{options}, CancellationToken cancellationToken = default)",
                 $"scope.StreamAsync({target}, {sent}, {fields}, cancellationToken)");
         }
     }

@@ -2,7 +2,6 @@
 #nullable enable
 
 using System.Text.Json;
-using Interoper;
 
 namespace GoldenSlice.Sync;
 
@@ -11,35 +10,35 @@ public sealed partial record Rgba
     public required double R { get; init; }
     public required double G { get; init; }
     public required double B { get; init; }
-    public Opt<double> A { get; init; }
+    public global::Interoper.Opt<double> A { get; init; }
 
     public static void Write(Utf8JsonWriter writer, Rgba value)
     {
         writer.WriteStartObject();
         writer.WritePropertyName("r"u8);
-        JsJson.WriteNumber(writer, value.R);
+        global::Interoper.JsJson.WriteNumber(writer, value.R);
         writer.WritePropertyName("g"u8);
-        JsJson.WriteNumber(writer, value.G);
+        global::Interoper.JsJson.WriteNumber(writer, value.G);
         writer.WritePropertyName("b"u8);
-        JsJson.WriteNumber(writer, value.B);
-        JsJson.WriteProperty(writer, "a"u8, value.A, JsJson.WriteNumber);
+        global::Interoper.JsJson.WriteNumber(writer, value.B);
+        global::Interoper.JsJson.WriteProperty(writer, "a"u8, value.A, global::Interoper.JsJson.WriteNumber);
         writer.WriteEndObject();
     }
 
     public static Rgba Read(ref Utf8JsonReader reader)
     {
         double r = default, g = default, b = default;
-        Opt<double> a = default;
+        global::Interoper.Opt<double> a = default;
         while (reader.Read() && reader.TokenType == JsonTokenType.PropertyName)
         {
             var property = reader.GetString();
             reader.Read();
             switch (property)
             {
-                case "r": r = JsJson.ReadNumber(ref reader); break;
-                case "g": g = JsJson.ReadNumber(ref reader); break;
-                case "b": b = JsJson.ReadNumber(ref reader); break;
-                case "a": a = JsJson.ReadOpt(ref reader, JsJson.ReadNumber); break;
+                case "r": r = global::Interoper.JsJson.ReadNumber(ref reader); break;
+                case "g": g = global::Interoper.JsJson.ReadNumber(ref reader); break;
+                case "b": b = global::Interoper.JsJson.ReadNumber(ref reader); break;
+                case "a": a = global::Interoper.JsJson.ReadOpt(ref reader, global::Interoper.JsJson.ReadNumber); break;
                 default: reader.Skip(); break;
             }
         }

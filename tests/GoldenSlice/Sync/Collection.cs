@@ -2,41 +2,42 @@
 #nullable enable
 
 using System;
-using Interoper;
 
 namespace GoldenSlice.Sync;
 
-public sealed partial class Collection<T> : Emitter where T : JsObject
+public sealed partial class Collection<T> : Emitter where T : global::Interoper.JsObject
 {
-    internal Collection(JsRealm realm, int handle) : base(realm, handle) { }
+    internal Collection(global::Interoper.JsRealm realm, int handle) : base(realm, handle) { }
 
     public double Length => Realm.GetNumber(Handle, "length");
 
-    public Opt<T> At(JsScope scope, double index) =>
-        Realm.Call(JsOp.Call(Handle, "at", w => JsJson.WriteNumber(w, index)), (ref r) => JsJson.ReadOpt(ref r, scope.Read<T>));
+    public global::Interoper.Opt<T> At(global::Interoper.JsScope scope, double index) =>
+        Realm.Call(global::Interoper.JsOp.Call(Handle, "at", w => global::Interoper.JsJson.WriteNumber(w, index)), (ref r) => global::Interoper.JsJson.ReadOpt(ref r, scope.Read<T>));
 
-    public void Add(T item) => Realm.Send(JsOp.Call(Handle, "add", w => JsObject.Write(w, item)));
+    public void Add(T item) =>
+        Realm.Send(global::Interoper.JsOp.Call(Handle, "add", w => global::Interoper.JsObject.Write(w, item)));
 
     public bool Remove(T item) =>
-        Realm.Call(JsOp.Call(Handle, "remove", w => JsObject.Write(w, item)), JsJson.ReadBoolean);
+        Realm.Call(global::Interoper.JsOp.Call(Handle, "remove", w => global::Interoper.JsObject.Write(w, item)), global::Interoper.JsJson.ReadBoolean);
 
-    public Opt<T> Find(JsScope scope, Func<T, double, bool> predicate) =>
-        Realm.Call(JsOp.Call(Handle, "find", w => JsJson.WriteCallback(w, scope.Callback(predicate, scope.Read<T>, JsJson.ReadNumber, JsJson.WriteBoolean))), (ref r) => JsJson.ReadOpt(ref r, scope.Read<T>));
+    public global::Interoper.Opt<T> Find(global::Interoper.JsScope scope, Func<T, double, bool> predicate) =>
+        Realm.Call(global::Interoper.JsOp.Call(Handle, "find", w => global::Interoper.JsJson.WriteCallback(w, scope.Callback(predicate, scope.Read<T>, global::Interoper.JsJson.ReadNumber, global::Interoper.JsJson.WriteBoolean))), (ref r) => global::Interoper.JsJson.ReadOpt(ref r, scope.Read<T>));
 
-    public void ForEach(JsScope scope, Action<T, double> callback) =>
-        Realm.Send(JsOp.Call(Handle, "forEach", w => JsJson.WriteCallback(w, scope.Callback(callback, scope.Read<T>, JsJson.ReadNumber))));
+    public void ForEach(global::Interoper.JsScope scope, Action<T, double> callback) =>
+        Realm.Send(global::Interoper.JsOp.Call(Handle, "forEach", w => global::Interoper.JsJson.WriteCallback(w, scope.Callback(callback, scope.Read<T>, global::Interoper.JsJson.ReadNumber))));
 
-    public T[] ToArray(JsScope scope) =>
-        Realm.Call(JsOp.Call(Handle, "toArray"), (ref r) => JsJson.ReadArray(ref r, scope.Read<T>))!;
+    public T[] ToArray(global::Interoper.JsScope scope) =>
+        Realm.Call(global::Interoper.JsOp.Call(Handle, "toArray"), (ref r) => global::Interoper.JsJson.ReadArray(ref r, scope.Read<T>))!;
 
-    public IDisposable OnChange(JsScope scope, Action<CollectionChangeEvent<T>> handler, EventOptions? options = null) =>
+    public IDisposable OnChange(global::Interoper.JsScope scope, Action<CollectionChangeEvent<T>> handler, global::Interoper.EventOptions? options = null) =>
         scope.Subscribe(Handle, "on", "change", (ref r) => CollectionChangeEvent<T>.Read(ref r, scope), handler, options, ["added", "removed"]);
 
-    public IDisposable WatchLength(JsScope scope, Action<double> handler) =>
-        scope.Subscribe(Handle, "watch", "length", JsJson.ReadNumber, handler, null, null);
+    public IDisposable WatchLength(global::Interoper.JsScope scope, Action<double> handler) =>
+        scope.Subscribe(Handle, "watch", "length", global::Interoper.JsJson.ReadNumber, handler, null, null);
 
-    public new CollectionSnapshot Snapshot() => Realm.Call(JsOp.Snapshot(Handle), CollectionSnapshot.Read)!;
+    public new CollectionSnapshot Snapshot() =>
+        Realm.Call(global::Interoper.JsOp.Snapshot(Handle), CollectionSnapshot.Read)!;
 
     public void Apply(CollectionSnapshot patch) =>
-        Realm.Send(JsOp.Apply(Handle, w => CollectionSnapshot.WriteMembers(w, patch)));
+        Realm.Send(global::Interoper.JsOp.Apply(Handle, w => CollectionSnapshot.WriteMembers(w, patch)));
 }

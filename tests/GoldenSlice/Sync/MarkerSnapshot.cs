@@ -2,27 +2,26 @@
 #nullable enable
 
 using System.Text.Json;
-using Interoper;
 
 namespace GoldenSlice.Sync;
 
 public sealed partial record MarkerSnapshot
 {
-    public Opt<PointSnapshot> Position { get; init; }
-    public Opt<string> Label { get; init; }
+    public global::Interoper.Opt<PointSnapshot> Position { get; init; }
+    public global::Interoper.Opt<string> Label { get; init; }
     public Style Style { get; init; }
 
     public static void WriteMembers(Utf8JsonWriter writer, MarkerSnapshot value)
     {
-        JsJson.WriteProperty(writer, "position"u8, value.Position, PointSnapshot.Write);
-        JsJson.WriteProperty(writer, "label"u8, value.Label, JsJson.WriteString);
-        JsJson.WriteProperty(writer, "style"u8, value.Style);
+        global::Interoper.JsJson.WriteProperty(writer, "position"u8, value.Position, PointSnapshot.Write);
+        global::Interoper.JsJson.WriteProperty(writer, "label"u8, value.Label, global::Interoper.JsJson.WriteString);
+        global::Interoper.JsJson.WriteProperty(writer, "style"u8, value.Style);
     }
 
     public static MarkerSnapshot Read(ref Utf8JsonReader reader)
     {
-        Opt<PointSnapshot> position = default;
-        Opt<string> label = default;
+        global::Interoper.Opt<PointSnapshot> position = default;
+        global::Interoper.Opt<string> label = default;
         Style style = default;
         while (reader.Read() && reader.TokenType == JsonTokenType.PropertyName)
         {
@@ -30,9 +29,9 @@ public sealed partial record MarkerSnapshot
             reader.Read();
             switch (property)
             {
-                case "position": position = JsJson.ReadOpt(ref reader, PointSnapshot.Read); break;
-                case "label": label = JsJson.ReadOpt(ref reader, JsJson.ReadString); break;
-                case "style": style = JsJson.ReadUnion<Style>(ref reader); break;
+                case "position": position = global::Interoper.JsJson.ReadOpt(ref reader, PointSnapshot.Read); break;
+                case "label": label = global::Interoper.JsJson.ReadOpt(ref reader, global::Interoper.JsJson.ReadString); break;
+                case "style": style = global::Interoper.JsJson.ReadUnion<Style>(ref reader); break;
                 default: reader.Skip(); break;
             }
         }
@@ -41,8 +40,8 @@ public sealed partial record MarkerSnapshot
 
     public static MarkerSnapshot Diff(MarkerSnapshot before, MarkerSnapshot after) => new()
     {
-        Position = after.Position.IsUndefined || JsDiff.Same(before.Position, after.Position) ? default : after.Position,
-        Label = after.Label.IsUndefined || JsDiff.Same(before.Label, after.Label) ? default : after.Label,
-        Style = after.Style.IsUndefined || JsDiff.Same(before.Style, after.Style) ? default : after.Style,
+        Position = after.Position.IsUndefined || global::Interoper.JsDiff.Same(before.Position, after.Position) ? default : after.Position,
+        Label = after.Label.IsUndefined || global::Interoper.JsDiff.Same(before.Label, after.Label) ? default : after.Label,
+        Style = after.Style.IsUndefined || global::Interoper.JsDiff.Same(before.Style, after.Style) ? default : after.Style,
     };
 }

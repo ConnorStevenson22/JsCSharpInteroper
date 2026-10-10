@@ -2,13 +2,12 @@
 #nullable enable
 
 using System.Text.Json;
-using Interoper;
 
 namespace GoldenSlice.Sync;
 
 public sealed partial record LineSnapshot : ShapeSnapshot
 {
-    public Opt<double[][]> Path { get; init; }
+    public global::Interoper.Opt<double[][]> Path { get; init; }
 
     public static void Write(Utf8JsonWriter writer, LineSnapshot value)
     {
@@ -21,19 +20,19 @@ public sealed partial record LineSnapshot : ShapeSnapshot
 
     public static void WriteMembers(Utf8JsonWriter writer, LineSnapshot value)
     {
-        JsJson.WriteProperty(writer, "path"u8, value.Path, static (w, v) => JsJson.WriteArray(w, v, static (w1, v1) => JsJson.WriteArray(w1, v1, JsJson.WriteNumber)));
+        global::Interoper.JsJson.WriteProperty(writer, "path"u8, value.Path, static (w, v) => global::Interoper.JsJson.WriteArray(w, v, static (w1, v1) => global::Interoper.JsJson.WriteArray(w1, v1, global::Interoper.JsJson.WriteNumber)));
     }
 
     public static new LineSnapshot Read(ref Utf8JsonReader reader)
     {
-        Opt<double[][]> path = default;
+        global::Interoper.Opt<double[][]> path = default;
         while (reader.Read() && reader.TokenType == JsonTokenType.PropertyName)
         {
             var property = reader.GetString();
             reader.Read();
             switch (property)
             {
-                case "path": path = JsJson.ReadOpt(ref reader, static (ref r) => JsJson.ReadArray(ref r, static (ref r1) => JsJson.ReadArray(ref r1, JsJson.ReadNumber))); break;
+                case "path": path = global::Interoper.JsJson.ReadOpt(ref reader, static (ref r) => global::Interoper.JsJson.ReadArray(ref r, static (ref r1) => global::Interoper.JsJson.ReadArray(ref r1, global::Interoper.JsJson.ReadNumber))); break;
                 default: reader.Skip(); break;
             }
         }
@@ -42,6 +41,6 @@ public sealed partial record LineSnapshot : ShapeSnapshot
 
     public static LineSnapshot Diff(LineSnapshot before, LineSnapshot after) => new()
     {
-        Path = after.Path.IsUndefined || JsDiff.Same(before.Path, after.Path) ? default : after.Path,
+        Path = after.Path.IsUndefined || global::Interoper.JsDiff.Same(before.Path, after.Path) ? default : after.Path,
     };
 }

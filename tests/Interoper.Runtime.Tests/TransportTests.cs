@@ -60,6 +60,19 @@ public sealed class TransportTests
         Assert.Equal(0, transport.Census());
     }
 
+    [Fact] // as interoper.js: a subscription's remove() serves for dispose(), and one with neither is refused
+    public void InMemorySubscriptionsMayHaveRemoveInsteadOfDispose()
+    {
+        var transport = new InMemoryTransport().Define(new(1, "Faulty", _ => new Faulty()));
+        JsEnvelope.Check(transport.Invoke("""{"op":"create","t":1}"""));
+        JsEnvelope.Check(transport.Invoke("""{"op":"subscribe","h":1,"method":"onRemove","name":"x","callback":null}"""));
+        JsEnvelope.Check(transport.Invoke("""{"op":"release","ids":[2]}"""));
+        Assert.Equal(1, Faulty.Removed);
+
+        var e = Assert.Throws<JsException>(() => JsEnvelope.Check(transport.Invoke("""{"op":"subscribe","h":1,"method":"onNothing","name":"x","callback":null}""")));
+        Assert.Equal(("InteroperError", "onNothing returned no dispose() or remove()"), (e.Name, e.Message));
+    }
+
     [Fact]
     public void InMemoryRejectsForeignValues()
     {
@@ -93,7 +106,15 @@ public sealed class TransportTests
     {
         public override string ClassName => "Faulty";
 
-        public override object? Call(string name, object?[] args) => name == "onFaulty" ? new Throwing() : base.Call(name, args);
+        public static int Removed { get; private set; }
+
+        public override object? Call(string name, object?[] args) => name switch
+        {
+            "onFaulty" => new Throwing(),
+            "onRemove" => new Dictionary<string, object?> { ["remove"] = new JsFunction(_ => Removed++) },
+            "onNothing" => new Dictionary<string, object?>(),
+            _ => base.Call(name, args),
+        };
     }
 
     private sealed class Throwing : IDisposable

@@ -2,7 +2,6 @@
 #nullable enable
 
 using System.Text.Json;
-using Interoper;
 
 namespace GoldenSlice.Sync;
 
@@ -15,9 +14,9 @@ public sealed partial record CenterAndZoom
     {
         writer.WriteStartObject();
         writer.WritePropertyName("center"u8);
-        JsJson.WriteArray(writer, value.Center, JsJson.WriteNumber);
+        global::Interoper.JsJson.WriteArray(writer, value.Center, global::Interoper.JsJson.WriteNumber);
         writer.WritePropertyName("zoom"u8);
-        JsJson.WriteNumber(writer, value.Zoom);
+        global::Interoper.JsJson.WriteNumber(writer, value.Zoom);
         writer.WriteEndObject();
     }
 
@@ -31,8 +30,8 @@ public sealed partial record CenterAndZoom
             reader.Read();
             switch (property)
             {
-                case "center": center = JsJson.ReadArray(ref reader, JsJson.ReadNumber); break;
-                case "zoom": zoom = JsJson.ReadNumber(ref reader); break;
+                case "center": center = global::Interoper.JsJson.ReadArray(ref reader, global::Interoper.JsJson.ReadNumber); break;
+                case "zoom": zoom = global::Interoper.JsJson.ReadNumber(ref reader); break;
                 default: reader.Skip(); break;
             }
         }

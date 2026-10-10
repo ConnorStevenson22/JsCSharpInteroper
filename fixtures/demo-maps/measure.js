@@ -7,3 +7,7 @@ export function distance(a, b) {
 export function perimeter(...points) {
   return points.reduce((sum, point, i) => sum + distance(point, points[(i + 1) % points.length]), 0);
 }
+
+export function describe(target) {
+  return target.type ?? `marker ${target.displayLabel}`;
+}

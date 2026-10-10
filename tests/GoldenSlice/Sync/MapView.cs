@@ -3,21 +3,20 @@
 
 using System;
 using System.Threading.Tasks;
-using Interoper;
 
 namespace GoldenSlice.Sync;
 
 public sealed partial class MapView : Emitter
 {
-    internal MapView(JsRealm realm, int handle) : base(realm, handle) { }
+    internal MapView(global::Interoper.JsRealm realm, int handle) : base(realm, handle) { }
 
-    public static MapView Create(JsScope scope, MapViewSnapshot props) =>
-        scope.Realm.Call(JsOp.Create(DemoMaps.MapViewId, w => MapViewSnapshot.WriteMembers(w, props)), scope.Read<MapView>)!;
+    public static MapView Create(global::Interoper.JsScope scope, MapViewSnapshot props) =>
+        scope.Realm.Call(global::Interoper.JsOp.Create(DemoMaps.MapViewId, w => MapViewSnapshot.WriteMembers(w, props)), scope.Read<MapView>)!;
 
     public PointSnapshot Center
     {
-        get => Realm.Call(JsOp.Get(Handle, "center", byValue: true), PointSnapshot.Read)!;
-        set => Realm.Send(JsOp.Set(Handle, "center", w => PointSnapshot.Write(w, value)));
+        get => Realm.Call(global::Interoper.JsOp.Get(Handle, "center", byValue: true), PointSnapshot.Read)!;
+        set => Realm.Send(global::Interoper.JsOp.Set(Handle, "center", w => PointSnapshot.Write(w, value)));
     }
 
     public double Zoom
@@ -38,82 +37,82 @@ public sealed partial class MapView : Emitter
         set => Realm.Set(Handle, "basemap", BasemapNames.ToJs(value));
     }
 
-    public Opt<Cursor> Cursor
+    public global::Interoper.Opt<Cursor> Cursor
     {
-        get => Realm.Call(JsOp.Get(Handle, "cursor"), static (ref r) => JsJson.ReadOpt(ref r, global::GoldenSlice.Sync.Cursor.Read));
-        set => Realm.Send(JsOp.Set(Handle, "cursor", w => JsJson.WriteValue(w, value, global::GoldenSlice.Sync.Cursor.Write)));
+        get => Realm.Call(global::Interoper.JsOp.Get(Handle, "cursor"), static (ref r) => global::Interoper.JsJson.ReadOpt(ref r, global::GoldenSlice.Sync.Cursor.Read));
+        set => Realm.Send(global::Interoper.JsOp.Set(Handle, "cursor", w => global::Interoper.JsJson.WriteValue(w, value, global::GoldenSlice.Sync.Cursor.Write)));
     }
 
-    public Opt<string> Title
+    public global::Interoper.Opt<string> Title
     {
-        get => Realm.Call(JsOp.Get(Handle, "title"), static (ref r) => JsJson.ReadOpt(ref r, JsJson.ReadString));
-        set => Realm.Send(JsOp.Set(Handle, "title", w => JsJson.WriteValue(w, value, JsJson.WriteString)));
+        get => Realm.Call(global::Interoper.JsOp.Get(Handle, "title"), static (ref r) => global::Interoper.JsJson.ReadOpt(ref r, global::Interoper.JsJson.ReadString));
+        set => Realm.Send(global::Interoper.JsOp.Set(Handle, "title", w => global::Interoper.JsJson.WriteValue(w, value, global::Interoper.JsJson.WriteString)));
     }
 
-    public Opt<Marker> GetSelected(JsScope scope) =>
-        Realm.Call(JsOp.Get(Handle, "selected"), (ref r) => JsJson.ReadOpt(ref r, scope.Read<Marker>));
+    public global::Interoper.Opt<Marker> GetSelected(global::Interoper.JsScope scope) =>
+        Realm.Call(global::Interoper.JsOp.Get(Handle, "selected"), (ref r) => global::Interoper.JsJson.ReadOpt(ref r, scope.Read<Marker>));
 
-    public void SetSelected(Opt<Marker> value) =>
-        Realm.Send(JsOp.Set(Handle, "selected", w => JsJson.WriteValue(w, value, Marker.Write)));
+    public void SetSelected(global::Interoper.Opt<Marker> value) =>
+        Realm.Send(global::Interoper.JsOp.Set(Handle, "selected", w => global::Interoper.JsJson.WriteValue(w, value, Marker.Write)));
 
-    public Collection<Marker> GetMarkers(JsScope scope) =>
-        Realm.Call(JsOp.Get(Handle, "markers"), (ref r) => scope.Read(ref r, static (realm, handle) => new Collection<Marker>(realm, handle)))!;
+    public Collection<Marker> GetMarkers(global::Interoper.JsScope scope) =>
+        Realm.Call(global::Interoper.JsOp.Get(Handle, "markers"), (ref r) => scope.Read(ref r, static (realm, handle) => new Collection<Marker>(realm, handle)))!;
 
-    public Collection<global::GoldenSlice.Sync.Layers.Layer> GetLayers(JsScope scope) =>
-        Realm.Call(JsOp.Get(Handle, "layers"), (ref r) => scope.Read(ref r, static (realm, handle) => new Collection<global::GoldenSlice.Sync.Layers.Layer>(realm, handle)))!;
+    public Collection<global::GoldenSlice.Sync.Layers.Layer> GetLayers(global::Interoper.JsScope scope) =>
+        Realm.Call(global::Interoper.JsOp.Get(Handle, "layers"), (ref r) => scope.Read(ref r, static (realm, handle) => new Collection<global::GoldenSlice.Sync.Layers.Layer>(realm, handle)))!;
 
     public PointSnapshot ScreenToMap(double x, double y) =>
-        Realm.Call(JsOp.Call(Handle, "screenToMap", w =>
+        Realm.Call(global::Interoper.JsOp.Call(Handle, "screenToMap", w =>
         {
-            JsJson.WriteNumber(w, x);
-            JsJson.WriteNumber(w, y);
+            global::Interoper.JsJson.WriteNumber(w, x);
+            global::Interoper.JsJson.WriteNumber(w, y);
         }, byValue: true), PointSnapshot.Read)!;
 
     public PointSnapshot ScreenToMap(double[] offset) =>
-        Realm.Call(JsOp.Call(Handle, "screenToMap", w => JsJson.WriteArray(w, offset, JsJson.WriteNumber), byValue: true), PointSnapshot.Read)!;
+        Realm.Call(global::Interoper.JsOp.Call(Handle, "screenToMap", w => global::Interoper.JsJson.WriteArray(w, offset, global::Interoper.JsJson.WriteNumber), byValue: true), PointSnapshot.Read)!;
 
     public Task FlyToAsync(FlyToTarget target) =>
-        Realm.SendAsync(JsOp.Call(Handle, "flyTo", w => JsJson.WriteValue(w, target)));
+        Realm.SendAsync(global::Interoper.JsOp.Call(Handle, "flyTo", w => global::Interoper.JsJson.WriteValue(w, target)));
 
-    public Task<Opt<Marker>> MarkerAtAsync(JsScope scope, double x, double y) =>
-        Realm.CallAsync(JsOp.Call(Handle, "markerAt", w =>
+    public Task<global::Interoper.Opt<Marker>> MarkerAtAsync(global::Interoper.JsScope scope, double x, double y) =>
+        Realm.CallAsync(global::Interoper.JsOp.Call(Handle, "markerAt", w =>
         {
-            JsJson.WriteNumber(w, x);
-            JsJson.WriteNumber(w, y);
-        }), (ref r) => JsJson.ReadOpt(ref r, scope.Read<Marker>));
+            global::Interoper.JsJson.WriteNumber(w, x);
+            global::Interoper.JsJson.WriteNumber(w, y);
+        }), (ref r) => global::Interoper.JsJson.ReadOpt(ref r, scope.Read<Marker>));
 
-    public IDisposable OnClick(JsScope scope, Action<ClickEvent> handler, EventOptions? options = null) =>
+    public IDisposable OnClick(global::Interoper.JsScope scope, Action<ClickEvent> handler, global::Interoper.EventOptions? options = null) =>
         scope.Subscribe(Handle, "on", "click", ClickEvent.Read, handler, options, ["type", "x", "y", "button", "mapPoint"]);
 
-    public IDisposable WatchCenter(JsScope scope, Action<PointSnapshot> handler) =>
+    public IDisposable WatchCenter(global::Interoper.JsScope scope, Action<PointSnapshot> handler) =>
         scope.Subscribe(Handle, "watch", "center", PointSnapshot.Read, handler, null, null);
 
-    public IDisposable WatchZoom(JsScope scope, Action<double> handler) =>
-        scope.Subscribe(Handle, "watch", "zoom", JsJson.ReadNumber, handler, null, null);
+    public IDisposable WatchZoom(global::Interoper.JsScope scope, Action<double> handler) =>
+        scope.Subscribe(Handle, "watch", "zoom", global::Interoper.JsJson.ReadNumber, handler, null, null);
 
-    public IDisposable WatchRotation(JsScope scope, Action<double> handler) =>
-        scope.Subscribe(Handle, "watch", "rotation", JsJson.ReadNumber, handler, null, null);
+    public IDisposable WatchRotation(global::Interoper.JsScope scope, Action<double> handler) =>
+        scope.Subscribe(Handle, "watch", "rotation", global::Interoper.JsJson.ReadNumber, handler, null, null);
 
-    public IDisposable WatchBasemap(JsScope scope, Action<Basemap> handler) =>
+    public IDisposable WatchBasemap(global::Interoper.JsScope scope, Action<Basemap> handler) =>
         scope.Subscribe(Handle, "watch", "basemap", BasemapNames.Read, handler, null, null);
 
-    public IDisposable WatchCursor(JsScope scope, Action<Opt<Cursor>> handler) =>
-        scope.Subscribe(Handle, "watch", "cursor", static (ref r) => JsJson.ReadOpt(ref r, global::GoldenSlice.Sync.Cursor.Read), handler, null, null);
+    public IDisposable WatchCursor(global::Interoper.JsScope scope, Action<global::Interoper.Opt<Cursor>> handler) =>
+        scope.Subscribe(Handle, "watch", "cursor", static (ref r) => global::Interoper.JsJson.ReadOpt(ref r, global::GoldenSlice.Sync.Cursor.Read), handler, null, null);
 
-    public IDisposable WatchTitle(JsScope scope, Action<Opt<string>> handler) =>
-        scope.Subscribe(Handle, "watch", "title", static (ref r) => JsJson.ReadOpt(ref r, JsJson.ReadString), handler, null, null);
+    public IDisposable WatchTitle(global::Interoper.JsScope scope, Action<global::Interoper.Opt<string>> handler) =>
+        scope.Subscribe(Handle, "watch", "title", static (ref r) => global::Interoper.JsJson.ReadOpt(ref r, global::Interoper.JsJson.ReadString), handler, null, null);
 
-    public IDisposable WatchSelected(JsScope scope, Action<Opt<Marker>> handler) =>
-        scope.Subscribe(Handle, "watch", "selected", (ref r) => JsJson.ReadOpt(ref r, scope.Read<Marker>), handler, null, null);
+    public IDisposable WatchSelected(global::Interoper.JsScope scope, Action<global::Interoper.Opt<Marker>> handler) =>
+        scope.Subscribe(Handle, "watch", "selected", (ref r) => global::Interoper.JsJson.ReadOpt(ref r, scope.Read<Marker>), handler, null, null);
 
-    public IDisposable WatchMarkers(JsScope scope, Action<Collection<Marker>> handler) =>
+    public IDisposable WatchMarkers(global::Interoper.JsScope scope, Action<Collection<Marker>> handler) =>
         scope.Subscribe(Handle, "watch", "markers", (ref r) => scope.Read(ref r, static (realm, handle) => new Collection<Marker>(realm, handle)), handler, null, null);
 
-    public IDisposable WatchLayers(JsScope scope, Action<Collection<global::GoldenSlice.Sync.Layers.Layer>> handler) =>
+    public IDisposable WatchLayers(global::Interoper.JsScope scope, Action<Collection<global::GoldenSlice.Sync.Layers.Layer>> handler) =>
         scope.Subscribe(Handle, "watch", "layers", (ref r) => scope.Read(ref r, static (realm, handle) => new Collection<global::GoldenSlice.Sync.Layers.Layer>(realm, handle)), handler, null, null);
 
-    public new MapViewSnapshot Snapshot() => Realm.Call(JsOp.Snapshot(Handle), MapViewSnapshot.Read)!;
+    public new MapViewSnapshot Snapshot() => Realm.Call(global::Interoper.JsOp.Snapshot(Handle), MapViewSnapshot.Read)!;
 
     public void Apply(MapViewSnapshot patch) =>
-        Realm.Send(JsOp.Apply(Handle, w => MapViewSnapshot.WriteMembers(w, patch)));
+        Realm.Send(global::Interoper.JsOp.Apply(Handle, w => MapViewSnapshot.WriteMembers(w, patch)));
 }

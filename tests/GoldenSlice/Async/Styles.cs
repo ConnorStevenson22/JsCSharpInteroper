@@ -2,7 +2,6 @@
 #nullable enable
 
 using System.Threading.Tasks;
-using Interoper;
 
 namespace GoldenSlice.Async;
 
@@ -10,6 +9,6 @@ public static partial class Styles
 {
     private const string Module = "@acme/demo-maps/styles.js";
 
-    public static async Task<Rgba> ToRgbaAsync(JsRealm realm, ColorInput color) =>
-        (await realm.CallAsync(JsOp.Call(Module, "toRgba", w => JsJson.WriteValue(w, color)), Rgba.Read))!;
+    public static async Task<Rgba> ToRgbaAsync(global::Interoper.JsRealm realm, ColorInput color) =>
+        (await realm.CallAsync(global::Interoper.JsOp.Call(Module, "toRgba", w => global::Interoper.JsJson.WriteValue(w, color)), Rgba.Read))!;
 }

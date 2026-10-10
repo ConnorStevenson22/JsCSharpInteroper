@@ -20,7 +20,8 @@ export class Emitter extends Observable {
   emit<K extends keyof this["$events"] & string>(type: K, event: this["$events"][K]): boolean;
 }
 
-export interface CollectionChangeEvent<T> {
+// `T` has a default, as many libraries' generic types do (§2).
+export interface CollectionChangeEvent<T = any> {
   added: T[];
   removed: T[];
 }
@@ -29,7 +30,7 @@ export interface CollectionEvents<T> {
   change: CollectionChangeEvent<T>;
 }
 
-export class Collection<T> extends Emitter {
+export class Collection<T = any> extends Emitter {
   "$events": CollectionEvents<T>;
   constructor(items?: T[]);
   readonly length: number;

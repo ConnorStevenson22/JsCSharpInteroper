@@ -2,7 +2,6 @@
 #nullable enable
 
 using System.Text.Json;
-using Interoper;
 
 namespace GoldenSlice.Async;
 
@@ -18,11 +17,11 @@ public sealed partial record ClickEvent
         writer.WriteStartObject();
         writer.WriteString("type"u8, "click"u8);
         writer.WritePropertyName("x"u8);
-        JsJson.WriteNumber(writer, value.X);
+        global::Interoper.JsJson.WriteNumber(writer, value.X);
         writer.WritePropertyName("y"u8);
-        JsJson.WriteNumber(writer, value.Y);
+        global::Interoper.JsJson.WriteNumber(writer, value.Y);
         writer.WritePropertyName("button"u8);
-        JsJson.WriteNumber(writer, (int)value.Button);
+        global::Interoper.JsJson.WriteNumber(writer, (int)value.Button);
         writer.WritePropertyName("mapPoint"u8);
         PointSnapshot.Write(writer, value.MapPoint);
         writer.WriteEndObject();
@@ -39,9 +38,9 @@ public sealed partial record ClickEvent
             reader.Read();
             switch (property)
             {
-                case "x": x = JsJson.ReadNumber(ref reader); break;
-                case "y": y = JsJson.ReadNumber(ref reader); break;
-                case "button": button = (ClickEventButton)JsJson.ReadNumber(ref reader); break;
+                case "x": x = global::Interoper.JsJson.ReadNumber(ref reader); break;
+                case "y": y = global::Interoper.JsJson.ReadNumber(ref reader); break;
+                case "button": button = (ClickEventButton)global::Interoper.JsJson.ReadNumber(ref reader); break;
                 case "mapPoint": mapPoint = PointSnapshot.Read(ref reader); break;
                 default: reader.Skip(); break;
             }

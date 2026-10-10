@@ -2,7 +2,6 @@
 #nullable enable
 
 using System.Text.Json;
-using Interoper;
 
 namespace GoldenSlice.Sync;
 
@@ -17,13 +16,13 @@ public sealed partial record DemoMapClickDetail
     {
         writer.WriteStartObject();
         writer.WritePropertyName("x"u8);
-        JsJson.WriteNumber(writer, value.X);
+        global::Interoper.JsJson.WriteNumber(writer, value.X);
         writer.WritePropertyName("y"u8);
-        JsJson.WriteNumber(writer, value.Y);
+        global::Interoper.JsJson.WriteNumber(writer, value.Y);
         writer.WritePropertyName("mapX"u8);
-        JsJson.WriteNumber(writer, value.MapX);
+        global::Interoper.JsJson.WriteNumber(writer, value.MapX);
         writer.WritePropertyName("mapY"u8);
-        JsJson.WriteNumber(writer, value.MapY);
+        global::Interoper.JsJson.WriteNumber(writer, value.MapY);
         writer.WriteEndObject();
     }
 
@@ -36,10 +35,10 @@ public sealed partial record DemoMapClickDetail
             reader.Read();
             switch (property)
             {
-                case "x": x = JsJson.ReadNumber(ref reader); break;
-                case "y": y = JsJson.ReadNumber(ref reader); break;
-                case "mapX": mapX = JsJson.ReadNumber(ref reader); break;
-                case "mapY": mapY = JsJson.ReadNumber(ref reader); break;
+                case "x": x = global::Interoper.JsJson.ReadNumber(ref reader); break;
+                case "y": y = global::Interoper.JsJson.ReadNumber(ref reader); break;
+                case "mapX": mapX = global::Interoper.JsJson.ReadNumber(ref reader); break;
+                case "mapY": mapY = global::Interoper.JsJson.ReadNumber(ref reader); break;
                 default: reader.Skip(); break;
             }
         }

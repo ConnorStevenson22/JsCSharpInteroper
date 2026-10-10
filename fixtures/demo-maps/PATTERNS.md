@@ -14,6 +14,8 @@ node --test "fixtures/demo-maps/test/*.test.mjs"
 | Abstract base with subclasses | R4, R15 | `Shape` → `Point`, `Line`, `Polygon` (`geometry`); the entity `Layer` → `TileLayer` (`layers/`) |
 | Runtime class-name property | R19 (step 1) | `Observable.className` (`core`), e.g. `"geometry.Point"`, `"MapView"`, `"layers.TileLayer"` |
 | Module folders | R27 | `layers/Layer`, `layers/TileLayer`: the `Layers` namespace |
+| Same names in sibling modules | R27 | `ops/a` and `ops/b` each export an `Options` and an `execute(x, options?)` |
+| Mixin base | [IR `extends`](../../docs/ir.md#declarations), §2 | `class Pin extends PinSuperclass`, where `PinSuperclass: typeof Marker & typeof Draggable` (`pins`): a `Marker`, with the mixin's `dragBy` and `drag` event |
 | Default export | [IR `export`](../../docs/ir.md#declarations), [design §2](../../docs/design.md#2-what-we-generate) | `export default class TileLayer` (`layers/TileLayer`) |
 | Member a subclass redeclares | R26 (`new`) | `TileLayer.clone(): TileLayer` over `Layer.clone(): Layer` |
 | Value-like classes (live class + snapshot) | R16–R18 | `Shape` and subclasses, via `profile.json` |
@@ -25,6 +27,8 @@ node --test "fixtures/demo-maps/test/*.test.mjs"
 | Untagged union | R2, R19 (step 3) | `Camera` = `Bounds \| CenterAndZoom` (`MapView`) |
 | Mixed union (live object, tuple, nested union) | R2, R5, R6, R19 | `FlyToTarget` = `Shape \| [number, number] \| Camera` (`MapView`) |
 | Mixed union (primitive, array, object) | R2, R19 (step 4) | `ColorInput` = `string \| number[] \| Rgba` (`styles`) |
+| Union with an entity case, only written | R2, R17 | `Measurable` = `Point \| Polygon \| Marker`, the parameter of `describe` (`measure`) |
+| `any` | §2, IOP2001 | `Pin.meta` (`pins`) |
 | String-literal union | R9, R25 | `Basemap` (`MapView`), including `"3d-relief"` |
 | Literal union with 100+ members | R10, R25 | `IconName`, `"pin-1"` … `"pin-120"` (`styles`) |
 | Open-ended literal union | R10 | `Cursor` = known values `\| (string & {})` (`MapView`) |
@@ -42,9 +46,10 @@ node --test "fixtures/demo-maps/test/*.test.mjs"
 | Callbacks | R21 | `on`, `watch`, `Collection.forEach` (result ignored), `Collection.find` (synchronous `boolean` result, IOP2005 in async mode) |
 | Callback with a synchronous return value | R21, IOP2005 | `Marker.labelFormatter` (`LabelFormatter`), a setter-only callback property read by `Marker.displayLabel` |
 | Event map through a phantom property | R24 | `"$events"` + `on<K extends keyof this["$events"]>` (`core`); `MapViewEvents.click` |
+| Subscription with `remove()`, not `dispose()` | R24, [design §3.4](../../docs/design.md#34-protocol) | `Pin.on` (`pins`) |
 | Property watch | design §2 | `Observable.watch(name, callback)` returns a `Subscription` (`core`), e.g. `view.watch("zoom", …)` |
-| Collection type (generic) | §2 (generic `T`), R17 | `Collection<T>` with a `change` event whose payload holds entities (`core`); `MapView.markers`, and `MapView.layers` of an abstract class |
-| Module functions | §5 | `distance`, `perimeter` (`measure`); `toRgba` (`styles`) |
+| Collection type (generic) | §2 (generic `T`, a default), R17 | `Collection<T = any>` with a `change` event whose payload holds entities (`core`); `MapView.markers`, and `MapView.layers` of an abstract class |
+| Module functions | §5 | `distance`, `perimeter`, `describe` (`measure`); `toRgba` (`styles`); `execute` (`ops/a`, `ops/b`) |
 | Custom element: attributes, properties, events, slots | design §2 | `<demo-map>` (`demo-map`, `custom-elements.json`): attributes `basemap`, `zoom`; properties `view`, `center`; events `demo-map-click`, `demo-map-zoom-change` (pairs with `zoom` for `@bind`), `demo-map-ready`; slots default and `toolbar` |
 
 The golden slice (`tests/GoldenSlice`) is the fixture's generated bindings: every declaration the generator can map.
@@ -65,7 +70,7 @@ The generator's `Profile` (`src/Interoper.Generator/Profile.cs`) is the schema.
 | `runtimeClassProperty` | Instance property holding the runtime class name; maps a JS object to its most-derived C# type. |
 | `runtimeClassPrefix` | Prepended to every runtime class name in the metadata module, for libraries whose names start with a namespace. Absent, as here, means none. |
 | `valueClasses` | Classes that also get an `XSnapshot` record used by value (R16). Every other class is an entity (R15). |
-| `events` | Event convention: `mapProperty` is the phantom event-map property (`$events`), `subscribe` the method that takes `(type, listener)` and returns a `Subscription` with `dispose()`. |
+| `events` | Event convention: `mapProperty` is the phantom event-map property (`$events`), `subscribe` the method that takes `(type, listener)` and returns a `Subscription` with `dispose()` (`Pin.on`'s has `remove()` instead). |
 | `watch` | Method that takes `(propertyName, callback)` and returns a `Subscription` with `dispose()`. Every property of a class that has it gets a watch. |
 | `collections` | Generic classes treated as live collections of their type argument, an entity: no `Create`, no registry entry (mapping §2). |
 | `include` | What to emit: module specifier globs (`"@acme/demo-maps/geometry.js"`; `*` matches any characters, `/` included). Every exported declaration of a matching module, the bases of its classes and the data types they use are emitted. Absent, as here, means every module. |

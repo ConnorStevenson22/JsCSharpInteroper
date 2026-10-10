@@ -2,28 +2,27 @@
 #nullable enable
 
 using System;
-using Interoper;
 
 namespace GoldenSlice.Sync;
 
 public sealed partial class Polygon : Shape
 {
-    internal Polygon(JsRealm realm, int handle) : base(realm, handle) { }
+    internal Polygon(global::Interoper.JsRealm realm, int handle) : base(realm, handle) { }
 
-    public static Polygon Create(JsScope scope, PolygonSnapshot props) =>
-        scope.Realm.Call(JsOp.Create(DemoMaps.PolygonId, w => PolygonSnapshot.WriteMembers(w, props)), scope.Read<Polygon>)!;
+    public static Polygon Create(global::Interoper.JsScope scope, PolygonSnapshot props) =>
+        scope.Realm.Call(global::Interoper.JsOp.Create(DemoMaps.PolygonId, w => PolygonSnapshot.WriteMembers(w, props)), scope.Read<Polygon>)!;
 
     public double[][] Vertices
     {
-        get => Realm.Call(JsOp.Get(Handle, "vertices"), static (ref r) => JsJson.ReadArray(ref r, static (ref r1) => JsJson.ReadArray(ref r1, JsJson.ReadNumber)))!;
-        set => Realm.Send(JsOp.Set(Handle, "vertices", w => JsJson.WriteArray(w, value, static (w1, v1) => JsJson.WriteArray(w1, v1, JsJson.WriteNumber))));
+        get => Realm.Call(global::Interoper.JsOp.Get(Handle, "vertices"), static (ref r) => global::Interoper.JsJson.ReadArray(ref r, static (ref r1) => global::Interoper.JsJson.ReadArray(ref r1, global::Interoper.JsJson.ReadNumber)))!;
+        set => Realm.Send(global::Interoper.JsOp.Set(Handle, "vertices", w => global::Interoper.JsJson.WriteArray(w, value, static (w1, v1) => global::Interoper.JsJson.WriteArray(w1, v1, global::Interoper.JsJson.WriteNumber))));
     }
 
-    public IDisposable WatchVertices(JsScope scope, Action<double[][]> handler) =>
-        scope.Subscribe(Handle, "watch", "vertices", static (ref r) => JsJson.ReadArray(ref r, static (ref r1) => JsJson.ReadArray(ref r1, JsJson.ReadNumber)), handler, null, null);
+    public IDisposable WatchVertices(global::Interoper.JsScope scope, Action<double[][]> handler) =>
+        scope.Subscribe(Handle, "watch", "vertices", static (ref r) => global::Interoper.JsJson.ReadArray(ref r, static (ref r1) => global::Interoper.JsJson.ReadArray(ref r1, global::Interoper.JsJson.ReadNumber)), handler, null, null);
 
-    public new PolygonSnapshot Snapshot() => Realm.Call(JsOp.Snapshot(Handle), PolygonSnapshot.Read)!;
+    public new PolygonSnapshot Snapshot() => Realm.Call(global::Interoper.JsOp.Snapshot(Handle), PolygonSnapshot.Read)!;
 
     public void Apply(PolygonSnapshot patch) =>
-        Realm.Send(JsOp.Apply(Handle, w => PolygonSnapshot.WriteMembers(w, patch)));
+        Realm.Send(global::Interoper.JsOp.Apply(Handle, w => PolygonSnapshot.WriteMembers(w, patch)));
 }

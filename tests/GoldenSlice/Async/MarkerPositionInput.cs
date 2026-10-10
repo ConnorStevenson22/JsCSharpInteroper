@@ -5,12 +5,11 @@ using System;
 using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
-using Interoper;
 
 namespace GoldenSlice.Async;
 
 [Union]
-public readonly partial struct MarkerPositionInput : IJsUnion<MarkerPositionInput>, IEquatable<MarkerPositionInput>
+public readonly partial struct MarkerPositionInput : global::Interoper.IJsUnion<MarkerPositionInput>, IEquatable<MarkerPositionInput>
 {
     private readonly object? _ref;
     private readonly byte _tag; // 0 = undefined, 1 = null, 2 = PointSnapshot, 3 = double[]
@@ -18,18 +17,18 @@ public readonly partial struct MarkerPositionInput : IJsUnion<MarkerPositionInpu
     private MarkerPositionInput(object? value, byte tag) => (_ref, _tag) = (value, tag);
     public MarkerPositionInput(PointSnapshot value) : this(value, 2) { }
     public MarkerPositionInput(double[] value) : this(value, 3) { }
-    public MarkerPositionInput(Undefined? value) : this(null, value is null ? (byte)1 : (byte)0) { }
+    public MarkerPositionInput(global::Interoper.Undefined? value) : this(null, value is null ? (byte)1 : (byte)0) { }
 
-    public static implicit operator MarkerPositionInput(Undefined? value) => new(value);
+    public static implicit operator MarkerPositionInput(global::Interoper.Undefined? value) => new(value);
 
-    public object? Value => _tag switch { 0 => Undefined.Value, 1 => null, _ => _ref };
+    public object? Value => _tag switch { 0 => global::Interoper.Undefined.Value, 1 => null, _ => _ref };
     public bool HasValue => _tag != 1;
     public bool IsUndefined => _tag == 0;
     public bool IsNull => _tag == 1;
 
-    public bool TryGetValue(out Undefined value)
+    public bool TryGetValue(out global::Interoper.Undefined value)
     {
-        value = Undefined.Value;
+        value = global::Interoper.Undefined.Value;
         return _tag == 0;
     }
 
@@ -50,13 +49,13 @@ public readonly partial struct MarkerPositionInput : IJsUnion<MarkerPositionInpu
         switch (value._tag)
         {
             case 2: PointSnapshot.Write(writer, (PointSnapshot)value._ref!); break;
-            case 3: JsJson.WriteArray(writer, (double[])value._ref!, JsJson.WriteNumber); break;
+            case 3: global::Interoper.JsJson.WriteArray(writer, (double[])value._ref!, global::Interoper.JsJson.WriteNumber); break;
         }
     }
 
     public static MarkerPositionInput ReadValue(ref Utf8JsonReader reader) => reader.TokenType switch
     {
-        JsonTokenType.StartArray => JsJson.ReadArray(ref reader, JsJson.ReadNumber),
+        JsonTokenType.StartArray => global::Interoper.JsJson.ReadArray(ref reader, global::Interoper.JsJson.ReadNumber),
         JsonTokenType.StartObject => PointSnapshot.Read(ref reader),
         var token => throw new JsonException($"MarkerPositionInput: unexpected {token}"),
     };

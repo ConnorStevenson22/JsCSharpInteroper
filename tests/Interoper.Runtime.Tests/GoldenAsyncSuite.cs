@@ -4,6 +4,7 @@
 using GoldenSlice.Async;
 using GoldenSlice.Async.Layers;
 using static Interoper.Contract.Check;
+using Ops = GoldenSlice.Async.Ops;
 
 namespace Interoper.Contract;
 
@@ -43,6 +44,11 @@ public static class GoldenAsyncSuite
         ("callbacks are released with their scope (R21)", InScope(CallbacksAreReleasedWithTheirScope)),
         ("handles in a callback's arguments that nothing reads are released with its scope (R21)", InScope(UnreadArgumentsAreReleased)),
         ("Diff: arrays, unions and nested snapshots, then Apply (R18)", InScope(DiffThenApply)),
+        ("a mixin keeps its class's base: a Pin is a Marker (R4, R19)", InScope(Mixin)),
+        ("a subscription with remove() instead of dispose(), delivered then released (R24)", InScope(RemoveSubscription)),
+        ("any is JsAny: data, or a handle the scope owns (§2)", InScope(Any)),
+        ("a union with an entity case is a parameter's (R2, R17)", InScope(WrittenUnion)),
+        ("same-named types of sibling modules (R27)", InScope(SiblingModules)),
     ];
 
     private static async Task CreateSnapshotApply(JsScope scope)
@@ -568,6 +574,64 @@ public static class GoldenAsyncSuite
         Equal(new MarkerSnapshot { Style = new StrokeStyle { Color = "blue", Width = 2 } }, stroke);
         await marker.ApplyAsync(stroke);
         Equal(style with { Style = new StrokeStyle { Color = "blue", Width = 2 } }, await marker.SnapshotAsync());
+    }
+
+    private static async Task Mixin(JsScope scope)
+    {
+        var view = await MapView.CreateAsync(scope, new MapViewSnapshot());
+        var pin = await Pin.CreateAsync(scope, new PinSnapshot { Position = new PointSnapshot { X = 1, Y = 2 }, Label = "p" });
+        await view.SetSelectedAsync(pin); // where a Marker is expected
+        Expect((await view.GetSelectedAsync(scope)).TryGetValue(out Marker? selected) && selected is Pin && ReferenceEquals(selected, pin),
+            "the selected marker to be the Pin");
+        Equal("p", await pin.GetDisplayLabelAsync());
+        await pin.DragByAsync(2, 3);
+        Equal(new PointSnapshot { X = 3, Y = 5 }, await pin.GetPositionAsync());
+    }
+
+    private static async Task RemoveSubscription(JsScope scope)
+    {
+        var pin = await Pin.CreateAsync(scope, new PinSnapshot());
+        var baseline = await Count(scope.Realm);
+        var dragged = new TaskCompletionSource<PinDragEvent>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var calls = 0;
+        await using (await pin.OnDragAsync(scope, drag => { calls++; dragged.TrySetResult(drag); })) // its `on` returns a subscription with remove()
+        {
+            await pin.DragByAsync(1, 2);
+            Equal(new PinDragEvent { Dx = 1, Dy = 2 }, await dragged.Task.WaitAsync(Timeout));
+        }
+        Equal(baseline, await Count(scope.Realm)); // released before the scope
+        await pin.DragByAsync(3, 4);
+        await pin.GetDisplayLabelAsync(); // a round trip after the drag: a call back would have come first
+        Equal(1, calls);
+    }
+
+    private static async Task Any(JsScope scope)
+    {
+        var pin = await Pin.CreateAsync(scope, new PinSnapshot());
+        Expect((await pin.GetMetaAsync(scope)).IsUndefined, "meta to start undefined");
+        await pin.SetMetaAsync(JsAny.Parse("""{"id":7,"tags":["a"]}"""));
+        Expect((await pin.GetMetaAsync(scope)).TryGetValue(out JsAny? meta) && meta.Json.GetProperty("id").GetDouble() == 7, "meta to read back as data");
+        var marker = await Marker.CreateAsync(scope, new MarkerSnapshot());
+        await pin.SetMetaAsync(JsAny.From(marker, JsObject.Write)); // a live object, as its handle
+        Expect((await pin.GetMetaAsync(scope)).TryGetValue(out JsAny? held) && ReferenceEquals(held.Read(scope.Read<Marker>), marker),
+            "the handle to be the same marker");
+        await pin.SetMetaAsync(null);
+        Expect((await pin.GetMetaAsync(scope)).IsNull, "meta to be null");
+    }
+
+    private static async Task WrittenUnion(JsScope scope)
+    {
+        Equal("point", await Measure.DescribeAsync(scope.Realm, new PointSnapshot()));
+        Equal("polygon", await Measure.DescribeAsync(scope.Realm, new PolygonSnapshot { Vertices = new double[][] { [0, 0], [1, 0], [0, 1] } }));
+        Equal("marker m", await Measure.DescribeAsync(scope.Realm, await Marker.CreateAsync(scope, new MarkerSnapshot { Label = "m" })));
+        Equal("marker p", await Measure.DescribeAsync(scope.Realm, await Pin.CreateAsync(scope, new PinSnapshot { Label = "p" }))); // a subclass of the case
+    }
+
+    private static async Task SiblingModules(JsScope scope)
+    {
+        Equal(6.0, await Ops.A.ExecuteAsync(scope.Realm, 3, new Ops.Options { Scale = 2 }));
+        Equal(5.0, await Ops.B.ExecuteAsync(scope.Realm, 3, new Ops.BOptions { Offset = 2 }));
+        Equal(3.0, await Ops.B.ExecuteAsync(scope.Realm, 3));
     }
 
     // --- Helpers ---

@@ -19,8 +19,8 @@ internal static class RecordEmitter
             name = $"{name}<{string.Join(", ", parameters)}>";
         }
         var fields = Unhidden(types.Fields(declaration), ns);
-        var w = CodeWriter.CSharp(ns, "System.Text.Json", "Interoper");
-        using (w.Block($"public sealed partial record {name}{string.Concat(parameters.Select(t => $" where {t} : JsObject"))}"))
+        var w = CodeWriter.CSharp(ns, "System.Text.Json");
+        using (w.Block($"public sealed partial record {name}{string.Concat(parameters.Select(t => $" where {t} : global::Interoper.JsObject"))}"))
         {
             Properties(w, fields, required: true);
             using (w.Block($"public static void Write(Utf8JsonWriter writer, {name} value)"))
@@ -45,7 +45,7 @@ internal static class RecordEmitter
         var (ns, name) = types.Snapshot(c);
         var fields = Unhidden(types.Fields(c), ns);
         var b = types.SnapshotBase(c);
-        var w = CodeWriter.CSharp(ns, "System.Text.Json", "Interoper");
+        var w = CodeWriter.CSharp(ns, "System.Text.Json");
         using (w.Block($"public {(types.IsClosed(c) ? "closed" : "sealed")} partial record {name}{(b is null ? "" : " : " + types.Snapshot(b).In(ns))}"))
         {
             Properties(w, fields, required: false);
@@ -103,7 +103,7 @@ internal static class RecordEmitter
         {
             foreach (var f in members)
             {
-                w.Line($"{f.Name} = after.{f.Name}.IsUndefined || JsDiff.Same(before.{f.Name}, after.{f.Name}) ? default : after.{f.Name},");
+                w.Line($"{f.Name} = after.{f.Name}.IsUndefined || global::Interoper.JsDiff.Same(before.{f.Name}, after.{f.Name}) ? default : after.{f.Name},");
             }
         }
     }
@@ -119,7 +119,7 @@ internal static class RecordEmitter
             {
                 foreach (var sub in subclasses)
                 {
-                    var (type, local) = (types.Snapshot(sub).In(ns), Syntax.Local(Naming.Type(sub.Name), "writer", "value"));
+                    var (type, local) = (types.Snapshot(sub).In(ns), Syntax.Local(types.Name(sub).Name, "writer", "value"));
                     w.Line($"case {type} {local}: {type}.{method}(writer, {local}); break;");
                 }
             }
@@ -134,7 +134,7 @@ internal static class RecordEmitter
     public static void DiscriminantSwitch(CodeWriter w, string header, string type, string discriminant, IEnumerable<(string Value, string Type)> cases)
     {
         var local = Syntax.Local(Naming.Pascal(discriminant), "reader");
-        using (w.Block($"{header} => JsJson.PeekString(reader, {Syntax.Utf8(discriminant)}) switch", "};"))
+        using (w.Block($"{header} => global::Interoper.JsJson.PeekString(reader, {Syntax.Utf8(discriminant)}) switch", "};"))
         {
             foreach (var (value, read) in cases)
             {
@@ -191,11 +191,11 @@ internal static class RecordEmitter
             var name = Syntax.Utf8(f.JsName);
             if (f.Type!.IsUnion)
             {
-                w.Line($"JsJson.WriteProperty(writer, {name}, value.{f.Name});");
+                w.Line($"global::Interoper.JsJson.WriteProperty(writer, {name}, value.{f.Name});");
             }
             else if (f.Opt)
             {
-                w.Line($"JsJson.WriteProperty(writer, {name}, value.{f.Name}, {f.Type.Writer(0)});");
+                w.Line($"global::Interoper.JsJson.WriteProperty(writer, {name}, value.{f.Name}, {f.Type.Writer(0)});");
             }
             else
             {
@@ -212,7 +212,7 @@ internal static class RecordEmitter
     private static void Read(CodeWriter w, string name, string modifier, IReadOnlyList<Field> fields, bool scoped = false)
     {
         var read = fields.Where(f => f.Constant is null).Select(f => (Field: f, Local: Syntax.Local(f.Name, "reader", "property", "scope"))).ToList();
-        using (w.Block($"public static {modifier}{name} Read(ref Utf8JsonReader reader{(scoped ? ", JsScope scope" : "")})"))
+        using (w.Block($"public static {modifier}{name} Read(ref Utf8JsonReader reader{(scoped ? ", global::Interoper.JsScope scope" : "")})"))
         {
             if (read.Count == 0)
             {
@@ -236,7 +236,7 @@ internal static class RecordEmitter
                 {
                     foreach (var (f, local) in read)
                     {
-                        var value = f.Opt ? $"JsJson.ReadOpt(ref reader, {f.Type!.Reader(0)})" : f.Type!.ReadCall("reader", 0);
+                        var value = f.Opt ? $"global::Interoper.JsJson.ReadOpt(ref reader, {f.Type!.Reader(0)})" : f.Type!.ReadCall("reader", 0);
                         w.Line($"case {Syntax.Literal(f.JsName)}: {local} = {value}; break;");
                     }
                     w.Line("default: reader.Skip(); break;");

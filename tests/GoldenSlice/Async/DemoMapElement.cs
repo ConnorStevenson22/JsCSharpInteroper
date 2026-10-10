@@ -2,19 +2,18 @@
 #nullable enable
 
 using System.Threading.Tasks;
-using Interoper;
 
 namespace GoldenSlice.Async;
 
-public sealed partial class DemoMapElement : JsObject
+public sealed partial class DemoMapElement : global::Interoper.JsObject
 {
-    internal DemoMapElement(JsRealm realm, int handle) : base(realm, handle) { }
+    internal DemoMapElement(global::Interoper.JsRealm realm, int handle) : base(realm, handle) { }
 
-    public static async Task<DemoMapElement> CreateAsync(JsScope scope, DemoMapElementSnapshot props) =>
-        (await scope.Realm.CallAsync(JsOp.Create(DemoMaps.DemoMapElementId, w => DemoMapElementSnapshot.WriteMembers(w, props)), scope.Read<DemoMapElement>))!;
+    public static async Task<DemoMapElement> CreateAsync(global::Interoper.JsScope scope, DemoMapElementSnapshot props) =>
+        (await scope.Realm.CallAsync(global::Interoper.JsOp.Create(DemoMaps.DemoMapElementId, w => DemoMapElementSnapshot.WriteMembers(w, props)), scope.Read<DemoMapElement>))!;
 
-    public async Task<MapView> GetViewAsync(JsScope scope) =>
-        (await Realm.CallAsync(JsOp.Get(Handle, "view"), scope.Read<MapView>))!;
+    public async Task<MapView> GetViewAsync(global::Interoper.JsScope scope) =>
+        (await Realm.CallAsync(global::Interoper.JsOp.Get(Handle, "view"), scope.Read<MapView>))!;
 
     public async Task<Basemap> GetBasemapAsync() => BasemapNames.FromJs(await Realm.GetStringAsync(Handle, "basemap"));
 
@@ -25,22 +24,22 @@ public sealed partial class DemoMapElement : JsObject
     public Task SetZoomAsync(double value) => Realm.SetAsync(Handle, "zoom", value);
 
     public async Task<PointSnapshot> GetCenterAsync() =>
-        (await Realm.CallAsync(JsOp.Get(Handle, "center", byValue: true), PointSnapshot.Read))!;
+        (await Realm.CallAsync(global::Interoper.JsOp.Get(Handle, "center", byValue: true), PointSnapshot.Read))!;
 
     public Task SetCenterAsync(PointSnapshot value) =>
-        Realm.SendAsync(JsOp.Set(Handle, "center", w => PointSnapshot.Write(w, value)));
+        Realm.SendAsync(global::Interoper.JsOp.Set(Handle, "center", w => PointSnapshot.Write(w, value)));
 
-    public Task ClickAtAsync(double x, double y, Opt<DemoMapElementClickAtButton> button = default) =>
-        Realm.SendAsync(JsOp.Call(Handle, "clickAt", w =>
+    public Task ClickAtAsync(double x, double y, global::Interoper.Opt<DemoMapElementClickAtButton> button = default) =>
+        Realm.SendAsync(global::Interoper.JsOp.Call(Handle, "clickAt", w =>
         {
-            JsJson.WriteNumber(w, x);
-            JsJson.WriteNumber(w, y);
-            if (!button.IsUndefined) JsJson.WriteValue(w, button, static (w1, v1) => JsJson.WriteNumber(w1, (int)v1));
+            global::Interoper.JsJson.WriteNumber(w, x);
+            global::Interoper.JsJson.WriteNumber(w, y);
+            if (!button.IsUndefined) global::Interoper.JsJson.WriteValue(w, button, static (w1, v1) => global::Interoper.JsJson.WriteNumber(w1, (int)v1));
         }));
 
     public async Task<DemoMapElementSnapshot> SnapshotAsync() =>
-        (await Realm.CallAsync(JsOp.Snapshot(Handle), DemoMapElementSnapshot.Read))!;
+        (await Realm.CallAsync(global::Interoper.JsOp.Snapshot(Handle), DemoMapElementSnapshot.Read))!;
 
     public Task ApplyAsync(DemoMapElementSnapshot patch) =>
-        Realm.SendAsync(JsOp.Apply(Handle, w => DemoMapElementSnapshot.WriteMembers(w, patch)));
+        Realm.SendAsync(global::Interoper.JsOp.Apply(Handle, w => DemoMapElementSnapshot.WriteMembers(w, patch)));
 }

@@ -2,7 +2,6 @@
 #nullable enable
 
 using System.Text.Json;
-using Interoper;
 
 namespace GoldenSlice.Async;
 
@@ -17,7 +16,7 @@ public sealed partial record IconStyle
         writer.WriteString("type"u8, "icon"u8);
         writer.WritePropertyName("name"u8);
         IconName.Write(writer, value.Name);
-        JsJson.WriteProperty(writer, "color"u8, value.Color);
+        global::Interoper.JsJson.WriteProperty(writer, "color"u8, value.Color);
         writer.WriteEndObject();
     }
 
@@ -32,7 +31,7 @@ public sealed partial record IconStyle
             switch (property)
             {
                 case "name": name = IconName.Read(ref reader); break;
-                case "color": color = JsJson.ReadUnion<ColorInput>(ref reader); break;
+                case "color": color = global::Interoper.JsJson.ReadUnion<ColorInput>(ref reader); break;
                 default: reader.Skip(); break;
             }
         }

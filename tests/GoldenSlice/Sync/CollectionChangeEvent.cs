@@ -2,11 +2,10 @@
 #nullable enable
 
 using System.Text.Json;
-using Interoper;
 
 namespace GoldenSlice.Sync;
 
-public sealed partial record CollectionChangeEvent<T> where T : JsObject
+public sealed partial record CollectionChangeEvent<T> where T : global::Interoper.JsObject
 {
     public required T[] Added { get; init; }
     public required T[] Removed { get; init; }
@@ -15,13 +14,13 @@ public sealed partial record CollectionChangeEvent<T> where T : JsObject
     {
         writer.WriteStartObject();
         writer.WritePropertyName("added"u8);
-        JsJson.WriteArray(writer, value.Added, JsObject.Write);
+        global::Interoper.JsJson.WriteArray(writer, value.Added, global::Interoper.JsObject.Write);
         writer.WritePropertyName("removed"u8);
-        JsJson.WriteArray(writer, value.Removed, JsObject.Write);
+        global::Interoper.JsJson.WriteArray(writer, value.Removed, global::Interoper.JsObject.Write);
         writer.WriteEndObject();
     }
 
-    public static CollectionChangeEvent<T> Read(ref Utf8JsonReader reader, JsScope scope)
+    public static CollectionChangeEvent<T> Read(ref Utf8JsonReader reader, global::Interoper.JsScope scope)
     {
         T[] added = [], removed = [];
         while (reader.Read() && reader.TokenType == JsonTokenType.PropertyName)
@@ -30,8 +29,8 @@ public sealed partial record CollectionChangeEvent<T> where T : JsObject
             reader.Read();
             switch (property)
             {
-                case "added": added = JsJson.ReadArray(ref reader, scope.Read<T>); break;
-                case "removed": removed = JsJson.ReadArray(ref reader, scope.Read<T>); break;
+                case "added": added = global::Interoper.JsJson.ReadArray(ref reader, scope.Read<T>); break;
+                case "removed": removed = global::Interoper.JsJson.ReadArray(ref reader, scope.Read<T>); break;
                 default: reader.Skip(); break;
             }
         }

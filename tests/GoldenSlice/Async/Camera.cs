@@ -5,12 +5,11 @@ using System;
 using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
-using Interoper;
 
 namespace GoldenSlice.Async;
 
 [Union]
-public readonly partial struct Camera : IJsUnion<Camera>, IEquatable<Camera>
+public readonly partial struct Camera : global::Interoper.IJsUnion<Camera>, IEquatable<Camera>
 {
     private readonly object? _ref;
     private readonly byte _tag; // 0 = undefined, 1 = null, 2 = Bounds, 3 = CenterAndZoom
@@ -18,18 +17,18 @@ public readonly partial struct Camera : IJsUnion<Camera>, IEquatable<Camera>
     private Camera(object? value, byte tag) => (_ref, _tag) = (value, tag);
     public Camera(Bounds value) : this(value, 2) { }
     public Camera(CenterAndZoom value) : this(value, 3) { }
-    public Camera(Undefined? value) : this(null, value is null ? (byte)1 : (byte)0) { }
+    public Camera(global::Interoper.Undefined? value) : this(null, value is null ? (byte)1 : (byte)0) { }
 
-    public static implicit operator Camera(Undefined? value) => new(value);
+    public static implicit operator Camera(global::Interoper.Undefined? value) => new(value);
 
-    public object? Value => _tag switch { 0 => Undefined.Value, 1 => null, _ => _ref };
+    public object? Value => _tag switch { 0 => global::Interoper.Undefined.Value, 1 => null, _ => _ref };
     public bool HasValue => _tag != 1;
     public bool IsUndefined => _tag == 0;
     public bool IsNull => _tag == 1;
 
-    public bool TryGetValue(out Undefined value)
+    public bool TryGetValue(out global::Interoper.Undefined value)
     {
-        value = Undefined.Value;
+        value = global::Interoper.Undefined.Value;
         return _tag == 0;
     }
 
@@ -56,8 +55,8 @@ public readonly partial struct Camera : IJsUnion<Camera>, IEquatable<Camera>
 
     public static Camera ReadValue(ref Utf8JsonReader reader) => reader.TokenType switch
     {
-        JsonTokenType.StartObject when JsJson.HasProperty(reader, "minX"u8) => Bounds.Read(ref reader),
-        JsonTokenType.StartObject when JsJson.HasProperty(reader, "center"u8) => CenterAndZoom.Read(ref reader),
+        JsonTokenType.StartObject when global::Interoper.JsJson.HasProperty(reader, "minX"u8) => Bounds.Read(ref reader),
+        JsonTokenType.StartObject when global::Interoper.JsJson.HasProperty(reader, "center"u8) => CenterAndZoom.Read(ref reader),
         var token => throw new JsonException($"Camera: unexpected {token}"),
     };
 

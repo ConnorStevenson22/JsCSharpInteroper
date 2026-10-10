@@ -2,7 +2,6 @@
 #nullable enable
 
 using System.Threading.Tasks;
-using Interoper;
 
 namespace GoldenSlice.Async;
 
@@ -10,16 +9,19 @@ public static partial class Measure
 {
     private const string Module = "@acme/demo-maps/measure.js";
 
-    public static Task<double> DistanceAsync(JsRealm realm, PointSnapshot a, PointSnapshot b) =>
-        realm.CallAsync(JsOp.Call(Module, "distance", w =>
+    public static Task<double> DistanceAsync(global::Interoper.JsRealm realm, PointSnapshot a, PointSnapshot b) =>
+        realm.CallAsync(global::Interoper.JsOp.Call(Module, "distance", w =>
         {
             PointSnapshot.Write(w, a);
             PointSnapshot.Write(w, b);
-        }), JsJson.ReadNumber);
+        }), global::Interoper.JsJson.ReadNumber);
 
-    public static Task<double> PerimeterAsync(JsRealm realm, params PointSnapshot[] points) =>
-        realm.CallAsync(JsOp.Call(Module, "perimeter", w =>
+    public static Task<double> PerimeterAsync(global::Interoper.JsRealm realm, params PointSnapshot[] points) =>
+        realm.CallAsync(global::Interoper.JsOp.Call(Module, "perimeter", w =>
         {
             foreach (var item in points) PointSnapshot.Write(w, item);
-        }), JsJson.ReadNumber);
+        }), global::Interoper.JsJson.ReadNumber);
+
+    public static async Task<string> DescribeAsync(global::Interoper.JsRealm realm, Measurable target) =>
+        (await realm.CallAsync(global::Interoper.JsOp.Call(Module, "describe", w => global::Interoper.JsJson.WriteValue(w, target)), global::Interoper.JsJson.ReadString))!;
 }

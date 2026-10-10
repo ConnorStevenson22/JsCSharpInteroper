@@ -5,45 +5,45 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
-using Interoper;
 
 namespace GoldenSlice.Async;
 
-public sealed partial class Collection<T> : Emitter where T : JsObject
+public sealed partial class Collection<T> : Emitter where T : global::Interoper.JsObject
 {
-    internal Collection(JsRealm realm, int handle) : base(realm, handle) { }
+    internal Collection(global::Interoper.JsRealm realm, int handle) : base(realm, handle) { }
 
     public Task<double> GetLengthAsync() => Realm.GetNumberAsync(Handle, "length");
 
-    public Task<Opt<T>> AtAsync(JsScope scope, double index) =>
-        Realm.CallAsync(JsOp.Call(Handle, "at", w => JsJson.WriteNumber(w, index)), (ref r) => JsJson.ReadOpt(ref r, scope.Read<T>));
+    public Task<global::Interoper.Opt<T>> AtAsync(global::Interoper.JsScope scope, double index) =>
+        Realm.CallAsync(global::Interoper.JsOp.Call(Handle, "at", w => global::Interoper.JsJson.WriteNumber(w, index)), (ref r) => global::Interoper.JsJson.ReadOpt(ref r, scope.Read<T>));
 
-    public Task AddAsync(T item) => Realm.SendAsync(JsOp.Call(Handle, "add", w => JsObject.Write(w, item)));
+    public Task AddAsync(T item) =>
+        Realm.SendAsync(global::Interoper.JsOp.Call(Handle, "add", w => global::Interoper.JsObject.Write(w, item)));
 
     public Task<bool> RemoveAsync(T item) =>
-        Realm.CallAsync(JsOp.Call(Handle, "remove", w => JsObject.Write(w, item)), JsJson.ReadBoolean);
+        Realm.CallAsync(global::Interoper.JsOp.Call(Handle, "remove", w => global::Interoper.JsObject.Write(w, item)), global::Interoper.JsJson.ReadBoolean);
 
-    public Task ForEachAsync(JsScope scope, Action<T, double> callback) =>
-        Realm.SendAsync(JsOp.Call(Handle, "forEach", w => JsJson.WriteCallback(w, scope.Callback(callback, scope.Read<T>, JsJson.ReadNumber))));
+    public Task ForEachAsync(global::Interoper.JsScope scope, Action<T, double> callback) =>
+        Realm.SendAsync(global::Interoper.JsOp.Call(Handle, "forEach", w => global::Interoper.JsJson.WriteCallback(w, scope.Callback(callback, scope.Read<T>, global::Interoper.JsJson.ReadNumber))));
 
-    public async Task<T[]> ToArrayAsync(JsScope scope) =>
-        (await Realm.CallAsync(JsOp.Call(Handle, "toArray"), (ref r) => JsJson.ReadArray(ref r, scope.Read<T>)))!;
+    public async Task<T[]> ToArrayAsync(global::Interoper.JsScope scope) =>
+        (await Realm.CallAsync(global::Interoper.JsOp.Call(Handle, "toArray"), (ref r) => global::Interoper.JsJson.ReadArray(ref r, scope.Read<T>)))!;
 
-    public Task<IAsyncDisposable> OnChangeAsync(JsScope scope, Action<CollectionChangeEvent<T>> handler, EventOptions? options = null) =>
+    public Task<IAsyncDisposable> OnChangeAsync(global::Interoper.JsScope scope, Action<CollectionChangeEvent<T>> handler, global::Interoper.EventOptions? options = null) =>
         scope.SubscribeAsync(Handle, "on", "change", (ref r) => CollectionChangeEvent<T>.Read(ref r, scope), handler, options, ["added", "removed"]);
 
-    public IAsyncEnumerable<CollectionChangeEvent<T>> OnChangeStreamAsync(JsScope scope, EventOptions? options = null, CancellationToken cancellationToken = default) =>
+    public IAsyncEnumerable<CollectionChangeEvent<T>> OnChangeStreamAsync(global::Interoper.JsScope scope, global::Interoper.EventOptions? options = null, CancellationToken cancellationToken = default) =>
         scope.StreamAsync(Handle, "on", "change", (ref r) => CollectionChangeEvent<T>.Read(ref r, scope), options, ["added", "removed"], cancellationToken);
 
-    public Task<IAsyncDisposable> WatchLengthAsync(JsScope scope, Action<double> handler) =>
-        scope.SubscribeAsync(Handle, "watch", "length", JsJson.ReadNumber, handler, null, null);
+    public Task<IAsyncDisposable> WatchLengthAsync(global::Interoper.JsScope scope, Action<double> handler) =>
+        scope.SubscribeAsync(Handle, "watch", "length", global::Interoper.JsJson.ReadNumber, handler, null, null);
 
-    public IAsyncEnumerable<double> WatchLengthStreamAsync(JsScope scope, CancellationToken cancellationToken = default) =>
-        scope.StreamAsync(Handle, "watch", "length", JsJson.ReadNumber, null, null, cancellationToken);
+    public IAsyncEnumerable<double> WatchLengthStreamAsync(global::Interoper.JsScope scope, CancellationToken cancellationToken = default) =>
+        scope.StreamAsync(Handle, "watch", "length", global::Interoper.JsJson.ReadNumber, null, null, cancellationToken);
 
     public new async Task<CollectionSnapshot> SnapshotAsync() =>
-        (await Realm.CallAsync(JsOp.Snapshot(Handle), CollectionSnapshot.Read))!;
+        (await Realm.CallAsync(global::Interoper.JsOp.Snapshot(Handle), CollectionSnapshot.Read))!;
 
     public Task ApplyAsync(CollectionSnapshot patch) =>
-        Realm.SendAsync(JsOp.Apply(Handle, w => CollectionSnapshot.WriteMembers(w, patch)));
+        Realm.SendAsync(global::Interoper.JsOp.Apply(Handle, w => CollectionSnapshot.WriteMembers(w, patch)));
 }

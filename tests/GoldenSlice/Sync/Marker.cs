@@ -2,53 +2,53 @@
 #nullable enable
 
 using System;
-using Interoper;
 
 namespace GoldenSlice.Sync;
 
-public sealed partial class Marker : Observable
+public partial class Marker : Observable
 {
-    internal Marker(JsRealm realm, int handle) : base(realm, handle) { }
+    internal Marker(global::Interoper.JsRealm realm, int handle) : base(realm, handle) { }
 
-    public static Marker Create(JsScope scope, MarkerSnapshot props) =>
-        scope.Realm.Call(JsOp.Create(DemoMaps.MarkerId, w => MarkerSnapshot.WriteMembers(w, props)), scope.Read<Marker>)!;
+    public static Marker Create(global::Interoper.JsScope scope, MarkerSnapshot props) =>
+        scope.Realm.Call(global::Interoper.JsOp.Create(DemoMaps.MarkerId, w => MarkerSnapshot.WriteMembers(w, props)), scope.Read<Marker>)!;
 
-    public PointSnapshot Position => Realm.Call(JsOp.Get(Handle, "position", byValue: true), PointSnapshot.Read)!;
+    public PointSnapshot Position =>
+        Realm.Call(global::Interoper.JsOp.Get(Handle, "position", byValue: true), PointSnapshot.Read)!;
 
     public void SetPosition(MarkerPositionInput value) =>
-        Realm.Send(JsOp.Set(Handle, "position", w => JsJson.WriteValue(w, value)));
+        Realm.Send(global::Interoper.JsOp.Set(Handle, "position", w => global::Interoper.JsJson.WriteValue(w, value)));
 
-    public Opt<string> Label
+    public global::Interoper.Opt<string> Label
     {
-        get => Realm.Call(JsOp.Get(Handle, "label"), static (ref r) => JsJson.ReadOpt(ref r, JsJson.ReadString));
-        set => Realm.Send(JsOp.Set(Handle, "label", w => JsJson.WriteValue(w, value, JsJson.WriteString)));
+        get => Realm.Call(global::Interoper.JsOp.Get(Handle, "label"), static (ref r) => global::Interoper.JsJson.ReadOpt(ref r, global::Interoper.JsJson.ReadString));
+        set => Realm.Send(global::Interoper.JsOp.Set(Handle, "label", w => global::Interoper.JsJson.WriteValue(w, value, global::Interoper.JsJson.WriteString)));
     }
 
     public Style Style
     {
-        get => Realm.Call(JsOp.Get(Handle, "style"), JsJson.ReadUnion<Style>);
-        set => Realm.Send(JsOp.Set(Handle, "style", w => JsJson.WriteValue(w, value)));
+        get => Realm.Call(global::Interoper.JsOp.Get(Handle, "style"), global::Interoper.JsJson.ReadUnion<Style>);
+        set => Realm.Send(global::Interoper.JsOp.Set(Handle, "style", w => global::Interoper.JsJson.WriteValue(w, value)));
     }
 
-    public void SetLabelFormatter(JsScope scope, Func<Marker, string>? value) =>
-        Realm.Send(JsOp.Set(Handle, "labelFormatter", w => JsJson.WriteCallback(w, value is null ? null : scope.Callback(value, scope.Read<Marker>, JsJson.WriteString))));
+    public void SetLabelFormatter(global::Interoper.JsScope scope, Func<Marker, string>? value) =>
+        Realm.Send(global::Interoper.JsOp.Set(Handle, "labelFormatter", w => global::Interoper.JsJson.WriteCallback(w, value is null ? null : scope.Callback(value, scope.Read<Marker>, global::Interoper.JsJson.WriteString))));
 
     public string DisplayLabel => Realm.GetString(Handle, "displayLabel");
 
-    public IDisposable WatchPosition(JsScope scope, Action<PointSnapshot> handler) =>
+    public IDisposable WatchPosition(global::Interoper.JsScope scope, Action<PointSnapshot> handler) =>
         scope.Subscribe(Handle, "watch", "position", PointSnapshot.Read, handler, null, null);
 
-    public IDisposable WatchLabel(JsScope scope, Action<Opt<string>> handler) =>
-        scope.Subscribe(Handle, "watch", "label", static (ref r) => JsJson.ReadOpt(ref r, JsJson.ReadString), handler, null, null);
+    public IDisposable WatchLabel(global::Interoper.JsScope scope, Action<global::Interoper.Opt<string>> handler) =>
+        scope.Subscribe(Handle, "watch", "label", static (ref r) => global::Interoper.JsJson.ReadOpt(ref r, global::Interoper.JsJson.ReadString), handler, null, null);
 
-    public IDisposable WatchStyle(JsScope scope, Action<Style> handler) =>
-        scope.Subscribe(Handle, "watch", "style", JsJson.ReadUnion<Style>, handler, null, null);
+    public IDisposable WatchStyle(global::Interoper.JsScope scope, Action<Style> handler) =>
+        scope.Subscribe(Handle, "watch", "style", global::Interoper.JsJson.ReadUnion<Style>, handler, null, null);
 
-    public IDisposable WatchDisplayLabel(JsScope scope, Action<string> handler) =>
-        scope.Subscribe(Handle, "watch", "displayLabel", JsJson.ReadString, handler, null, null);
+    public IDisposable WatchDisplayLabel(global::Interoper.JsScope scope, Action<string> handler) =>
+        scope.Subscribe(Handle, "watch", "displayLabel", global::Interoper.JsJson.ReadString, handler, null, null);
 
-    public new MarkerSnapshot Snapshot() => Realm.Call(JsOp.Snapshot(Handle), MarkerSnapshot.Read)!;
+    public new MarkerSnapshot Snapshot() => Realm.Call(global::Interoper.JsOp.Snapshot(Handle), MarkerSnapshot.Read)!;
 
     public void Apply(MarkerSnapshot patch) =>
-        Realm.Send(JsOp.Apply(Handle, w => MarkerSnapshot.WriteMembers(w, patch)));
+        Realm.Send(global::Interoper.JsOp.Apply(Handle, w => MarkerSnapshot.WriteMembers(w, patch)));
 }

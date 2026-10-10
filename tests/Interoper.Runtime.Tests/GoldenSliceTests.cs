@@ -48,7 +48,7 @@ public sealed class GoldenSliceTests
         string[] live =
         [
             "DemoMaps.cs", "Observable.cs", "Emitter.cs", "Collection.cs", "Shape.cs", "Point.cs", "Line.cs", "Polygon.cs", "MapView.cs", "Marker.cs",
-            "DemoMapElement.cs", "Layers/Layer.cs", "Layers/TileLayer.cs", "Measure.cs", "Styles.cs",
+            "DemoMapElement.cs", "Layers/Layer.cs", "Layers/TileLayer.cs", "Measure.cs", "Styles.cs", "Pin.cs", "Ops/A.cs", "Ops/B.cs",
         ];
         var files = Files(Path.Combine(root, "Async"));
         Assert.Equal(files, Files(Path.Combine(root, "Sync")));

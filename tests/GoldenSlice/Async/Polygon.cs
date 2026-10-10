@@ -5,32 +5,31 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
-using Interoper;
 
 namespace GoldenSlice.Async;
 
 public sealed partial class Polygon : Shape
 {
-    internal Polygon(JsRealm realm, int handle) : base(realm, handle) { }
+    internal Polygon(global::Interoper.JsRealm realm, int handle) : base(realm, handle) { }
 
-    public static async Task<Polygon> CreateAsync(JsScope scope, PolygonSnapshot props) =>
-        (await scope.Realm.CallAsync(JsOp.Create(DemoMaps.PolygonId, w => PolygonSnapshot.WriteMembers(w, props)), scope.Read<Polygon>))!;
+    public static async Task<Polygon> CreateAsync(global::Interoper.JsScope scope, PolygonSnapshot props) =>
+        (await scope.Realm.CallAsync(global::Interoper.JsOp.Create(DemoMaps.PolygonId, w => PolygonSnapshot.WriteMembers(w, props)), scope.Read<Polygon>))!;
 
     public async Task<double[][]> GetVerticesAsync() =>
-        (await Realm.CallAsync(JsOp.Get(Handle, "vertices"), static (ref r) => JsJson.ReadArray(ref r, static (ref r1) => JsJson.ReadArray(ref r1, JsJson.ReadNumber))))!;
+        (await Realm.CallAsync(global::Interoper.JsOp.Get(Handle, "vertices"), static (ref r) => global::Interoper.JsJson.ReadArray(ref r, static (ref r1) => global::Interoper.JsJson.ReadArray(ref r1, global::Interoper.JsJson.ReadNumber))))!;
 
     public Task SetVerticesAsync(double[][] value) =>
-        Realm.SendAsync(JsOp.Set(Handle, "vertices", w => JsJson.WriteArray(w, value, static (w1, v1) => JsJson.WriteArray(w1, v1, JsJson.WriteNumber))));
+        Realm.SendAsync(global::Interoper.JsOp.Set(Handle, "vertices", w => global::Interoper.JsJson.WriteArray(w, value, static (w1, v1) => global::Interoper.JsJson.WriteArray(w1, v1, global::Interoper.JsJson.WriteNumber))));
 
-    public Task<IAsyncDisposable> WatchVerticesAsync(JsScope scope, Action<double[][]> handler) =>
-        scope.SubscribeAsync(Handle, "watch", "vertices", static (ref r) => JsJson.ReadArray(ref r, static (ref r1) => JsJson.ReadArray(ref r1, JsJson.ReadNumber)), handler, null, null);
+    public Task<IAsyncDisposable> WatchVerticesAsync(global::Interoper.JsScope scope, Action<double[][]> handler) =>
+        scope.SubscribeAsync(Handle, "watch", "vertices", static (ref r) => global::Interoper.JsJson.ReadArray(ref r, static (ref r1) => global::Interoper.JsJson.ReadArray(ref r1, global::Interoper.JsJson.ReadNumber)), handler, null, null);
 
-    public IAsyncEnumerable<double[][]> WatchVerticesStreamAsync(JsScope scope, CancellationToken cancellationToken = default) =>
-        scope.StreamAsync(Handle, "watch", "vertices", static (ref r) => JsJson.ReadArray(ref r, static (ref r1) => JsJson.ReadArray(ref r1, JsJson.ReadNumber)), null, null, cancellationToken);
+    public IAsyncEnumerable<double[][]> WatchVerticesStreamAsync(global::Interoper.JsScope scope, CancellationToken cancellationToken = default) =>
+        scope.StreamAsync(Handle, "watch", "vertices", static (ref r) => global::Interoper.JsJson.ReadArray(ref r, static (ref r1) => global::Interoper.JsJson.ReadArray(ref r1, global::Interoper.JsJson.ReadNumber)), null, null, cancellationToken);
 
     public new async Task<PolygonSnapshot> SnapshotAsync() =>
-        (await Realm.CallAsync(JsOp.Snapshot(Handle), PolygonSnapshot.Read))!;
+        (await Realm.CallAsync(global::Interoper.JsOp.Snapshot(Handle), PolygonSnapshot.Read))!;
 
     public Task ApplyAsync(PolygonSnapshot patch) =>
-        Realm.SendAsync(JsOp.Apply(Handle, w => PolygonSnapshot.WriteMembers(w, patch)));
+        Realm.SendAsync(global::Interoper.JsOp.Apply(Handle, w => PolygonSnapshot.WriteMembers(w, patch)));
 }

@@ -90,11 +90,18 @@ internal sealed class CsType
     /// <summary>A string enum's name map (R9), which converts it for the <c>String</c> fast path.</summary>
     public string? Names { get; }
 
-    public static CsType Number { get; } = new("double", JsonKind.Number, true, "JsJson.WriteNumber", "JsJson.ReadNumber", fast: "Number");
+    public static CsType Number { get; } = new("double", JsonKind.Number, true, "global::Interoper.JsJson.WriteNumber", "global::Interoper.JsJson.ReadNumber", fast: "Number");
 
-    public static CsType String { get; } = new("string", JsonKind.String, false, "JsJson.WriteString", "JsJson.ReadString", fast: "String");
+    public static CsType String { get; } = new("string", JsonKind.String, false, "global::Interoper.JsJson.WriteString", "global::Interoper.JsJson.ReadString", fast: "String");
 
-    public static CsType Boolean { get; } = new("bool", JsonKind.Boolean, true, "JsJson.WriteBoolean", "JsJson.ReadBoolean", fast: "Boolean");
+    public static CsType Boolean { get; } = new("bool", JsonKind.Boolean, true, "global::Interoper.JsJson.WriteBoolean", "global::Interoper.JsJson.ReadBoolean", fast: "Boolean");
+
+    /// <summary>
+    /// <c>any</c>, <c>unknown</c> and <c>object</c> (mapping §2): the runtime's <c>JsAny</c>, read with the caller's scope,
+    /// which owns the handles in it.
+    /// </summary>
+    public static CsType Any { get; } = new("global::Interoper.JsAny", JsonKind.Object, false, "global::Interoper.JsAny.Write", null,
+        read: (r, _) => $"global::Interoper.JsAny.Read(ref {r}, scope)", scoped: true);
 
     /// <summary>An extensible enum (R10): a string wrapper with static <c>Write</c> and <c>Read</c> methods.</summary>
     public static CsType Extensible(TypeName type) =>
@@ -114,7 +121,7 @@ internal sealed class CsType
             read: (r, _) => $"scope.Read(ref {r}, static (realm, handle) => new {name}(realm, handle))", scoped: true));
 
     /// <summary>A type parameter of a generic class or record: an entity (<c>where T : JsObject</c>, mapping §2).</summary>
-    public static CsType TypeParameter(string name) => new(name, JsonKind.Object, false, "JsObject.Write", $"scope.Read<{name}>", scoped: true);
+    public static CsType TypeParameter(string name) => new(name, JsonKind.Object, false, "global::Interoper.JsObject.Write", $"scope.Read<{name}>", scoped: true);
 
     /// <summary>
     /// A data or snapshot record (R15, R16). A scoped one holds an entity, so it's read with the caller's scope (R17).
@@ -124,12 +131,12 @@ internal sealed class CsType
         : Named(type, args ?? [], name => new(name, JsonKind.Object, false, $"{name}.Write", $"{name}.Read"));
 
     public static CsType Union(TypeName type) =>
-        Named(type, [], name => new(name, JsonKind.Object, isValueType: true, "JsJson.WriteValue", $"JsJson.ReadUnion<{name}>", isUnion: true));
+        Named(type, [], name => new(name, JsonKind.Object, isValueType: true, "global::Interoper.JsJson.WriteValue", $"global::Interoper.JsJson.ReadUnion<{name}>", isUnion: true));
 
     /// <summary>A number-literal union or numeric enum: written as its value.</summary>
     public static CsType NumberEnum(TypeName type) =>
         Named(type, [], name => new(name, JsonKind.Number, isValueType: true, null, null,
-            (w, v, _) => $"JsJson.WriteNumber({w}, (int){v})", (r, _) => $"({name})JsJson.ReadNumber(ref {r})"));
+            (w, v, _) => $"global::Interoper.JsJson.WriteNumber({w}, (int){v})", (r, _) => $"({name})global::Interoper.JsJson.ReadNumber(ref {r})"));
 
     /// <summary><paramref name="make"/> makes the type from its name as code spells it: with its type arguments.</summary>
     private static CsType Named(TypeName type, IReadOnlyList<CsType> args, Func<string, CsType> make)
@@ -147,7 +154,7 @@ internal sealed class CsType
 
     public static CsType Array(CsType element) =>
         new($"{element.Name}[]", JsonKind.Array, isValueType: false, null, null,
-            (w, v, d) => $"JsJson.WriteArray({w}, {v}, {element.Writer(d)})", (r, d) => $"JsJson.ReadArray(ref {r}, {element.Reader(d)})",
+            (w, v, d) => $"global::Interoper.JsJson.WriteArray({w}, {v}, {element.Writer(d)})", (r, d) => $"global::Interoper.JsJson.ReadArray(ref {r}, {element.Reader(d)})",
             scoped: element.Scoped)
         { Element = element, fullName = element.FullName + "[]", rebuild = change => Array(change(element)) };
 
@@ -166,17 +173,17 @@ internal sealed class CsType
             var name = result is null ? (list.Count == 0 ? "Action" : $"Action<{string.Join(", ", list)}>") : $"Func<{string.Join(", ", list)}>";
             return nullable ? name + "?" : name;
         }
-        static string OptName((CsType Type, bool Opt) p, Func<CsType, string> name) => p.Opt ? $"Opt<{name(p.Type)}>" : name(p.Type);
+        static string OptName((CsType Type, bool Opt) p, Func<CsType, string> name) => p.Opt ? $"global::Interoper.Opt<{name(p.Type)}>" : name(p.Type);
         var all = result is { } r ? parameters.Append(r).ToList() : parameters.ToList();
         return new(Spell(all.Select(p => OptName(p, t => t.Name))), JsonKind.Object, isValueType: false, null, null,
             (w, v, d) =>
             {
-                var readers = parameters.Select(p => p.Opt ? $"{p.Type.Static}(ref r{Suffix(d)}) => JsJson.ReadOpt(ref r{Suffix(d)}, {p.Type.Reader(d + 1)})" : p.Type.Reader(d));
+                var readers = parameters.Select(p => p.Opt ? $"{p.Type.Static}(ref r{Suffix(d)}) => global::Interoper.JsJson.ReadOpt(ref r{Suffix(d)}, {p.Type.Reader(d + 1)})" : p.Type.Reader(d));
                 var writer = result is not { } x ? null
-                    : x.Opt ? $"static (w{Suffix(d)}, v{Suffix(d)}) => JsJson.WriteValue(w{Suffix(d)}, v{Suffix(d)}, {x.Type.Writer(d + 1)})" : x.Type.Writer(d);
+                    : x.Opt ? $"static (w{Suffix(d)}, v{Suffix(d)}) => global::Interoper.JsJson.WriteValue(w{Suffix(d)}, v{Suffix(d)}, {x.Type.Writer(d + 1)})" : x.Type.Writer(d);
                 var id = $"scope.Callback({string.Join(", ", readers.Append(writer).OfType<string>().Prepend(v))})";
-                return !nullable ? $"JsJson.WriteCallback({w}, {id})"
-                    : $"JsJson.WriteCallback({w}, {v} is null ? null : {id}{(jsNull ? "" : ", undefined: true")})";
+                return !nullable ? $"global::Interoper.JsJson.WriteCallback({w}, {id})"
+                    : $"global::Interoper.JsJson.WriteCallback({w}, {v} is null ? null : {id}{(jsNull ? "" : ", undefined: true")})";
             })
         {
             IsCallback = true,

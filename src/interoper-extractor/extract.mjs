@@ -70,7 +70,7 @@ export function extract(packageDir, { eventMap } = {}) {
     const type = checker.getDeclaredTypeOfSymbol(sym);
     const statics = checker.getTypeOfSymbol(sym);
     const decl = sym.declarations.find(ts.isClassLike);
-    const [superclass] = checker.getBaseTypes(type);
+    const [superclass] = checker.getBaseTypes(type).map((b) => namedBase(b) ?? b);
     const mapProp = eventMap && type.getProperty(eventMap);
     const implemented = decl?.heritageClauses?.find((h) => h.token === ts.SyntaxKind.ImplementsKeyword)?.types ?? [];
     return compact({
@@ -99,11 +99,11 @@ export function extract(packageDir, { eventMap } = {}) {
 
   /**
    * Checker-resolved members. Those a named base declares stay with that base (follow `extends`). Members of an
-   * anonymous base or a mapped type are kept, as inherited, unless the platform declares them (DOM types are JsAny).
+   * anonymous base, a mixin or a mapped type are kept, as inherited, unless the platform declares them (DOM types are JsAny).
    */
   function members(type, isStatic = false) {
     const owners = type.symbol?.declarations ?? [];
-    const bases = type.objectFlags & ts.ObjectFlags.ClassOrInterface ? checker.getBaseTypes(type).filter(isNamed) : [];
+    const bases = type.objectFlags & ts.ObjectFlags.ClassOrInterface ? checker.getBaseTypes(type).map(namedBase).filter(Boolean) : [];
     return checker.getPropertiesOfType(type).flatMap((p) => {
       const decls = p.declarations ?? []; // none for a mapped type's synthetic keys (Record<"x" | "y", T>)
       if (p.name === eventMap || p.name === "prototype" || (decls.length && decls.every(isPlatform))) return [];
@@ -414,6 +414,11 @@ function specifierOf(file) {
 
 /** A declaration's own name: the symbol of a default export is named `default` (its `export`, ir.md). */
 const nameOf = (sym) => sym.declarations?.map((d) => ts.getNameOfDeclaration(d)).find((n) => n && ts.isIdentifier(n))?.text ?? sym.name;
+/**
+ * The named class or interface a base is, or starts with: a mixin's base `typeof Marker & typeof Draggable` is
+ * `Marker`, and the mixin's members are listed as inherited.
+ */
+const namedBase = (type) => (isNamed(type) ? type : type.isIntersection() && isNamed(type.types[0]) && type.types[0].symbol.flags & F.Class ? type.types[0] : undefined);
 const isNamed = (type) => type.symbol && type.symbol.flags & (F.Class | F.Interface) && !(type.objectFlags & (ts.ObjectFlags.Anonymous | ts.ObjectFlags.Mapped));
 const hasModifier = (decl, flag) => (decl && (ts.getCombinedModifierFlags(decl) & flag) !== 0) || undefined;
 const sameSet = (a, b) => a.length === b.length && a.every((x) => b.includes(x));

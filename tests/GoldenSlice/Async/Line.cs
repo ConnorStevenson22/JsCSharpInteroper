@@ -5,32 +5,31 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
-using Interoper;
 
 namespace GoldenSlice.Async;
 
 public sealed partial class Line : Shape
 {
-    internal Line(JsRealm realm, int handle) : base(realm, handle) { }
+    internal Line(global::Interoper.JsRealm realm, int handle) : base(realm, handle) { }
 
-    public static async Task<Line> CreateAsync(JsScope scope, LineSnapshot props) =>
-        (await scope.Realm.CallAsync(JsOp.Create(DemoMaps.LineId, w => LineSnapshot.WriteMembers(w, props)), scope.Read<Line>))!;
+    public static async Task<Line> CreateAsync(global::Interoper.JsScope scope, LineSnapshot props) =>
+        (await scope.Realm.CallAsync(global::Interoper.JsOp.Create(DemoMaps.LineId, w => LineSnapshot.WriteMembers(w, props)), scope.Read<Line>))!;
 
     public async Task<double[][]> GetPathAsync() =>
-        (await Realm.CallAsync(JsOp.Get(Handle, "path"), static (ref r) => JsJson.ReadArray(ref r, static (ref r1) => JsJson.ReadArray(ref r1, JsJson.ReadNumber))))!;
+        (await Realm.CallAsync(global::Interoper.JsOp.Get(Handle, "path"), static (ref r) => global::Interoper.JsJson.ReadArray(ref r, static (ref r1) => global::Interoper.JsJson.ReadArray(ref r1, global::Interoper.JsJson.ReadNumber))))!;
 
     public Task SetPathAsync(double[][] value) =>
-        Realm.SendAsync(JsOp.Set(Handle, "path", w => JsJson.WriteArray(w, value, static (w1, v1) => JsJson.WriteArray(w1, v1, JsJson.WriteNumber))));
+        Realm.SendAsync(global::Interoper.JsOp.Set(Handle, "path", w => global::Interoper.JsJson.WriteArray(w, value, static (w1, v1) => global::Interoper.JsJson.WriteArray(w1, v1, global::Interoper.JsJson.WriteNumber))));
 
-    public Task<IAsyncDisposable> WatchPathAsync(JsScope scope, Action<double[][]> handler) =>
-        scope.SubscribeAsync(Handle, "watch", "path", static (ref r) => JsJson.ReadArray(ref r, static (ref r1) => JsJson.ReadArray(ref r1, JsJson.ReadNumber)), handler, null, null);
+    public Task<IAsyncDisposable> WatchPathAsync(global::Interoper.JsScope scope, Action<double[][]> handler) =>
+        scope.SubscribeAsync(Handle, "watch", "path", static (ref r) => global::Interoper.JsJson.ReadArray(ref r, static (ref r1) => global::Interoper.JsJson.ReadArray(ref r1, global::Interoper.JsJson.ReadNumber)), handler, null, null);
 
-    public IAsyncEnumerable<double[][]> WatchPathStreamAsync(JsScope scope, CancellationToken cancellationToken = default) =>
-        scope.StreamAsync(Handle, "watch", "path", static (ref r) => JsJson.ReadArray(ref r, static (ref r1) => JsJson.ReadArray(ref r1, JsJson.ReadNumber)), null, null, cancellationToken);
+    public IAsyncEnumerable<double[][]> WatchPathStreamAsync(global::Interoper.JsScope scope, CancellationToken cancellationToken = default) =>
+        scope.StreamAsync(Handle, "watch", "path", static (ref r) => global::Interoper.JsJson.ReadArray(ref r, static (ref r1) => global::Interoper.JsJson.ReadArray(ref r1, global::Interoper.JsJson.ReadNumber)), null, null, cancellationToken);
 
     public new async Task<LineSnapshot> SnapshotAsync() =>
-        (await Realm.CallAsync(JsOp.Snapshot(Handle), LineSnapshot.Read))!;
+        (await Realm.CallAsync(global::Interoper.JsOp.Snapshot(Handle), LineSnapshot.Read))!;
 
     public Task ApplyAsync(LineSnapshot patch) =>
-        Realm.SendAsync(JsOp.Apply(Handle, w => LineSnapshot.WriteMembers(w, patch)));
+        Realm.SendAsync(global::Interoper.JsOp.Apply(Handle, w => LineSnapshot.WriteMembers(w, patch)));
 }

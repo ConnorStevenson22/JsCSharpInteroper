@@ -5,63 +5,63 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
-using Interoper;
 
 namespace GoldenSlice.Async;
 
-public sealed partial class Marker : Observable
+public partial class Marker : Observable
 {
-    internal Marker(JsRealm realm, int handle) : base(realm, handle) { }
+    internal Marker(global::Interoper.JsRealm realm, int handle) : base(realm, handle) { }
 
-    public static async Task<Marker> CreateAsync(JsScope scope, MarkerSnapshot props) =>
-        (await scope.Realm.CallAsync(JsOp.Create(DemoMaps.MarkerId, w => MarkerSnapshot.WriteMembers(w, props)), scope.Read<Marker>))!;
+    public static async Task<Marker> CreateAsync(global::Interoper.JsScope scope, MarkerSnapshot props) =>
+        (await scope.Realm.CallAsync(global::Interoper.JsOp.Create(DemoMaps.MarkerId, w => MarkerSnapshot.WriteMembers(w, props)), scope.Read<Marker>))!;
 
     public async Task<PointSnapshot> GetPositionAsync() =>
-        (await Realm.CallAsync(JsOp.Get(Handle, "position", byValue: true), PointSnapshot.Read))!;
+        (await Realm.CallAsync(global::Interoper.JsOp.Get(Handle, "position", byValue: true), PointSnapshot.Read))!;
 
     public Task SetPositionAsync(MarkerPositionInput value) =>
-        Realm.SendAsync(JsOp.Set(Handle, "position", w => JsJson.WriteValue(w, value)));
+        Realm.SendAsync(global::Interoper.JsOp.Set(Handle, "position", w => global::Interoper.JsJson.WriteValue(w, value)));
 
-    public Task<Opt<string>> GetLabelAsync() =>
-        Realm.CallAsync(JsOp.Get(Handle, "label"), static (ref r) => JsJson.ReadOpt(ref r, JsJson.ReadString));
+    public Task<global::Interoper.Opt<string>> GetLabelAsync() =>
+        Realm.CallAsync(global::Interoper.JsOp.Get(Handle, "label"), static (ref r) => global::Interoper.JsJson.ReadOpt(ref r, global::Interoper.JsJson.ReadString));
 
-    public Task SetLabelAsync(Opt<string> value) =>
-        Realm.SendAsync(JsOp.Set(Handle, "label", w => JsJson.WriteValue(w, value, JsJson.WriteString)));
+    public Task SetLabelAsync(global::Interoper.Opt<string> value) =>
+        Realm.SendAsync(global::Interoper.JsOp.Set(Handle, "label", w => global::Interoper.JsJson.WriteValue(w, value, global::Interoper.JsJson.WriteString)));
 
-    public Task<Style> GetStyleAsync() => Realm.CallAsync(JsOp.Get(Handle, "style"), JsJson.ReadUnion<Style>);
+    public Task<Style> GetStyleAsync() =>
+        Realm.CallAsync(global::Interoper.JsOp.Get(Handle, "style"), global::Interoper.JsJson.ReadUnion<Style>);
 
     public Task SetStyleAsync(Style value) =>
-        Realm.SendAsync(JsOp.Set(Handle, "style", w => JsJson.WriteValue(w, value)));
+        Realm.SendAsync(global::Interoper.JsOp.Set(Handle, "style", w => global::Interoper.JsJson.WriteValue(w, value)));
 
     public Task<string> GetDisplayLabelAsync() => Realm.GetStringAsync(Handle, "displayLabel");
 
-    public Task<IAsyncDisposable> WatchPositionAsync(JsScope scope, Action<PointSnapshot> handler) =>
+    public Task<IAsyncDisposable> WatchPositionAsync(global::Interoper.JsScope scope, Action<PointSnapshot> handler) =>
         scope.SubscribeAsync(Handle, "watch", "position", PointSnapshot.Read, handler, null, null);
 
-    public IAsyncEnumerable<PointSnapshot> WatchPositionStreamAsync(JsScope scope, CancellationToken cancellationToken = default) =>
+    public IAsyncEnumerable<PointSnapshot> WatchPositionStreamAsync(global::Interoper.JsScope scope, CancellationToken cancellationToken = default) =>
         scope.StreamAsync(Handle, "watch", "position", PointSnapshot.Read, null, null, cancellationToken);
 
-    public Task<IAsyncDisposable> WatchLabelAsync(JsScope scope, Action<Opt<string>> handler) =>
-        scope.SubscribeAsync(Handle, "watch", "label", static (ref r) => JsJson.ReadOpt(ref r, JsJson.ReadString), handler, null, null);
+    public Task<IAsyncDisposable> WatchLabelAsync(global::Interoper.JsScope scope, Action<global::Interoper.Opt<string>> handler) =>
+        scope.SubscribeAsync(Handle, "watch", "label", static (ref r) => global::Interoper.JsJson.ReadOpt(ref r, global::Interoper.JsJson.ReadString), handler, null, null);
 
-    public IAsyncEnumerable<Opt<string>> WatchLabelStreamAsync(JsScope scope, CancellationToken cancellationToken = default) =>
-        scope.StreamAsync(Handle, "watch", "label", static (ref r) => JsJson.ReadOpt(ref r, JsJson.ReadString), null, null, cancellationToken);
+    public IAsyncEnumerable<global::Interoper.Opt<string>> WatchLabelStreamAsync(global::Interoper.JsScope scope, CancellationToken cancellationToken = default) =>
+        scope.StreamAsync(Handle, "watch", "label", static (ref r) => global::Interoper.JsJson.ReadOpt(ref r, global::Interoper.JsJson.ReadString), null, null, cancellationToken);
 
-    public Task<IAsyncDisposable> WatchStyleAsync(JsScope scope, Action<Style> handler) =>
-        scope.SubscribeAsync(Handle, "watch", "style", JsJson.ReadUnion<Style>, handler, null, null);
+    public Task<IAsyncDisposable> WatchStyleAsync(global::Interoper.JsScope scope, Action<Style> handler) =>
+        scope.SubscribeAsync(Handle, "watch", "style", global::Interoper.JsJson.ReadUnion<Style>, handler, null, null);
 
-    public IAsyncEnumerable<Style> WatchStyleStreamAsync(JsScope scope, CancellationToken cancellationToken = default) =>
-        scope.StreamAsync(Handle, "watch", "style", JsJson.ReadUnion<Style>, null, null, cancellationToken);
+    public IAsyncEnumerable<Style> WatchStyleStreamAsync(global::Interoper.JsScope scope, CancellationToken cancellationToken = default) =>
+        scope.StreamAsync(Handle, "watch", "style", global::Interoper.JsJson.ReadUnion<Style>, null, null, cancellationToken);
 
-    public Task<IAsyncDisposable> WatchDisplayLabelAsync(JsScope scope, Action<string> handler) =>
-        scope.SubscribeAsync(Handle, "watch", "displayLabel", JsJson.ReadString, handler, null, null);
+    public Task<IAsyncDisposable> WatchDisplayLabelAsync(global::Interoper.JsScope scope, Action<string> handler) =>
+        scope.SubscribeAsync(Handle, "watch", "displayLabel", global::Interoper.JsJson.ReadString, handler, null, null);
 
-    public IAsyncEnumerable<string> WatchDisplayLabelStreamAsync(JsScope scope, CancellationToken cancellationToken = default) =>
-        scope.StreamAsync(Handle, "watch", "displayLabel", JsJson.ReadString, null, null, cancellationToken);
+    public IAsyncEnumerable<string> WatchDisplayLabelStreamAsync(global::Interoper.JsScope scope, CancellationToken cancellationToken = default) =>
+        scope.StreamAsync(Handle, "watch", "displayLabel", global::Interoper.JsJson.ReadString, null, null, cancellationToken);
 
     public new async Task<MarkerSnapshot> SnapshotAsync() =>
-        (await Realm.CallAsync(JsOp.Snapshot(Handle), MarkerSnapshot.Read))!;
+        (await Realm.CallAsync(global::Interoper.JsOp.Snapshot(Handle), MarkerSnapshot.Read))!;
 
     public Task ApplyAsync(MarkerSnapshot patch) =>
-        Realm.SendAsync(JsOp.Apply(Handle, w => MarkerSnapshot.WriteMembers(w, patch)));
+        Realm.SendAsync(global::Interoper.JsOp.Apply(Handle, w => MarkerSnapshot.WriteMembers(w, patch)));
 }

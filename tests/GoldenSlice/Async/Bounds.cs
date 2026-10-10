@@ -2,7 +2,6 @@
 #nullable enable
 
 using System.Text.Json;
-using Interoper;
 
 namespace GoldenSlice.Async;
 
@@ -17,13 +16,13 @@ public sealed partial record Bounds
     {
         writer.WriteStartObject();
         writer.WritePropertyName("minX"u8);
-        JsJson.WriteNumber(writer, value.MinX);
+        global::Interoper.JsJson.WriteNumber(writer, value.MinX);
         writer.WritePropertyName("minY"u8);
-        JsJson.WriteNumber(writer, value.MinY);
+        global::Interoper.JsJson.WriteNumber(writer, value.MinY);
         writer.WritePropertyName("maxX"u8);
-        JsJson.WriteNumber(writer, value.MaxX);
+        global::Interoper.JsJson.WriteNumber(writer, value.MaxX);
         writer.WritePropertyName("maxY"u8);
-        JsJson.WriteNumber(writer, value.MaxY);
+        global::Interoper.JsJson.WriteNumber(writer, value.MaxY);
         writer.WriteEndObject();
     }
 
@@ -36,10 +35,10 @@ public sealed partial record Bounds
             reader.Read();
             switch (property)
             {
-                case "minX": minX = JsJson.ReadNumber(ref reader); break;
-                case "minY": minY = JsJson.ReadNumber(ref reader); break;
-                case "maxX": maxX = JsJson.ReadNumber(ref reader); break;
-                case "maxY": maxY = JsJson.ReadNumber(ref reader); break;
+                case "minX": minX = global::Interoper.JsJson.ReadNumber(ref reader); break;
+                case "minY": minY = global::Interoper.JsJson.ReadNumber(ref reader); break;
+                case "maxX": maxX = global::Interoper.JsJson.ReadNumber(ref reader); break;
+                case "maxY": maxY = global::Interoper.JsJson.ReadNumber(ref reader); break;
                 default: reader.Skip(); break;
             }
         }

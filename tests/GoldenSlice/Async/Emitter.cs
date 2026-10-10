@@ -2,20 +2,19 @@
 #nullable enable
 
 using System.Threading.Tasks;
-using Interoper;
 
 namespace GoldenSlice.Async;
 
 public partial class Emitter : Observable
 {
-    internal Emitter(JsRealm realm, int handle) : base(realm, handle) { }
+    internal Emitter(global::Interoper.JsRealm realm, int handle) : base(realm, handle) { }
 
-    public static async Task<Emitter> CreateAsync(JsScope scope, EmitterSnapshot props) =>
-        (await scope.Realm.CallAsync(JsOp.Create(DemoMaps.EmitterId, w => EmitterSnapshot.WriteMembers(w, props)), scope.Read<Emitter>))!;
+    public static async Task<Emitter> CreateAsync(global::Interoper.JsScope scope, EmitterSnapshot props) =>
+        (await scope.Realm.CallAsync(global::Interoper.JsOp.Create(DemoMaps.EmitterId, w => EmitterSnapshot.WriteMembers(w, props)), scope.Read<Emitter>))!;
 
     public new async Task<EmitterSnapshot> SnapshotAsync() =>
-        (await Realm.CallAsync(JsOp.Snapshot(Handle), EmitterSnapshot.Read))!;
+        (await Realm.CallAsync(global::Interoper.JsOp.Snapshot(Handle), EmitterSnapshot.Read))!;
 
     public Task ApplyAsync(EmitterSnapshot patch) =>
-        Realm.SendAsync(JsOp.Apply(Handle, w => EmitterSnapshot.WriteMembers(w, patch)));
+        Realm.SendAsync(global::Interoper.JsOp.Apply(Handle, w => EmitterSnapshot.WriteMembers(w, patch)));
 }

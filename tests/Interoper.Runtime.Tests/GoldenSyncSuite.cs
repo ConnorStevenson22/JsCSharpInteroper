@@ -4,6 +4,7 @@
 using GoldenSlice.Sync;
 using GoldenSlice.Sync.Layers;
 using static Interoper.Contract.Check;
+using Ops = GoldenSlice.Sync.Ops;
 
 namespace Interoper.Contract;
 
@@ -38,6 +39,11 @@ public static class GoldenSyncSuite
         ("callbacks are released with their scope (R21)", InScope(CallbacksAreReleasedWithTheirScope)),
         ("handles in a callback's arguments that nothing reads are released with its scope (R21)", InScope(UnreadArgumentsAreReleased)),
         ("Diff: arrays, unions and nested snapshots, then Apply (R18)", InScope(DiffThenApply)),
+        ("a mixin keeps its class's base: a Pin is a Marker (R4, R19)", InScope(Mixin)),
+        ("a subscription with remove() instead of dispose(), delivered then released (R24)", InScope(RemoveSubscription)),
+        ("any is JsAny: data, or a handle the scope owns (§2)", InScope(Any)),
+        ("a union with an entity case is a parameter's (R2, R17)", InScope(WrittenUnion)),
+        ("same-named types of sibling modules (R27)", InScope(SiblingModules)),
     ];
 
     private static void CreateSnapshotApply(JsScope scope)
@@ -414,6 +420,59 @@ public static class GoldenSyncSuite
         Equal(new MarkerSnapshot { Style = new StrokeStyle { Color = "blue", Width = 2 } }, stroke);
         marker.Apply(stroke);
         Equal(style with { Style = new StrokeStyle { Color = "blue", Width = 2 } }, marker.Snapshot());
+    }
+
+    private static void Mixin(JsScope scope)
+    {
+        var view = MapView.Create(scope, new MapViewSnapshot());
+        var pin = Pin.Create(scope, new PinSnapshot { Position = new PointSnapshot { X = 1, Y = 2 }, Label = "p" });
+        view.SetSelected(pin); // where a Marker is expected
+        Expect(view.GetSelected(scope).TryGetValue(out Marker? selected) && selected is Pin && ReferenceEquals(selected, pin), "the selected marker to be the Pin");
+        Equal("p", pin.DisplayLabel);
+        pin.DragBy(2, 3);
+        Equal(new PointSnapshot { X = 3, Y = 5 }, pin.Position);
+    }
+
+    private static async Task RemoveSubscription(JsScope scope)
+    {
+        var pin = Pin.Create(scope, new PinSnapshot());
+        var baseline = await Count(scope.Realm);
+        var drags = new List<PinDragEvent>();
+        using (pin.OnDrag(scope, drags.Add)) // its `on` returns a subscription with remove()
+        {
+            pin.DragBy(1, 2);
+        }
+        Equal(baseline, await Count(scope.Realm)); // released before the scope
+        pin.DragBy(3, 4);
+        Equal(new PinDragEvent { Dx = 1, Dy = 2 }, drags.Single());
+    }
+
+    private static void Any(JsScope scope)
+    {
+        var pin = Pin.Create(scope, new PinSnapshot());
+        Expect(pin.GetMeta(scope).IsUndefined, "meta to start undefined");
+        pin.SetMeta(JsAny.Parse("""{"id":7,"tags":["a"]}"""));
+        Expect(pin.GetMeta(scope).TryGetValue(out JsAny? meta) && meta.Json.GetProperty("id").GetDouble() == 7, "meta to read back as data");
+        var marker = Marker.Create(scope, new MarkerSnapshot());
+        pin.SetMeta(JsAny.From(marker, JsObject.Write)); // a live object, as its handle
+        Expect(pin.GetMeta(scope).TryGetValue(out JsAny? held) && ReferenceEquals(held.Read(scope.Read<Marker>), marker), "the handle to be the same marker");
+        pin.SetMeta(null);
+        Expect(pin.GetMeta(scope).IsNull, "meta to be null");
+    }
+
+    private static void WrittenUnion(JsScope scope)
+    {
+        Equal("point", Measure.Describe(scope.Realm, new PointSnapshot()));
+        Equal("polygon", Measure.Describe(scope.Realm, new PolygonSnapshot { Vertices = new double[][] { [0, 0], [1, 0], [0, 1] } }));
+        Equal("marker m", Measure.Describe(scope.Realm, Marker.Create(scope, new MarkerSnapshot { Label = "m" })));
+        Equal("marker p", Measure.Describe(scope.Realm, Pin.Create(scope, new PinSnapshot { Label = "p" }))); // a subclass of the case
+    }
+
+    private static void SiblingModules(JsScope scope)
+    {
+        Equal(6.0, Ops.A.Execute(scope.Realm, 3, new Ops.Options { Scale = 2 }));
+        Equal(5.0, Ops.B.Execute(scope.Realm, 3, new Ops.BOptions { Offset = 2 }));
+        Equal(3.0, Ops.B.Execute(scope.Realm, 3));
     }
 
     // --- Helpers ---

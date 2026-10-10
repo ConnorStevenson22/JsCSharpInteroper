@@ -22,6 +22,7 @@ Verified ([design §8](design.md#8-evidence)).
 - `default` is `undefined`: tag 0, and `Value` returns `Undefined.Value`.
 - The `null` literal compiles through a generated `implicit operator X(Undefined? value)` and means JS `null`.
 - Each case has `TryGetValue(out T)`, plus `HasValue`, `IsUndefined` and `IsNull`.
+- **A union that is only written**, a parameter's or a setter's wider type, may have a case that needs a scope to be read: an entity, or a record that holds one (R17). Writing needs none. It also drops a case that is a class outside the selection, reported as IOP2007 with the union as the subject. Nothing reads it, so it skips R19 and its `ReadValue` throws. Where the same union would be read (a getter, a result, a record member), the member is skipped (IOP2007).
 - The struct implements the runtime's `IJsUnion<TSelf>`, which requires the `null` conversion and static `WriteValue`/`ReadValue` for the cases. The runtime's `JsJson` helpers handle undefined and null once for every union and `Opt<T>`. Everything else (tag, constructors, `TryGetValue`, equality) is generated per union.
 
 Why not the `union` keyword: its `default` is `null`, and it boxes value types.
@@ -89,17 +90,18 @@ The nullable bottom case is what makes the compiler demand the `null` arm. With 
 | interface with only data members | data record (keeps the interface's name) | §3 |
 | intersection of data bags (`A & { type: "x" }`) | one flattened record of the checker-resolved members | **R11.** |
 | intersection used as a mixin | C# interfaces on the live class | |
-| generic `T` | C# generic over entities (`where T : JsObject`) where it's reified at runtime (`Collection<T>`); a constrained type parameter isn't mapped yet (IOP2007) | See below |
+| class whose base is a mixin's (`extends PinSuperclass`, where `PinSuperclass: typeof Marker & typeof Draggable`) | a live class deriving from the named class (`Pin : Marker`), with the mixin's members as its own | The extractor resolves it ([ir.md](ir.md#declarations)) |
+| generic `T` | C# generic over entities (`where T : JsObject`) where it's reified at runtime (`Collection<T>`); a constrained type parameter isn't mapped yet (IOP2007), and a default (`T = any`) is ignored | See below |
 | `this` (return type) | the declaring type | |
 | `keyof`, indexed access, mapped, conditional, `typeof` | the type the checker resolves | **R12.** Unresolvable → `JsAny` + diagnostic IOP2002 |
-| `any`, `unknown`, `object` | `JsAny`: an opaque handle with untyped get/set/call | Diagnostic IOP2001 |
+| `any`, `unknown`, `object` | `JsAny`: the value's JSON, untyped. Plain objects and arrays are copies; other objects are handles, which the scope that read it owns, so it's read with a scope (R17) and isn't in snapshots. It's `Opt<JsAny>`, since `any` includes null and undefined (R3). `meta.Read(JsJson.ReadNumber)` or `meta.Read(scope.Read<Marker>)` reads it as a type; `JsAny.Parse(json)` and `JsAny.From(value, write)` make one | Diagnostic IOP2001. Not a union case |
 | DOM element types (`HTMLElement`, `HTMLDivElement`) | `ElementReference` | **R13.** So Blazor `@ref`s can be passed directly |
 | other DOM types (`MouseEvent`, `ImageData`) | `JsAny` until a DOM binding exists (WebIDL front end, see [plan](plan.md) "Later") | |
 | `AbortSignal` (parameter) | `CancellationToken` | **R14.** Bridged by the runtime |
 | `ArrayBuffer`, typed arrays | `byte[]` / `T[]` | Binary transfer is a later optimisation |
 | function type | delegate (`Action<…>` / `Func<…>`) | §5, R21 |
 
-**Generics.** A type parameter without a constraint stands for an entity (`where T : JsObject`), read with the scope like any entity; a constrained one isn't mapped yet (IOP2007).
+**Generics.** A type parameter without a constraint stands for an entity (`where T : JsObject`), read with the scope like any entity; a constrained one isn't mapped yet (IOP2007). A default (`Collection<T = any>`) doesn't matter, since C# always has the type argument.
 - A class the profile lists in `collections` is a live generic class (`Collection<T> : Emitter where T : JsObject` in the fixture). It has no `Create`, since its owner makes it (its constructor isn't a bag, IOP2007), and no registry entry, since the registry can't make an instance of an unknown type argument: what reads one passes `JsScope.Read(ref reader, create)` a factory (`static (realm, handle) => new Collection<Marker>(realm, handle)`), and identity still holds (R19). So a collection is read only through its collection-typed members (`MapView.markers`), never as a `JsObject` or through a base. A use with a type argument that isn't an entity (`Collection<number>`) is skipped (IOP2007).
 - A generic data interface is a generic record (`CollectionChangeEvent<T>`), with the same constraint.
 
@@ -122,7 +124,7 @@ The profile overrides either way. Getting this wrong is the classic failure mode
 Sent to JS, a snapshot record of a value-like class arrives as an instance: the writer adds its concrete class id (`$c`, [design §3.4](design.md#34-protocol)) and the runtime calls `new Point(bag)`. The bag keeps its constants, such as the discriminant (R20). Data records stay plain objects. The snapshots of an abstract value-like base form a `closed record` hierarchy (`ShapeSnapshot`), read by the discriminant (R19 step 2).
 
 **R17. Snapshot depth.** Snapshot records carry data members only, copying value-like members deeply as their snapshot records. Entity members are not in snapshots, because reading one needs a scope: read them with their scoped getter (`GetSelected(scope)`).
-- **Scoped records.** A data record (not a snapshot) may hold entities, directly, in arrays or through a type parameter (`{ added: T[] }`). It's *scoped*: its reader is `Read(ref reader, JsScope scope)`, which reads each handle with the scope, so what returns or delivers one takes a scope (§5). A union can't have an entity or a scoped record as a case yet, since its reader takes no scope (IOP2007).
+- **Scoped records.** A data record (not a snapshot) may hold entities, directly, in arrays or through a type parameter (`{ added: T[] }`). It's *scoped*: its reader is `Read(ref reader, JsScope scope)`, which reads each handle with the scope, so what returns or delivers one takes a scope (§5). A union's reader takes no scope, so only a union that is only written can have an entity or a scoped record as a case (R2).
 
 **R18. Every live class has an `XSnapshot` record.** It carries the class's writable data members, all optional, each with its getter's type where the setter's differs (`MarkerSnapshot.Position` is a `PointSnapshot`). Read-only members are read with their getters. One type serves as:
 - what `Snapshot()`/`SnapshotAsync()` returns;
@@ -194,13 +196,14 @@ Sync mode needs .NET and JS on one thread, so it runs on WebAssembly only and fa
 - **`EventOptions`** (`Interoper.Runtime`) carry what JS must do before the event reaches .NET, because Server and Hybrid can't call `preventDefault()` in time from .NET: `PreventDefault` and `StopPropagation` call the event's methods of those names when it has them, so library events with them work as DOM events do. `Fields` names the payload's top-level members to send. They travel with the `subscribe` op ([design §3.4](design.md#34-protocol)); watches take none.
 - **Default projection.** When the payload is a data record, the generated member passes the record's wire members, constants included, as the default fields, and `options.Fields` replaces them. What the record doesn't have (DOM values, methods, live objects) never crosses the wire, so payloads stay small and leak no handles. A member that isn't sent is `default` in the record (null for a reference). Any other payload is sent whole.
 - **Payload interfaces.** An interface an event names directly as its payload (not through an alias or a union), and its bases, become data records with their methods left out, one IOP2007 per method, instead of being skipped whole.
+- **Subscriptions.** The profile's subscribe and watch methods return an object with `dispose()`, or `remove()` as some libraries name it; releasing the subscription calls whichever it has ([design §3.4](design.md#34-protocol)).
 - **Streams** (async mode). `OnXStreamAsync` and `WatchXStreamAsync` (§5) subscribe when the enumeration first moves, and release the subscription when it ends: on `break`, cancellation or disposal. Disposing the scope ends its open streams normally, after what's already queued. JS can't be paused, so there's no backpressure: values queue without bound until they're read, and projection keeps them small.
 
 ---
 
 ## 6. Naming
 
-**R25. Literal values → enum member names.** Split on non-alphanumerics and PascalCase each part (`"simple-marker"` → `SimpleMarker`). A leading digit gets an underscore (`"3d"` → `_3d`); the empty string becomes `Empty`. Duplicates after normalization get a numeric suffix and IOP2006. The profile can rename.
+**R25. Literal values → enum member names.** Split on non-alphanumerics and PascalCase each part (`"simple-marker"` → `SimpleMarker`). A leading digit gets an underscore (`"3d"` → `_3d`); the empty string becomes `Empty`. Duplicates after normalization get a numeric suffix and IOP2006, reported once for each distinct rename, with the first enum that has it: an anonymous union that many owners repeat is an enum per owner (`…, and in 2 other enums`). The profile can rename.
 
 **R26. Members** are PascalCased. Async mode appends `Async`.
 - A JS member that collides with a generated member (`getZoom()` next to `zoom` in async mode) or with an `object` member (`toString()`, `equals()`) is renamed (`JsToString`, `JsEquals`) with IOP2006.
@@ -209,9 +212,10 @@ Sync mode needs .NET and JS on one thread, so it runs on WebAssembly only and fa
 
 **R27. Types** keep the TypeScript name in PascalCase.
 - **Namespaces.** A type's namespace is the consumer's root namespace plus its module's folders in the package, each PascalCased: `layers/TileLayer.js` gives `Acme.Maps.Layers`. Its file's path mirrors the namespace (`Layers/TileLayer.cs`). The registry `{Package}.cs` and the metadata module stay at the root.
-- **References.** Generated code names a type in its own namespace plainly, and a type in another namespace by its `global::`-qualified name (`global::Acme.Maps.Geometry.Extent`). In `Acme.Maps.Geometry.Support`, say, `Geometry.Extent` would otherwise mean a member of the class `Acme.Maps.Geometry.Geometry`.
+- **References.** Generated code names a type in its own namespace plainly, and a type in another namespace by its `global::`-qualified name (`global::Acme.Maps.Geometry.Extent`). In `Acme.Maps.Geometry.Support`, say, `Geometry.Extent` would otherwise mean a member of the class `Acme.Maps.Geometry.Geometry`. The runtime's types are always qualified (`global::Interoper.Opt<double>`, `global::Interoper.JsJson`), and generated files have no `using Interoper;`, so a member named `JsJson` or `Opt` hides none of them.
+- **Sibling modules.** Modules of one folder can declare types of one name (`ops/a.js` and `ops/b.js` each export `Options`). The first in IR order keeps it; a later one is prefixed with its module's name (`BOptions`), and its users use that name, so both compile.
 
-Anonymous unions are named after their owner: `Feature.shape` becomes `FeatureShape`, and its setter-only wider type becomes `FeatureShapeInput`. A method's result is named after the method (`Feature.moveTo` → `FeatureMoveTo`), a parameter's after the method and the parameter (`FeatureMoveToTarget`), and an event's payload after the event (`FeatureClick`). When two generated types would share a path, the registry keeps its name and a module's static class takes the next free one (`Measure2`), since nothing refers to it, and so does one whose full name is a namespace's; any other later type is skipped, and so is a type with the full name of a namespace (`Layers` next to the `layers/` folder). A skipped type's users are not removed with it, so they don't compile until the profile renames it. Classes of one name in different namespaces get class id constants prefixed with their namespace below the root (`LayersPointId`), whatever the order of the modules; a class in the root namespace keeps `PointId`. All of these are IOP2006, with the type's full name (or the module, for its static class) as the subject.
+Anonymous unions are named after their owner: `Feature.shape` becomes `FeatureShape`, and its setter-only wider type becomes `FeatureShapeInput`. A method's result is named after the method (`Feature.moveTo` → `FeatureMoveTo`), a parameter's after the method and the parameter (`FeatureMoveToTarget`), and an event's payload after the event (`FeatureClick`). The registry is named after the package without its scope (`Maps`); when a namespace has that name (`@acme/core` with a `core/` folder gives `Acme.Core`), it takes the next free one (`Core2`). When two generated types would share a path, the registry keeps its name and a module's static class takes the next free one (`Measure2`), since nothing refers to it, and so does one whose full name is a namespace's; any other later type is skipped (an anonymous type named like a declared one, say), and so is a type with the full name of a namespace (`Layers` next to the `layers/` folder). A skipped type's users are not removed with it, so they don't compile until the profile renames it. Classes of one name in different namespaces get class id constants prefixed with their namespace below the root (`LayersPointId`), whatever the order of the modules; a class in the root namespace keeps `PointId`. All of these are IOP2006, with the type's full name (or the module, for its static class and a sibling's renamed type) as the subject.
 
 ---
 
@@ -234,13 +238,13 @@ Every fallback is reported with a code so consumers can see and tune what didn't
 
 | Code | Meaning |
 |---|---|
-| IOP2001 | `any` / `unknown` / `object` mapped to `JsAny` |
+| IOP2001 | `any` / `unknown` / `object` mapped to `JsAny`, for each member, parameter or result that has it |
 | IOP2002 | Type the checker couldn't resolve, mapped to `JsAny` |
 | IOP2003 | Skipped: an ambiguous union (R19), whose cases can't be told apart, and what uses it. Profile override needed |
 | IOP2004 | Overloads merged after mapping |
 | IOP2005 | Skipped in async mode: a member whose callback's result JS uses synchronously (R21) |
-| IOP2006 | Name changed to avoid a collision (R25, R26); a module's static class renamed, or a type skipped, because its path or full name is taken or is a namespace's; a class id prefixed because classes in other namespaces share its name (R27) |
-| IOP2007 | Skipped: a declaration, member or optional parameter the generator can't map (yet), or that uses one, or a class outside the selection |
+| IOP2006 | Name changed to avoid a collision (R25, R26); the registry, a module's static class or a sibling module's type renamed, or a type skipped, because its path or full name is taken or is a namespace's; a class id prefixed because classes in other namespaces share its name (R27) |
+| IOP2007 | Skipped: a declaration, member or optional parameter the generator can't map (yet), or that uses one, or a class outside the selection; or a union case dropped where the union is only written (R2) |
 | IOP3001 | Analyzer (Info): two or more consecutive awaited writes to live objects outside `await using (scope.BeginBatch())`, each a round trip on Server ([design §3.3](design.md#33-batching-async-mode)). A write is an awaited statement calling an instance method of a `JsObject`-derived type that returns `Task`, with or without `ConfigureAwait`; reads return `Task<T>` and aren't counted. A run is consecutive statements of a block, a switch section or the top-level statements, and is reported once, on its second statement. The batch can also be a local that `BeginBatch()` initialised (`await using (batch)`). A lambda or local function isn't in its method's batch, since it may run later. Info, so builds with `TreatWarningsAsErrors` don't break; raise it with `dotnet_diagnostic.IOP3001.severity = warning` in `.editorconfig` |
 
 ---

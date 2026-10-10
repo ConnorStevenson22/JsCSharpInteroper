@@ -5,16 +5,15 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
-using Interoper;
 
 namespace GoldenSlice.Async;
 
 public sealed partial class Point : Shape
 {
-    internal Point(JsRealm realm, int handle) : base(realm, handle) { }
+    internal Point(global::Interoper.JsRealm realm, int handle) : base(realm, handle) { }
 
-    public static async Task<Point> CreateAsync(JsScope scope, PointSnapshot props) =>
-        (await scope.Realm.CallAsync(JsOp.Create(DemoMaps.PointId, w => PointSnapshot.WriteMembers(w, props)), scope.Read<Point>))!;
+    public static async Task<Point> CreateAsync(global::Interoper.JsScope scope, PointSnapshot props) =>
+        (await scope.Realm.CallAsync(global::Interoper.JsOp.Create(DemoMaps.PointId, w => PointSnapshot.WriteMembers(w, props)), scope.Read<Point>))!;
 
     public Task<double> GetXAsync() => Realm.GetNumberAsync(Handle, "x");
 
@@ -24,21 +23,21 @@ public sealed partial class Point : Shape
 
     public Task SetYAsync(double value) => Realm.SetAsync(Handle, "y", value);
 
-    public Task<IAsyncDisposable> WatchXAsync(JsScope scope, Action<double> handler) =>
-        scope.SubscribeAsync(Handle, "watch", "x", JsJson.ReadNumber, handler, null, null);
+    public Task<IAsyncDisposable> WatchXAsync(global::Interoper.JsScope scope, Action<double> handler) =>
+        scope.SubscribeAsync(Handle, "watch", "x", global::Interoper.JsJson.ReadNumber, handler, null, null);
 
-    public IAsyncEnumerable<double> WatchXStreamAsync(JsScope scope, CancellationToken cancellationToken = default) =>
-        scope.StreamAsync(Handle, "watch", "x", JsJson.ReadNumber, null, null, cancellationToken);
+    public IAsyncEnumerable<double> WatchXStreamAsync(global::Interoper.JsScope scope, CancellationToken cancellationToken = default) =>
+        scope.StreamAsync(Handle, "watch", "x", global::Interoper.JsJson.ReadNumber, null, null, cancellationToken);
 
-    public Task<IAsyncDisposable> WatchYAsync(JsScope scope, Action<double> handler) =>
-        scope.SubscribeAsync(Handle, "watch", "y", JsJson.ReadNumber, handler, null, null);
+    public Task<IAsyncDisposable> WatchYAsync(global::Interoper.JsScope scope, Action<double> handler) =>
+        scope.SubscribeAsync(Handle, "watch", "y", global::Interoper.JsJson.ReadNumber, handler, null, null);
 
-    public IAsyncEnumerable<double> WatchYStreamAsync(JsScope scope, CancellationToken cancellationToken = default) =>
-        scope.StreamAsync(Handle, "watch", "y", JsJson.ReadNumber, null, null, cancellationToken);
+    public IAsyncEnumerable<double> WatchYStreamAsync(global::Interoper.JsScope scope, CancellationToken cancellationToken = default) =>
+        scope.StreamAsync(Handle, "watch", "y", global::Interoper.JsJson.ReadNumber, null, null, cancellationToken);
 
     public new async Task<PointSnapshot> SnapshotAsync() =>
-        (await Realm.CallAsync(JsOp.Snapshot(Handle), PointSnapshot.Read))!;
+        (await Realm.CallAsync(global::Interoper.JsOp.Snapshot(Handle), PointSnapshot.Read))!;
 
     public Task ApplyAsync(PointSnapshot patch) =>
-        Realm.SendAsync(JsOp.Apply(Handle, w => PointSnapshot.WriteMembers(w, patch)));
+        Realm.SendAsync(global::Interoper.JsOp.Apply(Handle, w => PointSnapshot.WriteMembers(w, patch)));
 }

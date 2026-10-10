@@ -2,33 +2,32 @@
 #nullable enable
 
 using System.Text.Json;
-using Interoper;
 
 namespace GoldenSlice.Async.Layers;
 
 public sealed partial record LayerSnapshot
 {
-    public Opt<string> Title { get; init; }
-    public Opt<bool> Visible { get; init; }
+    public global::Interoper.Opt<string> Title { get; init; }
+    public global::Interoper.Opt<bool> Visible { get; init; }
 
     public static void WriteMembers(Utf8JsonWriter writer, LayerSnapshot value)
     {
-        JsJson.WriteProperty(writer, "title"u8, value.Title, JsJson.WriteString);
-        JsJson.WriteProperty(writer, "visible"u8, value.Visible, JsJson.WriteBoolean);
+        global::Interoper.JsJson.WriteProperty(writer, "title"u8, value.Title, global::Interoper.JsJson.WriteString);
+        global::Interoper.JsJson.WriteProperty(writer, "visible"u8, value.Visible, global::Interoper.JsJson.WriteBoolean);
     }
 
     public static LayerSnapshot Read(ref Utf8JsonReader reader)
     {
-        Opt<string> title = default;
-        Opt<bool> visible = default;
+        global::Interoper.Opt<string> title = default;
+        global::Interoper.Opt<bool> visible = default;
         while (reader.Read() && reader.TokenType == JsonTokenType.PropertyName)
         {
             var property = reader.GetString();
             reader.Read();
             switch (property)
             {
-                case "title": title = JsJson.ReadOpt(ref reader, JsJson.ReadString); break;
-                case "visible": visible = JsJson.ReadOpt(ref reader, JsJson.ReadBoolean); break;
+                case "title": title = global::Interoper.JsJson.ReadOpt(ref reader, global::Interoper.JsJson.ReadString); break;
+                case "visible": visible = global::Interoper.JsJson.ReadOpt(ref reader, global::Interoper.JsJson.ReadBoolean); break;
                 default: reader.Skip(); break;
             }
         }
@@ -37,7 +36,7 @@ public sealed partial record LayerSnapshot
 
     public static LayerSnapshot Diff(LayerSnapshot before, LayerSnapshot after) => new()
     {
-        Title = after.Title.IsUndefined || JsDiff.Same(before.Title, after.Title) ? default : after.Title,
-        Visible = after.Visible.IsUndefined || JsDiff.Same(before.Visible, after.Visible) ? default : after.Visible,
+        Title = after.Title.IsUndefined || global::Interoper.JsDiff.Same(before.Title, after.Title) ? default : after.Title,
+        Visible = after.Visible.IsUndefined || global::Interoper.JsDiff.Same(before.Visible, after.Visible) ? default : after.Visible,
     };
 }
