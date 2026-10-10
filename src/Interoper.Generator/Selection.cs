@@ -28,13 +28,16 @@ public sealed record SelectedElement(string Module, Element Element, ClassDeclar
 /// selection instead (R2). The profile's collection classes are generic live classes, and generic interfaces generic
 /// records; their type parameters are entities (mapping §2). A use of <c>any</c>, <c>unknown</c> or <c>object</c> is
 /// reported as IOP2001. Each custom element of an emitted class gets a component (R28); an element's event map, whose
-/// events the component binds from the manifest, isn't emitted. An internal module can't be imported, so its classes
-/// have no <c>Create</c> and its functions are skipped (IOP2007).
+/// events the component binds from the manifest, isn't emitted. A declaration that can't be imported (an internal
+/// module's that nothing re-exports, design §3.5) has no <c>Create</c>, function or component (IOP2007).
 /// </summary>
 public sealed class Selection
 {
     /// <summary>The primitives that map to <c>JsAny</c> (mapping §2), each use reported as IOP2001.</summary>
     private static readonly string[] Untyped = ["any", "unknown", "object"];
+
+    /// <summary>Design §3.5: a declaration whose module is internal, and that no reachable module re-exports.</summary>
+    private const string Unimportable = "can't be imported (its module is internal)";
 
     private static readonly HashSet<string> SupportedPrimitives = ["string", "number", "boolean", "void", "undefined", "null", .. Untyped];
 
@@ -170,8 +173,8 @@ public sealed class Selection
             case ClassDeclaration c:
                 AddClass(c);
                 break;
-            case FunctionDeclaration f when types.IsInternal(moduleOf[f]):
-                Report(new(Diagnostic.NotSupported, f.Name, "skipped: its module is internal, so it can't be called"));
+            case FunctionDeclaration f when types.Import(f) is null:
+                Report(new(Diagnostic.NotSupported, f.Name, $"skipped: it {Unimportable}"));
                 break;
             case FunctionDeclaration f:
                 var signatures = Signatures(f.Name, f.Signatures);
@@ -202,13 +205,11 @@ public sealed class Selection
     private void AddClass(ClassDeclaration c)
     {
         typeParameters = c.TypeParameters;
-        if (!c.Abstract && types.IsInternal(moduleOf[c]))
+        if (!c.Abstract && !types.Constructible(c))
         {
-            Report(new(Diagnostic.NotSupported, $"{c.Name}.constructor", "skipped: its module is internal, so there's no Create (R18)"));
-        }
-        else if (!c.Abstract && !types.Constructible(c))
-        {
-            Report(new(Diagnostic.NotSupported, $"{c.Name}.constructor", "skipped: its parameter isn't a bag, so there's no Create (R18)"));
+            Report(new(Diagnostic.NotSupported, $"{c.Name}.constructor", types.Import(c) is not null
+                ? "skipped: its parameter isn't a bag, so there's no Create (R18)"
+                : $"skipped: it {Unimportable}, so there's no Create (R18){(types.IsValueLike(c) ? " and it can't be sent as a value (R16)" : "")}"));
         }
         var members = new List<Member>();
         foreach (var member in c.Members.Where(m => !IsConvention(m)))
@@ -277,6 +278,11 @@ public sealed class Selection
         if (element.Class is not RefType { Module: not null } r || Find(r) is not ClassDeclaration c || !selected.TryGetValue(c, out var s) ||
             c.TypeParameters.Count > 0)
         {
+            return;
+        }
+        if (types.Import(c) is null)
+        {
+            Report(new(Diagnostic.NotSupported, $"<{element.Tag}>", $"skipped: its class {Unimportable}, so nothing defines the element (R28)"));
             return;
         }
         var component = Naming.Type(element.Tag);

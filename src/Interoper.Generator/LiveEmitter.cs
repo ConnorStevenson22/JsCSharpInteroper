@@ -247,7 +247,8 @@ internal sealed class LiveEmitter
     /// one with a callback whose result JS uses is skipped in async mode (IOP2005). <paramref name="export"/> is the name
     /// JS calls, when it isn't <paramref name="js"/>: a module's default export.
     /// </summary>
-    private void Calls(string owner, string js, IReadOnlyList<Signature> signatures, string? self, string? export = null)
+    /// <param name="module">For a module's function, the expression naming the module JS imports it from.</param>
+    private void Calls(string owner, string js, IReadOnlyList<Signature> signatures, string? self, string? export = null, string module = "Module")
     {
         var names = new Dictionary<string, string>();
         foreach (var signature in signatures)
@@ -262,7 +263,7 @@ internal sealed class LiveEmitter
             var name = Mode(Naming.Pascal(js), promise);
             name = names.TryGetValue(name, out var claimed) ? claimed : names[name] = Claim(name, $"{owner}.{js}");
             var scoped = result?.Type.Scoped == true || callbacks.Count > 0;
-            var op = $"global::Interoper.JsOp.Call({(self is null ? "Module" : "Handle")}, {Syntax.Literal(export ?? js)}{args}{ByValue(returns)})";
+            var op = $"global::Interoper.JsOp.Call({(self is null ? module : "Handle")}, {Syntax.Literal(export ?? js)}{args}{ByValue(returns)})";
             var (type, body) = Run(self is not null ? "Realm" : scoped ? "scope.Realm" : "realm", op, result, async || promise);
             var (first, firstType) = scoped ? ("global::Interoper.JsScope scope", "global::Interoper.JsScope") : self is null ? ("global::Interoper.JsRealm realm", "global::Interoper.JsRealm") : (null, null);
             var hides = Declare(name, firstType is null ? keys : keys.Prepend(firstType));
@@ -299,10 +300,14 @@ internal sealed class LiveEmitter
         using (w.Block($"public static partial class {name}"))
         {
             Separate();
-            w.Line($"private const string Module = {Syntax.Literal(specifier)};");
-            foreach (var f in functions)
+            // Design §3.5: functions are called through the module they're imported from, which for an internal module's
+            // is the one that re-exports them (each may have its own).
+            var imports = functions.Select(f => (Function: f, Import: types.Import(f)!.Value)).ToList();
+            var module = imports.Count > 0 ? imports[0].Import.Module : specifier;
+            w.Line($"private const string Module = {Syntax.Literal(module)};");
+            foreach (var (f, import) in imports)
             {
-                Calls(name, f.Name, f.Signatures, null, f.Export);
+                Calls(name, f.Name, f.Signatures, null, import.Export, import.Module == module ? "Module" : Syntax.Literal(import.Module));
             }
         }
     }

@@ -156,7 +156,7 @@ internal sealed class ComponentEmitter
             w.Line();
             Render(s.Element.Tag, parameters, callbacks, slots, bound);
             w.Line();
-            AfterRender(element, s.Module, parameters, bound);
+            AfterRender(element, types.Import(s.Class)!.Value.Module, parameters, bound);
             foreach (var callback in callbacks)
             {
                 w.Line();

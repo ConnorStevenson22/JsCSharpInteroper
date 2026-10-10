@@ -205,8 +205,15 @@ internal sealed class TypeMap
     /// <summary>The package a module is in.</summary>
     public string PackageOf(string module) => modules.GetValueOrDefault(module)?.Package ?? package;
 
-    /// <summary>Whether no export of its package reaches a module, which then can't be imported (ir.md).</summary>
-    public bool IsInternal(string module) => modules.GetValueOrDefault(module)?.Internal ?? false;
+    /// <summary>
+    /// Where JS imports a declaration from (design §3.5): its module and the name it's exported under there. That's its
+    /// own module unless the module is internal, when it's the module that re-exports it (ir.md <c>importFrom</c>);
+    /// null when nothing does, so it can't be imported at all.
+    /// </summary>
+    public (string Module, string Export)? Import(Declaration d) =>
+        !(modules.GetValueOrDefault(moduleOf[d])?.Internal ?? false) ? (moduleOf[d], d.Export ?? d.Name)
+        : d.ImportFrom is { } from ? (from.Module, from.Export ?? d.Name)
+        : null;
 
     /// <summary>The type a declaration becomes, in its namespace (R27).</summary>
     public TypeName Name(Declaration declaration) =>
@@ -249,11 +256,11 @@ internal sealed class TypeMap
     public CsType Self(ClassDeclaration c) => CsType.Live(Name(c), [.. c.TypeParameters.Select(t => CsType.TypeParameter(t.Name))]);
 
     /// <summary>
-    /// Whether a class gets <c>Create</c> (R18): it isn't abstract, its module isn't internal, and its constructor takes
-    /// nothing or a bag (an object type or a record), whose members its snapshot carries.
+    /// Whether a class gets <c>Create</c> (R18): it isn't abstract, it can be imported (<see cref="Import"/>), and its
+    /// constructor takes nothing or a bag (an object type or a record), whose members its snapshot carries.
     /// </summary>
     public bool Constructible(ClassDeclaration c) =>
-        !c.Abstract && !IsInternal(moduleOf[c]) && (c.Constructors.Count == 0 || c.Constructors.Any(s => s.Params.Count == 0 || IsBag(s.Params[0].Type)));
+        !c.Abstract && Import(c) is not null && (c.Constructors.Count == 0 || c.Constructors.Any(s => s.Params.Count == 0 || IsBag(s.Params[0].Type)));
 
     private bool IsBag(IrType type) => Values(type) is [var bag] &&
         (bag is ObjectType || bag is RefType r && Find(r) is InterfaceDeclaration or AliasDeclaration { Type: ObjectType });

@@ -18,11 +18,11 @@ internal static class MetadataEmitter
     /// <summary>
     /// The class id constants and the registry of live types (R19 step 1); an abstract class has none, and nor has a
     /// generic one, whose readers make it (mapping §2). Sync mode preloads the modules of its classes and module functions
-    /// (design §3.5), except internal ones, which can't be imported, and those of its custom elements, which their
-    /// components need, as async mode's load them (R28).
+    /// and custom elements (design §3.5, R28): the modules they're imported from, which for an internal module's
+    /// declarations are the modules that re-export them; one that can't be imported has none.
     /// </summary>
-    public static string Registry(TypeMap types, GeneratorOptions options, IReadOnlyList<Selected> classes, IEnumerable<string> functionModules,
-        IEnumerable<string> elementModules)
+    public static string Registry(TypeMap types, GeneratorOptions options, IReadOnlyList<Selected> classes, IEnumerable<Selected> functions,
+        IEnumerable<SelectedElement> elements)
     {
         var w = CodeWriter.CSharp(options.Namespace);
         using (w.Block($"public static partial class {types.Registry}"))
@@ -37,7 +37,8 @@ internal static class MetadataEmitter
             }
             var calls = classes.Select(s => (ClassDeclaration)s.Declaration).Where(c => !c.Abstract && c.TypeParameters.Count == 0)
                 .Select(c => $".Add({types.ClassIdName(c)}, static (realm, handle) => new {types.Name(c).In(options.Namespace)}(realm, handle))").ToList();
-            var modules = classes.Select(s => s.Module).Where(m => !types.IsInternal(m)).Concat(functionModules).Concat(elementModules).Distinct().ToList();
+            var modules = classes.Select(s => s.Declaration).Concat(functions.Select(s => s.Declaration)).Concat(elements.Select(e => e.Class))
+                .Select(types.Import).OfType<(string Module, string Export)>().Select(i => i.Module).Distinct().ToList();
             if (options.Api == Api.Sync && modules.Count > 0)
             {
                 calls.Add($".Preload({string.Join(", ", modules.Select(Syntax.Literal))})");
@@ -73,7 +74,9 @@ internal static class MetadataEmitter
             var members = string.Join(", ", types.WireMembers(c).Select(m => Syntax.Literal(m.Name)));
             var name = profile.RuntimeClassPrefix + RuntimeName(types.PackageOf(s.Module), s.Module, c.Name);
             var tag = elements.FirstOrDefault(e => e.Class.Name == c.Name && e.Module == s.Module)?.Element.Tag;
-            lines.Add($"    {id}: {{ module: {Syntax.Literal(s.Module)}, export: {Syntax.Literal(c.Export ?? c.Name)}, " +
+            // Design §3.5: a class that can't be imported has neither, so it isn't constructed or imported for $c.
+            var import = types.Import(c) is { } i ? $"module: {Syntax.Literal(i.Module)}, export: {Syntax.Literal(i.Export)}, " : "";
+            lines.Add($"    {id}: {{ {import}" +
                 $"name: {Syntax.Literal(name)}, {(tag is null ? "" : $"tag: {Syntax.Literal(tag)}, ")}{(types.IsValueLike(c) ? "value: true, " : "")}members: [{members}] }},");
         }
         lines.Add("  },");

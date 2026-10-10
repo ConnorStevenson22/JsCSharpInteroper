@@ -106,7 +106,7 @@ public static class Generator
             Add(new(ns, name), ComponentEmitter.Component(types, options, diagnostics, element, name));
         }
         var classes = MetadataEmitter.ClassIds(types, selection);
-        files.Add(new($"{types.Registry}.cs", MetadataEmitter.Registry(types, options, classes, modules.Select(m => m.Key), selection.Elements.Select(e => e.Module))));
+        files.Add(new($"{types.Registry}.cs", MetadataEmitter.Registry(types, options, classes, modules.SelectMany(m => m), selection.Elements)));
         files.Add(new(MetadataEmitter.FileName(ir), MetadataEmitter.Module(ir, profile, types, classes, selection.Elements)));
         foreach (var type in types.Owned)
         {

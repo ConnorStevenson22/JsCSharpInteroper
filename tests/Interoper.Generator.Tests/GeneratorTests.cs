@@ -767,30 +767,86 @@ public sealed class GeneratorTests
         Assert.Empty(result.Diagnostics);
     }
 
-    [Theory] // R18, R27: an internal module's classes have no Create and its functions are skipped; sync mode doesn't preload it
+    [Theory] // R18, R28, design §3.5: an internal module's declarations are imported from the module that re-exports them
     [InlineData(Api.Sync)]
     [InlineData(Api.Async)]
-    public void AnInternalModuleCantBeImported(Api api)
+    public void AnInternalModulesDeclarationsAreImportedFromTheirReexport(Api api)
     {
-        var result = Packages(api, """
+        var result = Packages(api, new Profile { Package = "@acme/maps" }, $$"""
+            { "specifier": "@acme/widgets/dist/swatch.js", "package": "@acme/widgets", "internal": true, "declarations": [
+              { "kind": "class", "name": "Swatch", "importFrom": { "module": "@acme/widgets" } },
+              { "kind": "class", "name": "Chip", "export": "default", "importFrom": { "module": "@acme/widgets", "export": "Chip" } },
+              { "kind": "function", "name": "swatchFor", "importFrom": { "module": "@acme/widgets" }, "signatures": [{ "returns": {{String}} }] },
+              { "kind": "function", "name": "tint", "importFrom": { "module": "@acme/widgets/tints", "export": "tintOf" }, "signatures": [{ "returns": {{String}} }] }] }
+            """, """
+            { "tag": "x-swatch", "class": { "kind": "ref", "name": "Swatch", "module": "@acme/widgets/dist/swatch.js" } }
+            """);
+
+        Assert.Equal(["IOP2006 @acme/widgets/dist/swatch.js: its functions are Swatch2: Swatch is taken (R27)"], result.Diagnostics.Select(d => d.ToString()));
+        Assert.Contains("global::Interoper.JsOp.Create(", File(result, "Widgets/Dist/Swatch.cs"));
+        var meta = File(result, "maps.meta.js");
+        Assert.Contains("""1: { module: "@acme/widgets", export: "Swatch", name: "dist.swatch.Swatch", tag: "x-swatch", members: [] },""", meta);
+        Assert.Contains("""2: { module: "@acme/widgets", export: "Chip", name: "dist.swatch.Chip", members: [] },""", meta);
+        var functions = File(result, "Widgets/Dist/Swatch2.cs"); // its file is swatch.js, and the class Swatch is taken
+        Assert.Contains("""private const string Module = "@acme/widgets";""", functions);
+        Assert.Contains("""global::Interoper.JsOp.Call(Module, "swatchFor")""", functions);
+        Assert.Contains("""global::Interoper.JsOp.Call("@acme/widgets/tints", "tintOf")""", functions); // re-exported elsewhere
+        Assert.Contains(api == Api.Sync ? """.Preload("@acme/widgets", "@acme/widgets/tints");""" : "new global::Interoper.JsClassRegistry()", File(result, "Maps.cs"));
+        Assert.Contains(api == Api.Sync ? "ElementAsync<Swatch>(element)" : """ElementAsync<Swatch>(element, "@acme/widgets")""", File(result, "Widgets/Dist/XSwatch.cs"));
+    }
+
+    [Theory] // R16, R18, R28, design §3.5: what an internal module declares, and nothing re-exports, can't be imported anywhere
+    [InlineData(Api.Sync)]
+    [InlineData(Api.Async)]
+    public void WhatCantBeImportedHasNoCreateFunctionComponentOrModule(Api api)
+    {
+        var result = Packages(api, new Profile { Package = "@acme/maps", ValueClasses = ["Chip"] }, $$"""
             { "specifier": "@acme/widgets/legend", "package": "@acme/widgets", "declarations": [
               { "kind": "class", "name": "Legend", "members": [{ "kind": "property", "name": "swatch", "type": { "kind": "ref", "name": "Swatch", "module": "@acme/widgets/dist/swatch.js" } }] }] },
             { "specifier": "@acme/widgets/dist/swatch.js", "package": "@acme/widgets", "internal": true, "declarations": [
-              { "kind": "class", "name": "Swatch", "members": [{ "kind": "property", "name": "color", "type": { "kind": "primitive", "name": "string" } }] },
-              { "kind": "function", "name": "describe", "signatures": [{ "returns": { "kind": "primitive", "name": "string" } }] }] }
+              { "kind": "class", "name": "Swatch", "members": [{ "kind": "property", "name": "color", "type": {{String}} }] },
+              { "kind": "class", "name": "Chip", "members": [{ "kind": "property", "name": "size", "type": {{Number}} }] },
+              { "kind": "function", "name": "describe", "signatures": [{ "returns": {{String}} }] }] }
+            """, """
+            { "tag": "x-swatch", "class": { "kind": "ref", "name": "Swatch", "module": "@acme/widgets/dist/swatch.js" } }
             """);
 
-        Assert.Equal(["Widgets/Legend.cs", "Widgets/LegendSnapshot.cs", "Widgets/Dist/Swatch.cs", "Widgets/Dist/SwatchSnapshot.cs", "Maps.cs", "maps.meta.js"],
-            result.Files.Select(f => f.Path));
+        Assert.Equal(["Widgets/Legend.cs", "Widgets/LegendSnapshot.cs", "Widgets/Dist/Swatch.cs", "Widgets/Dist/SwatchSnapshot.cs", "Widgets/Dist/Chip.cs",
+            "Widgets/Dist/ChipSnapshot.cs", "Maps.cs", "maps.meta.js"], result.Files.Select(f => f.Path)); // no functions, no component
         Assert.Contains("global::Interoper.JsOp.Create(", File(result, "Widgets/Legend.cs"));
         var swatch = File(result, "Widgets/Dist/Swatch.cs");
         Assert.DoesNotContain("global::Interoper.JsOp.Create(", swatch); // its instances come from JS, read as any other
         Assert.Contains(api == Api.Sync ? "public string Color" : "public global::System.Threading.Tasks.Task<string> GetColorAsync()", swatch);
+        // Neither is imported: not to construct, not for $c, not preloaded.
+        var meta = File(result, "maps.meta.js");
+        Assert.Contains("""1: { name: "dist.swatch.Chip", value: true, members: ["size"] },""", meta);
+        Assert.Contains("""3: { name: "dist.swatch.Swatch", members: ["color"] },""", meta);
         Assert.Contains(api == Api.Sync ? """.Preload("@acme/widgets/legend");""" : "new global::Interoper.JsClassRegistry()", File(result, "Maps.cs"));
         Assert.Equal(
         [
-            "IOP2007 Swatch.constructor: skipped: its module is internal, so there's no Create (R18)",
-            "IOP2007 describe: skipped: its module is internal, so it can't be called",
+            "IOP2007 Swatch.constructor: skipped: it can't be imported (its module is internal), so there's no Create (R18)",
+            "IOP2007 Chip.constructor: skipped: it can't be imported (its module is internal), so there's no Create (R18) and it can't be sent as a value (R16)",
+            "IOP2007 describe: skipped: it can't be imported (its module is internal)",
+            "IOP2007 <x-swatch>: skipped: its class can't be imported (its module is internal), so nothing defines the element (R28)",
+        ], result.Diagnostics.Select(d => d.ToString()));
+    }
+
+    [Fact] // R27: a namespace two packages, or a package and a folder, share holds both's types; same-named ones are renamed
+    public void PackagesWithTheSameNameShareANamespace()
+    {
+        var result = Packages(Api.Sync, new Profile { Package = "@acme/maps" }, """
+            { "specifier": "@acme/maps/widgets/Legend.js", "declarations": [{ "kind": "class", "name": "Legend" }] },
+            { "specifier": "@acme/widgets/legend", "package": "@acme/widgets", "declarations": [{ "kind": "class", "name": "Legend" }, { "kind": "interface", "name": "Entry" }] },
+            { "specifier": "@other/widgets", "package": "@other/widgets", "declarations": [{ "kind": "class", "name": "Legend" }, { "kind": "interface", "name": "Entry" }] }
+            """);
+
+        Assert.Equal(["Widgets/Legend.cs", "Widgets/LegendSnapshot.cs", "Widgets/LegendLegend.cs", "Widgets/LegendLegendSnapshot.cs", "Widgets/Entry.cs",
+            "Widgets/WidgetsLegend.cs", "Widgets/WidgetsLegendSnapshot.cs", "Widgets/WidgetsEntry.cs", "Maps.cs", "maps.meta.js"], result.Files.Select(f => f.Path));
+        Assert.Equal(
+        [
+            "IOP2006 @acme/widgets/legend: its Legend is LegendLegend: @acme/maps/widgets/Legend.js has one too (R27)",
+            "IOP2006 @other/widgets: its Legend is WidgetsLegend: @acme/maps/widgets/Legend.js has one too (R27)",
+            "IOP2006 @other/widgets: its Entry is WidgetsEntry: @acme/widgets/legend has one too (R27)",
         ], result.Diagnostics.Select(d => d.ToString()));
     }
 
@@ -803,7 +859,13 @@ public sealed class GeneratorTests
         Assert.Contains("public async global::System.Threading.Tasks.Task<global::Acme.Maps.MapView> GetViewAsync(global::Interoper.JsScope scope) =>", File(result, "DemoWidgets/Legend.cs"));
         Assert.Contains("namespace Acme.Maps.DemoWidgets.Dist.Support;", File(result, "DemoWidgets/Dist/Support/LegendEntry.cs"));
         Assert.Contains("public sealed partial class DemoLegend : global::Interoper.JsComponentBase", File(result, "DemoWidgets/DemoLegend.cs"));
-        Assert.Contains("IOP2007 describe: skipped: its module is internal, so it can't be called", result.Diagnostics.Select(d => d.ToString()));
+        Assert.Contains("IOP2007 describe: skipped: it can't be imported (its module is internal)", result.Diagnostics.Select(d => d.ToString()));
+        // The root re-exports the internal swatch.js, so Swatch has Create, and its functions are called through the root.
+        Assert.Contains("global::Interoper.JsOp.Create(", File(result, "DemoWidgets/Dist/Support/Swatch.cs"));
+        Assert.Contains("""private const string Module = "@acme/demo-widgets";""", File(result, "DemoWidgets/Dist/Support/Swatch2.cs"));
+        // Deliberate (R27): legend.js's functions are a class named after the file, and the class Legend has that name.
+        Assert.Contains("public static partial class Legend2", File(result, "DemoWidgets/Legend2.cs"));
+        Assert.Contains("IOP2006 @acme/demo-widgets/legend: its functions are Legend2: Legend is taken (R27)", result.Diagnostics.Select(d => d.ToString()));
         // demo-maps' own types are where they are without demo-widgets.
         var alone = Generator.Generate(Fixture.Ir, Fixture.Profile, new(Api.Async, "Acme.Maps"));
         Assert.Empty(alone.Files.Select(f => f.Path).Except(result.Files.Select(f => f.Path)));
@@ -841,11 +903,13 @@ public sealed class GeneratorTests
         return Generator.Generate(ir, profile, new(api, "Acme.Maps"));
     }
 
-    /// <summary>An IR of <c>@acme/maps</c> with the given modules, which may be another package's.</summary>
-    private static GeneratorResult Packages(Api api, string modules)
+    /// <summary>An IR of <c>@acme/maps</c> with the given modules, which may be another package's, and elements.</summary>
+    private static GeneratorResult Packages(Api api, string modules) => Packages(api, new Profile { Package = "@acme/maps" }, modules);
+
+    private static GeneratorResult Packages(Api api, Profile profile, string modules, string elements = "")
     {
-        var ir = IrDocument.Parse($$"""{ "version": 1, "package": { "name": "@acme/maps", "version": "1" }, "modules": [{{modules}}] }""");
-        return Generator.Generate(ir, new Profile { Package = "@acme/maps" }, new(api, "Acme.Maps"));
+        var ir = IrDocument.Parse($$"""{ "version": 1, "package": { "name": "@acme/maps", "version": "1" }, "modules": [{{modules}}], "elements": [{{elements}}] }""");
+        return Generator.Generate(ir, profile, new(api, "Acme.Maps"));
     }
 
     private static string File(GeneratorResult result, string path) => result.Files.Single(f => f.Path == path).Text;

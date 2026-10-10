@@ -4,7 +4,6 @@ import { describe } from "./support/entry.js";
 const Base = globalThis.HTMLElement ?? EventTarget;
 
 export class Legend extends Base {
-  static className = "Legend";
   view = null;
   heading = "Legend";
 

@@ -30,7 +30,7 @@ class BatchError extends Error {
 // --- Start ---
 
 // metadataSpecifier: a module whose default export is the generated metadata table:
-//   { classNameProperty: "className", classes: { [classId]: { module, export, name, tag?, value?, members } },
+//   { classNameProperty: "className", classes: { [classId]: { module?, export?, name, tag?, value?, members } },
 //     customEvents?: [{ name, fields? }] }
 // sink(callbackId, argsJson) calls a .NET callback and returns its result as JSON text ("null" for null), null or
 // nothing for undefined, or a Promise of either.
@@ -43,7 +43,8 @@ export async function start(metadataSpecifier, sink) {
   classIdsByTag = new Map(classes.filter(([, c]) => c.tag).map(([id, c]) => [c.tag, Number(id)]));
   callbackSink = sink;
   registerCustomEvents(meta.customEvents ?? []);
-  const preloaded = new Set(classes.filter(([, c]) => c.value).map(([, c]) => c.module));
+  // A class that can't be imported has no module (design §3.5).
+  const preloaded = new Set(classes.filter(([, c]) => c.value && c.module).map(([, c]) => c.module));
   await Promise.all([...preloaded].map(load));
 }
 

@@ -20,3 +20,10 @@ test("a legend lists its view's layers and reports a selection", () => {
   legend.select(1);
   assert.deepEqual(seen, [{ index: 1, title: "Night (hidden)" }]);
 });
+
+test("the root re-exports the swatch, which no export reaches directly", async () => {
+  const { Swatch, swatchFor } = await import("../dist/index.js");
+  assert.equal((await import("../dist/support/swatch.js")).Swatch, Swatch);
+  assert.deepEqual([swatchFor({ title: "a", visible: false }).color, new Swatch().color], ["grey", "black"]);
+  assert.equal(new Swatch().className, "dist.support.swatch.Swatch");
+});

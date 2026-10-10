@@ -26,18 +26,19 @@ const compact = (o) => Object.fromEntries(Object.entries(o).filter(([, v]) => v 
 
 /** `packageDirs` is one package's folder or a list of them; the first is the IR's `package`. */
 export function extract(packageDirs, { eventMap } = {}) {
-  const dirs = [packageDirs].flat().map((d) => path.resolve(d));
+  // By real path, so a package reached through a link (a workspace, pnpm) is the same files as the one listed.
+  const dirs = [packageDirs].flat().map((d) => fs.realpathSync(d));
   packages.clear(); // package.json files are read once per run
   const pkg = readPackage(dirs[0]);
   const files = dirs.flatMap((d) => listDts(d));
   const manifests = dirs.map((d) => readManifest(d, readPackage(d)));
   const manifestTypes = new Map(manifests.flatMap((m) => [...m.types]));
   const virtual = Object.fromEntries([...manifestTypes.values()].map((t) => [t.file, t.text]));
-  // A symlinked package (as in a workspace) resolves its dependencies from where it's linked.
-  const program = createProgram(ts, files, virtual, { preserveSymlinks: true });
+  const program = createProgram(ts, files, virtual);
   const checker = program.getTypeChecker();
 
   const own = new Set(files);
+  const listedNames = new Set(dirs.map((d) => readPackage(d).name));
 
   // A declaration file's module: its specifier, package and whether it's internal (ir.md). Undefined for the platform's
   // own typings (lib.dom.d.ts) and the manifests' virtual modules.
@@ -80,12 +81,36 @@ export function extract(packageDirs, { eventMap } = {}) {
     return result;
   }
 
+  let reexports;
+  /**
+   * Where a declaration of an internal module is imported from (ir.md `importFrom`): the first module, by specifier,
+   * that an export reaches and that re-exports it, with the name it's exported under there when that isn't its own.
+   */
+  function importFrom(sym, decl) {
+    if (!infoOf(decl.getSourceFile())?.internal) return undefined;
+    if (!reexports) {
+      reexports = new Map();
+      const reachable = program.getSourceFiles().filter((sf) => infoOf(sf) && !infoOf(sf).internal).sort((a, b) => (infoOf(a).specifier < infoOf(b).specifier ? -1 : 1));
+      for (const sf of reachable) {
+        const moduleSym = checker.getSymbolAtLocation(sf);
+        for (const e of moduleSym ? checker.getExportsOfModule(moduleSym) : []) {
+          const target = e.flags & F.Alias ? checker.getAliasedSymbol(e) : e;
+          if (!reexports.has(target) && target.declarations?.length && target.declarations.every((d) => d.getSourceFile() !== sf)) {
+            reexports.set(target, { module: infoOf(sf).specifier, name: e.name });
+          }
+        }
+      }
+    }
+    const found = reexports.get(sym);
+    return found && compact({ module: found.module, export: found.name !== nameOf(sym) ? found.name : undefined });
+  }
+
   // --- Declarations ---
 
   /** `exported` is the name the module exports `sym` under (ir.md `export`). */
   function declaration(sym, decl, exported = sym.name) {
     const name = nameOf(sym);
-    const base = { name, export: name !== exported ? exported : undefined, doc: doc(sym) };
+    const base = { name, export: name !== exported ? exported : undefined, importFrom: importFrom(sym, decl), doc: doc(sym) };
     if (sym.flags & F.Class) return classDecl(sym, base);
     if (sym.flags & F.Enum) return enumDecl(sym, base);
     if (sym.flags & F.Interface) {
@@ -95,7 +120,7 @@ export function extract(packageDirs, { eventMap } = {}) {
     if (sym.flags & F.TypeAlias) {
       return compact({ kind: "alias", ...base, typeParameters: typeParams(decl.typeParameters?.map((p) => checker.getTypeAtLocation(p.name))), type: typeRef(checker.getTypeFromTypeNode(decl.type), decl.type, { expandAlias: true }) });
     }
-    if (sym.flags & F.Function) return compact({ kind: "function", name, export: base.export, signatures: signatures(checker.getTypeOfSymbol(sym), ts.SignatureKind.Call) });
+    if (sym.flags & F.Function) return compact({ kind: "function", name, export: base.export, importFrom: base.importFrom, signatures: signatures(checker.getTypeOfSymbol(sym), ts.SignatureKind.Call) });
     if (sym.flags & F.Variable) {
       return compact({ kind: "variable", ...base, readonly: (ts.getCombinedNodeFlags(decl) & ts.NodeFlags.Const) !== 0 || undefined, type: valueType(sym, decl.type) });
     }
@@ -316,7 +341,8 @@ export function extract(packageDirs, { eventMap } = {}) {
   function ref(sym, args, node) {
     const argNodes = node && ts.isTypeReferenceNode(node) ? node.typeArguments ?? [] : [];
     const decl = sym.declarations?.find(moduleOf);
-    if (decl && !own.has(path.resolve(decl.getSourceFile().fileName))) reached.add(sym);
+    // Another copy of a listed package (one a dependency installed for itself) has the same modules: they're listed.
+    if (decl && !own.has(path.resolve(decl.getSourceFile().fileName)) && !listedNames.has(infoOf(decl.getSourceFile()).package)) reached.add(sym);
     return compact({ kind: "ref", name: nameOf(sym), module: decl && moduleOf(decl), args: args?.map((a, i) => typeRef(a, argNodes[i])) });
   }
   /** Whether a package declares a symbol (an alias of the platform's, such as `Partial`, is resolved in place). */
@@ -455,43 +481,76 @@ function readPackage(dir) {
 
 /**
  * A declaration file's module (ir.md): the nearest package.json with a name is its package, and its specifier is how
- * that package's `exports` reach the .js next to the .d.ts (`@acme/widgets/legend`). Without `exports` it's
- * `<name>/<path of the .js>`, and so it is when no export reaches the file, which is then internal.
+ * that package's `exports` reach the file (`@acme/widgets/legend`). Without `exports` it's `<name>/<path of the .js
+ * next to the .d.ts>`, and so it is when no export reaches the file, which is then internal.
  */
 function moduleInfo(file) {
   for (let d = path.dirname(file); d !== path.dirname(d); d = path.dirname(d)) {
     const pkg = readPackage(d);
     if (!pkg?.name) continue;
-    const js = `./${path.relative(d, file).split(path.sep).join("/").replace(/\.d\.([mc]?)ts$/, ".$1js")}`;
-    const subpath = pkg.exports === undefined ? js : exportOf(pkg.exports, js);
+    const dts = `./${path.relative(d, file).split(path.sep).join("/")}`;
+    const js = dts.replace(/\.d\.([mc]?)ts$/, ".$1js");
+    const subpath = pkg.exports === undefined ? js : exportOf(exportsMap(pkg.exports), [js, dts]);
     return compact({ specifier: pkg.name + (subpath ?? js).slice(1), package: pkg.name, internal: subpath === undefined || undefined });
   }
   return undefined;
 }
 
+/** An `exports` field as a map of subpaths: a string, an array or a map of conditions is the `"."` export. */
+const exportsMap = (exports) => (exports && typeof exports === "object" && !Array.isArray(exports) && Object.keys(exports).some((k) => k.startsWith(".")) ? exports : { ".": exports });
+
 /**
- * The subpath of an `exports` map that reaches a file (`./dist/legend.js`), or undefined: the exact keys first, then
- * the `*` patterns, each in the map's order. `"exports": "./index.js"` and a map of conditions are the `"."` export.
+ * The subpath of an `exports` map that reaches a file (its `.js` or its `.d.ts`, `files`), or undefined. The keys whose
+ * target is the file are tried, the exact ones first, then the `*` patterns, each in the map's order, and a subpath
+ * counts only when resolving it forward gives the file: a pattern with a longer prefix, or a null target, can shadow it.
  */
-function exportOf(exports, file) {
-  const map = typeof exports === "object" && exports && Object.keys(exports).some((k) => k.startsWith(".")) ? exports : { ".": exports };
+function exportOf(map, files) {
   const entries = Object.entries(map).map(([key, value]) => [key, target(value)]).filter(([, t]) => typeof t === "string");
-  const exact = entries.find(([key, t]) => !key.includes("*") && t === file);
-  if (exact) return exact[0];
-  for (const [key, t] of entries.filter(([key, t]) => key.includes("*") && t.includes("*"))) {
-    const [prefix, suffix] = t.split("*");
-    if (file.length >= prefix.length + suffix.length && file.startsWith(prefix) && file.endsWith(suffix)) {
-      return key.replace("*", file.slice(prefix.length, file.length - suffix.length));
-    }
-  }
-  return undefined;
+  const candidates = [
+    ...entries.filter(([key, t]) => !key.includes("*") && files.includes(t)).map(([key]) => key),
+    ...entries.filter(([key, t]) => key.includes("*") && t.includes("*")).flatMap(([key, t]) => {
+      const [prefix, suffix] = [t.slice(0, t.indexOf("*")), t.slice(t.indexOf("*") + 1)];
+      const file = files.find((f) => f.length > prefix.length + suffix.length && f.startsWith(prefix) && f.endsWith(suffix));
+      return file ? [key.replace("*", file.slice(prefix.length, file.length - suffix.length))] : [];
+    }),
+  ];
+  return candidates.find((subpath) => files.includes(resolveExport(map, subpath)));
 }
 
-/** What an export resolves to for an `import`: a string, or its first `import` or `default` condition's target. */
+/**
+ * What a subpath resolves to through an `exports` map, as Node resolves it: its exact key, or else the pattern whose
+ * prefix is the longest (then the longest key), with `*` replaced; null or undefined when nothing is exported there.
+ */
+function resolveExport(map, subpath) {
+  if (!subpath.includes("*") && Object.hasOwn(map, subpath)) return target(map[subpath]);
+  let best;
+  for (const key of Object.keys(map)) {
+    const star = key.indexOf("*");
+    if (star < 0 || key.indexOf("*", star + 1) >= 0) continue;
+    const [prefix, suffix] = [key.slice(0, star), key.slice(star + 1)];
+    if (subpath.length < key.length || !subpath.startsWith(prefix) || !subpath.endsWith(suffix)) continue;
+    if (!best || prefix.length > best.prefix.length || (prefix.length === best.prefix.length && key.length > best.key.length)) best = { key, prefix, suffix };
+  }
+  const t = best && target(map[best.key]);
+  return typeof t === "string" ? t.replaceAll("*", subpath.slice(best.prefix.length, subpath.length - best.suffix.length)) : t;
+}
+
+const CONDITIONS = new Set(["types", "import", "default"]);
+
+/**
+ * What an export's value resolves to, as TypeScript resolves an `import` (conditions `types`, `import`, `default`):
+ * a string; a condition object's first of those conditions that resolves, nested ones too; an array's first entry that
+ * resolves to a string. Null excludes it, and undefined means none applies.
+ */
 function target(value) {
-  if (typeof value === "string" || value === null || typeof value !== "object" || Array.isArray(value)) return value;
-  const [, chosen] = Object.entries(value).find(([condition]) => condition === "import" || condition === "default") ?? [];
-  return target(chosen);
+  if (typeof value === "string" || value === null) return value;
+  if (Array.isArray(value)) return value.map(target).find((t) => typeof t === "string");
+  if (typeof value !== "object") return undefined;
+  for (const [condition, nested] of Object.entries(value)) {
+    const t = CONDITIONS.has(condition) ? target(nested) : undefined;
+    if (t !== undefined) return t;
+  }
+  return undefined;
 }
 
 /** A declaration's own name: the symbol of a default export is named `default` (its `export`, ir.md). */
@@ -503,7 +562,8 @@ const sameSet = (a, b) => a.length === b.length && a.every((x) => b.includes(x))
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const args = process.argv.slice(2);
   const opt = (name) => (args.includes(name) ? args[args.indexOf(name) + 1] : undefined);
-  const dirs = args.filter((a, i) => !a.startsWith("--") && !args[i - 1]?.startsWith("--"));
+  const valueOptions = ["--profile", "--out"];
+  const dirs = args.filter((a, i) => !a.startsWith("--") && !valueOptions.includes(args[i - 1]));
   if (!dirs.length) {
     console.error("usage: node extract.mjs <package dir>... [--profile profile.json] [--out ir.json]");
     process.exit(2);

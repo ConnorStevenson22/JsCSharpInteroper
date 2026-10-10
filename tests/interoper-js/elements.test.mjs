@@ -38,6 +38,12 @@ test("wrap returns an ElementReference's element as a handle, its class id found
   assert.equal(interoper.census(), 0);
 });
 
+test("a value-like class without a module isn't imported at start, and can't be sent as a value (design §3.5)", () => {
+  // start() above didn't fail on it; the other value-like class was imported.
+  assert.match(send({ op: "wrap", value: { $c: ids.Unimportable, x: 1 } }).e.message, /internal\.Unimportable is not loaded/);
+  assert.equal(send({ op: "wrap", value: { $c: ids.Point, x: 1, y: 2 } }).v.$t, ids.Point);
+});
+
 test("an ElementReference that isn't rendered is an error (R13)", () => {
   assert.deepEqual(send({ op: "wrap", value: { $e: "zz" } }).e.message,
     "No element has the capture attribute _bl_zz; send an ElementReference after its first render");

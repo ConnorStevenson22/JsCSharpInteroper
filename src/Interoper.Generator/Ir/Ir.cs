@@ -54,6 +54,8 @@ public abstract record Declaration
     public required string Name { get; init; }
     /// <summary>The name the module exports it under, when that isn't <see cref="Name"/>: <c>default</c>.</summary>
     public string? Export { get; init; }
+    /// <summary>For a declaration of an internal module: the module that re-exports it, where it's imported from.</summary>
+    public ImportFrom? ImportFrom { get; init; }
     public Doc? Doc { get; init; }
 }
 
@@ -99,6 +101,9 @@ public sealed record VariableDeclaration : Declaration
     public required IrType Type { get; init; }
     public bool Readonly { get; init; }
 }
+
+/// <summary>A module that re-exports a declaration, and the name it exports it under when that isn't the declaration's.</summary>
+public sealed record ImportFrom(string Module, string? Export = null);
 
 /// <summary>A TS enum member; <see cref="Value"/> is a string or a number.</summary>
 public sealed record EnumMember(string Name, JsonElement Value, Doc? Doc = null);
