@@ -571,6 +571,42 @@ public sealed class GeneratorTests
         ], result.Diagnostics.Select(d => d.ToString()));
     }
 
+    [Fact] // §5, §2, R2, R27: a setter that can't be mapped is dropped and its getter kept; a generic union alias is its union
+    public void ASetterThatCantBeMappedIsDroppedAndAGenericUnionAliasIsInstantiated()
+    {
+        const string T = """{ "kind": "typeParameter", "name": "T" }""";
+        const string Marker = """{ "kind": "ref", "name": "Marker", "module": "@acme/maps/a.js" }""";
+        string List(string item) => $$"""{ "kind": "ref", "name": "List", "module": "@acme/maps/a.js", "args": [{{item}}] }""";
+        string Items(string item) => $$"""{ "kind": "ref", "name": "Items", "module": "@acme/maps/a.js", "args": [{{item}}] }""";
+        var result = Generate(new Profile { Package = "@acme/maps", Collections = ["List"] }, Api.Sync, ("a.js", $$"""
+            { "kind": "class", "name": "Marker" },
+            { "kind": "class", "name": "List", "typeParameters": [{ "name": "T" }] },
+            { "kind": "alias", "name": "Items", "typeParameters": [{ "name": "T" }], "type": { "kind": "union", "types": [{ "kind": "array", "element": {{T}} }, {{List(T)}}] } },
+            { "kind": "class", "name": "View", "members": [
+              { "kind": "property", "name": "markers", "type": {{List(Marker)}}, "writeType": {{Items(Marker)}} },
+              { "kind": "property", "name": "numbers", "type": {{List(Marker)}}, "writeType": {{Items(Number)}} },
+              { "kind": "property", "name": "labels", "type": { "kind": "array", "element": {{String}} }, "writeType": { "kind": "unresolved", "text": "LabelList" } }] }
+            """));
+
+        var view = File(result, "View.cs");
+        // Items<Marker> is Marker[] | List<Marker>, an anonymous union only written (R2: it has entity cases).
+        Assert.Contains("public List<Marker> GetMarkers(global::Interoper.JsScope scope) =>", view);
+        Assert.Contains("public void SetMarkers(ViewMarkersInput value) =>", view);
+        Assert.Contains("public ViewMarkersInput(Marker[] value) : this(value, 2) { }", File(result, "ViewMarkersInput.cs"));
+        Assert.Contains("public ViewMarkersInput(List<Marker> value) : this(value, 3) { }", File(result, "ViewMarkersInput.cs"));
+        // Items<number> has List<number>, which isn't mapped (§2), and LabelList doesn't resolve: the getters stay.
+        Assert.Contains("public List<Marker> GetNumbers(global::Interoper.JsScope scope) =>", view);
+        Assert.DoesNotContain("SetNumbers", view);
+        Assert.Contains("public string[] Labels =>\n", view); // read-only
+        Assert.DoesNotContain("SetLabels", view);
+        Assert.Equal(
+        [
+            "IOP2007 Items: skipped: uses generic `Items` (in `Items`)",
+            "IOP2007 View.numbers: setter dropped: uses `List` of a type that isn't an entity (§2)",
+            "IOP2007 View.labels: setter dropped: uses unresolved `LabelList`",
+        ], result.Diagnostics.Select(d => d.ToString()));
+    }
+
     [Theory] // R26
     [InlineData(Api.Sync)]
     [InlineData(Api.Async)]
@@ -619,6 +655,72 @@ public sealed class GeneratorTests
         Assert.Contains("public sealed partial class TileLayer : global::Interoper.JsObject", File(result, "Layers/TileLayer.cs"));
         Assert.Contains("""1: { module: "@acme/maps/layers/TileLayer.js", export: "default", name: "acme.layers.TileLayer", members: [] },""", File(result, "maps.meta.js"));
         Assert.Contains("""realm.CallAsync(global::Interoper.JsOp.Call(Module, "default"), global::Interoper.JsJson.ReadNumber);""", File(result, "Area.cs"));
+    }
+
+    [Fact] // R16, R18, R26: a member a subclass redeclares is in its snapshot once; with another type it's new
+    public void ARedeclaredMemberIsInTheSnapshotOnce()
+    {
+        static string Ref(string name) => $$"""{ "kind": "ref", "name": "{{name}}", "module": "@acme/maps/a.js" }""";
+        var result = Generate($$"""
+            { "kind": "interface", "name": "Anchor", "members": [{ "kind": "property", "name": "id", "type": {{String}} }] },
+            { "kind": "interface", "name": "AnchorProps", "members": [{ "kind": "property", "name": "id", "optional": true, "type": {{String}} }] },
+            { "kind": "class", "name": "Figure", "abstract": true, "members": [
+              { "kind": "property", "name": "kind", "readonly": true, "type": {{String}} },
+              { "kind": "property", "name": "anchor", "type": {{Ref("Anchor")}} },
+              { "kind": "property", "name": "size", "type": {{Number}} }] },
+            { "kind": "class", "name": "Tile", "extends": {{Ref("Figure")}}, "members": [
+              { "kind": "property", "name": "kind", "readonly": true, "type": { "kind": "literal", "value": "tile" } },
+              { "kind": "property", "name": "anchor", "type": {{Ref("Anchor")}}, "writeType": {{Ref("AnchorProps")}} },
+              { "kind": "property", "name": "size", "type": {{String}} }] }
+            """, new Profile { Package = "@acme/maps", ValueClasses = ["Figure", "Tile"] });
+
+        var tile = File(result, "TileSnapshot.cs");
+        Assert.DoesNotContain("Anchor {", tile); // the base's
+        Assert.DoesNotContain("JsAnchor", tile);
+        Assert.Contains("public new global::Interoper.Opt<string> Size { get; init; }", tile);
+        Assert.Single(tile.Split('\n'), l => l.Contains("\"anchor\"u8", StringComparison.Ordinal));
+        Assert.Contains("""2: { module: "@acme/maps/a.js", export: "Tile", name: "a.Tile", value: true, members: ["anchor", "size", "kind"] },""", File(result, "maps.meta.js"));
+        Assert.Empty(result.Diagnostics);
+    }
+
+    [Fact] // R15, R2, R19: a record drops an optional member it can't map, and the unions it's in keep it; a required one skips it
+    public void ARecordDropsAnOptionalMemberItCantMap()
+    {
+        const string Pairs = """{ "kind": "array", "element": { "kind": "tuple", "elements": [{ "kind": "primitive", "name": "number" }, { "kind": "primitive", "name": "string" }] } }""";
+        static string Ref(string name) => $$"""{ "kind": "ref", "name": "{{name}}", "module": "@acme/maps/a.js" }""";
+        var result = Generate($$"""
+            { "kind": "interface", "name": "TrackProps", "members": [
+              { "kind": "property", "name": "stops", "type": { "kind": "array", "element": { "kind": "array", "element": {{Number}} } } },
+              { "kind": "property", "name": "legs", "optional": true, "type": {{Pairs}} }] },
+            { "kind": "interface", "name": "DotProps", "members": [{ "kind": "property", "name": "x", "type": {{Number}} }] },
+            { "kind": "interface", "name": "LegProps", "members": [{ "kind": "property", "name": "legs", "type": {{Pairs}} }] },
+            { "kind": "alias", "name": "FigureProps", "type": { "kind": "union", "types": [{{Ref("TrackProps")}}, {{Ref("DotProps")}}] } },
+            { "kind": "function", "name": "draw", "signatures": [{ "params": [{ "name": "props", "type": {{Ref("FigureProps")}} }], "returns": {{Ref("FigureProps")}} }] }
+            """);
+
+        var track = File(result, "TrackProps.cs");
+        Assert.Contains("public required double[][] Stops { get; init; }", track);
+        Assert.DoesNotContain("Legs", track);
+        Assert.Contains("public static FigureProps Draw(global::Interoper.JsRealm realm, FigureProps props) =>", File(result, "A.cs"));
+        Assert.Contains("JsonTokenType.StartObject when global::Interoper.JsJson.HasProperty(reader, \"x\"u8) => DotProps.Read(ref reader),", File(result, "FigureProps.cs"));
+        Assert.DoesNotContain("LegProps.cs", result.Files.Select(f => f.Path));
+        Assert.Equal(
+        [
+            "IOP2007 TrackProps.legs: skipped: uses a tuple of different types",
+            "IOP2007 LegProps: skipped: uses a tuple of different types (in `LegProps`)",
+        ], result.Diagnostics.Select(d => d.ToString()));
+    }
+
+    [Fact] // design §2: the profile is the first package's, so its runtime class prefix is too
+    public void TheRuntimeClassPrefixIsTheFirstPackagesOnly()
+    {
+        var result = Packages(Api.Sync, new Profile { Package = "@acme/maps", RuntimeClassPrefix = "acme." }, """
+            { "specifier": "@acme/maps/Map.js", "declarations": [{ "kind": "class", "name": "Map" }] },
+            { "specifier": "@acme/widgets/legend", "package": "@acme/widgets", "declarations": [{ "kind": "class", "name": "Legend" }] }
+            """);
+
+        Assert.Contains("""1: { module: "@acme/maps/Map.js", export: "Map", name: "acme.Map", members: [] },""", File(result, "maps.meta.js"));
+        Assert.Contains("""2: { module: "@acme/widgets/legend", export: "Legend", name: "legend.Legend", members: [] },""", File(result, "maps.meta.js"));
     }
 
     [Theory] // R13, R28: a component's attributes, properties, events and @bind; a DOM element is written only
@@ -831,6 +933,22 @@ public sealed class GeneratorTests
         ], result.Diagnostics.Select(d => d.ToString()));
     }
 
+    [Fact] // R28: an element whose class the extractor couldn't resolve, or that isn't the IR's, is reported
+    public void AnElementWithoutItsClassIsReported()
+    {
+        var result = Elements(Api.Sync, [("chart.js", """{ "kind": "class", "name": "ChartElement" }""")],
+            """{ "tag": "x-chart", "class": { "kind": "ref", "name": "ChartElement", "module": "@acme/maps/chart.js" } }""",
+            """{ "tag": "x-gauge", "class": { "kind": "unresolved", "text": "GaugeElement" }, "events": [{ "name": "x-gauge-turn" }] }""",
+            """{ "tag": "x-plain", "class": { "kind": "ref", "name": "HTMLElement" } }""");
+
+        Assert.Contains("XChart.cs", result.Files.Select(f => f.Path));
+        Assert.Equal(
+        [
+            "IOP2007 <x-gauge>: skipped: its class `GaugeElement` isn't a class the IR declares (R28)",
+            "IOP2007 <x-plain>: skipped: its class `HTMLElement` isn't a class the IR declares (R28)",
+        ], result.Diagnostics.Select(d => d.ToString()));
+    }
+
     [Fact] // R27: a namespace two packages, or a package and a folder, share holds both's types; same-named ones are renamed
     public void PackagesWithTheSameNameShareANamespace()
     {
@@ -866,6 +984,11 @@ public sealed class GeneratorTests
         // Deliberate (R27): legend.js's functions are a class named after the file, and the class Legend has that name.
         Assert.Contains("public static partial class Legend2", File(result, "DemoWidgets/Legend2.cs"));
         Assert.Contains("IOP2006 @acme/demo-widgets/legend: its functions are Legend2: Legend is taken (R27)", result.Diagnostics.Select(d => d.ToString()));
+        // The manifest names the zoom label's module by an export subpath; its class is in an internal module that the
+        // subpath's index re-exports, so the component imports it from there.
+        Assert.Contains("public sealed partial class DemoZoomLabel : global::Interoper.JsComponentBase", File(result, "DemoWidgets/Dist/Components/ZoomLabel/DemoZoomLabel.cs"));
+        Assert.Contains("""module: "@acme/demo-widgets/components/zoom-label", export: "ZoomLabelElement", """, File(result, "demo-maps.meta.js"));
+        Assert.Contains("""{ name: "demo-zoom-label-copy", fields: ["text"] },""", File(result, "demo-maps.meta.js"));
         // demo-maps' own types are where they are without demo-widgets.
         var alone = Generator.Generate(Fixture.Ir, Fixture.Profile, new(Api.Async, "Acme.Maps"));
         Assert.Empty(alone.Files.Select(f => f.Path).Except(result.Files.Select(f => f.Path)));

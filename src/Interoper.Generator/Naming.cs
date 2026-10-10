@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text;
 
 namespace Interoper.Generator;
@@ -7,6 +8,13 @@ public static class Naming
 {
     private static readonly HashSet<string> ObjectMembers =
         ["Equals", "Finalize", "GetHashCode", "GetType", "MemberwiseClone", "ReferenceEquals", "ToString"];
+
+    /// <summary>R25: the spelled names of symbols, for a value with no letters or digits; the longest match wins.</summary>
+    private static readonly (string Symbol, string Name)[] Symbols =
+    [
+        ("<=", "LessThanOrEqual"), (">=", "GreaterThanOrEqual"), ("==", "Equal"), ("!=", "NotEqual"),
+        ("<", "LessThan"), (">", "GreaterThan"), ("=", "Equal"), ("+", "Plus"), ("-", "Minus"), ("*", "Star"), ("/", "Slash"), ("%", "Percent"),
+    ];
 
     /// <summary>
     /// Splits on non-alphanumerics and upper-cases the first letter of each part (<c>"simple-marker"</c> →
@@ -67,15 +75,16 @@ public static class Naming
         ownerType + Pascal(member) + (input ? "Input" : "");
 
     /// <summary>
-    /// R25: enum member names for literal values, in order. The empty string is <c>Empty</c>; a name taken by an
-    /// earlier value gets a numeric suffix, reported as IOP2006.
+    /// R25: enum member names for literal values, in order. A value with no letters or digits spells its symbols
+    /// (<c>"&gt;="</c> → <c>GreaterThanOrEqual</c>, any other character as its code, <c>U0026</c>), and the empty string is
+    /// <c>Empty</c>; a name taken by an earlier value gets a numeric suffix, reported as IOP2006.
     /// </summary>
     public static string[] EnumMembers(IEnumerable<string> values, string subject, ICollection<Diagnostic> diagnostics)
     {
         var taken = new HashSet<string>();
         return [.. values.Select(value =>
         {
-            var name = Pascal(value) is { Length: > 0 } pascal ? pascal : "Empty";
+            var name = Pascal(value) is { Length: > 0 } pascal ? pascal : value.Length > 0 ? Spell(value) : "Empty";
             if (taken.Add(name))
             {
                 return name;
@@ -101,6 +110,25 @@ public static class Naming
         var renamed = Unique(taken, "Js" + name);
         diagnostics.Add(new(Diagnostic.Renamed, subject, $"{renamed}: {name} is taken (R26)"));
         return renamed;
+    }
+
+    /// <summary>R25: a value of symbols only, spelled: the longest known symbol at each position, or the character's code.</summary>
+    private static string Spell(string value)
+    {
+        var result = new StringBuilder();
+        for (var i = 0; i < value.Length;)
+        {
+            var match = Symbols.Where(s => string.CompareOrdinal(value, i, s.Symbol, 0, s.Symbol.Length) == 0).OrderByDescending(s => s.Symbol.Length).FirstOrDefault();
+            if (match.Symbol is null)
+            {
+                result.Append(CultureInfo.InvariantCulture, $"U{(int)value[i]:X4}");
+                i++;
+                continue;
+            }
+            result.Append(match.Name);
+            i += match.Symbol.Length;
+        }
+        return result.ToString();
     }
 
     /// <summary><paramref name="name"/> if it's free, otherwise the first free <c>name2</c>, <c>name3</c>, …; claimed.</summary>

@@ -6,6 +6,99 @@
   },
   "modules": [
     {
+      "specifier": "@acme/demo-widgets/dist/components/zoom-label/element.js",
+      "package": "@acme/demo-widgets",
+      "internal": true,
+      "declarations": [
+        {
+          "kind": "interface",
+          "name": "ZoomLabelCopyDetail",
+          "importFrom": {
+            "module": "@acme/demo-widgets/components/zoom-label"
+          },
+          "members": [
+            {
+              "kind": "property",
+              "name": "text",
+              "type": {
+                "kind": "primitive",
+                "name": "string"
+              }
+            }
+          ]
+        },
+        {
+          "kind": "class",
+          "name": "ZoomLabelElement",
+          "importFrom": {
+            "module": "@acme/demo-widgets/components/zoom-label"
+          },
+          "doc": {
+            "summary": "`<demo-zoom-label>`: a view's zoom as text. Attribute: `precision`. Event: `demo-zoom-label-copy`.\nNo export reaches this file: the package exports `./components/*` as each folder's `index.js`, which re-exports it,\nand the manifest names the element's module by that subpath, `components/zoom-label`."
+          },
+          "extends": {
+            "kind": "ref",
+            "name": "HTMLElement"
+          },
+          "constructors": [
+            {}
+          ],
+          "members": [
+            {
+              "kind": "property",
+              "name": "view",
+              "doc": {
+                "summary": "The view whose zoom it shows."
+              },
+              "type": {
+                "kind": "ref",
+                "name": "MapView",
+                "module": "@acme/demo-maps/MapView.js"
+              }
+            },
+            {
+              "kind": "property",
+              "name": "precision",
+              "doc": {
+                "summary": "Digits after the decimal point."
+              },
+              "type": {
+                "kind": "primitive",
+                "name": "number"
+              }
+            },
+            {
+              "kind": "property",
+              "name": "text",
+              "doc": {
+                "summary": "The zoom, as shown."
+              },
+              "readonly": true,
+              "type": {
+                "kind": "primitive",
+                "name": "string"
+              }
+            },
+            {
+              "kind": "method",
+              "name": "copy",
+              "signatures": [
+                {
+                  "returns": {
+                    "kind": "primitive",
+                    "name": "void"
+                  },
+                  "doc": {
+                    "summary": "Raises `demo-zoom-label-copy` with the text, as a click on the label would."
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
       "specifier": "@acme/demo-widgets/dist/support/entry.js",
       "package": "@acme/demo-widgets",
       "internal": true,
@@ -297,6 +390,36 @@
             "kind": "ref",
             "name": "LegendSelectDetail",
             "module": "@acme/demo-widgets/legend"
+          }
+        }
+      ]
+    },
+    {
+      "tag": "demo-zoom-label",
+      "class": {
+        "kind": "ref",
+        "name": "ZoomLabelElement",
+        "module": "@acme/demo-widgets/dist/components/zoom-label/element.js"
+      },
+      "doc": {
+        "summary": "A view's zoom as text."
+      },
+      "attributes": [
+        {
+          "name": "precision",
+          "property": "precision",
+          "doc": {
+            "default": "0"
+          }
+        }
+      ],
+      "events": [
+        {
+          "name": "demo-zoom-label-copy",
+          "detail": {
+            "kind": "ref",
+            "name": "ZoomLabelCopyDetail",
+            "module": "@acme/demo-widgets/dist/components/zoom-label/element.js"
           }
         }
       ]

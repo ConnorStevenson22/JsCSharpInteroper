@@ -16,9 +16,8 @@ public sealed class GoldenSliceTests
     /// </summary>
     private static readonly (Api? Mode, string Diagnostic, string Reason)[] Remaining =
     [
-        (null, "IOP2007 FlyToOptions: skipped: uses `AbortSignal` (in `FlyToOptions`)", "AbortSignal (R14) isn't bridged yet"),
-        (null, "IOP2007 MapView.flyTo(options): optional parameter dropped (R22): uses `AbortSignal` (in `FlyToOptions`)", "AbortSignal (R14) isn't bridged yet"),
-        (null, "IOP2007 MarkerOptions: skipped: uses a callback that isn't a parameter (R21) (in `MarkerOptions`)", "a data record can't hold a callback (R21)"),
+        (null, "IOP2007 FlyToOptions.signal: skipped: uses `AbortSignal`", "AbortSignal (R14) isn't bridged yet; the record drops the optional member"),
+        (null, "IOP2007 MarkerOptions.labelFormatter: skipped: uses a callback that isn't a parameter (R21)", "a data record can't hold a callback (R21); the record drops the optional member"),
         (null, "IOP2007 Subscription: skipped: uses method `dispose` (in `Subscription`)", "an interface with a method isn't a data record (R15)"),
         (null, "IOP2007 ChangeCallback: skipped: uses generic `ChangeCallback` (in `ChangeCallback`)", "a generic callback type has no C# type"),
         (null, "IOP2007 Emitter.emit: skipped: uses type parameter `K`", "its payload depends on a type parameter"),

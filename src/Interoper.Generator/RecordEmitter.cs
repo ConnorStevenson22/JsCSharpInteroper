@@ -164,7 +164,7 @@ internal static class RecordEmitter
         var own = fields.Where(f => f.Constant is null && !f.Inherited).ToList();
         foreach (var f in own)
         {
-            w.Line($"public {(required && f.Required ? "required " : "")}{f.TypeName} {f.Name} {{ get; init; }}");
+            w.Line($"public {(f.Hides ? "new " : "")}{(required && f.Required ? "required " : "")}{f.TypeName} {f.Name} {{ get; init; }}");
         }
         if (own.Count > 0)
         {

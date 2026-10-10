@@ -5,8 +5,9 @@ namespace Interoper.Generator;
 
 /// <summary>
 /// A declaration to emit, trimmed to what can be mapped: a class keeps only the members, events and signatures that
-/// can be, a dropped optional or rest parameter is gone from its signature (R22), and an event payload's interface has
-/// no methods (R24). A callback alias is never one: it has no C# type of its own (R21).
+/// can be, a property whose setter can't be is read-only (§5), a dropped optional or rest parameter is gone from its
+/// signature (R22), a data record has no optional members that can't be (R15), and an event payload's interface has no
+/// methods (R24). A callback alias is never one: it has no C# type of its own (R21).
 /// </summary>
 public sealed record Selected(string Module, Declaration Declaration);
 
@@ -23,13 +24,14 @@ public sealed record SelectedElement(string Module, Element Element, ClassDeclar
 /// data types (interfaces, aliases, enums) they use, whole. What can't be mapped is found here, so that a skipped type
 /// takes the members that use it along with it (mapping §8): a member that uses a class outside the selection, or a
 /// type the type map can't map (<see cref="TypeMap.Problem(IrType, Position)"/>), is skipped with IOP2007, or IOP2003
-/// for an ambiguous union; an optional trailing parameter or a rest parameter is dropped instead (R22), and so is a
-/// method of an interface that an event delivers (R24). A union that is only written drops its cases outside the
-/// selection instead (R2). The profile's collection classes are generic live classes, and generic interfaces generic
-/// records; their type parameters are entities (mapping §2). A use of <c>any</c>, <c>unknown</c> or <c>object</c> is
-/// reported as IOP2001. Each custom element of an emitted class gets a component (R28); an element's event map, whose
-/// events the component binds from the manifest, isn't emitted. A declaration that can't be imported (an internal
-/// module's that nothing re-exports, design §3.5) has no <c>Create</c>, function or component (IOP2007).
+/// for an ambiguous union; an optional trailing parameter or a rest parameter is dropped instead (R22), and so are a
+/// setter (§5), a data record's optional member (R15) and a method of an interface that an event delivers (R24). A
+/// union drops its cases outside the selection instead (R2). The profile's collection classes are generic live
+/// classes, and generic interfaces generic records; their type parameters are entities (mapping §2). A use of
+/// <c>any</c>, <c>unknown</c> or <c>object</c> is reported as IOP2001. Each custom element of an emitted class gets a
+/// component (R28); an element's event map, whose events the component binds from the manifest, isn't emitted. A
+/// declaration that can't be imported (an internal module's that nothing re-exports, design §3.5) has no <c>Create</c>,
+/// function or component (IOP2007). The generator instantiates generic union aliases first (<see cref="Instantiation"/>).
 /// </summary>
 public sealed class Selection
 {
@@ -234,7 +236,15 @@ public sealed class Selection
             {
                 continue;
             }
-            var parts = property.WriteType is { } writeType ? [property.Type, writeType] : new[] { property.Type };
+            // §5: a setter whose wider type can't be mapped is dropped, and the getter kept; it's read-only then.
+            if (property.WriteType is { } writeType && !types.IsCallback(property) && !types.IsElement(property) &&
+                (Problem(property.Type) ?? types.Problem(property with { WriteType = null })) is null &&
+                (Problem(writeType) ?? types.Problem(property)) is { } setter)
+            {
+                Report(new(setter.Code, subject, $"setter dropped: uses {setter}"));
+                property = property with { WriteType = null, Readonly = true };
+            }
+            var parts = property.WriteType is { } kept ? [property.Type, kept] : new[] { property.Type };
             if ((FirstProblem(parts) ?? types.Problem(property)) is { } problem)
             {
                 Skip(subject, problem);
@@ -269,13 +279,20 @@ public sealed class Selection
     }
 
     /// <summary>
-    /// R28: an element's component, unless its class isn't emitted (or is generic). An attribute or event that can't be
-    /// bound is skipped (IOP2007), and so is an attribute without a property that isn't a primitive or a string enum; an
-    /// attribute of a property that was skipped goes with it.
+    /// R28: an element's component, unless its class isn't emitted (or is generic). A class that isn't one of the IR's
+    /// declarations (the extractor couldn't resolve the manifest's name) skips the component (IOP2007). An attribute or
+    /// event that can't be bound is skipped (IOP2007), and so is an attribute without a property that isn't a primitive
+    /// or a string enum; an attribute of a property that was skipped goes with it.
     /// </summary>
     private void AddElement(Element element)
     {
-        if (element.Class is not RefType { Module: not null } r || Find(r) is not ClassDeclaration c || !selected.TryGetValue(c, out var s) ||
+        if (element.Class is not RefType { Module: not null } declared || Find(declared) is not ClassDeclaration)
+        {
+            var name = element.Class switch { UnresolvedType u => u.Text, RefType x => x.Name, _ => "?" };
+            Report(new(Diagnostic.NotSupported, $"<{element.Tag}>", $"skipped: its class `{name}` isn't a class the IR declares (R28)"));
+            return;
+        }
+        if (Find(declared) is not ClassDeclaration c || !selected.TryGetValue(c, out var s) ||
             c.TypeParameters.Count > 0)
         {
             return;
@@ -474,8 +491,7 @@ public sealed class Selection
         PrimitiveType p => SupportedPrimitives.Contains(p.Name) ? null : new($"`{p.Name}`"),
         LiteralType or ThisType => null,
         RefType { Module: null, Name: "Promise" } r => FirstProblem(r.Args),
-        // R2: where a union is only written, a case that is a class outside the selection is dropped; where it's read,
-        // the type map refuses it.
+        // R2: a union drops a case that is a class outside the selection.
         UnionType u when u.Types.Count(t => !IsNullish(t)) > 1 => FirstProblem(u.Types.Where(t => !types.IsUnselected(t))),
         RefType { Module: null } r => TypeMap.IsElement(r) ? null : new($"`{r.Name}`"), // R13: a DOM element is an ElementReference
         RefType r => Find(r) is { } declaration ? DeclarationProblem(declaration) ?? FirstProblem(r.Args) : new($"`{r.Name}`"),
@@ -512,9 +528,9 @@ public sealed class Selection
                 : skippedClasses.GetValueOrDefault(c)
                     ?? new(c.TypeParameters.Count > 0 && !profile.Collections.Contains(c.Name) ? $"generic `{c.Name}`" : $"class `{c.Name}` outside the selection"),
             AliasDeclaration { TypeParameters.Count: > 0 } => new($"generic `{declaration.Name}`"),
-            InterfaceDeclaration i => MembersProblem(payloads.Contains(i) ? i.Members.OfType<PropertyMember>() : i.Members, i.CallSignatures.Count + i.ConstructSignatures.Count)
-                ?? FirstProblem(Parts(i)) ?? types.Problem(i),
-            AliasDeclaration a => Problem(a.Type) ?? types.Problem(a),
+            InterfaceDeclaration i when Trim(i) is var t => MembersProblem(payloads.Contains(i) ? t.Members.OfType<PropertyMember>() : t.Members, i.CallSignatures.Count + i.ConstructSignatures.Count)
+                ?? FirstProblem(Parts(t)) ?? types.Problem(t),
+            AliasDeclaration a => Problem(Trim(a).Type) ?? types.Problem(a),
             EnumDeclaration e => types.Problem(e),
             _ => new($"`{declaration.Name}`"),
         };
@@ -570,8 +586,12 @@ public sealed class Selection
         {
             return;
         }
-        var emitted = declaration;
-        if (declaration is InterfaceDeclaration i && payloads.Contains(i))
+        foreach (var (member, problem) in Dropped(declaration))
+        {
+            Skip($"{declaration.Name}.{member.Name}", problem);
+        }
+        var emitted = Trim(declaration);
+        if (emitted is InterfaceDeclaration i && payloads.Contains((InterfaceDeclaration)declaration))
         {
             foreach (var method in i.Members.OfType<MethodMember>())
             {
@@ -580,7 +600,7 @@ public sealed class Selection
             emitted = i with { Members = [.. i.Members.OfType<PropertyMember>()] };
         }
         selected[declaration] = new(moduleOf[declaration], emitted);
-        foreach (var type in Parts(declaration))
+        foreach (var type in Parts(emitted))
         {
             Collect(type);
         }
@@ -597,6 +617,44 @@ public sealed class Selection
     }
 
     private static bool IsNullish(IrType type) => type is PrimitiveType { Name: "null" or "undefined" };
+
+    /// <summary>
+    /// R15: a data record's own optional members that can't be mapped, each with why: the record is emitted without them
+    /// (IOP2007), as a required one skips it. Its bases drop their own.
+    /// </summary>
+    private List<(PropertyMember Member, Unmappable Problem)> Dropped(Declaration declaration)
+    {
+        var members = declaration switch
+        {
+            InterfaceDeclaration i => i.Members,
+            AliasDeclaration { Type: ObjectType o } => o.Members,
+            _ => [],
+        };
+        var outer = typeParameters;
+        typeParameters = declaration is InterfaceDeclaration generic ? generic.TypeParameters : [];
+        var dropped = new List<(PropertyMember, Unmappable)>();
+        foreach (var p in members.OfType<PropertyMember>().Where(p => p.Optional && !p.Static))
+        {
+            if ((Problem(p.Type) ?? types.MemberProblem(p)) is { } problem)
+            {
+                dropped.Add((p, problem));
+            }
+        }
+        typeParameters = outer;
+        return dropped;
+    }
+
+    /// <summary>A data record without the optional members it drops (<see cref="Dropped"/>); any other declaration as it is.</summary>
+    private T Trim<T>(T declaration) where T : Declaration
+    {
+        var dropped = Dropped(declaration).Select(d => d.Member).ToHashSet(ReferenceEqualityComparer.Instance);
+        return dropped.Count == 0 ? declaration : declaration switch
+        {
+            InterfaceDeclaration i => (T)(Declaration)(i with { Members = [.. i.Members.Where(m => !dropped.Contains(m))] }),
+            AliasDeclaration { Type: ObjectType o } a => (T)(Declaration)(a with { Type = o with { Members = [.. o.Members.Where(m => !dropped.Contains(m))] } }),
+            _ => declaration,
+        };
+    }
 
     /// <summary>
     /// IOP2001: a member, parameter or result whose type has <c>any</c>, <c>unknown</c> or <c>object</c> in it, which

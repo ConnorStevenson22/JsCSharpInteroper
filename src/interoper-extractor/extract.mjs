@@ -434,7 +434,10 @@ export function extract(packageDirs, { eventMap } = {}) {
 /**
  * The elements of the package's Custom Elements Manifest (`customElements` in package.json). Each type
  * text the IR needs becomes a virtual module next to the package, for the checker: it imports the names the text's
- * `references` point at and exports the text as `__type`. `types` maps a manifest type to `{ file, text }`.
+ * `references` point at and exports the text as `__type`. `types` maps a manifest type to `{ file, text }`. A module
+ * path of the package itself is imported through its own `exports` when one reaches it (`components/zoom-label` as
+ * `<name>/components/zoom-label`, for `"./components/*"`), and otherwise as a file of the package (`./dist/index.js`);
+ * the checker then follows re-exports to the declaring module.
  */
 function readManifest(dir, pkg) {
   const elements = [];
@@ -451,11 +454,17 @@ function readManifest(dir, pkg) {
   }
 
   const root = dir.split(path.sep).join("/");
+  const map = pkg.exports === undefined ? undefined : exportsMap(pkg.exports);
+  const own = (module) => {
+    const subpath = module.replace(/^\.?\//, "");
+    return map && typeof resolveExport(map, `./${subpath}`) === "string" ? `${pkg.name}/${subpath}` : `./${subpath}`;
+  };
   const add = (type) => {
     if (!type?.text) return;
-    const from = (r) => (r.package && r.package !== "global:" ? [r.package, r.module].filter(Boolean).join("/") : !r.package && r.module && `./${r.module}`);
+    const from = (r) => (r.package && r.package !== "global:" ? [r.package, r.module].filter(Boolean).join("/") : !r.package && r.module && own(r.module));
     const imports = (type.references ?? []).filter(from).map((r) => `import type { ${r.name} } from ${JSON.stringify(from(r))};\n`);
-    types.set(type, { file: `${root}/__element-type-${types.size}.ts`, text: `${[...new Set(imports)].join("")}export type __type = ${type.text};\n` });
+    // An ES module whatever the package's `type`, so imports resolve with the `import` condition.
+    types.set(type, { file: `${root}/__element-type-${types.size}.mts`, text: `${[...new Set(imports)].join("")}export type __type = ${type.text};\n` });
   };
   for (const { decl, type } of elements) {
     add(type);

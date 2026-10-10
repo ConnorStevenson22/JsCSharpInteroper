@@ -14,8 +14,8 @@ public sealed record Profile
     public string? RuntimeClassProperty { get; init; }
 
     /// <summary>
-    /// Prepended to every runtime class name in the metadata module (design §2), for libraries whose runtime names start
-    /// with a namespace of their own.
+    /// Prepended to the runtime class names of the package's classes in the metadata module (design §2), for libraries
+    /// whose runtime names start with a namespace of their own; another package's classes keep theirs.
     /// </summary>
     public string RuntimeClassPrefix { get; init; } = "";
 

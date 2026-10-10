@@ -9,9 +9,27 @@ public sealed class NamingTests
     [InlineData("pin-120", "Pin120")]
     [InlineData("0", "_0")]
     [InlineData("", "Empty")]
-    [InlineData("--", "Empty")]
+    [InlineData("<", "LessThan")]
+    [InlineData("<=", "LessThanOrEqual")]
+    [InlineData(">", "GreaterThan")]
+    [InlineData(">=", "GreaterThanOrEqual")]
+    [InlineData("=", "Equal")]
+    [InlineData("==", "Equal")]
+    [InlineData("!=", "NotEqual")]
+    [InlineData("+", "Plus")]
+    [InlineData("-", "Minus")]
+    [InlineData("*", "Star")]
+    [InlineData("/", "Slash")]
+    [InlineData("%", "Percent")]
+    [InlineData("--", "MinusMinus")]
+    [InlineData("<>", "LessThanGreaterThan")]
+    [InlineData("&", "U0026")]
     public void LiteralsBecomeEnumMemberNames(string value, string name) =>
         Assert.Equal(name, Assert.Single(Naming.EnumMembers([value], "Basemap", [])));
+
+    [Fact] // R25
+    public void SymbolsAreSpelledAndOnlyTheEmptyStringIsEmpty() =>
+        Assert.Equal(["LessThan", "LessThanOrEqual", "Equal", "Equal2", "Empty"], Naming.EnumMembers(["<", "<=", "=", "==", ""], "Operator", []));
 
     [Fact] // R25
     public void DuplicateEnumMemberNamesGetANumericSuffix()

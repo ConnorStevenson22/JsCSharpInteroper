@@ -56,7 +56,8 @@ internal static class MetadataEmitter
     }
 
     /// <summary>
-    /// Per class id: the module and export that construct it, its runtime class name (with the profile's prefix), a
+    /// Per class id: the module and export that construct it, its runtime class name (with the profile's prefix when
+    /// it's the first package's), a
     /// custom element's tag (R28), whether it's value-like (R16), and its snapshot members (R18), a value-like one's with
     /// its constants. Then the components' custom events, each with its detail's default projection (R24, R28).
     /// </summary>
@@ -72,7 +73,9 @@ internal static class MetadataEmitter
         {
             var c = (ClassDeclaration)s.Declaration;
             var members = string.Join(", ", types.WireMembers(c).Select(m => Syntax.Literal(m.Name)));
-            var name = profile.RuntimeClassPrefix + RuntimeName(types.PackageOf(s.Module), s.Module, c.Name);
+            // The profile is the first package's, and so is its prefix: another package's classes have none.
+            var package = types.PackageOf(s.Module);
+            var name = (package == ir.Package.Name ? profile.RuntimeClassPrefix : "") + RuntimeName(package, s.Module, c.Name);
             var tag = elements.FirstOrDefault(e => e.Class.Name == c.Name && e.Module == s.Module)?.Element.Tag;
             // Design §3.5: a class that can't be imported has neither, so it isn't constructed or imported for $c.
             var import = types.Import(c) is { } i ? $"module: {Syntax.Literal(i.Module)}, export: {Syntax.Literal(i.Export)}, " : "";

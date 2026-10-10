@@ -12,8 +12,8 @@ public sealed class SelectionTests
 
         Assert.Equal(
         [
-            "MapView.js: Basemap, Cursor, CenterAndZoom, Camera, FlyToTarget, ClickEvent, MapViewEvents, MapViewOptions, MapView",
-            "Marker.js: Marker",
+            "MapView.js: Basemap, Cursor, CenterAndZoom, Camera, FlyToTarget, FlyToOptions, ClickEvent, MapViewEvents, MapViewOptions, MapView", // R15: FlyToOptions without its signal
+            "Marker.js: MarkerOptions, Marker", // R15: without its callback
             "core.js: Observable, Emitter, CollectionChangeEvent, CollectionEvents, Collection",
             "demo-map.js: DemoMapClickDetail, DemoMapElement, DemoMapZoomChangeDetail", // R28: not the event map; a record for an inline detail
             "geometry.js: ShapeType, Bounds, Shape, Point, Line, Polygon",
@@ -37,9 +37,11 @@ public sealed class SelectionTests
         Assert.Empty(Members(selection, "Observable")); // the runtime-class property and the watch method are never members
         Assert.Empty(Members(selection, "Emitter")); // nor is the event method; `emit` has a type parameter
 
-        // R14 isn't supported yet, so flyTo loses its optional `options` (R22).
+        // R14 isn't supported yet, so FlyToOptions drops its optional `signal` (R15), and flyTo keeps its `options`.
         var flyTo = Assert.IsType<MethodMember>(Class(selection, "MapView").Members.Single(m => m.Name == "flyTo"));
-        Assert.Equal(["target"], Assert.Single(flyTo.Signatures).Params.Select(p => p.Name));
+        Assert.Equal(["target", "options"], Assert.Single(flyTo.Signatures).Params.Select(p => p.Name));
+        var flyToOptions = Assert.IsType<InterfaceDeclaration>(selection.Declarations.Single(s => s.Declaration.Name == "FlyToOptions").Declaration);
+        Assert.Equal(["duration"], flyToOptions.Members.Select(m => m.Name));
     }
 
     [Fact]
@@ -67,16 +69,15 @@ public sealed class SelectionTests
         Assert.Equal(["zoom", "rotation", "basemap", "cursor", "title", "container", "flyTo"], Members(selection, "MapView"));
         Assert.Equal(
         [
-            "IOP2007 FlyToOptions: skipped: uses `AbortSignal` (in `FlyToOptions`)",
+            "IOP2007 FlyToOptions.signal: skipped: uses `AbortSignal`", // R15: an optional member is dropped, a required one skips its record
             "IOP2007 ClickEvent: skipped: uses class `Point` outside the selection (in `ClickEvent`)",
             "IOP2007 MapViewEvents: skipped: uses class `Point` outside the selection (in `ClickEvent`) (in `MapViewEvents`)",
-            "IOP2007 MapViewOptions: skipped: uses class `Point` outside the selection (in `MapViewOptions`)",
+            "IOP2007 MapViewOptions.center: skipped: uses class `Point` outside the selection",
             "IOP2007 MapView.center: skipped: uses class `Point` outside the selection",
             "IOP2007 MapView.selected: skipped: uses class `Marker` outside the selection",
             "IOP2007 MapView.markers: skipped: uses class `Collection` outside the selection",
             "IOP2007 MapView.layers: skipped: uses class `Collection` outside the selection",
             "IOP2007 MapView.screenToMap: skipped: uses class `Point` outside the selection", // once for its two overloads
-            "IOP2007 MapView.flyTo(options): optional parameter dropped (R22): uses `AbortSignal` (in `FlyToOptions`)",
             "IOP2007 MapView.markerAt: skipped: uses class `Marker` outside the selection",
             "IOP2007 MapView.on:click: skipped: uses class `Point` outside the selection (in `ClickEvent`)",
             "IOP2007 Emitter.emit: skipped: uses type parameter `K`",
@@ -293,28 +294,40 @@ public sealed class SelectionTests
         Assert.DoesNotContain("Add(", result.Files.Single(f => f.Path == "Bag.cs").Text);
     }
 
-    [Fact] // R2: where a union is only written, a case outside the selection is dropped; where it's read, it's still skipped
-    public void AUnionDropsACaseOutsideTheSelectionWhereItsOnlyWritten()
+    [Fact] // R2, R19: a union drops a case outside the selection, reads the others and fails on it; one that can't tell the others apart is only written
+    public void AUnionDropsACaseOutsideTheSelectionAndFailsOnlyOnIt()
     {
-        var ir = Ir("""
+        const string Layer = """{ "kind": "ref", "name": "Layer", "module": "@acme/maps/b.js" }""";
+        static string Ref(string name) => $$"""{ "kind": "ref", "name": "{{name}}", "module": "@acme/maps/a.js" }""";
+        static string Box(string name) => $$"""{ "kind": "interface", "name": "{{name}}", "members": [{ "kind": "property", "name": "w", "type": { "kind": "primitive", "name": "number" } }] }""";
+        var ir = Ir($$"""
             { "kind": "alias", "name": "Target", "type": { "kind": "union", "types": [
-              { "kind": "ref", "name": "Layer", "module": "@acme/maps/b.js" }, { "kind": "primitive", "name": "string" },
-              { "kind": "array", "element": { "kind": "primitive", "name": "number" } }] } },
+              {{Layer}}, { "kind": "primitive", "name": "string" }, { "kind": "array", "element": { "kind": "primitive", "name": "number" } }] } },
+            {{Box("Box")}}, {{Box("Disc")}},
+            { "kind": "alias", "name": "Spot", "type": { "kind": "union", "types": [{{Layer}}, {{Ref("Box")}}, {{Ref("Disc")}}] } },
             { "kind": "class", "name": "View", "members": [
-              { "kind": "property", "name": "target", "type": { "kind": "ref", "name": "Target", "module": "@acme/maps/a.js" } },
-              { "kind": "method", "name": "goTo", "signatures": [{ "params": [{ "name": "target", "type": { "kind": "ref", "name": "Target", "module": "@acme/maps/a.js" } }],
+              { "kind": "property", "name": "target", "type": {{Ref("Target")}} },
+              { "kind": "property", "name": "spot", "readonly": true, "type": {{Ref("Spot")}} },
+              { "kind": "method", "name": "goTo", "signatures": [{ "params": [{ "name": "target", "type": {{Ref("Target")}} }, { "name": "spot", "type": {{Ref("Spot")}} }],
                 "returns": { "kind": "primitive", "name": "void" } }] }] }
             """, """{ "kind": "class", "name": "Layer" }""");
         var result = Generator.Generate(ir, new Profile { Package = "@acme/maps", Include = ["@acme/maps/a.js"] }, new(Api.Sync, "Acme.Maps"));
         Assert.Equal(
         [
-            "IOP2007 View.target: skipped: uses class `Layer` outside the selection",
-            "IOP2007 Target: case `Layer` dropped: a class outside the selection, so it's only written (R2)",
+            "IOP2003 View.spot: skipped: uses the ambiguous union `Spot`: Box has no required member the other cases lack (R19)",
+            "IOP2007 Target: case `Layer` dropped: a class outside the selection (R2)",
+            "IOP2007 Spot: case `Layer` dropped: a class outside the selection (R2)",
         ], result.Diagnostics.Select(d => d.ToString()));
-        Assert.Contains("public void GoTo(Target target) =>", result.Files.Single(f => f.Path == "View.cs").Text);
+        var view = result.Files.Single(f => f.Path == "View.cs").Text;
+        Assert.Contains("public Target Target", view); // read, and written
+        Assert.Contains("public void GoTo(Target target, Spot spot) =>", view);
+        // Target reads its other cases, and fails on a handle, which is how JS sends a Layer.
         var target = result.Files.Single(f => f.Path == "Target.cs").Text;
         Assert.Contains("private readonly byte _tag; // 0 = undefined, 1 = null, 2 = string, 3 = double[]", target);
-        Assert.Contains("throw new global::System.Text.Json.JsonException(\"Target is only written (R2)\")", target);
+        Assert.Contains("""global::System.Text.Json.JsonTokenType.StartObject when global::Interoper.JsJson.HasProperty(reader, "$h"u8) => throw new global::System.Text.Json.JsonException("Target: a case outside the selection (R2)"),""", target);
+        Assert.Contains("global::System.Text.Json.JsonTokenType.String => global::Interoper.JsJson.ReadString(ref reader),", target);
+        // Spot can't tell Box from Disc, so it's only written, as a parameter's.
+        Assert.Contains("throw new global::System.Text.Json.JsonException(\"Spot is only written (R2)\")", result.Files.Single(f => f.Path == "Spot.cs").Text);
     }
 
     [Fact] // R22: a rest parameter is params T[], so one that isn't an array is dropped, as an optional one is

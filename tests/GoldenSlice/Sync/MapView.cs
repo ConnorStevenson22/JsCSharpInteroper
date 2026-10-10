@@ -71,8 +71,12 @@ public sealed partial class MapView : Emitter
     public PointSnapshot ScreenToMap(double[] offset) =>
         Realm.Call(global::Interoper.JsOp.Call(Handle, "screenToMap", w => global::Interoper.JsJson.WriteArray(w, offset, global::Interoper.JsJson.WriteNumber), byValue: true), PointSnapshot.Read)!;
 
-    public global::System.Threading.Tasks.Task FlyToAsync(FlyToTarget target) =>
-        Realm.SendAsync(global::Interoper.JsOp.Call(Handle, "flyTo", w => global::Interoper.JsJson.WriteValue(w, target)));
+    public global::System.Threading.Tasks.Task FlyToAsync(FlyToTarget target, global::Interoper.Opt<FlyToOptions> options = default) =>
+        Realm.SendAsync(global::Interoper.JsOp.Call(Handle, "flyTo", w =>
+        {
+            global::Interoper.JsJson.WriteValue(w, target);
+            if (!options.IsUndefined) global::Interoper.JsJson.WriteValue(w, options, FlyToOptions.Write);
+        }));
 
     public global::System.Threading.Tasks.Task<global::Interoper.Opt<Marker>> MarkerAtAsync(global::Interoper.JsScope scope, double x, double y) =>
         Realm.CallAsync(global::Interoper.JsOp.Call(Handle, "markerAt", w =>

@@ -153,14 +153,15 @@ internal static class ValueTypeEmitter
 
     /// <summary>
     /// R19: by the discriminant (step 2), or by the JSON token (step 4), objects last, told apart by a required member
-    /// (step 3). A union that is only written can't be read.
+    /// (step 3). A union that is only written can't be read, and one that dropped a case fails on it (R2).
     /// </summary>
     private static void ReadValue(CodeWriter w, TypeMap types, UnionStruct u)
     {
         var header = $"public static {u.Name} ReadValue(ref global::System.Text.Json.Utf8JsonReader reader)";
         if (u.WrittenOnly)
         {
-            // R2: it has an entity case or dropped a case outside the selection, so it's only a parameter's.
+            // R2: it has an entity case, or dropped a case outside the selection and can't tell the others apart, so
+            // it's only a parameter's.
             w.Line($"{header} => throw new global::System.Text.Json.JsonException(\"{u.Name} is only written (R2)\");");
             return;
         }
@@ -174,6 +175,12 @@ internal static class ValueTypeEmitter
         var others = u.Cases.Except(objects).ToList();
         using (w.Block($"{header} => reader.TokenType switch", "};"))
         {
+            if (u.Dropped)
+            {
+                // R2: JS sends an instance of a class outside the selection, a dropped case, as a handle.
+                w.Line($"global::System.Text.Json.JsonTokenType.StartObject when global::Interoper.JsJson.HasProperty(reader, \"$h\"u8) => " +
+                    $"throw new global::System.Text.Json.JsonException(\"{u.Name}: a case outside the selection (R2)\"),");
+            }
             foreach (var c in others)
             {
                 w.Line($"global::System.Text.Json.JsonTokenType.{(c.Type.Json == JsonKind.String ? "String" : "StartArray")} => {c.Type.ReadCall("reader", 0)},");

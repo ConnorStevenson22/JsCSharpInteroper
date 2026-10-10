@@ -39,6 +39,7 @@ node --test "fixtures/demo-maps/test/*.test.mjs"
 | `Partial<Pick<…>>` constructor bags | R12, R18 | `Point`, `Line`, `Polygon` constructors; `MapViewOptions`; `MarkerOptions` (also extends with a wider `position`) |
 | Promise methods | R8 | `MapView.flyTo`, `MapView.markerAt` |
 | `AbortSignal` parameter | R14 | `FlyToOptions.signal` |
+| Optional record member that can't be mapped | R15 | `FlyToOptions.signal` (R14), `MarkerOptions.labelFormatter` (a callback, R21): the records leave them out |
 | Overloads | R23 | `MapView.screenToMap(x, y)` and `screenToMap([x, y])` |
 | JSDoc tags | [mapping §7](../../docs/mapping.md#7-what-the-extractor-must-resolve-with-the-checker) | `@default` (`FlyToOptions.duration`, `Rgba.a`); `@since`, `@deprecated`, `@see` on the `screenToMap` overloads |
 | Optional parameters | R22 | `MapView.flyTo(target, options?)`, `DemoMapElement.clickAt(x, y, button?)` |
@@ -68,7 +69,7 @@ The generator's `Profile` (`src/Interoper.Generator/Profile.cs`) is the schema.
 |---|---|
 | `package` | The npm package the profile applies to. |
 | `runtimeClassProperty` | Instance property holding the runtime class name; maps a JS object to its most-derived C# type. |
-| `runtimeClassPrefix` | Prepended to every runtime class name in the metadata module, for libraries whose names start with a namespace. Absent, as here, means none. |
+| `runtimeClassPrefix` | Prepended to the runtime class names of the package's own classes in the metadata module, for libraries whose names start with a namespace; another package's classes keep theirs. Absent, as here, means none. |
 | `valueClasses` | Classes that also get an `XSnapshot` record used by value (R16). Every other class is an entity (R15). |
 | `events` | Event convention: `mapProperty` is the phantom event-map property (`$events`), `subscribe` the method that takes `(type, listener)` and returns a `Subscription` with `dispose()` (`Pin.on`'s has `remove()` instead). |
 | `watch` | Method that takes `(propertyName, callback)` and returns a `Subscription` with `dispose()`. Every property of a class that has it gets a watch. |

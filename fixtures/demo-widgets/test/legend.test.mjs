@@ -27,3 +27,16 @@ test("the root re-exports the swatch, which no export reaches directly", async (
   assert.deepEqual([swatchFor({ title: "a", visible: false }).color, new Swatch().color], ["grey", "black"]);
   assert.equal(new Swatch().className, "dist.support.swatch.Swatch");
 });
+
+test("a component folder's index re-exports its element, which shows and copies its view's zoom", async () => {
+  const { ZoomLabelElement } = await import("../dist/components/zoom-label/index.js");
+  assert.equal((await import("../dist/components/zoom-label/element.js")).ZoomLabelElement, ZoomLabelElement);
+  const label = new ZoomLabelElement();
+  label.view = new MapView();
+  label.view.zoom = 3.25;
+  label.precision = 1;
+  const seen = [];
+  label.addEventListener("demo-zoom-label-copy", (e) => seen.push(e.detail));
+  label.copy();
+  assert.deepEqual(seen, [{ text: "3.3" }]);
+});

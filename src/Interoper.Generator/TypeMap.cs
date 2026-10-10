@@ -8,7 +8,9 @@ namespace Interoper.Generator;
 /// <param name="Constant">The value of a member typed with one literal: always written, and no property (R16, R20).</param>
 /// <param name="Opt">The property is <c>Opt&lt;T&gt;</c> (R3); a union never is (R2).</param>
 /// <param name="Inherited">Declared by the base snapshot record (R16).</param>
-internal sealed record Field(string JsName, string Name, CsType? Type, bool Required, bool Opt = false, JsonElement? Constant = null, bool Inherited = false)
+/// <param name="Hides">Redeclares a base snapshot record's member with another type, so it's <c>new</c> (R18, R26).</param>
+internal sealed record Field(string JsName, string Name, CsType? Type, bool Required, bool Opt = false, JsonElement? Constant = null, bool Inherited = false,
+    bool Hides = false)
 {
     public string TypeName => Opt ? $"global::Interoper.Opt<{Type!.Name}>" : Type!.Name;
 }
@@ -28,10 +30,11 @@ internal sealed record EnumType(TypeName Type, IReadOnlyList<(string Name, JsonE
 
 /// <summary>
 /// A generated union struct (R2). <see cref="Discriminant"/> is the property its object cases are told apart by (R19
-/// step 2). A <see cref="WrittenOnly"/> one is a parameter's that has an entity case or had a case outside the selection:
-/// it's never read, so R19 doesn't apply.
+/// step 2). A <see cref="WrittenOnly"/> one is a parameter's that has an entity case, or that dropped a case and can't
+/// tell the others apart: it's never read, so R19 doesn't apply. One that <see cref="Dropped"/> a case outside the
+/// selection reads the others, and fails on a handle, which is how JS sends a class outside the selection.
 /// </summary>
-internal sealed record UnionStruct(TypeName Type, IReadOnlyList<UnionCase> Cases, string? Discriminant, bool WrittenOnly = false) : DataType(Type);
+internal sealed record UnionStruct(TypeName Type, IReadOnlyList<UnionCase> Cases, string? Discriminant, bool WrittenOnly = false, bool Dropped = false) : DataType(Type);
 
 /// <param name="Declaration">What an object case is read as (R19 steps 2 and 3).</param>
 internal sealed record UnionCase(CsType Type, Declaration? Declaration);
@@ -426,11 +429,11 @@ internal sealed class TypeMap
             return known;
         }
         var all = Values(type);
-        // R2: a parameter's union drops its cases outside the selection, and is then only written.
+        // R2: a union drops its cases outside the selection.
         var flat = all.Where(t => !IsUnselected(t)).ToList();
         foreach (var dropped in all.Except(flat).OfType<RefType>())
         {
-            diagnostics.Add(new(Diagnostic.NotSupported, name.Name, $"case `{dropped.Name}` dropped: a class outside the selection, so it's only written (R2)"));
+            diagnostics.Add(new(Diagnostic.NotSupported, name.Name, $"case `{dropped.Name}` dropped: a class outside the selection (R2)"));
         }
         var literals = flat.OfType<LiteralType>().Select(l => l.Value).ToList();
         DataType? result =
@@ -441,7 +444,7 @@ internal sealed class TypeMap
                 EnumMembers(name.Name, literals, literals.Select(v => v.GetRawText())), Extensible: false)
             : new UnionStruct(name, Cases(name, flat),
                 type is UnionType u && u.Types.Count(t => !IsNullish(t)) == all.Count ? u.Discriminant : null,
-                WrittenOnly(all, flat));
+                WrittenOnly(type, all, flat), Dropped: flat.Count < all.Count);
         unions[name] = result;
         return result;
     }
@@ -522,10 +525,11 @@ internal sealed class TypeMap
     private static bool IsNullish(IrType type) => type is PrimitiveType { Name: "null" or "undefined" };
 
     /// <summary>
-    /// R2: a union that dropped a case outside the selection, or has an entity case, which needs a scope to be read: only
-    /// a parameter's, never read.
+    /// R2: a union that has an entity case, which needs a scope to be read, or that dropped a case outside the selection
+    /// and can't tell the others apart (R19): only a parameter's, never read.
     /// </summary>
-    private bool WrittenOnly(List<IrType> all, List<IrType> flat) => flat.Count < all.Count || flat.Any(UsesEntity);
+    private bool WrittenOnly(IrType type, List<IrType> all, List<IrType> flat) =>
+        flat.Any(UsesEntity) || flat.Count < all.Count && UnionProblem(type, null, written: false) is not null;
 
     /// <summary>The first type parameter a type names, if any.</summary>
     private static TypeParameterType? TypeParameterIn(IrType type) =>
@@ -610,7 +614,11 @@ internal sealed class TypeMap
         return result;
     }
 
-    /// <summary>A closed base's snapshot declares its members; any other emitted base's are repeated (R18).</summary>
+    /// <summary>
+    /// A closed base's snapshot declares its members; any other emitted base's are repeated (R18). A member the class
+    /// redeclares is there once, the class's: a closed base's member of the same type stays the base's, one of another
+    /// type is <c>new</c>, and a constant replaces it.
+    /// </summary>
     private List<Field> SnapshotFields(ClassDeclaration c)
     {
         var type = Name(c);
@@ -618,15 +626,27 @@ internal sealed class TypeMap
         var taken = new HashSet<string>(result.Select(f => f.Name)) { SnapshotName(c), "Write", "WriteMembers", "Read", "Diff" };
         foreach (var p in c.Members.OfType<PropertyMember>().Where(p => !p.Static))
         {
+            var inherited = result.FindIndex(f => f.JsName == p.Name);
             if (p.Type is LiteralType constant)
             {
+                if (inherited >= 0)
+                {
+                    result.RemoveAt(inherited);
+                }
                 result.Add(new(p.Name, "", null, Required: true, Constant: constant.Value));
             }
             else if (IsSnapshotMember(p))
             {
                 var mapped = Slot(p.Type, type.Owned(p.Name)).Type;
-                var name = Naming.Member(taken, Naming.Pascal(p.Name), $"{SnapshotName(c)}.{p.Name}", diagnostics);
-                result.Add(new(p.Name, name, mapped, Required: false, Opt: !mapped.IsUnion));
+                if (inherited < 0)
+                {
+                    var name = Naming.Member(taken, Naming.Pascal(p.Name), $"{SnapshotName(c)}.{p.Name}", diagnostics);
+                    result.Add(new(p.Name, name, mapped, Required: false, Opt: !mapped.IsUnion));
+                }
+                else if (result[inherited] is { Constant: null } own && own.Type!.FullName != mapped.FullName)
+                {
+                    result[inherited] = new(p.Name, own.Name, mapped, Required: false, Opt: !mapped.IsUnion, Hides: true);
+                }
             }
         }
         if (SnapshotBase(c) is null && LiveBase(c) is { } live)
@@ -854,18 +874,15 @@ internal sealed class TypeMap
     /// <summary>
     /// What <see cref="Union"/> and the union reader (R19) refuse: a literal next to other types, a value-type case (R2
     /// keeps unions non-boxing), a non-integer number, a discriminant that isn't a string on every case, or cases it
-    /// can't tell apart, which is IOP2003. A union that is only <paramref name="written"/> (a parameter's, R2) may have an
-    /// entity case, which needs no scope to be written, and drops its cases outside the selection; it's never read.
+    /// can't tell apart, which is IOP2003. Any union drops its cases outside the selection. A union that is only
+    /// <paramref name="written"/> (a parameter's, R2) may have an entity case, which needs no scope to be written, and may
+    /// fail R19 when it dropped a case; it's never read then.
     /// </summary>
     private Unmappable? UnionProblem(IrType type, string? name, bool written)
     {
         var all = Values(type);
         var label = name is null ? "a union" : $"the union `{name}`";
         var ambiguous = name is null ? "an ambiguous union" : $"the ambiguous union `{name}`";
-        if (!written && all.FirstOrDefault(IsUnselected) is RefType unselected)
-        {
-            return new($"class `{unselected.Name}` outside the selection");
-        }
         var flat = all.Where(t => !IsUnselected(t)).ToList(); // as Union() drops them
         if (flat.All(t => t is LiteralType { Value.ValueKind: JsonValueKind.String } || IsOpenString(t)))
         {
@@ -915,11 +932,18 @@ internal sealed class TypeMap
                 cases.Add((NameOf(t), NameOf(t, full: true), JsonOf(t), t is RefType r ? Find(r) : null));
             }
         }
-        if (WrittenOnly(all, flat))
+        if (flat.Any(UsesEntity))
         {
-            return null; // never read, so R19 doesn't apply
+            return null; // only written, so R19 doesn't apply
         }
-        if (type is UnionType u && u.Types.Count(t => !IsNullish(t)) == all.Count && u.Discriminant is { } discriminant) // as Union() reads it
+        // R2: a written union that dropped a case and can't tell the others apart is only written, too (WrittenOnly).
+        return Classification(type, all.Count, cases, label, ambiguous) is { } unclassified && !(written && flat.Count < all.Count) ? unclassified : null;
+    }
+
+    /// <summary>R19 without mapping: the discriminant is a string on every case, or the cases' JSON or required members tell them apart.</summary>
+    private Unmappable? Classification(IrType type, int count, List<(string? Name, string? FullName, JsonKind Json, Declaration? Declaration)> cases, string label, string ambiguous)
+    {
+        if (type is UnionType u && u.Types.Count(t => !IsNullish(t)) == count && u.Discriminant is { } discriminant) // as Union() reads it
         {
             return cases.All(c => c.Declaration is { } d && StringConstants(d).Contains(discriminant)) ? null
                 : new($"{label}, whose discriminant `{discriminant}` isn't a string on every case (R19)");
@@ -947,10 +971,17 @@ internal sealed class TypeMap
             ? new($"the non-integer enum value {value}")
             : null;
 
-    /// <summary>A data record's members; one that is a DOM element is written only, and so is the record (R13).</summary>
+    /// <summary>
+    /// A data record's required members (R15); an optional one that can't be mapped is dropped instead (selection), and
+    /// one that is a DOM element is written only, and so is the record (R13).
+    /// </summary>
     private Unmappable? RecordProblem(int indexSignatures, IEnumerable<PropertyMember> members) =>
         indexSignatures > 0 ? new("an index signature")
-        : members.Where(p => !p.Static && p.Type is not LiteralType && !ElementOf(p.Type)).Select(p => Problem(p.Type, Position.Data)).FirstOrDefault(p => p is not null);
+        : members.Where(p => !p.Optional).Select(MemberProblem).FirstOrDefault(p => p is not null);
+
+    /// <summary>Why a data record's member can't be mapped: a constant can (R20), and so can a DOM element, which is written (R13).</summary>
+    public Unmappable? MemberProblem(PropertyMember p) =>
+        p.Static || p.Type is LiteralType || ElementOf(p.Type) ? null : Problem(p.Type, Position.Data);
 
     /// <summary>The string constants of a record, or a class's own (R20), in order.</summary>
     private List<string> StringConstants(Declaration declaration) =>

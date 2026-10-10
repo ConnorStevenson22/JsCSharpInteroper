@@ -27,6 +27,7 @@ public static class Generator
     /// </summary>
     public static GeneratorResult Generate(IrDocument ir, Profile profile, GeneratorOptions options)
     {
+        ir = Instantiation.Instantiate(ir); // §2: a generic union alias's uses are its unions
         var selection = Selection.Select(ir, profile);
         var diagnostics = selection.Diagnostics.ToList();
         var types = new TypeMap(ir, profile, selection.Declarations, diagnostics, options.Namespace);

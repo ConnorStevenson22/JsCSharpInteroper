@@ -25,6 +25,31 @@
         }
       ],
       "exports": [{ "kind": "js", "name": "*", "declaration": { "name": "*", "module": "dist/legend.js" } }]
+    },
+    {
+      "kind": "javascript-module",
+      "path": "components/zoom-label",
+      "declarations": [
+        {
+          "kind": "class",
+          "name": "ZoomLabelElement",
+          "tagName": "demo-zoom-label",
+          "customElement": true,
+          "superclass": { "name": "HTMLElement", "package": "global:" },
+          "description": "A view's zoom as text.",
+          "attributes": [{ "name": "precision", "type": { "text": "number" }, "fieldName": "precision", "default": "0" }],
+          "events": [
+            {
+              "name": "demo-zoom-label-copy",
+              "type": {
+                "text": "CustomEvent<ZoomLabelCopyDetail>",
+                "references": [{ "name": "ZoomLabelCopyDetail", "module": "components/zoom-label" }]
+              }
+            }
+          ]
+        }
+      ],
+      "exports": [{ "kind": "js", "name": "*", "declaration": { "name": "*", "module": "dist/components/zoom-label/element.js" } }]
     }
   ]
 }

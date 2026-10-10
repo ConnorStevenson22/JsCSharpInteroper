@@ -360,6 +360,19 @@ test("manifest references through `export { … } from` resolve to the declaring
   assert.deepEqual(element.events[0].detail, { kind: "ref", name: "TagDetail", module: "@acme/extra/x-tag.js" });
 });
 
+test("a manifest module path that is an export subpath resolves through the package's exports, then its re-exports", () => {
+  // No "type": the virtual modules are ES modules anyway, so the exports' `import` condition applies.
+  const { elements: [element] } = withPackage({
+    "package.json": { name: "@acme/extra", version: "1.0.0", customElements: "cem.json", exports: { "./parts/*": { import: "./lib/parts/*/index.js" } } },
+    "lib/parts/x-dial/index.d.ts": 'export * from "./dial.js";',
+    "lib/parts/x-dial/dial.d.ts": "export declare class DialElement extends HTMLElement {}\nexport interface DialTurn { by: number }",
+    "cem.json": { modules: [{ path: "parts/x-dial", declarations: [{ kind: "class", name: "DialElement", tagName: "x-dial",
+      events: [{ name: "x-dial-turn", type: { text: "CustomEvent<DialTurn>", references: [{ name: "DialTurn", module: "parts/x-dial" }] } }] }] }] },
+  }, extract);
+  assert.deepEqual(element.class, { kind: "ref", name: "DialElement", module: "@acme/extra/lib/parts/x-dial/dial.js" });
+  assert.deepEqual(element.events[0].detail, { kind: "ref", name: "DialTurn", module: "@acme/extra/lib/parts/x-dial/dial.js" });
+});
+
 /** A node_modules with both fixtures copied into it, as an install has them, so each resolves the other by name. */
 function installed() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "extract-"));
@@ -376,12 +389,13 @@ test("a listed package's dependency contributes only the declarations it reaches
   const names = Object.fromEntries(widgets.modules.map((m) => [m.specifier, m.declarations.map((d) => d.name)]));
   // Legend.view is a MapView, which reaches its own types, its bases, its members' types and theirs.
   assert.deepEqual(Object.keys(names), ["@acme/demo-maps/MapView.js", "@acme/demo-maps/Marker.js", "@acme/demo-maps/core.js", "@acme/demo-maps/geometry.js",
-    "@acme/demo-maps/layers/Layer.js", "@acme/demo-maps/styles.js", "@acme/demo-widgets/dist/support/entry.js", "@acme/demo-widgets/dist/support/swatch.js", "@acme/demo-widgets/legend"]);
+    "@acme/demo-maps/layers/Layer.js", "@acme/demo-maps/styles.js", "@acme/demo-widgets/dist/components/zoom-label/element.js",
+    "@acme/demo-widgets/dist/support/entry.js", "@acme/demo-widgets/dist/support/swatch.js", "@acme/demo-widgets/legend"]);
   assert.deepEqual(names["@acme/demo-maps/geometry.js"], ["ShapeType", "Bounds", "Shape", "Point"]); // no Line or Polygon
   assert.ok(widgets.modules.filter((m) => m.specifier.startsWith("@acme/demo-maps/")).every((m) => m.package === "@acme/demo-maps"));
   // A dependency's declaration is the same as when its package is listed; its manifest isn't read.
   assert.deepEqual(widgets.modules[0].declarations.find((d) => d.name === "MapView"), decl("MapView", "MapView"));
-  assert.deepEqual(widgets.elements.map((e) => e.tag), ["demo-legend"]);
+  assert.deepEqual(widgets.elements.map((e) => e.tag), ["demo-legend", "demo-zoom-label"]);
 });
 
 test("a listed package that a dependency has its own copy of is listed once", () => {
@@ -435,20 +449,30 @@ test("the CLI writes the golden IR for several packages, byte for byte", () => {
   assert.deepEqual(both.package, ir.package);
   assert.deepEqual({ ...both, modules: both.modules.filter((m) => !m.package), elements: both.elements.filter((e) => tags.has(e.tag)) }, ir);
   const widgets = both.modules.filter((m) => m.package);
-  // `exports` gives "./legend" for dist/legend.js (its `types` condition); no export reaches dist/support/.
+  // `exports` gives "./legend" for dist/legend.js (its `types` condition); no export reaches dist/support/, nor a
+  // component's element.js ("./components/*" reaches its index.js).
   assert.deepEqual(widgets.map((m) => [m.specifier, m.package, m.internal]), [
+    ["@acme/demo-widgets/dist/components/zoom-label/element.js", "@acme/demo-widgets", true],
     ["@acme/demo-widgets/dist/support/entry.js", "@acme/demo-widgets", true],
     ["@acme/demo-widgets/dist/support/swatch.js", "@acme/demo-widgets", true],
     ["@acme/demo-widgets/legend", "@acme/demo-widgets", undefined],
   ]);
   // The root re-exports swatch.js's declarations, so they're imported from it; entry.js's aren't importable.
-  assert.deepEqual(widgets[1].declarations.map((d) => [d.name, d.importFrom]), [["Swatch", { module: "@acme/demo-widgets" }], ["swatchFor", { module: "@acme/demo-widgets" }]]);
-  assert.deepEqual(widgets[0].declarations.map((d) => [d.name, d.importFrom]), [["LegendEntry", undefined], ["describe", undefined]]);
-  const legend = widgets[2].declarations.find((d) => d.name === "Legend");
+  assert.deepEqual(widgets[2].declarations.map((d) => [d.name, d.importFrom]), [["Swatch", { module: "@acme/demo-widgets" }], ["swatchFor", { module: "@acme/demo-widgets" }]]);
+  assert.deepEqual(widgets[1].declarations.map((d) => [d.name, d.importFrom]), [["LegendEntry", undefined], ["describe", undefined]]);
+  const legend = widgets[3].declarations.find((d) => d.name === "Legend");
   assert.equal(legend.importFrom, undefined); // its own module is reachable
   assert.deepEqual(legend.members.find((m) => m.name === "view").type, ref("MapView", "MapView"));
   // The manifest names dist/index.js, which does `export * from "./legend.js"`: its references resolve to legend.
   const element = both.elements.find((e) => e.tag === "demo-legend");
   assert.deepEqual(element.class, { kind: "ref", name: "Legend", module: "@acme/demo-widgets/legend" });
   assert.deepEqual(element.events.map((e) => e.detail), [{ kind: "ref", name: "LegendSelectDetail", module: "@acme/demo-widgets/legend" }]);
+  // The manifest names the zoom label's module by an export subpath, `components/zoom-label`: it's imported as
+  // `@acme/demo-widgets/components/zoom-label`, whose index.js re-exports element.js, which declares the element.
+  const zoomLabel = both.elements.find((e) => e.tag === "demo-zoom-label");
+  const declaring = "@acme/demo-widgets/dist/components/zoom-label/element.js";
+  assert.deepEqual(zoomLabel.class, { kind: "ref", name: "ZoomLabelElement", module: declaring });
+  assert.deepEqual(zoomLabel.events.map((e) => e.detail), [{ kind: "ref", name: "ZoomLabelCopyDetail", module: declaring }]);
+  assert.deepEqual(widgets[0].declarations.map((d) => [d.name, d.importFrom]),
+    [["ZoomLabelCopyDetail", { module: "@acme/demo-widgets/components/zoom-label" }], ["ZoomLabelElement", { module: "@acme/demo-widgets/components/zoom-label" }]]);
 });
