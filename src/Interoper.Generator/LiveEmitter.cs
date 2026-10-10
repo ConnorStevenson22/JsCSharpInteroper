@@ -20,6 +20,8 @@ internal sealed class LiveEmitter
     /// <summary>R26: the members this class declares, and those its emitted bases do, by name and parameter types.</summary>
     private readonly HashSet<string> declared = [], inherited = [];
     private bool usesSystem, usesTask, usesStreams, first = true;
+    /// <summary>The live class being emitted, as its members name it (for <c>this</c>); none for a module.</summary>
+    private CsType? self;
 
     private LiveEmitter(TypeMap types, Profile profile, GeneratorOptions options, ICollection<Diagnostic> diagnostics, string ns)
     {
@@ -100,21 +102,22 @@ internal sealed class LiveEmitter
         var name = Naming.Type(c.Name);
         var snapshot = TypeMap.SnapshotName(c);
         var snapshotKey = CsType.Record(new(ns, snapshot)).FullName;
-        var b = types.LiveBase(c);
+        self = types.Self(c);
         var modifier = types.IsClosed(c) ? "closed " : c.Abstract ? "abstract " : types.HasSubclasses(c) ? "" : "sealed ";
         taken.UnionWith([name, "Realm", "Handle", "Write", Mode("Snapshot"), Mode("Apply")]);
         if (!async)
         {
             Hide(c);
         }
-        using (w.Block($"public {modifier}partial class {name} : {(b is null ? "JsObject" : types.Name(b).In(ns))}"))
+        // Mapping §2: a generic class's type parameters are entities.
+        var constraints = string.Concat(c.TypeParameters.Select(t => $" where {t.Name} : JsObject"));
+        using (w.Block($"public {modifier}partial class {self.Name} : {types.LiveBaseName(c, ns)}{constraints}"))
         {
             Separate();
             w.Line($"internal {name}(JsRealm realm, int handle) : base(realm, handle) {{ }}");
-            if (!c.Abstract)
+            if (types.Constructible(c))
             {
-                var (type, body) = Run("scope.Realm", $"JsOp.Create({types.ClassId(c, ns)}, w => {snapshot}.WriteMembers(w, props))",
-                    new(CsType.Live(new(ns, name)), false), async);
+                var (type, body) = Run("scope.Realm", $"JsOp.Create({types.ClassId(c, ns)}, w => {snapshot}.WriteMembers(w, props))", new(self, false), async);
                 var create = Claim(Mode("Create"), c.Name);
                 Expression($"public static {Declare(create, ["JsScope", snapshotKey])}{type} {create}(JsScope scope, {snapshot} props)", body);
             }
@@ -130,7 +133,8 @@ internal sealed class LiveEmitter
             {
                 Subscription(name, "On" + Naming.Pascal(e.Name), profile.Events!.Subscribe!, e.Name, e.Type, $"{name}.on:{e.Name}", optional: false, isEvent: true);
             }
-            foreach (var p in types.HasWatches(c) ? c.Members.OfType<PropertyMember>().Where(p => p.Type is not LiteralType) : []) // §5
+            // §5; a callback can't be read back (R21).
+            foreach (var p in types.HasWatches(c) ? c.Members.OfType<PropertyMember>().Where(p => p.Type is not LiteralType && !types.IsCallback(p)) : [])
             {
                 Subscription(name, "Watch" + Naming.Pascal(p.Name), profile.Watch!, p.Name, p.Type, $"{name}.watch:{p.Name}", p.Optional, isEvent: false);
             }
@@ -151,6 +155,11 @@ internal sealed class LiveEmitter
         var get = Slot(p.Type, Naming.OwnedType(owner, p.Name), owner, p.Optional);
         var set = p.Readonly ? null : p.WriteType is { } writeType ? Slot(writeType, Naming.OwnedType(owner, p.Name, input: true), owner, p.Optional) : get;
         var (js, x, subject) = (Syntax.Literal(p.Name), Naming.Pascal(p.Name), $"{owner}.{p.Name}");
+        if (types.IsCallback(p))
+        {
+            CallbackProperty(subject, js, x, set!);
+            return;
+        }
         var (getType, getter) = Get(get, js, ByValue(p.Type));
         var (setType, setter) = set is null ? default : Set(set, js);
         if (async || get.Type.Scoped)
@@ -185,6 +194,32 @@ internal sealed class LiveEmitter
         }
     }
 
+    /// <summary>
+    /// R21: a callback property is setter-only, <c>SetX(scope, value)</c>, since JS can't hand a function back. One
+    /// whose result JS uses is skipped in async mode (IOP2005).
+    /// </summary>
+    private void CallbackProperty(string subject, string js, string x, Value set)
+    {
+        if (async && set.Type.Returns)
+        {
+            SyncOnly(subject);
+            return;
+        }
+        var setName = Claim(Mode("Set" + x), subject);
+        var (setType, setter) = Run("Realm", $"JsOp.Set(Handle, {js}, w => {set.Write("value")})", null, async);
+        Expression($"public {Declare(setName, ["JsScope", set.Key])}{setType} {setName}(JsScope scope, {set.Name} value)", setter);
+    }
+
+    /// <summary>R21: a member with a callback whose result JS uses, which async mode can't give it, is skipped there.</summary>
+    private void SyncOnly(string subject)
+    {
+        var diagnostic = new Diagnostic(Diagnostic.SyncOnly, subject, "skipped in async mode: JS uses its callback's result (R21)");
+        if (!diagnostics.Contains(diagnostic))
+        {
+            diagnostics.Add(diagnostic);
+        }
+    }
+
     private (string Type, string Body) Get(Value value, string js, string byValue)
     {
         if (value.Opt || value.Type.Fast is not { } fast)
@@ -209,8 +244,9 @@ internal sealed class LiveEmitter
 
     /// <summary>
     /// A method per overload (R23): a live class's (<paramref name="self"/>), or a module's static one, which takes the
-    /// realm. Either takes the caller's scope first instead when it returns a live object (§5). <paramref name="export"/>
-    /// is the name JS calls, when it isn't <paramref name="js"/>: a module's default export.
+    /// realm. Either takes the caller's scope first instead when it returns a live object or takes a callback (§5, R21);
+    /// one with a callback whose result JS uses is skipped in async mode (IOP2005). <paramref name="export"/> is the name
+    /// JS calls, when it isn't <paramref name="js"/>: a module's default export.
     /// </summary>
     private void Calls(string owner, string js, IReadOnlyList<Signature> signatures, string? self, string? export = null)
     {
@@ -218,10 +254,15 @@ internal sealed class LiveEmitter
         foreach (var signature in signatures)
         {
             var (result, returns, promise) = Result(signature, Naming.OwnedType(owner, js), self);
+            var (parameters, args, keys, callbacks) = Parameters(signature, Naming.OwnedType(owner, js), self);
+            if (async && callbacks.Any(c => c.Returns))
+            {
+                SyncOnly($"{owner}.{js}");
+                continue;
+            }
             var name = Mode(Naming.Pascal(js), promise);
             name = names.TryGetValue(name, out var claimed) ? claimed : names[name] = Claim(name, $"{owner}.{js}");
-            var (parameters, args, keys) = Parameters(signature, Naming.OwnedType(owner, js), self);
-            var scoped = result?.Type.Scoped == true;
+            var scoped = result?.Type.Scoped == true || callbacks.Count > 0;
             var op = $"JsOp.Call({(self is null ? "Module" : "Handle")}, {Syntax.Literal(export ?? js)}{args}{ByValue(returns)})";
             var (type, body) = Run(self is not null ? "Realm" : scoped ? "scope.Realm" : "realm", op, result, async || promise);
             var (first, firstType) = scoped ? ("JsScope scope", "JsScope") : self is null ? ("JsRealm realm", "JsRealm") : (null, null);
@@ -292,7 +333,7 @@ internal sealed class LiveEmitter
     /// as they tell members apart (R26), and the argument writer for the op: one value per parameter, in order, leaving
     /// out trailing undefined ones, then one per element of the rest parameter (a spread).
     /// </summary>
-    private (string Parameters, string Args, IEnumerable<string> Keys) Parameters(Signature signature, string owner, string? self)
+    private (string Parameters, string Args, IEnumerable<string> Keys, List<CsType> Callbacks) Parameters(Signature signature, string owner, string? self)
     {
         string[] used = signature.Params is [.., { Rest: true }] ? ["scope", "realm", "w", "r", "item"] : ["scope", "realm", "w", "r"];
         var values = signature.Params.Select(p => (p.Optional, Spread: p.Rest, Value: Slot(p.Type, Naming.OwnedType(owner, p.Name), self, p.Optional),
@@ -303,20 +344,23 @@ internal sealed class LiveEmitter
         var writes = values.Select((p, i) =>
             p.Spread ? $"foreach (var item in {p.Local}) {p.Value.Type.Element!.WriteCall("w", "item", 1)}"
             : !p.Optional ? p.Value.Write(p.Local)
-            : $"if ({string.Join(" || ", values.Skip(i).Select(q => q.Spread ? $"{q.Local}.Length > 0" : $"!{q.Local}.IsUndefined"))}) {p.Value.Write(p.Local)}").ToList();
+            : $"if ({string.Join(" || ", values.Skip(i).Select(q => q.Spread ? $"{q.Local}.Length > 0" : q.Value.Type.IsCallback ? $"{q.Local} is not null" : $"!{q.Local}.IsUndefined"))}) {p.Value.Write(p.Local)}").ToList();
         var args = writes switch
         {
             [] => "",
             [var one] when !values[0].Optional && !values[0].Spread => $", w => {one}",
             _ => $", w =>\n{{\n{string.Join("\n", writes.Select(x => $"    {x};"))}\n}}",
         };
-        return (string.Join(", ", parameters), args, values.Select(p => p.Value.Key));
+        return (string.Join(", ", parameters), args, values.Select(p => p.Value.Key), [.. values.Select(p => p.Value.Type).Where(t => t.IsCallback)]);
     }
 
+    /// <summary>A value in this class (<paramref name="owner"/>) or module; a callback is never <c>Opt</c>, but nullable (R21).</summary>
     private Value Slot(IrType type, string owner, string? self, bool optional)
     {
-        var (mapped, nullable) = types.Slot(type, new(ns, owner), self is null ? null : new(ns, self));
-        return new(mapped.In(ns).Unhidden(hidden), (nullable || optional) && !mapped.IsUnion);
+        var (mapped, nullable) = types.Slot(type, new(ns, owner), self is null ? null : this.self);
+        var named = mapped.In(ns).Unhidden(hidden);
+        usesSystem |= named.IsCallback; // Action, Func
+        return named.IsCallback ? new(nullable || optional ? named.Nullable() : named, false) : new(named, (nullable || optional) && !mapped.IsUnion);
     }
 
     /// <summary>
@@ -331,7 +375,7 @@ internal sealed class LiveEmitter
             foreach (var m in k.Members)
             {
                 var name = Naming.Pascal(m.Name);
-                if (m is not PropertyMember p || p.Type is not LiteralType && types.Slot(p.Type, owner.Owned(p.Name), owner) is var (type, nullable) &&
+                if (m is not PropertyMember p || p.Type is not LiteralType && types.Slot(p.Type, owner.Owned(p.Name), types.Self(k)) is var (type, nullable) &&
                     !type.Scoped && new Value(type.In(ns), (nullable || p.Optional) && !type.IsUnion).Name != name)
                 {
                     hidden.Add(name);

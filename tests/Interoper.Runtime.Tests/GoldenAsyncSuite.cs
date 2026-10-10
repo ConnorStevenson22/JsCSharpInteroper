@@ -36,6 +36,11 @@ public static class GoldenAsyncSuite
         ("a stream ends when its scope is disposed (R24)", InScope(StreamEndsWithItsScope)),
         ("a stream ends when it's cancelled (R24)", InScope(StreamCancelled)),
         ("click event: by default only the record's members cross the wire (R24)", InScope(DefaultProjection)),
+        ("a collection: add, remove, at and toArray, one C# object per JS one (§2)", InScope(Collections)),
+        ("a collection's change event is a CollectionChangeEvent<Marker> (R17, R24)", InScope(CollectionChange)),
+        ("a collection of an abstract class reads its items as the most-derived type (R4, R19)", InScope(LayersOfAnAbstractClass)),
+        ("ForEach calls back with each item and its index (R21)", InScope(ForEach)),
+        ("callbacks are released with their scope (R21)", InScope(CallbacksAreReleasedWithTheirScope)),
     ];
 
     private static async Task CreateSnapshotApply(JsScope scope)
@@ -421,6 +426,96 @@ public static class GoldenAsyncSuite
         await tile.SetTitleAsync(null);
         await tile.SetVisibleAsync(false);
         Equal(new TileLayerSnapshot { Url = "", Title = null, Visible = false }, await tile.SnapshotAsync());
+    }
+
+    private static async Task Collections(JsScope scope)
+    {
+        var view = await MapView.CreateAsync(scope, new MapViewSnapshot());
+        var markers = await view.GetMarkersAsync(scope);
+        Expect(ReferenceEquals(markers, await view.GetMarkersAsync(scope)), "one JS collection to be one C# object");
+        var (a, b) = (await Marker.CreateAsync(scope, new MarkerSnapshot { Label = "a" }), await Marker.CreateAsync(scope, new MarkerSnapshot { Label = "b" }));
+        await markers.AddAsync(a);
+        await markers.AddAsync(b);
+        Equal(2.0, await markers.GetLengthAsync());
+        Expect(await markers.ToArrayAsync(scope) is [var first, var second] && ReferenceEquals(first, a) && ReferenceEquals(second, b), "toArray to give the markers, in order");
+        Expect(await markers.RemoveAsync(a) && !await markers.RemoveAsync(a), "remove to find the marker once");
+        Expect((await markers.AtAsync(scope, 0)).TryGetValue(out Marker? left) && ReferenceEquals(left, b), "the other marker to be at 0");
+        Expect((await markers.AtAsync(scope, 1)).IsUndefined, "nothing at 1");
+    }
+
+    private static async Task CollectionChange(JsScope scope)
+    {
+        var view = await MapView.CreateAsync(scope, new MapViewSnapshot());
+        var markers = await view.GetMarkersAsync(scope);
+        var marker = await Marker.CreateAsync(scope, new MarkerSnapshot());
+        var changes = new List<CollectionChangeEvent<Marker>>();
+        var both = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        await using (await markers.OnChangeAsync(scope, change =>
+        {
+            lock (changes)
+            {
+                changes.Add(change);
+                if (changes.Count == 2) both.TrySetResult();
+            }
+        }))
+        {
+            await markers.AddAsync(marker);
+            await markers.RemoveAsync(marker);
+            await both.Task.WaitAsync(Timeout);
+        }
+        lock (changes) // each host delivers them in order, but Server may run them out of it
+        {
+            Expect(changes.Any(c => c is { Added: [var added], Removed: [] } && ReferenceEquals(added, marker)), "an add with the marker itself");
+            Expect(changes.Any(c => c is { Added: [], Removed: [var removed] } && ReferenceEquals(removed, marker)), "a remove with the marker itself");
+        }
+    }
+
+    private static async Task LayersOfAnAbstractClass(JsScope scope)
+    {
+        var view = await MapView.CreateAsync(scope, new MapViewSnapshot());
+        var layers = await view.GetLayersAsync(scope);
+        var tile = await TileLayer.CreateAsync(scope, new TileLayerSnapshot { Url = "u" });
+        await layers.AddAsync(tile);
+        Expect((await layers.AtAsync(scope, 0)).TryGetValue(out Layer? layer) && layer is TileLayer && ReferenceEquals(layer, tile), "the Layer to be the TileLayer");
+        Expect(await layers.ToArrayAsync(scope) is [TileLayer], "toArray to give the TileLayer");
+    }
+
+    private static async Task ForEach(JsScope scope)
+    {
+        var markers = await (await MapView.CreateAsync(scope, new MapViewSnapshot())).GetMarkersAsync(scope);
+        var (a, b) = (await Marker.CreateAsync(scope, new MarkerSnapshot()), await Marker.CreateAsync(scope, new MarkerSnapshot()));
+        await markers.AddAsync(a);
+        await markers.AddAsync(b);
+        var seen = new List<string>();
+        var all = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        await markers.ForEachAsync(scope, (marker, index) =>
+        {
+            lock (seen)
+            {
+                seen.Add($"{index} {ReferenceEquals(marker, index == 0 ? a : b)}");
+                if (seen.Count == 2) all.TrySetResult();
+            }
+        });
+        await all.Task.WaitAsync(Timeout); // on Server, JS doesn't wait for .NET
+        lock (seen)
+        {
+            Equal("0 True; 1 True", string.Join("; ", seen.Order()));
+        }
+    }
+
+    private static async Task CallbacksAreReleasedWithTheirScope(JsScope scope)
+    {
+        var markers = await (await MapView.CreateAsync(scope, new MapViewSnapshot())).GetMarkersAsync(scope);
+        await markers.AddAsync(await Marker.CreateAsync(scope, new MarkerSnapshot()));
+        var baseline = await Count(scope.Realm);
+        var called = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        await using (var inner = new JsScope(scope.Realm))
+        {
+            await markers.ForEachAsync(inner, (_, _) => called.TrySetResult());
+            await called.Task.WaitAsync(Timeout);
+            Equal(baseline.Callbacks + 1, (await Count(scope.Realm)).Callbacks); // the inner scope owns it
+        }
+        Equal(baseline, await Count(scope.Realm));
     }
 
     // --- Helpers ---

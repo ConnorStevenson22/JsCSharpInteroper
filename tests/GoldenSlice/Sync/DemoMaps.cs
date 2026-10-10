@@ -15,9 +15,10 @@ public static partial class DemoMaps
     public const int MarkerId = 6;
     public const int ObservableId = 7;
     public const int EmitterId = 8;
-    public const int DemoMapElementId = 9;
-    public const int LayerId = 10;
-    public const int TileLayerId = 11;
+    public const int CollectionId = 9;
+    public const int DemoMapElementId = 10;
+    public const int LayerId = 11;
+    public const int TileLayerId = 12;
 
     public static JsClassRegistry Classes { get; } = new JsClassRegistry()
         .Add(PointId, static (realm, handle) => new Point(realm, handle))

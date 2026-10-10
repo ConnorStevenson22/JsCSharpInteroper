@@ -14,7 +14,7 @@ public sealed class SelectionTests
         [
             "MapView.js: Basemap, Cursor, CenterAndZoom, Camera, FlyToTarget, ClickEvent, MapViewEvents, MapView",
             "Marker.js: Marker",
-            "core.js: Observable, Emitter",
+            "core.js: Observable, Emitter, CollectionChangeEvent, CollectionEvents, Collection",
             "demo-map.js: DemoMapClickDetail, DemoMapElement",
             "geometry.js: ShapeType, Bounds, Shape, Point, Line, Polygon",
             "layers/Layer.js: Layer",
@@ -23,7 +23,11 @@ public sealed class SelectionTests
             "styles.js: Rgba, ColorInput, IconName, FillStyle, StrokeStyle, IconStyle, Style, toRgba",
         ], Modules(selection));
 
-        Assert.Equal(["center", "zoom", "rotation", "basemap", "cursor", "title", "selected", "screenToMap", "flyTo", "markerAt"], Members(selection, "MapView"));
+        Assert.Equal(["center", "zoom", "rotation", "basemap", "cursor", "title", "selected", "markers", "layers", "screenToMap", "flyTo", "markerAt"],
+            Members(selection, "MapView"));
+        Assert.Equal(["position", "label", "style", "labelFormatter", "displayLabel"], Members(selection, "Marker")); // R21: no LabelFormatter type
+        Assert.Equal(["length", "at", "add", "remove", "find", "forEach", "toArray"], Members(selection, "Collection")); // §2: a generic live class
+        Assert.Equal(["change"], Class(selection, "Collection").Events.Select(e => e.Name));
         Assert.Equal(["click"], Class(selection, "MapView").Events.Select(e => e.Name));
         Assert.Equal(["bounds", "clone"], Members(selection, "Shape")); // not the discriminant `type`
         Assert.Equal(["type", "x", "y"], Members(selection, "Point")); // a constant (R20)
@@ -67,8 +71,8 @@ public sealed class SelectionTests
             "IOP2007 MapView.center: skipped: uses class `Point` outside the selection",
             "IOP2007 MapView.container: skipped: uses `HTMLElement`",
             "IOP2007 MapView.selected: skipped: uses class `Marker` outside the selection",
-            "IOP2007 MapView.markers: skipped: uses generic `Collection`",
-            "IOP2007 MapView.layers: skipped: uses generic `Collection`",
+            "IOP2007 MapView.markers: skipped: uses class `Collection` outside the selection",
+            "IOP2007 MapView.layers: skipped: uses class `Collection` outside the selection",
             "IOP2007 MapView.screenToMap: skipped: uses class `Point` outside the selection", // once for its two overloads
             "IOP2007 MapView.flyTo: skipped: uses class `Shape` outside the selection (in `FlyToTarget`)",
             "IOP2007 MapView.markerAt: skipped: uses class `Marker` outside the selection",
@@ -137,12 +141,39 @@ public sealed class SelectionTests
     [InlineData( // R15: a data record
         """{ "kind": "interface", "name": "T", "indexSignatures": [{ "key": { "kind": "primitive", "name": "string" }, "type": { "kind": "primitive", "name": "number" } }] }""",
         "IOP2007", "an index signature")]
-    [InlineData( // R17: an entity in a data record
+    [InlineData( // R17, R19: a union is read without a scope, so no case holds an entity
         """
-        { "kind": "interface", "name": "T", "members": [{ "kind": "property", "name": "layer", "type": { "kind": "ref", "name": "Layer", "module": "@acme/maps/a.js" } }] },
+        { "kind": "alias", "name": "T", "type": { "kind": "union", "types": [{ "kind": "ref", "name": "X", "module": "@acme/maps/a.js" }, { "kind": "primitive", "name": "string" }] } },
+        { "kind": "interface", "name": "X", "members": [{ "kind": "property", "name": "layer", "type": { "kind": "ref", "name": "Layer", "module": "@acme/maps/a.js" } }] },
         { "kind": "class", "name": "Layer" }
         """,
-        "IOP2007", "the entity `Layer` in a data position (R17)")]
+        "IOP2007", "the union `T` with the case X, which needs a scope to be read (R17, R19)")]
+    [InlineData( // R17, R19: nor is a case an entity
+        """
+        { "kind": "alias", "name": "T", "type": { "kind": "union", "types": [{ "kind": "ref", "name": "Layer", "module": "@acme/maps/a.js" }, { "kind": "primitive", "name": "string" }] } },
+        { "kind": "class", "name": "Layer" }
+        """,
+        "IOP2007", "the union `T` with the case Layer, which needs a scope to be read (R17, R19)")]
+    [InlineData( // R21: a callback is a parameter's, never a data record's
+        """{ "kind": "interface", "name": "T", "members": [{ "kind": "property", "name": "f", "type": { "kind": "function", "params": [], "returns": { "kind": "primitive", "name": "void" } } }] }""",
+        "IOP2007", "a callback that isn't a parameter (R21)")]
+    [InlineData( // R21: JsScope.Callback reads up to four arguments
+        """
+        { "kind": "alias", "name": "T", "type": { "kind": "function", "params": [
+          { "name": "a", "type": { "kind": "primitive", "name": "number" } }, { "name": "b", "type": { "kind": "primitive", "name": "number" } },
+          { "name": "c", "type": { "kind": "primitive", "name": "number" } }, { "name": "d", "type": { "kind": "primitive", "name": "number" } },
+          { "name": "e", "type": { "kind": "primitive", "name": "number" } }], "returns": { "kind": "primitive", "name": "void" } } }
+        """,
+        "IOP2007", "a callback with more than 4 parameters (R21)")]
+    [InlineData( // §2: a generic record's type parameters are entities
+        """{ "kind": "interface", "name": "T", "typeParameters": [{ "name": "U", "constraint": { "kind": "primitive", "name": "string" } }], "members": [{ "kind": "property", "name": "u", "type": { "kind": "typeParameter", "name": "U" } }] }""",
+        "IOP2007", "the type parameter `U` with a constraint or a default (§2)")]
+    [InlineData( // §2: so are its type arguments
+        """
+        { "kind": "alias", "name": "T", "type": { "kind": "ref", "name": "Box", "module": "@acme/maps/a.js", "args": [{ "kind": "primitive", "name": "number" }] } },
+        { "kind": "interface", "name": "Box", "typeParameters": [{ "name": "U" }], "members": [{ "kind": "property", "name": "items", "type": { "kind": "array", "element": { "kind": "typeParameter", "name": "U" } } }] }
+        """,
+        "IOP2007", "`Box` of a type that isn't an entity (§2)")]
     [InlineData( // §2: a type the generator doesn't map
         """{ "kind": "interface", "name": "T", "members": [{ "kind": "property", "name": "size", "type": { "kind": "object", "members": [] } }] }""",
         "IOP2007", "an inline object type")]
@@ -202,6 +233,17 @@ public sealed class SelectionTests
         """)]
     [InlineData("""{ "kind": "interface", "name": "T", "members": [{ "kind": "property", "name": "x", "optional": true, "type": { "kind": "union", "types": [{ "kind": "primitive", "name": "string" }, { "kind": "primitive", "name": "null" }] } }] }""")] // R3
     [InlineData("""{ "kind": "interface", "name": "T", "members": [{ "kind": "property", "name": "pair", "type": { "kind": "tuple", "elements": [{ "kind": "primitive", "name": "number" }, { "kind": "primitive", "name": "number" }] } }] }""")] // R5
+    [InlineData( // R17: an entity in a data record, which is then read with a scope
+        """
+        { "kind": "interface", "name": "T", "members": [{ "kind": "property", "name": "layer", "type": { "kind": "ref", "name": "Layer", "module": "@acme/maps/a.js" } }] },
+        { "kind": "class", "name": "Layer" }
+        """)]
+    [InlineData( // §2: a generic record of entities
+        """
+        { "kind": "interface", "name": "T", "members": [{ "kind": "property", "name": "box", "type": { "kind": "ref", "name": "Box", "module": "@acme/maps/a.js", "args": [{ "kind": "ref", "name": "Layer", "module": "@acme/maps/a.js" }] } }] },
+        { "kind": "interface", "name": "Box", "typeParameters": [{ "name": "U" }], "members": [{ "kind": "property", "name": "items", "type": { "kind": "array", "element": { "kind": "typeParameter", "name": "U" } } }] },
+        { "kind": "class", "name": "Layer" }
+        """)]
     [InlineData( // R16: a value-like class in a data record
         """
         { "kind": "interface", "name": "T", "members": [{ "kind": "property", "name": "at", "type": { "kind": "ref", "name": "Spot", "module": "@acme/maps/a.js" } }] },

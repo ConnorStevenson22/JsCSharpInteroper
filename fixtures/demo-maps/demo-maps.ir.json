@@ -1406,6 +1406,49 @@
             },
             {
               "kind": "method",
+              "name": "forEach",
+              "signatures": [
+                {
+                  "params": [
+                    {
+                      "name": "callback",
+                      "type": {
+                        "kind": "function",
+                        "params": [
+                          {
+                            "name": "item",
+                            "type": {
+                              "kind": "typeParameter",
+                              "name": "T"
+                            }
+                          },
+                          {
+                            "name": "index",
+                            "type": {
+                              "kind": "primitive",
+                              "name": "number"
+                            }
+                          }
+                        ],
+                        "returns": {
+                          "kind": "primitive",
+                          "name": "void"
+                        }
+                      }
+                    }
+                  ],
+                  "returns": {
+                    "kind": "primitive",
+                    "name": "void"
+                  },
+                  "doc": {
+                    "summary": "Calls `callback` for each item, in order; its result is ignored."
+                  }
+                }
+              ]
+            },
+            {
+              "kind": "method",
               "name": "toArray",
               "signatures": [
                 {

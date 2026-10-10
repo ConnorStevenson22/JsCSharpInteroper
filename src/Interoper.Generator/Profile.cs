@@ -30,7 +30,10 @@ public sealed record Profile
     /// </summary>
     public string? Watch { get; init; }
 
-    /// <summary>Generic classes treated as collections of their type argument.</summary>
+    /// <summary>
+    /// Generic classes treated as live collections of their type argument, an entity: emitted generic, with no
+    /// <c>Create</c> and no registry entry, and read with a factory (mapping §2).
+    /// </summary>
     public IReadOnlyList<string> Collections { get; init; } = [];
 
     /// <summary>

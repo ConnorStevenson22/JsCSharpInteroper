@@ -7,6 +7,9 @@ public sealed record Diagnostic(string Code, string Subject, string Message)
     /// <summary>An ambiguous union skipped: its cases can't be told apart (R19).</summary>
     public const string Ambiguous = "IOP2003";
 
+    /// <summary>Skipped in async mode: a callback whose result JS uses (R21).</summary>
+    public const string SyncOnly = "IOP2005";
+
     /// <summary>A name changed to avoid a collision.</summary>
     public const string Renamed = "IOP2006";
 

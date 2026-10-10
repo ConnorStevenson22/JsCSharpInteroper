@@ -13,8 +13,8 @@ internal enum JsonKind
 /// <summary>
 /// A C# type in generated code, and the expressions that read and write it as JSON. Expressions nest: a lambda made at
 /// depth <c>d</c> names its parameters <c>w{d}</c>, <c>v{d}</c> and <c>r{d}</c> (no suffix at depth 0). A live type's
-/// reader uses the caller's <c>scope</c>, so lambdas around it aren't static. A generated type has its plain name; code
-/// in another namespace uses <see cref="In"/> (R27).
+/// reader, and a scoped record's (R17), use the caller's <c>scope</c>, so lambdas around them aren't static; so does a
+/// callback's writer (R21). A generated type has its plain name; code in another namespace uses <see cref="In"/> (R27).
 /// </summary>
 internal sealed class CsType
 {
@@ -44,11 +44,23 @@ internal sealed class CsType
     /// <summary>A generated type's namespace (R27); none for the runtime's and the built-in types, and once qualified.</summary>
     public string? Namespace { get; private set; }
 
+    /// <summary>A generated type's name without its type arguments.</summary>
+    private string baseName = "";
+
+    /// <summary>A generic type's type arguments (mapping §2).</summary>
+    private IReadOnlyList<CsType> args = [];
+
+    /// <summary>The full name of a type made of others (an array, a generic type, a callback), from theirs.</summary>
+    private string? fullName;
+
     /// <summary>The name with its namespace, the same from any namespace: what tells two types apart.</summary>
-    public string FullName => Element is not null ? Element.FullName + "[]" : Namespace is null ? Name : new TypeName(Namespace, Name).FullName;
+    public string FullName => fullName ?? (Namespace is null ? Name : new TypeName(Namespace, Name).FullName);
 
     /// <summary>Makes this type under another spelling of its name: <c>global::</c>-qualified, for <see cref="In"/>.</summary>
     private Func<string, CsType>? named;
+
+    /// <summary>A type made of others (an array, a callback): this type with each of them changed, for <see cref="In"/> and <see cref="Unhidden"/>.</summary>
+    private Func<Func<CsType, CsType>, CsType>? rebuild;
 
     public JsonKind Json { get; }
 
@@ -57,8 +69,17 @@ internal sealed class CsType
     /// <summary>A generated union (R2): never wrapped in <c>Opt&lt;T&gt;</c>, since it has the undefined and null states itself.</summary>
     public bool IsUnion { get; }
 
-    /// <summary>A live object (an entity, or <c>this</c>): reading one needs a scope (R17, §5).</summary>
+    /// <summary>
+    /// A live object (an entity, a type parameter, or <c>this</c>), or a record holding one: reading one needs a scope
+    /// (R17, §5).
+    /// </summary>
     public bool Scoped { get; }
+
+    /// <summary>A callback (R21): written with the caller's scope, which owns it, and never read.</summary>
+    public bool IsCallback { get; private init; }
+
+    /// <summary>A callback whose result JS uses (a <c>Func</c>), which async mode can't serve (R21, IOP2005).</summary>
+    public bool Returns { get; private init; }
 
     /// <summary>The realm's typed fast path (design §3.4): <c>Number</c>, <c>String</c> or <c>Boolean</c>.</summary>
     public string? Fast { get; }
@@ -74,48 +95,111 @@ internal sealed class CsType
 
     /// <summary>An extensible enum (R10): a string wrapper with static <c>Write</c> and <c>Read</c> methods.</summary>
     public static CsType Extensible(TypeName type) =>
-        Named(type, name => new(name, JsonKind.String, true, $"{name}.Write", $"{name}.Read"));
+        Named(type, [], name => new(name, JsonKind.String, true, $"{name}.Write", $"{name}.Read"));
 
     /// <summary>A string enum and its name map (R9).</summary>
     public static CsType StringEnum(TypeName type) =>
-        Named(type, name => new(name, JsonKind.String, true, $"{name}Names.Write", $"{name}Names.Read", fast: "String", names: $"{name}Names"));
+        Named(type, [], name => new(name, JsonKind.String, true, $"{name}Names.Write", $"{name}Names.Read", fast: "String", names: $"{name}Names"));
 
-    /// <summary>A live class, written as its handle and read with the caller's scope (design §3.2).</summary>
-    public static CsType Live(TypeName type) =>
-        Named(type, name => new(name, JsonKind.Object, false, $"{name}.Write", $"scope.Read<{name}>", scoped: true));
+    /// <summary>
+    /// A live class, written as its handle and read with the caller's scope (design §3.2). A generic one (a collection,
+    /// mapping §2) isn't in the registry, so its reader makes it.
+    /// </summary>
+    public static CsType Live(TypeName type, IReadOnlyList<CsType>? args = null) => args is not { Count: > 0 }
+        ? Named(type, [], name => new(name, JsonKind.Object, false, $"{name}.Write", $"scope.Read<{name}>", scoped: true))
+        : Named(type, args, name => new(name, JsonKind.Object, false, $"{name}.Write", null,
+            read: (r, _) => $"scope.Read(ref {r}, static (realm, handle) => new {name}(realm, handle))", scoped: true));
 
-    /// <summary>A data or snapshot record (R15, R16).</summary>
-    public static CsType Record(TypeName type) => Named(type, name => new(name, JsonKind.Object, false, $"{name}.Write", $"{name}.Read"));
+    /// <summary>A type parameter of a generic class or record: an entity (<c>where T : JsObject</c>, mapping §2).</summary>
+    public static CsType TypeParameter(string name) => new(name, JsonKind.Object, false, "JsObject.Write", $"scope.Read<{name}>", scoped: true);
+
+    /// <summary>
+    /// A data or snapshot record (R15, R16). A scoped one holds an entity, so it's read with the caller's scope (R17).
+    /// </summary>
+    public static CsType Record(TypeName type, IReadOnlyList<CsType>? args = null, bool scoped = false) => scoped
+        ? Named(type, args ?? [], name => new(name, JsonKind.Object, false, $"{name}.Write", null, read: (r, _) => $"{name}.Read(ref {r}, scope)", scoped: true))
+        : Named(type, args ?? [], name => new(name, JsonKind.Object, false, $"{name}.Write", $"{name}.Read"));
 
     public static CsType Union(TypeName type) =>
-        Named(type, name => new(name, JsonKind.Object, isValueType: true, "JsJson.WriteValue", $"JsJson.ReadUnion<{name}>", isUnion: true));
+        Named(type, [], name => new(name, JsonKind.Object, isValueType: true, "JsJson.WriteValue", $"JsJson.ReadUnion<{name}>", isUnion: true));
 
     /// <summary>A number-literal union or numeric enum: written as its value.</summary>
     public static CsType NumberEnum(TypeName type) =>
-        Named(type, name => new(name, JsonKind.Number, isValueType: true, null, null,
+        Named(type, [], name => new(name, JsonKind.Number, isValueType: true, null, null,
             (w, v, _) => $"JsJson.WriteNumber({w}, (int){v})", (r, _) => $"({name})JsJson.ReadNumber(ref {r})"));
 
-    private static CsType Named(TypeName type, Func<string, CsType> make)
+    /// <summary><paramref name="make"/> makes the type from its name as code spells it: with its type arguments.</summary>
+    private static CsType Named(TypeName type, IReadOnlyList<CsType> args, Func<string, CsType> make)
     {
-        var result = make(type.Name);
-        (result.Namespace, result.named) = (type.Namespace, make);
+        var result = make(Generic(type.Name, args.Select(a => a.Name)));
+        (result.Namespace, result.baseName, result.args, result.named) = (type.Namespace, type.Name, args, make);
+        if (args.Count > 0)
+        {
+            result.fullName = Generic(type.FullName, args.Select(a => a.FullName));
+        }
         return result;
     }
+
+    private static string Generic(string name, IEnumerable<string> args) => args.Any() ? $"{name}<{string.Join(", ", args)}>" : name;
 
     public static CsType Array(CsType element) =>
         new($"{element.Name}[]", JsonKind.Array, isValueType: false, null, null,
             (w, v, d) => $"JsJson.WriteArray({w}, {v}, {element.Writer(d)})", (r, d) => $"JsJson.ReadArray(ref {r}, {element.Reader(d)})",
             scoped: element.Scoped)
-        { Element = element };
+        { Element = element, fullName = element.FullName + "[]", rebuild = change => Array(change(element)) };
+
+    /// <summary>
+    /// A callback (R21): an <c>Action</c>, or a <c>Func</c> when it has a result, with an argument per parameter (an
+    /// optional or nullable one is <c>Opt&lt;T&gt;</c>, R3). It's registered with the caller's scope and written as
+    /// <c>{"$f":id}</c>; a <paramref name="nullable"/> one (<c>Func&lt;…&gt;?</c>) writes null as JS null.
+    /// </summary>
+    public static CsType Callback(IReadOnlyList<(CsType Type, bool Opt)> parameters, (CsType Type, bool Opt)? result, bool nullable = false)
+    {
+        string Spell(IEnumerable<string> types)
+        {
+            var list = types.ToList();
+            var name = result is null ? (list.Count == 0 ? "Action" : $"Action<{string.Join(", ", list)}>") : $"Func<{string.Join(", ", list)}>";
+            return nullable ? name + "?" : name;
+        }
+        static string OptName((CsType Type, bool Opt) p, Func<CsType, string> name) => p.Opt ? $"Opt<{name(p.Type)}>" : name(p.Type);
+        var all = result is { } r ? parameters.Append(r).ToList() : parameters.ToList();
+        return new(Spell(all.Select(p => OptName(p, t => t.Name))), JsonKind.Object, isValueType: false, null, null,
+            (w, v, d) =>
+            {
+                var readers = parameters.Select(p => p.Opt ? $"{p.Type.Static}(ref r{Suffix(d)}) => JsJson.ReadOpt(ref r{Suffix(d)}, {p.Type.Reader(d + 1)})" : p.Type.Reader(d));
+                var writer = result is not { } x ? null
+                    : x.Opt ? $"static (w{Suffix(d)}, v{Suffix(d)}) => JsJson.WriteValue(w{Suffix(d)}, v{Suffix(d)}, {x.Type.Writer(d + 1)})" : x.Type.Writer(d);
+                var id = $"scope.Callback({string.Join(", ", readers.Append(writer).OfType<string>().Prepend(v))})";
+                return $"JsJson.WriteCallback({w}, {(nullable ? $"{v} is null ? null : {id}" : id)})";
+            })
+        {
+            IsCallback = true,
+            Returns = result is not null,
+            fullName = Spell(all.Select(p => OptName(p, t => t.FullName))),
+            rebuild = change => Callback([.. parameters.Select(p => (change(p.Type), p.Opt))], result is { } x ? (change(x.Type), x.Opt) : null, nullable),
+            nullableCallback = () => Callback(parameters, result, nullable: true),
+        };
+    }
+
+    private Func<CsType>? nullableCallback;
+
+    /// <summary>A callback that can be null (<c>Func&lt;…&gt;?</c>), which JS gets as null (R21).</summary>
+    public CsType Nullable() => nullableCallback!();
 
     /// <summary>An array's element type.</summary>
     public CsType? Element { get; private init; }
 
     /// <summary>This type as code in namespace <paramref name="ns"/> names it: <c>global::</c>-qualified from another (R27).</summary>
     public CsType In(string ns) =>
-        Element is not null ? Array(Element.In(ns))
-        : Namespace is null || Namespace == ns ? this
-        : named!(new TypeName(Namespace, Name).In(ns));
+        rebuild is not null ? rebuild(t => t.In(ns))
+        : Namespace is null || Namespace == ns && args.All(a => a.In(ns).Name == a.Name) ? this
+        : Qualified(named!(Generic(new TypeName(Namespace, baseName).In(ns), args.Select(a => a.In(ns).Name))));
+
+    private CsType Qualified(CsType spelled)
+    {
+        spelled.fullName = FullName;
+        return spelled;
+    }
 
     /// <summary>
     /// This type, calling its static methods through <c>global::</c> where a member of the type's name hides it
@@ -123,16 +207,20 @@ internal sealed class CsType
     /// </summary>
     public CsType Unhidden(IReadOnlySet<string> hidden)
     {
-        if (Element is not null)
+        if (rebuild is not null)
         {
-            return Array(Element.Unhidden(hidden));
+            return rebuild(t => t.Unhidden(hidden));
         }
-        if (Namespace is null || !hidden.Contains(Name))
+        if (Namespace is null || !hidden.Contains(baseName))
         {
             return this;
         }
+        if (args.Count > 0)
+        {
+            return Qualified(named!(Generic(new TypeName(Namespace, baseName).FullName, args.Select(a => a.Name))));
+        }
         string? Qualify(string? method) => method?.StartsWith(Name + ".", StringComparison.Ordinal) == true ? $"global::{Namespace}.{method}" : method;
-        return new(Name, Json, IsValueType, Qualify(writeMethod), Qualify(readMethod), write, read, IsUnion, Scoped, Fast, Names) { Namespace = Namespace, named = named };
+        return new(Name, Json, IsValueType, Qualify(writeMethod), Qualify(readMethod), write, read, IsUnion, Scoped, Fast, Names) { Namespace = Namespace, baseName = baseName, named = named };
     }
 
     /// <summary>An expression that writes <paramref name="value"/> with <paramref name="writer"/>.</summary>

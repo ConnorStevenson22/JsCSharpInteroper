@@ -113,6 +113,19 @@ public static class JsJson
         writer.WriteEndArray();
     }
 
+    /// <summary>A callback (R21) as <c>{"$f":id}</c>, with the id <see cref="JsScope.Callback(Action)"/> returns; null is JS null.</summary>
+    public static void WriteCallback(Utf8JsonWriter writer, int? id)
+    {
+        if (id is not { } callback)
+        {
+            writer.WriteNullValue();
+            return;
+        }
+        writer.WriteStartObject();
+        writer.WriteNumber("$f"u8, callback);
+        writer.WriteEndObject();
+    }
+
     // For generated union readers (R19), which classify an object before reading it. The reader is a copy, so the
     // caller's stays on the object's start.
 

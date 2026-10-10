@@ -302,8 +302,8 @@ public sealed class GeneratorTests
         Assert.Empty(result.Diagnostics);
     }
 
-    [Fact] // R22: a rest parameter of entities
-    public void ARestParameterOfEntitiesIsDropped()
+    [Fact] // R22, R17: a rest parameter of entities
+    public void ARestParameterOfEntitiesIsASpreadOfHandles()
     {
         var result = Generate("""
             { "kind": "class", "name": "Marker" },
@@ -311,10 +311,130 @@ public sealed class GeneratorTests
               { "name": "markers", "rest": true, "type": { "kind": "array", "element": { "kind": "ref", "name": "Marker", "module": "@acme/maps/a.js" } } }],
               "returns": { "kind": "primitive", "name": "void" } }] }] }
             """);
-        // An array is copied by value, so an entity element is a data position (R17): there is no handle spread.
-        Assert.Contains("public void Add() => Realm.Send(JsOp.Call(Handle, \"add\"));", File(result, "Layer.cs"));
-        Assert.Equal("IOP2007 Layer.add(markers): rest parameter dropped (R22): uses the entity `Marker` in a data position (R17)",
-            Assert.Single(result.Diagnostics).ToString());
+        Assert.Contains("""
+                public void Add(params Marker[] markers) =>
+                    Realm.Send(JsOp.Call(Handle, "add", w =>
+                    {
+                        foreach (var item in markers) Marker.Write(w, item);
+                    }));
+            """, File(result, "Layer.cs"));
+        Assert.Empty(result.Diagnostics);
+    }
+
+    [Theory] // R21
+    [InlineData(Api.Sync)]
+    [InlineData(Api.Async)]
+    public void ACallbackIsADelegateItsScopeRegisters(Api api)
+    {
+        const string Number = """{ "kind": "primitive", "name": "number" }""";
+        const string Void = """{ "kind": "primitive", "name": "void" }""";
+        const string Marker = """{ "kind": "ref", "name": "Marker", "module": "@acme/maps/a.js" }""";
+        string Parameter(string name, string type, bool optional = false) =>
+            $$"""{ "name": "{{name}}", "type": {{type}}{{(optional ? ", \"optional\": true" : "")}} }""";
+        string Callback(string returns, params string[] parameters) =>
+            $$"""{ "kind": "function", "params": [{{string.Join(", ", parameters)}}], "returns": {{returns}} }""";
+        string Method(string name, string callback, string returns) =>
+            $$"""{ "kind": "method", "name": "{{name}}", "signatures": [{ "params": [{{Parameter("callback", callback)}}], "returns": {{returns}} }] }""";
+        var each = Callback(Void, Parameter("item", Marker), Parameter("index", Number), Parameter("label", """{ "kind": "primitive", "name": "string" }""", optional: true));
+        var pick = Callback("""{ "kind": "union", "types": [{ "kind": "primitive", "name": "boolean" }, { "kind": "primitive", "name": "undefined" }] }""", Parameter("item", Marker));
+        var many = Callback(Void, [.. "abcde".Select(p => Parameter($"{p}", Number))]);
+        var result = Generate(new Profile { Package = "@acme/maps" }, api, ("a.js", $$"""
+            { "kind": "alias", "name": "Formatter", "type": {{Callback("""{ "kind": "primitive", "name": "string" }""", Parameter("marker", Marker))}} },
+            { "kind": "class", "name": "Marker" },
+            { "kind": "class", "name": "Layer", "members": [
+              { "kind": "property", "name": "formatter", "optional": true, "type": { "kind": "union", "types": [
+                { "kind": "ref", "name": "Formatter", "module": "@acme/maps/a.js" }, { "kind": "primitive", "name": "null" }] } },
+              { "kind": "property", "name": "onLoad", "type": {{Callback(Void)}} },
+              {{Method("each", each, Void)}}, {{Method("pick", pick, Marker)}}, {{Method("many", many, Void)}}] },
+            { "kind": "function", "name": "visit", "signatures": [{ "params": [{{Parameter("callback", Callback(Void, Parameter("marker", Marker)))}}], "returns": {{Void}} }] }
+            """));
+
+        // Each argument is read with the scope, which owns the handles in it, and a result is written back to JS.
+        var (layer, sync) = (File(result, "Layer.cs"), api == Api.Sync);
+        Assert.Contains("using System;", layer);
+        Assert.Contains($$"""
+                public {{(sync ? "void Each" : "Task EachAsync")}}(JsScope scope, Action<Marker, double, Opt<string>> callback) =>
+                    Realm.{{(sync ? "Send" : "SendAsync")}}(JsOp.Call(Handle, "each", w => JsJson.WriteCallback(w, scope.Callback(callback, scope.Read<Marker>, JsJson.ReadNumber, static (ref r1) => JsJson.ReadOpt(ref r1, JsJson.ReadString)))));
+            """, layer);
+        // A callback property is setter-only: JS can't hand the function back.
+        Assert.Contains($"public {(sync ? "void SetOnLoad" : "Task SetOnLoadAsync")}(JsScope scope, Action value) =>", layer);
+        Assert.DoesNotContain(sync ? " OnLoad " : "GetOnLoadAsync", layer);
+        // A module function with a callback takes the scope instead of the realm.
+        Assert.Contains($"public static {(sync ? "void Visit" : "Task VisitAsync")}(JsScope scope, Action<Marker> callback) =>", File(result, "A.cs"));
+        Assert.DoesNotContain(result.Files, f => f.Path == "Formatter.cs"); // a callback alias has no C# type
+        string[] skipped = ["IOP2007 Layer.many: skipped: uses a callback with more than 4 parameters (R21)"];
+        if (sync)
+        {
+            Assert.Contains("""
+                    public void SetFormatter(JsScope scope, Func<Marker, string>? value) =>
+                        Realm.Send(JsOp.Set(Handle, "formatter", w => JsJson.WriteCallback(w, value is null ? null : scope.Callback(value, scope.Read<Marker>, JsJson.WriteString))));
+                """, layer);
+            Assert.Contains("""
+                    public Marker Pick(JsScope scope, Func<Marker, Opt<bool>> callback) =>
+                        Realm.Call(JsOp.Call(Handle, "pick", w => JsJson.WriteCallback(w, scope.Callback(callback, scope.Read<Marker>, static (w1, v1) => JsJson.WriteValue(w1, v1, JsJson.WriteBoolean)))), scope.Read<Marker>)!;
+                """, layer);
+            Assert.Equal(skipped, result.Diagnostics.Select(d => d.ToString()));
+            return;
+        }
+        // Async mode can't give JS a result in time, so what uses one is skipped.
+        Assert.DoesNotContain("Formatter", layer);
+        Assert.DoesNotContain("Pick", layer);
+        Assert.Equal(
+        [
+            .. skipped,
+            "IOP2005 Layer.formatter: skipped in async mode: JS uses its callback's result (R21)",
+            "IOP2005 Layer.pick: skipped in async mode: JS uses its callback's result (R21)",
+        ], result.Diagnostics.Select(d => d.ToString()));
+    }
+
+    [Theory] // §2, R17
+    [InlineData(Api.Sync)]
+    [InlineData(Api.Async)]
+    public void ACollectionIsAGenericLiveClassAndARecordWithAnEntityIsReadWithAScope(Api api)
+    {
+        const string T = """{ "kind": "typeParameter", "name": "T" }""";
+        const string Marker = """{ "kind": "ref", "name": "Marker", "module": "@acme/maps/a.js" }""";
+        const string Hit = """{ "kind": "ref", "name": "Hit", "module": "@acme/maps/a.js" }""";
+        string List(string item) => $$"""{ "kind": "ref", "name": "List", "module": "@acme/maps/a.js", "args": [{{item}}] }""";
+        var result = Generate(new Profile { Package = "@acme/maps", Collections = ["List"] }, api, ("a.js", $$"""
+            { "kind": "class", "name": "Marker" },
+            { "kind": "interface", "name": "Change", "typeParameters": [{ "name": "T" }], "members": [{ "kind": "property", "name": "added", "type": { "kind": "array", "element": {{T}} } }] },
+            { "kind": "class", "name": "List", "typeParameters": [{ "name": "T" }], "constructors": [{ "params": [{ "name": "items", "optional": true, "type": { "kind": "array", "element": {{T}} } }] }],
+              "members": [{ "kind": "method", "name": "first", "signatures": [{ "returns": { "kind": "union", "types": [{{T}}, { "kind": "primitive", "name": "undefined" }] } }] }] },
+            { "kind": "interface", "name": "Hit", "members": [
+              { "kind": "property", "name": "marker", "type": {{Marker}} }, { "kind": "property", "name": "x", "type": { "kind": "primitive", "name": "number" } }] },
+            { "kind": "class", "name": "View", "members": [
+              { "kind": "property", "name": "markers", "readonly": true, "type": {{List(Marker)}} },
+              { "kind": "property", "name": "numbers", "readonly": true, "type": {{List("""{ "kind": "primitive", "name": "number" }""")}} },
+              { "kind": "method", "name": "hitAt", "signatures": [{ "returns": {{Hit}} }] }] },
+            { "kind": "function", "name": "lastHit", "signatures": [{ "returns": {{Hit}} }] }
+            """));
+        var sync = api == Api.Sync;
+        // The collection is generic over entities, with no Create and no registry entry: it comes from its owner.
+        var list = File(result, "List.cs");
+        Assert.Contains("public sealed partial class List<T> : JsObject where T : JsObject", list);
+        Assert.DoesNotContain("Create", list);
+        Assert.Contains(sync ? "public Opt<T> First(JsScope scope) =>" : "public Task<Opt<T>> FirstAsync(JsScope scope) =>", list);
+        Assert.Contains("(ref r) => JsJson.ReadOpt(ref r, scope.Read<T>)", list);
+        var maps = File(result, "Maps.cs");
+        Assert.Contains("public const int ListId = 2;", maps);
+        Assert.DoesNotContain(".Add(ListId", maps);
+        // Its owner reads it with a factory, as the registry can't make one of a type argument.
+        var view = File(result, "View.cs");
+        Assert.Contains(sync ? "public List<Marker> GetMarkers(JsScope scope) =>" : "public async Task<List<Marker>> GetMarkersAsync(JsScope scope) =>", view);
+        Assert.Contains("(ref r) => scope.Read(ref r, static (realm, handle) => new List<Marker>(realm, handle))", view);
+        // A generic data interface is a generic record; a record holding an entity is read with a scope.
+        Assert.Contains("public sealed partial record Change<T> where T : JsObject", File(result, "Change.cs"));
+        var hit = File(result, "Hit.cs");
+        Assert.Contains("public static Hit Read(ref Utf8JsonReader reader, JsScope scope)", hit);
+        Assert.Contains("""case "marker": marker = scope.Read<Marker>(ref reader); break;""", hit);
+        Assert.Contains("(ref r) => Hit.Read(ref r, scope)", view);
+        Assert.Contains(sync ? "public static Hit LastHit(JsScope scope) =>" : "public static async Task<Hit> LastHitAsync(JsScope scope) =>", File(result, "A.cs"));
+        Assert.Equal(
+        [
+            "IOP2007 List.constructor: skipped: its parameter isn't a bag, so there's no Create (R18)",
+            "IOP2007 View.numbers: skipped: uses `List` of a type that isn't an entity (§2)",
+        ], result.Diagnostics.Select(d => d.ToString()));
     }
 
     [Theory] // R26

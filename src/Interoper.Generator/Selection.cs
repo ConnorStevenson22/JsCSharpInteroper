@@ -6,7 +6,7 @@ namespace Interoper.Generator;
 /// <summary>
 /// A declaration to emit, trimmed to what can be mapped: a class keeps only the members, events and signatures that
 /// can be, a dropped optional or rest parameter is gone from its signature (R22), and an event payload's interface has
-/// no methods (R24).
+/// no methods (R24). A callback alias is never one: it has no C# type of its own (R21).
 /// </summary>
 public sealed record Selected(string Module, Declaration Declaration);
 
@@ -15,9 +15,10 @@ public sealed record Selected(string Module, Declaration Declaration);
 /// module); every exported declaration of a matching module is emitted, and so are the bases of emitted classes and the
 /// data types (interfaces, aliases, enums) they use, whole. What can't be mapped is found here, so that a skipped type
 /// takes the members that use it along with it (mapping §8): a member that uses a class outside the selection, or a
-/// type the type map can't map (<see cref="TypeMap.Problem(IrType, bool)"/>), is skipped with IOP2007, or IOP2003 for
-/// an ambiguous union; an optional trailing parameter or a rest parameter is dropped instead (R22), and so is a method
-/// of an interface that an event delivers (R24).
+/// type the type map can't map (<see cref="TypeMap.Problem(IrType, Position)"/>), is skipped with IOP2007, or IOP2003
+/// for an ambiguous union; an optional trailing parameter or a rest parameter is dropped instead (R22), and so is a
+/// method of an interface that an event delivers (R24). The profile's collection classes are generic live classes, and
+/// generic interfaces generic records; their type parameters are entities (mapping §2).
 /// </summary>
 public sealed class Selection
 {
@@ -34,6 +35,9 @@ public sealed class Selection
     private readonly Dictionary<Declaration, Unmappable?> problems = new(ReferenceEqualityComparer.Instance);
     private readonly HashSet<Declaration> checking = new(ReferenceEqualityComparer.Instance);
     private readonly HashSet<InterfaceDeclaration> payloads = new(ReferenceEqualityComparer.Instance);
+    private readonly HashSet<AliasDeclaration> callbacks = new(ReferenceEqualityComparer.Instance);
+    /// <summary>The type parameters of the generic declaration being checked or added, which its types can use (mapping §2).</summary>
+    private IReadOnlyList<TypeParameter> typeParameters = [];
     private readonly List<Diagnostic> diagnostics = [];
     private readonly TypeMap types;
     private bool recursed;
@@ -62,7 +66,7 @@ public sealed class Selection
                 roots.Add(b);
             }
         }
-        classes.UnionWith(roots.OfType<ClassDeclaration>().Where(c => c.TypeParameters.Count == 0));
+        classes.UnionWith(roots.OfType<ClassDeclaration>().Where(c => c.TypeParameters.Count == 0 || profile.Collections.Contains(c.Name)));
         types = Checker();
         // R19 step 2: a closed base is read by a string discriminant; without one it's skipped, with what uses it.
         while (classes.FirstOrDefault(c => types.Problem(c) is not null) is { } closed)
@@ -143,7 +147,7 @@ public sealed class Selection
                 AddClass(c);
                 break;
             case FunctionDeclaration f:
-                var signatures = Signatures(f.Name, f.Signatures, live: false);
+                var signatures = Signatures(f.Name, f.Signatures);
                 if (signatures.Count > 0)
                 {
                     selected[f] = new(moduleOf[f], f with { Signatures = signatures });
@@ -167,6 +171,11 @@ public sealed class Selection
 
     private void AddClass(ClassDeclaration c)
     {
+        typeParameters = c.TypeParameters;
+        if (!c.Abstract && !types.Constructible(c))
+        {
+            Report(new(Diagnostic.NotSupported, $"{c.Name}.constructor", "skipped: its parameter isn't a bag, so there's no Create (R18)"));
+        }
         var members = new List<Member>();
         foreach (var member in c.Members.Where(m => !IsConvention(m)))
         {
@@ -178,7 +187,7 @@ public sealed class Selection
             }
             if (member is MethodMember method)
             {
-                var signatures = Signatures(subject, method.Signatures, live: true);
+                var signatures = Signatures(subject, method.Signatures);
                 if (signatures.Count > 0)
                 {
                     members.Add(method with { Signatures = signatures });
@@ -210,7 +219,7 @@ public sealed class Selection
                 Report(new(Diagnostic.NotSupported, $"{c.Name}.on:{e.Name}", "skipped: the profile names no subscribe method"));
                 continue;
             }
-            if ((Problem(e.Type) ?? types.Problem(e.Type, live: true)) is { } problem)
+            if ((Problem(e.Type) ?? types.Problem(e.Type, Position.Member)) is { } problem)
             {
                 Skip($"{c.Name}.on:{e.Name}", problem);
                 continue;
@@ -219,6 +228,7 @@ public sealed class Selection
             events.Add(e);
         }
         selected[c] = new(moduleOf[c], c with { Members = members, Events = events });
+        typeParameters = [];
     }
 
     /// <summary>
@@ -237,26 +247,23 @@ public sealed class Selection
             sub.Extends is RefType r && ReferenceEquals(Find(r), c) &&
             sub.Members.Any(m => m is PropertyMember { Type: LiteralType } && m.Name == property.Name));
 
-    /// <summary>
-    /// The signatures that can be mapped, without trailing optional or rest parameters that can't (R22).
-    /// <paramref name="live"/>: a live class's method, whose parameters and result can be entities.
-    /// </summary>
-    private List<Signature> Signatures(string subject, IEnumerable<Signature> signatures, bool live)
+    /// <summary>The signatures that can be mapped, without trailing optional or rest parameters that can't (R22).</summary>
+    private List<Signature> Signatures(string subject, IEnumerable<Signature> signatures)
     {
         var result = new List<Signature>();
         foreach (var signature in signatures)
         {
-            if (Problem(signature, live) is { } problem)
+            if (Problem(signature) is { } problem)
             {
                 Skip(subject, problem);
                 continue;
             }
-            var kept = signature.Params.TakeWhile(p => ParameterProblem(p, live) is null).ToList();
+            var kept = signature.Params.TakeWhile(p => ParameterProblem(p) is null).ToList();
             if (kept.Count < signature.Params.Count)
             {
                 var dropped = signature.Params[kept.Count];
                 Report(new(Diagnostic.NotSupported, $"{subject}({dropped.Name})",
-                    $"{(dropped.Rest ? "rest" : "optional")} parameter dropped (R22): uses {ParameterProblem(dropped, live)}"));
+                    $"{(dropped.Rest ? "rest" : "optional")} parameter dropped (R22): uses {ParameterProblem(dropped)}"));
             }
             var trimmed = signature with { Params = kept };
             foreach (var type in trimmed.Params.Select(p => p.Type).Append(trimmed.Returns).OfType<IrType>())
@@ -269,15 +276,15 @@ public sealed class Selection
     }
 
     /// <summary>Why a signature can't be mapped: a type parameter, its result, or a required parameter.</summary>
-    private Unmappable? Problem(Signature signature, bool live) =>
+    private Unmappable? Problem(Signature signature) =>
         signature.TypeParameters.Count > 0 ? new($"type parameter `{signature.TypeParameters[0].Name}`")
-        : signature.Returns is { } returns && (Problem(returns) ?? types.ResultProblem(returns, live)) is { } problem ? problem
-        : signature.Params.FirstOrDefault(p => ParameterProblem(p, live) is not null) is { Optional: false, Rest: false } required ? ParameterProblem(required, live)
+        : signature.Returns is { } returns && (Problem(returns) ?? types.ResultProblem(returns)) is { } problem ? problem
+        : signature.Params.FirstOrDefault(p => ParameterProblem(p) is not null) is { Optional: false, Rest: false } required ? ParameterProblem(required)
         : null;
 
     /// <summary>R22: a rest parameter is <c>params T[]</c>, so its type must be an array.</summary>
-    private Unmappable? ParameterProblem(Parameter p, bool live) =>
-        p.Rest && p.Type is not ArrayType ? new("a type that isn't an array") : Problem(p.Type) ?? types.Problem(p.Type, live);
+    private Unmappable? ParameterProblem(Parameter p) =>
+        p.Rest && p.Type is not ArrayType ? new("a type that isn't an array") : Problem(p.Type) ?? types.Problem(p.Type, Position.Parameter);
 
     private void Skip(string subject, Unmappable problem) => Report(new(problem.Code, subject, $"skipped: uses {problem}"));
 
@@ -293,8 +300,9 @@ public sealed class Selection
     // --- What can be reached ---
 
     /// <summary>
-    /// Why a type can't be used: something outside the selection or the generator, here or in a declaration it names.
-    /// What the types themselves map to is the type map's to check (<see cref="TypeMap.Problem(IrType, bool)"/>).
+    /// Why a type can't be used: something outside the selection or the generator, here or in a declaration it names,
+    /// or a type parameter that isn't the generic declaration's own. What the types themselves map to is the type map's
+    /// to check (<see cref="TypeMap.Problem(IrType, Position)"/>).
     /// </summary>
     private Unmappable? Problem(IrType type) => type switch
     {
@@ -302,10 +310,9 @@ public sealed class Selection
         LiteralType or ThisType => null,
         RefType { Module: null, Name: "Promise" } r => FirstProblem(r.Args),
         RefType { Module: null } r => new($"`{r.Name}`"),
-        RefType r => Find(r) is { } declaration ? DeclarationProblem(declaration) : new($"`{r.Name}`"),
+        RefType r => Find(r) is { } declaration ? DeclarationProblem(declaration) ?? FirstProblem(r.Args) : new($"`{r.Name}`"),
         ObjectType o => MembersProblem(o.Members, o.CallSignatures.Count + o.ConstructSignatures.Count) ?? FirstProblem(Children(o)),
-        FunctionType => new("a callback"),
-        TypeParameterType t => new($"type parameter `{t.Name}`"),
+        TypeParameterType t => typeParameters.Any(p => p.Name == t.Name) ? null : new($"type parameter `{t.Name}`"),
         UnresolvedType u => new($"unresolved `{u.Text}`"),
         _ => FirstProblem(Children(type)),
     };
@@ -329,17 +336,21 @@ public sealed class Selection
             recursed = true; // a recursive data type is fine, unless something else in it isn't
             return null;
         }
+        var outer = typeParameters;
+        typeParameters = declaration is InterfaceDeclaration generic ? generic.TypeParameters : [];
         var problem = declaration switch
         {
             ClassDeclaration c => classes.Contains(c) ? null
-                : skippedClasses.GetValueOrDefault(c) ?? new(c.TypeParameters.Count > 0 ? $"generic `{c.Name}`" : $"class `{c.Name}` outside the selection"),
-            InterfaceDeclaration { TypeParameters.Count: > 0 } or AliasDeclaration { TypeParameters.Count: > 0 } => new($"generic `{declaration.Name}`"),
+                : skippedClasses.GetValueOrDefault(c)
+                    ?? new(c.TypeParameters.Count > 0 && !profile.Collections.Contains(c.Name) ? $"generic `{c.Name}`" : $"class `{c.Name}` outside the selection"),
+            AliasDeclaration { TypeParameters.Count: > 0 } => new($"generic `{declaration.Name}`"),
             InterfaceDeclaration i => MembersProblem(payloads.Contains(i) ? i.Members.OfType<PropertyMember>() : i.Members, i.CallSignatures.Count + i.ConstructSignatures.Count)
                 ?? FirstProblem(Parts(i)) ?? types.Problem(i),
             AliasDeclaration a => Problem(a.Type) ?? types.Problem(a),
             EnumDeclaration e => types.Problem(e),
             _ => new($"`{declaration.Name}`"),
         };
+        typeParameters = outer;
         if (problem is not null && declaration is not ClassDeclaration)
         {
             problem = problem with { Text = $"{problem.Text} (in `{declaration.Name}`)" };
@@ -378,6 +389,15 @@ public sealed class Selection
 
     private void AddDataType(Declaration declaration)
     {
+        if (declaration is AliasDeclaration { Type: FunctionType callback } alias)
+        {
+            // R21: a callback alias has no C# type; its uses are delegates.
+            if (callbacks.Add(alias))
+            {
+                Collect(callback);
+            }
+            return;
+        }
         if (selected.ContainsKey(declaration))
         {
             return;
@@ -419,6 +439,7 @@ public sealed class Selection
         UnionType u => u.Types,
         IntersectionType i => i.Types,
         ObjectType o => MemberTypes(o.Members, o.IndexSignatures),
+        FunctionType f => f.Params.Select(p => p.Type).Append(f.Returns),
         _ => [],
     };
 

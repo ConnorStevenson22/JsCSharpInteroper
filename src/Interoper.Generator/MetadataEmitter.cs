@@ -16,8 +16,9 @@ internal static class MetadataEmitter
         [.. selection.Declarations.Where(s => s.Declaration is ClassDeclaration).OrderBy(s => !types.IsValueLike((ClassDeclaration)s.Declaration))];
 
     /// <summary>
-    /// The class id constants and the registry of live types (R19 step 1); an abstract class has none. Sync mode preloads
-    /// the modules of its classes and module functions (design §3.5).
+    /// The class id constants and the registry of live types (R19 step 1); an abstract class has none, and nor has a
+    /// generic one, whose readers make it (mapping §2). Sync mode preloads the modules of its classes and module functions
+    /// (design §3.5).
     /// </summary>
     public static string Registry(TypeMap types, GeneratorOptions options, IReadOnlyList<Selected> classes, IEnumerable<string> functionModules)
     {
@@ -32,7 +33,7 @@ internal static class MetadataEmitter
             {
                 w.Line();
             }
-            var calls = classes.Select(s => (ClassDeclaration)s.Declaration).Where(c => !c.Abstract)
+            var calls = classes.Select(s => (ClassDeclaration)s.Declaration).Where(c => !c.Abstract && c.TypeParameters.Count == 0)
                 .Select(c => $".Add({types.ClassIdName(c)}, static (realm, handle) => new {types.Name(c).In(options.Namespace)}(realm, handle))").ToList();
             var modules = classes.Select(s => s.Module).Concat(functionModules).Distinct().ToList();
             if (options.Api == Api.Sync && modules.Count > 0)

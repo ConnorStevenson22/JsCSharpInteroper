@@ -39,11 +39,11 @@ node --test "fixtures/demo-maps/test/*.test.mjs"
 | JSDoc tags | [mapping §7](../../docs/mapping.md#7-what-the-extractor-must-resolve-with-the-checker) | `@default` (`FlyToOptions.duration`, `Rgba.a`); `@since`, `@deprecated`, `@see` on the `screenToMap` overloads |
 | Optional parameters | R22 | `MapView.flyTo(target, options?)`, `DemoMapElement.clickAt(x, y, button?)` |
 | Rest parameter | R22 | `perimeter(...points)` (`measure`) |
-| Callbacks | R21 | `on`, `watch`, `Collection.find` (synchronous `boolean` result) |
-| Callback with a synchronous return value | R21, IOP2005 | `Marker.labelFormatter` (`LabelFormatter`), read by `Marker.displayLabel` |
+| Callbacks | R21 | `on`, `watch`, `Collection.forEach` (result ignored), `Collection.find` (synchronous `boolean` result, IOP2005 in async mode) |
+| Callback with a synchronous return value | R21, IOP2005 | `Marker.labelFormatter` (`LabelFormatter`), a setter-only callback property read by `Marker.displayLabel` |
 | Event map through a phantom property | R24 | `"$events"` + `on<K extends keyof this["$events"]>` (`core`); `MapViewEvents.click` |
 | Property watch | design §2 | `Observable.watch(name, callback)` returns a `Subscription` (`core`), e.g. `view.watch("zoom", …)` |
-| Collection type (generic) | §2 (generic `T`) | `Collection<T>` with a `change` event (`core`); `MapView.markers`, and `MapView.layers` of an abstract class |
+| Collection type (generic) | §2 (generic `T`), R17 | `Collection<T>` with a `change` event whose payload holds entities (`core`); `MapView.markers`, and `MapView.layers` of an abstract class |
 | Module functions | §5 | `distance`, `perimeter` (`measure`); `toRgba` (`styles`) |
 | Custom element: attributes, properties, events, slots | design §2 | `<demo-map>` (`demo-map`, `custom-elements.json`): attributes `basemap`, `zoom`; properties `view`, `center`; events `demo-map-click`, `demo-map-zoom-change` (pairs with `zoom` for `@bind`), `demo-map-ready`; slots default and `toolbar` |
 
@@ -57,7 +57,7 @@ The golden slice (`tests/GoldenSlice`) is the fixture's generated bindings: ever
 
 ## `profile.json`
 
-Provisional; the generator (plan phase 2) fixes the schema.
+The generator's `Profile` (`src/Interoper.Generator/Profile.cs`) is the schema.
 
 | Field | Meaning |
 |---|---|
@@ -67,5 +67,5 @@ Provisional; the generator (plan phase 2) fixes the schema.
 | `valueClasses` | Classes that also get an `XSnapshot` record used by value (R16). Every other class is an entity (R15). |
 | `events` | Event convention: `mapProperty` is the phantom event-map property (`$events`), `subscribe` the method that takes `(type, listener)` and returns a `Subscription` with `dispose()`. |
 | `watch` | Method that takes `(propertyName, callback)` and returns a `Subscription` with `dispose()`. Every property of a class that has it gets a watch. |
-| `collections` | Generic classes treated as collections of their type argument. |
+| `collections` | Generic classes treated as live collections of their type argument, an entity: no `Create`, no registry entry (mapping §2). |
 | `include` | What to emit: module specifier globs (`"@acme/demo-maps/geometry.js"`; `*` matches any characters, `/` included). Every exported declaration of a matching module, the bases of its classes and the data types they use are emitted. Absent, as here, means every module. |

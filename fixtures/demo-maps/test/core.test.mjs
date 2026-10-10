@@ -42,3 +42,10 @@ test("Collection reports adds and removes as change events", () => {
   assert.equal(items.at(5), undefined);
   assert.equal(items.find((item) => item === "b"), "b");
 });
+
+test("Collection.forEach calls back with each item and its index, and nothing else", () => {
+  const items = new Collection(["a", "b"]);
+  const seen = [];
+  items.forEach((...args) => seen.push(args));
+  assert.deepEqual(seen, [["a", 0], ["b", 1]]);
+});

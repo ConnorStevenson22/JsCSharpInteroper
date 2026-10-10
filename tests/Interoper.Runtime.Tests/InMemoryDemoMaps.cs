@@ -24,6 +24,7 @@ internal static class InMemoryDemoMaps
         .Define(new(DemoMaps.MarkerId, "Marker", args => new FakeMarker(Bag(args))) { Members = ["position", "label", "style"] })
         .Define(new(DemoMaps.ObservableId, "core.Observable", _ => new FakeObservable()))
         .Define(new(DemoMaps.EmitterId, "core.Emitter", _ => new FakeEmitter()))
+        .Define(new(DemoMaps.CollectionId, "core.Collection", args => new FakeCollection(args.FirstOrDefault() as List<object?> ?? [])))
         .Define(new(DemoMaps.DemoMapElementId, "demo-map.DemoMapElement", _ => new FakeDemoMapElement()) { Members = ["basemap", "zoom", "center"] })
         .Define(new(DemoMaps.LayerId, "layers.Layer", _ => throw new JsException("TypeError", "Layer is abstract", null)) { Members = ["title", "visible"] })
         .Define(new(DemoMaps.TileLayerId, "layers.TileLayer", args => new FakeTileLayer(Bag(args))) { Members = ["url", "title", "visible"] })
@@ -92,6 +93,66 @@ internal class FakeEmitter : FakeObservable
                 return base.Call(name, args);
         }
     }
+}
+
+/// <summary>
+/// <c>core.Collection</c>: a live list that emits <c>change</c> on <c>add</c> and <c>remove</c>, and calls back from
+/// <c>find</c> and <c>forEach</c> with each item and its index.
+/// </summary>
+internal sealed class FakeCollection(List<object?> items) : FakeEmitter
+{
+    private readonly List<object?> items = [.. items];
+
+    public override string ClassName => "core.Collection";
+
+    public IReadOnlyList<object?> Items => items;
+
+    public override object? Get(string name) => name == "length" ? (double)items.Count : base.Get(name);
+
+    public override object? Call(string name, object?[] args)
+    {
+        switch (name)
+        {
+            case "at": // negative indexes count from the end
+                var index = (int)(double)args[0]!;
+                index = index < 0 ? items.Count + index : index;
+                return index >= 0 && index < items.Count ? items[index] : Undefined.Value;
+            case "add":
+                items.Add(args[0]);
+                Changed(added: [args[0]], removed: []);
+                return Undefined.Value;
+            case "remove":
+                if (!items.Remove(args[0])) return false;
+                Changed(added: [], removed: [args[0]]);
+                return true;
+            case "find":
+                var predicate = (JsFunction)args[0]!;
+                return items.Where((item, i) => Truthy(predicate(item, (double)i))).DefaultIfEmpty(Undefined.Value).First();
+            case "forEach":
+                var callback = (JsFunction)args[0]!;
+                foreach (var (item, i) in items.ToList().Select((item, i) => (item, i)))
+                {
+                    callback(item, (double)i);
+                }
+                return Undefined.Value;
+            case "toArray":
+                return items.ToList();
+            default:
+                return base.Call(name, args);
+        }
+    }
+
+    private void Changed(List<object?> added, List<object?> removed) =>
+        Call("emit", ["change", new Dictionary<string, object?> { ["added"] = added, ["removed"] = removed }]);
+
+    private static bool Truthy(object? value) => value switch
+    {
+        null or Undefined => false,
+        bool b => b,
+        double d => d != 0 && !double.IsNaN(d),
+        string s => s.Length > 0,
+        _ => true,
+    };
 }
 
 /// <summary><c>geometry.Shape</c>: <c>bounds</c> from the coordinates, and <c>clone()</c>.</summary>
@@ -172,6 +233,8 @@ internal sealed class FakePolygon : FakeShape
 
 internal sealed class FakeMapView : FakeEmitter
 {
+    private readonly FakeCollection markers = new([]), layers = new([]);
+
     public FakeMapView(Dictionary<string, object?> bag)
     {
         Set("center", bag.GetValueOrDefault("center") ?? new FakePoint([]));
@@ -185,6 +248,13 @@ internal sealed class FakeMapView : FakeEmitter
     }
 
     public override string ClassName => "MapView";
+
+    public override object? Get(string name) => name switch
+    {
+        "markers" => markers,
+        "layers" => layers,
+        _ => base.Get(name),
+    };
 
     public override void Set(string name, object? value) => base.Set(name, name switch
     {
@@ -203,8 +273,10 @@ internal sealed class FakeMapView : FakeEmitter
                 return Task.FromResult<object?>(Undefined.Value);
             case "screenToMap":
                 return ScreenToMap(args);
-            case "markerAt": // the fakes have no markers collection
-                return Task.FromResult<object?>(null);
+            case "markerAt": // the first marker within 10 pixels of the screen offset, or null
+                var point = ScreenToMap(args);
+                var tolerance = 10 / Math.Pow(2, (double)Get("zoom")!);
+                return Task.FromResult(markers.Items.Cast<FakeMarker>().FirstOrDefault(m => Distance((FakePoint)m.Get("position")!, point) <= tolerance) as object);
             default:
                 return base.Call(name, args);
         }
@@ -239,6 +311,9 @@ internal sealed class FakeMapView : FakeEmitter
                 break;
         }
     }
+
+    private static double Distance(FakePoint a, FakePoint b) =>
+        Math.Sqrt(Math.Pow((double)a.Get("x")! - (double)b.Get("x")!, 2) + Math.Pow((double)a.Get("y")! - (double)b.Get("y")!, 2));
 
     private static FakePoint Midpoint(Dictionary<string, object?> b) => new(new()
     {

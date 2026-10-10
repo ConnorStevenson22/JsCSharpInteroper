@@ -56,6 +56,12 @@ public sealed partial class MapView : Emitter
     public void SetSelected(Opt<Marker> value) =>
         Realm.Send(JsOp.Set(Handle, "selected", w => JsJson.WriteValue(w, value, Marker.Write)));
 
+    public Collection<Marker> GetMarkers(JsScope scope) =>
+        Realm.Call(JsOp.Get(Handle, "markers"), (ref r) => scope.Read(ref r, static (realm, handle) => new Collection<Marker>(realm, handle)))!;
+
+    public Collection<global::GoldenSlice.Sync.Layers.Layer> GetLayers(JsScope scope) =>
+        Realm.Call(JsOp.Get(Handle, "layers"), (ref r) => scope.Read(ref r, static (realm, handle) => new Collection<global::GoldenSlice.Sync.Layers.Layer>(realm, handle)))!;
+
     public PointSnapshot ScreenToMap(double x, double y) =>
         Realm.Call(JsOp.Call(Handle, "screenToMap", w =>
         {
@@ -99,6 +105,12 @@ public sealed partial class MapView : Emitter
 
     public IDisposable WatchSelected(JsScope scope, Action<Opt<Marker>> handler) =>
         scope.Subscribe(Handle, "watch", "selected", (ref r) => JsJson.ReadOpt(ref r, scope.Read<Marker>), handler, null, null);
+
+    public IDisposable WatchMarkers(JsScope scope, Action<Collection<Marker>> handler) =>
+        scope.Subscribe(Handle, "watch", "markers", (ref r) => scope.Read(ref r, static (realm, handle) => new Collection<Marker>(realm, handle)), handler, null, null);
+
+    public IDisposable WatchLayers(JsScope scope, Action<Collection<global::GoldenSlice.Sync.Layers.Layer>> handler) =>
+        scope.Subscribe(Handle, "watch", "layers", (ref r) => scope.Read(ref r, static (realm, handle) => new Collection<global::GoldenSlice.Sync.Layers.Layer>(realm, handle)), handler, null, null);
 
     public new MapViewSnapshot Snapshot() => Realm.Call(JsOp.Snapshot(Handle), MapViewSnapshot.Read)!;
 

@@ -328,6 +328,36 @@ public sealed class RealmTests
     }
 
     [Fact]
+    public async Task ACallbackReadsItsArgumentsWithItsScopeAndWritesItsResult() // R21
+    {
+        var realm = await StartedRealm();
+        var baseline = transport.Callbacks.Count;
+        var scope = new JsScope(realm);
+        var view = await MapView.CreateAsync(scope, new());
+        var calls = new List<(MapView, double, Opt<string>)>();
+        var id = scope.Callback((MapView v, double n, Opt<string> s) => { calls.Add((v, n, s)); return $"{n}{(s.TryGetValue(out string? t) ? t : "")}"; },
+            scope.Read<MapView>, JsJson.ReadNumber, static (ref r) => JsJson.ReadOpt(ref r, JsJson.ReadString), JsJson.WriteString);
+        var arguments = $$"""[{"$t":{{DemoMaps.MapViewId}},"$h":{{view.Handle}}},2""";
+
+        Assert.Equal("\"2!\"", transport.Callbacks.InvokeCallback(id, arguments + ",\"!\"]"));
+        Assert.Equal("\"3\"", transport.Callbacks.InvokeCallback(id, arguments.Replace(",2", ",3") + "]")); // a missing argument is undefined
+        Assert.Equal([(view, 2.0, new Opt<string>("!")), (view, 3.0, default)], calls);
+        Assert.Null(transport.Callbacks.InvokeCallback(scope.Callback(() => { }), "[]")); // an Action's result is undefined
+
+        await scope.DisposeAsync();
+        Assert.Equal(baseline, transport.Callbacks.Count); // released with their scope
+    }
+
+    [Fact] // §2: a generic class has no registry entry; its reader is given a factory
+    public async Task ReadWithAFactoryKeepsIdentity()
+    {
+        var scope = new JsScope(await StartedRealm());
+        var view = await MapView.CreateAsync(scope, new());
+        var json = $$"""{"$t":0,"$h":{{view.Handle}}}""";
+        Assert.Same(view, Json.Read(json, (ref r) => scope.Read<MapView>(ref r, static (_, _) => throw new InvalidOperationException())));
+    }
+
+    [Fact]
     public async Task CallbacksRunOnTheDispatcher() // R21
     {
         var realm = await StartedRealm();

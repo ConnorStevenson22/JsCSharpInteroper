@@ -30,6 +30,9 @@ public sealed partial class Marker : Observable
         set => Realm.Send(JsOp.Set(Handle, "style", w => JsJson.WriteValue(w, value)));
     }
 
+    public void SetLabelFormatter(JsScope scope, Func<Marker, string>? value) =>
+        Realm.Send(JsOp.Set(Handle, "labelFormatter", w => JsJson.WriteCallback(w, value is null ? null : scope.Callback(value, scope.Read<Marker>, JsJson.WriteString))));
+
     public string DisplayLabel => Realm.GetString(Handle, "displayLabel");
 
     public IDisposable WatchPosition(JsScope scope, Action<PointSnapshot> handler) =>

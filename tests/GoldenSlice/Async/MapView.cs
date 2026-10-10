@@ -52,6 +52,12 @@ public sealed partial class MapView : Emitter
     public Task SetSelectedAsync(Opt<Marker> value) =>
         Realm.SendAsync(JsOp.Set(Handle, "selected", w => JsJson.WriteValue(w, value, Marker.Write)));
 
+    public async Task<Collection<Marker>> GetMarkersAsync(JsScope scope) =>
+        (await Realm.CallAsync(JsOp.Get(Handle, "markers"), (ref r) => scope.Read(ref r, static (realm, handle) => new Collection<Marker>(realm, handle))))!;
+
+    public async Task<Collection<global::GoldenSlice.Async.Layers.Layer>> GetLayersAsync(JsScope scope) =>
+        (await Realm.CallAsync(JsOp.Get(Handle, "layers"), (ref r) => scope.Read(ref r, static (realm, handle) => new Collection<global::GoldenSlice.Async.Layers.Layer>(realm, handle))))!;
+
     public async Task<PointSnapshot> ScreenToMapAsync(double x, double y) =>
         (await Realm.CallAsync(JsOp.Call(Handle, "screenToMap", w =>
         {
@@ -119,6 +125,18 @@ public sealed partial class MapView : Emitter
 
     public IAsyncEnumerable<Opt<Marker>> WatchSelectedStreamAsync(JsScope scope, CancellationToken cancellationToken = default) =>
         scope.StreamAsync(Handle, "watch", "selected", (ref r) => JsJson.ReadOpt(ref r, scope.Read<Marker>), null, null, cancellationToken);
+
+    public Task<IAsyncDisposable> WatchMarkersAsync(JsScope scope, Action<Collection<Marker>> handler) =>
+        scope.SubscribeAsync(Handle, "watch", "markers", (ref r) => scope.Read(ref r, static (realm, handle) => new Collection<Marker>(realm, handle)), handler, null, null);
+
+    public IAsyncEnumerable<Collection<Marker>> WatchMarkersStreamAsync(JsScope scope, CancellationToken cancellationToken = default) =>
+        scope.StreamAsync(Handle, "watch", "markers", (ref r) => scope.Read(ref r, static (realm, handle) => new Collection<Marker>(realm, handle)), null, null, cancellationToken);
+
+    public Task<IAsyncDisposable> WatchLayersAsync(JsScope scope, Action<Collection<global::GoldenSlice.Async.Layers.Layer>> handler) =>
+        scope.SubscribeAsync(Handle, "watch", "layers", (ref r) => scope.Read(ref r, static (realm, handle) => new Collection<global::GoldenSlice.Async.Layers.Layer>(realm, handle)), handler, null, null);
+
+    public IAsyncEnumerable<Collection<global::GoldenSlice.Async.Layers.Layer>> WatchLayersStreamAsync(JsScope scope, CancellationToken cancellationToken = default) =>
+        scope.StreamAsync(Handle, "watch", "layers", (ref r) => scope.Read(ref r, static (realm, handle) => new Collection<global::GoldenSlice.Async.Layers.Layer>(realm, handle)), null, null, cancellationToken);
 
     public new async Task<MapViewSnapshot> SnapshotAsync() =>
         (await Realm.CallAsync(JsOp.Snapshot(Handle), MapViewSnapshot.Read))!;

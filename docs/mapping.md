@@ -89,7 +89,7 @@ The nullable bottom case is what makes the compiler demand the `null` arm. With 
 | interface with only data members | data record (keeps the interface's name) | §3 |
 | intersection of data bags (`A & { type: "x" }`) | one flattened record of the checker-resolved members | **R11.** |
 | intersection used as a mixin | C# interfaces on the live class | |
-| generic `T` | C# generic where it's reified at runtime (`Collection<T>`); otherwise the constraint, or `JsAny` | |
+| generic `T` | C# generic where it's reified at runtime (`Collection<T>`); otherwise the constraint, or `JsAny` | See below |
 | `this` (return type) | the declaring type | |
 | `keyof`, indexed access, mapped, conditional, `typeof` | the type the checker resolves | **R12.** Unresolvable → `JsAny` + diagnostic IOP2002 |
 | `any`, `unknown`, `object` | `JsAny`: an opaque handle with untyped get/set/call | Diagnostic IOP2001 |
@@ -98,6 +98,10 @@ The nullable bottom case is what makes the compiler demand the `null` arm. With 
 | `AbortSignal` (parameter) | `CancellationToken` | **R14.** Bridged by the runtime |
 | `ArrayBuffer`, typed arrays | `byte[]` / `T[]` | Binary transfer is a later optimisation |
 | function type | delegate (`Action<…>` / `Func<…>`) | §5, R21 |
+
+**Generics.** A type parameter without a constraint stands for an entity (`where T : JsObject`), read with the scope like any entity; a constrained one isn't mapped yet (IOP2007).
+- A class the profile lists in `collections` is a live generic class (`Collection<T> : Emitter where T : JsObject` in the fixture). It has no `Create`, since its owner makes it (its constructor isn't a bag, IOP2007), and no registry entry, since the registry can't make an instance of an unknown type argument: what reads one passes `JsScope.Read(ref reader, create)` a factory (`static (realm, handle) => new Collection<Marker>(realm, handle)`), and identity still holds (R19). A use with a type argument that isn't an entity (`Collection<number>`) is skipped (IOP2007).
+- A generic data interface is a generic record (`CollectionChangeEvent<T>`), with the same constraint.
 
 ---
 
@@ -118,6 +122,7 @@ The profile overrides either way. Getting this wrong is the classic failure mode
 Sent to JS, a snapshot record of a value-like class arrives as an instance: the writer adds its concrete class id (`$c`, [design §3.4](design.md#34-protocol)) and the runtime calls `new Point(bag)`. The bag keeps its constants, such as the discriminant (R20). Data records stay plain objects. The snapshots of an abstract value-like base form a `closed record` hierarchy (`ShapeSnapshot`), read by the discriminant (R19 step 2).
 
 **R17. Snapshot depth.** Snapshot records carry data members only, copying value-like members deeply as their snapshot records. Entity members are not in snapshots, because reading one needs a scope: read them with their scoped getter (`GetSelected(scope)`).
+- **Scoped records.** A data record (not a snapshot) may hold entities, directly, in arrays or through a type parameter (`{ added: T[] }`). It's *scoped*: its reader is `Read(ref reader, JsScope scope)`, which reads each handle with the scope, so what returns or delivers one takes a scope (§5). A union can't have an entity or a scoped record as a case yet, since its reader takes no scope (IOP2007).
 
 **R18. Every live class has an `XSnapshot` record.** It carries the class's writable data members, all optional, each with its getter's type where the setter's differs (`MarkerSnapshot.Position` is a `PointSnapshot`). Read-only members are read with their getters. One type serves as:
 - what `Snapshot()`/`SnapshotAsync()` returns;
@@ -152,7 +157,8 @@ When JS returns a value for a union position, the runtime must pick the case.
 | read-only property | `T X { get; }` | `Task<T> GetXAsync()` |
 | getter type ≠ setter type | `TGet X { get; }` + `void SetX(TSet value)` | `Task<TGet> GetXAsync()`, `Task SetXAsync(TSet value)` |
 | method `foo(a): R` | `R Foo(A a)` | `Task<R> FooAsync(A a)` |
-| property or method returning an entity, or taking a callback (R21) | `R GetX(JsScope scope)` (+ `void SetX(T value)`), `R Foo(JsScope scope, A a)` | `Task<R> GetXAsync(JsScope scope)`, `Task<R> FooAsync(JsScope scope, A a)` |
+| property or method returning an entity or a scoped record (R17), or taking a callback (R21) | `R GetX(JsScope scope)` (+ `void SetX(T value)`), `R Foo(JsScope scope, A a)` | `Task<R> GetXAsync(JsScope scope)`, `Task<R> FooAsync(JsScope scope, A a)` |
+| callback property (R21) | `void SetX(JsScope scope, Func<A, R>? value)` | `Task SetXAsync(JsScope scope, Action<A>? value)` |
 | method returning `Promise<R>` | `Task<R> FooAsync(A a)` | `Task<R> FooAsync(A a)` |
 | constructor `new X(props)` | `static X Create(JsScope scope, XSnapshot props)` | `static Task<X> CreateAsync(JsScope scope, XSnapshot props)` |
 | event (from an event map) | `IDisposable OnClick(JsScope scope, Action<ClickEvent> handler, EventOptions? options = null)` | `Task<IAsyncDisposable> OnClickAsync(JsScope scope, Action<ClickEvent> handler, EventOptions? options = null)` |
@@ -160,7 +166,7 @@ When JS returns a value for a union position, the runtime must pick the case.
 | property watch, for every property of a class with the profile's watch method (its own or a base's) | `IDisposable WatchZoom(JsScope scope, Action<double>)` | `Task<IAsyncDisposable> WatchZoomAsync(JsScope scope, Action<double>)` |
 | property watch stream | — | `IAsyncEnumerable<double> WatchZoomStreamAsync(JsScope scope, CancellationToken cancellationToken = default)` |
 | snapshot / patch | `XSnapshot Snapshot()`, `void Apply(XSnapshot)` | `Task<XSnapshot> SnapshotAsync()`, `Task ApplyAsync(XSnapshot)` |
-| module function | static method on a static class per module, same per-mode shape, with a leading `JsRealm realm`, or `JsScope scope` when it returns an entity or takes a callback | |
+| module function | static method on a static class per module, same per-mode shape, with a leading `JsRealm realm`, or `JsScope scope` when it returns an entity or a scoped record or takes a callback (`static Hit LastHit(JsScope scope)`) | |
 
 - **A live result belongs to the scope the caller passes** ([design §3.2](design.md#32-handles-identity-and-lifetime)), so members that return an entity, or take a callback the scope will own (R21), take that `JsScope` first; in sync mode such a property is `GetX(scope)` plus `SetX(value)`. Value-like classes are values (R16), so `PointSnapshot Center { get; set; }` needs no scope.
 - **Events and watches** belong to the scope too: it owns the subscription and the listener, and disposing the result releases both sooner (R24).
@@ -169,12 +175,14 @@ When JS returns a value for a union position, the runtime must pick the case.
 Sync mode needs .NET and JS on one thread, so it runs on WebAssembly only and fails fast elsewhere (verified, [design §8](design.md#8-evidence)).
 
 **R21. Callbacks** (function-typed parameters) become delegates registered in the runtime's callback registry, owned by the scope, so the member takes a `JsScope` first (§5).
+- **Shape.** A callback returning `void` is an `Action<…>`, any other a `Func<…, R>`, with at most 4 parameters (more is IOP2007). The generated member registers it with `scope.Callback(handler, read1, …, write)` and sends `{"$f":id}`: each argument is read with its reader and the scope, which owns the handles in it, and a missing one is undefined; a `Func`'s result is written back with `write`, an `Action`'s is undefined. A named function alias (`type Formatter = (m: Marker) => string`) has no C# type of its own; its uses are delegates.
+- **Properties.** A callback property is setter-only, `SetX(scope, value)`, since JS can't hand the function back; an optional or nullable one takes `null` to clear it, and it has no watch. A read-only one, or a callback anywhere but a parameter or a property (in a data record, say), is skipped (IOP2007).
 - A callback whose *return value* JS uses synchronously (e.g. a formatter `(v) => string`) works in sync mode.
-- It *can't* work in async mode on Server or Hybrid. The generator emits IOP2005, and the profile can supply a JS-side implementation instead.
+- It *can't* work in async mode on Server or Hybrid: JS has moved on before the result arrives. The member is skipped in async mode with IOP2005, and the profile can supply a JS-side implementation instead.
 
 **R22. Optional parameters** use the value model: `Opt<T> p = default` (or a union `= default`), and `default` is undefined. Omitted trailing arguments are omitted on the JS side too.
 - A rest parameter `...points: Point[]` becomes `params PointSnapshot[] points`, written as one argument per element (a spread). The optional parameters before it are written while a later one is defined or it has elements.
-- An optional trailing parameter or a rest parameter whose type isn't supported yet is dropped, with IOP2007; a rest parameter's type must be an array, and its element a data type: an array of entities is a data position (R17), so `...markers: Marker[]` is dropped. A required one skips the member.
+- An optional trailing parameter or a rest parameter whose type isn't supported yet is dropped, with IOP2007; a rest parameter's type must be an array. `...markers: Marker[]` is `params Marker[] markers`, a spread of handles. A required one skips the member.
 
 **R23. Overloads** map one to one. If two TypeScript overloads collapse to the same C# signature after mapping, they merge into one method with a union or enum parameter (IOP2004).
 
@@ -226,7 +234,7 @@ Every fallback is reported with a code so consumers can see and tune what didn't
 | IOP2002 | Type the checker couldn't resolve, mapped to `JsAny` |
 | IOP2003 | Skipped: an ambiguous union (R19), whose cases can't be told apart, and what uses it. Profile override needed |
 | IOP2004 | Overloads merged after mapping |
-| IOP2005 | Synchronous-result callback not supported in async mode |
+| IOP2005 | Skipped in async mode: a member whose callback's result JS uses synchronously (R21) |
 | IOP2006 | Name changed to avoid a collision (R25, R26); a module's static class renamed, or a type skipped, because its path or full name is taken or is a namespace's; a class id prefixed because classes in other namespaces share its name (R27) |
 | IOP2007 | Skipped: a declaration, member or optional parameter the generator can't map (yet), or that uses one, or a class outside the selection |
 

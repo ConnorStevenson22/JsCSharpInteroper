@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.Runtime.CompilerServices;
 using System.Runtime.ExceptionServices;
 using System.Text;
@@ -53,6 +54,26 @@ public sealed class JsScope(JsRealm realm) : IDisposable, IAsyncDisposable
     /// </summary>
     public T Read<T>(ref Utf8JsonReader reader) where T : JsObject
     {
+        var (handle, classId) = ReadHandle(ref reader);
+        return Wrap<T>(handle, classId);
+    }
+
+    /// <summary>
+    /// Reads a handle of a live type the registry can't make, a generic one such as <c>Collection&lt;Marker&gt;</c>
+    /// (mapping §2): the cached object for the handle, or the one <paramref name="create"/> makes, owned by this scope too.
+    /// </summary>
+    public T Read<T>(ref Utf8JsonReader reader, Func<JsRealm, int, T> create) where T : JsObject
+    {
+        var (handle, _) = ReadHandle(ref reader);
+        lock (gate)
+        {
+            ThrowIfDisposed(handle);
+            return (T)Realm.Wrap(this, handle, create);
+        }
+    }
+
+    private static (int Handle, int ClassId) ReadHandle(ref Utf8JsonReader reader)
+    {
         if (reader.TokenType != JsonTokenType.StartObject)
         {
             throw new JsonException($"Expected a handle {{\"$h\",\"$t\"}}, got {reader.TokenType}");
@@ -70,7 +91,7 @@ public sealed class JsScope(JsRealm realm) : IDisposable, IAsyncDisposable
                 default: reader.Skip(); break;
             }
         }
-        return handle is { } h ? Wrap<T>(h, classId) : throw new JsonException("Expected a handle: the object has no \"$h\"");
+        return handle is { } h ? (h, classId) : throw new JsonException("Expected a handle: the object has no \"$h\"");
     }
 
     /// <summary>Owns a handle that has no live object, such as a subscription.</summary>
@@ -124,6 +145,105 @@ public sealed class JsScope(JsRealm realm) : IDisposable, IAsyncDisposable
         {
             batches.Remove(batch);
         }
+    }
+
+    // --- Callbacks (R21) ---
+    // A .NET delegate JS can call: registered with this scope, which releases it, and sent as {"$f":id}
+    // (JsJson.WriteCallback). Each argument is read with its reader, with this scope, which owns the handles in them;
+    // a missing one is undefined. A result is written with its writer; an Action's is undefined.
+
+    public int Callback(Action handler) => Register(_ =>
+    {
+        handler();
+        return null;
+    });
+
+    public int Callback<T1>(Action<T1> handler, JsonRead<T1> read1) => Register(args =>
+    {
+        var r = Arguments(args);
+        handler(Next(ref r, read1));
+        return null;
+    });
+
+    public int Callback<T1, T2>(Action<T1, T2> handler, JsonRead<T1> read1, JsonRead<T2> read2) => Register(args =>
+    {
+        var r = Arguments(args);
+        handler(Next(ref r, read1), Next(ref r, read2));
+        return null;
+    });
+
+    public int Callback<T1, T2, T3>(Action<T1, T2, T3> handler, JsonRead<T1> read1, JsonRead<T2> read2, JsonRead<T3> read3) => Register(args =>
+    {
+        var r = Arguments(args);
+        handler(Next(ref r, read1), Next(ref r, read2), Next(ref r, read3));
+        return null;
+    });
+
+    public int Callback<T1, T2, T3, T4>(Action<T1, T2, T3, T4> handler, JsonRead<T1> read1, JsonRead<T2> read2, JsonRead<T3> read3,
+        JsonRead<T4> read4) => Register(args =>
+    {
+        var r = Arguments(args);
+        handler(Next(ref r, read1), Next(ref r, read2), Next(ref r, read3), Next(ref r, read4));
+        return null;
+    });
+
+    public int Callback<TResult>(Func<TResult> handler, JsonWrite<TResult> write) => Register(_ => Result(write, handler()));
+
+    public int Callback<T1, TResult>(Func<T1, TResult> handler, JsonRead<T1> read1, JsonWrite<TResult> write) => Register(args =>
+    {
+        var r = Arguments(args);
+        return Result(write, handler(Next(ref r, read1)));
+    });
+
+    public int Callback<T1, T2, TResult>(Func<T1, T2, TResult> handler, JsonRead<T1> read1, JsonRead<T2> read2, JsonWrite<TResult> write) =>
+        Register(args =>
+        {
+            var r = Arguments(args);
+            return Result(write, handler(Next(ref r, read1), Next(ref r, read2)));
+        });
+
+    public int Callback<T1, T2, T3, TResult>(Func<T1, T2, T3, TResult> handler, JsonRead<T1> read1, JsonRead<T2> read2, JsonRead<T3> read3,
+        JsonWrite<TResult> write) => Register(args =>
+    {
+        var r = Arguments(args);
+        return Result(write, handler(Next(ref r, read1), Next(ref r, read2), Next(ref r, read3)));
+    });
+
+    public int Callback<T1, T2, T3, T4, TResult>(Func<T1, T2, T3, T4, TResult> handler, JsonRead<T1> read1, JsonRead<T2> read2,
+        JsonRead<T3> read3, JsonRead<T4> read4, JsonWrite<TResult> write) => Register(args =>
+    {
+        var r = Arguments(args);
+        return Result(write, handler(Next(ref r, read1), Next(ref r, read2), Next(ref r, read3), Next(ref r, read4)));
+    });
+
+    // The arguments arrive as a JSON array, by value (design §3.4); the reader starts on its `[`.
+    private static Utf8JsonReader Arguments(string args)
+    {
+        var reader = new Utf8JsonReader(Encoding.UTF8.GetBytes(args));
+        reader.Read();
+        return reader;
+    }
+
+    // The next argument; past the last one, undefined.
+    private static T Next<T>(ref Utf8JsonReader reader, JsonRead<T> read)
+    {
+        if (reader.Read() && reader.TokenType != JsonTokenType.EndArray)
+        {
+            return read(ref reader);
+        }
+        var undefined = new Utf8JsonReader("{\"$u\":1}"u8);
+        undefined.Read();
+        return read(ref undefined);
+    }
+
+    private static string Result<T>(JsonWrite<T> write, T value)
+    {
+        var buffer = new ArrayBufferWriter<byte>();
+        using (var writer = new Utf8JsonWriter(buffer))
+        {
+            write(writer, value);
+        }
+        return Encoding.UTF8.GetString(buffer.WrittenSpan);
     }
 
     /// <summary>Registers a callback (R21) that this scope releases; send it as <c>{"$f":id}</c>.</summary>
@@ -245,13 +365,11 @@ public sealed class JsScope(JsRealm realm) : IDisposable, IAsyncDisposable
     private static EventOptions? Projected(EventOptions? options, IReadOnlyList<string>? fields) =>
         options?.Fields is not null || fields is null ? options : (options ?? new()) with { Fields = fields };
 
-    // Arguments arrive as a JSON array (R21); events and watches use the first.
+    // Events and watches use the first argument (R24).
     private static Func<string, string?> Listener<T>(JsonRead<T> read, Action<T> handler) => args =>
     {
-        var reader = new Utf8JsonReader(Encoding.UTF8.GetBytes(args));
-        reader.Read(); // [
-        reader.Read();
-        handler(read(ref reader));
+        var reader = Arguments(args);
+        handler(Next(ref reader, read));
         return null;
     };
 

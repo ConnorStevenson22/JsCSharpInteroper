@@ -6,13 +6,21 @@ namespace Interoper.Generator;
 /// <summary>Data records (R15, R20) and snapshot records (R16–R18), with their JSON readers and writers.</summary>
 internal static class RecordEmitter
 {
-    /// <summary>A data record: plain JSON, its constants written in place (R20).</summary>
+    /// <summary>
+    /// A data record: plain JSON, its constants written in place (R20). One that holds an entity is read with a scope
+    /// (R17). A generic interface is a generic record whose type parameters are entities (mapping §2).
+    /// </summary>
     public static string Data(TypeMap types, Declaration declaration)
     {
         var (ns, name) = types.Name(declaration);
+        var parameters = declaration is InterfaceDeclaration i ? i.TypeParameters.Select(t => t.Name).ToList() : [];
+        if (parameters.Count > 0)
+        {
+            name = $"{name}<{string.Join(", ", parameters)}>";
+        }
         var fields = Unhidden(types.Fields(declaration), ns);
         var w = CodeWriter.CSharp(ns, "System.Text.Json", "Interoper");
-        using (w.Block($"public sealed partial record {name}"))
+        using (w.Block($"public sealed partial record {name}{string.Concat(parameters.Select(t => $" where {t} : JsObject"))}"))
         {
             Properties(w, fields, required: true);
             using (w.Block($"public static void Write(Utf8JsonWriter writer, {name} value)"))
@@ -23,7 +31,7 @@ internal static class RecordEmitter
                 w.Line("writer.WriteEndObject();");
             }
             w.Line();
-            Read(w, name, "", fields);
+            Read(w, name, "", fields, types.IsScoped(declaration));
         }
         return w.ToString();
     }
@@ -173,11 +181,14 @@ internal static class RecordEmitter
         }
     }
 
-    /// <summary>Reads the members it knows and skips the rest, constants included.</summary>
-    private static void Read(CodeWriter w, string name, string modifier, IReadOnlyList<Field> fields)
+    /// <summary>
+    /// Reads the members it knows and skips the rest, constants included. A <paramref name="scoped"/> record reads its
+    /// entities with the caller's scope, which owns them (R17).
+    /// </summary>
+    private static void Read(CodeWriter w, string name, string modifier, IReadOnlyList<Field> fields, bool scoped = false)
     {
-        var read = fields.Where(f => f.Constant is null).Select(f => (Field: f, Local: Syntax.Local(f.Name, "reader", "property"))).ToList();
-        using (w.Block($"public static {modifier}{name} Read(ref Utf8JsonReader reader)"))
+        var read = fields.Where(f => f.Constant is null).Select(f => (Field: f, Local: Syntax.Local(f.Name, "reader", "property", "scope"))).ToList();
+        using (w.Block($"public static {modifier}{name} Read(ref Utf8JsonReader reader{(scoped ? ", JsScope scope" : "")})"))
         {
             if (read.Count == 0)
             {

@@ -29,6 +29,13 @@ public static class GoldenSyncSuite
         ("module function with a rest parameter (R22)", InScope(RestParameter)),
         ("module folders are namespaces (R27)", InScope(Namespaces)),
         ("click event options: Fields send only those members (R24)", InScope(EventOptionsAndFields)),
+        ("a collection: add, remove, at and toArray, one C# object per JS one (§2)", InScope(Collections)),
+        ("a collection's change event is a CollectionChangeEvent<Marker> (R17, R24)", InScope(CollectionChange)),
+        ("a collection of an abstract class reads its items as the most-derived type (R4, R19)", InScope(LayersOfAnAbstractClass)),
+        ("Find with a predicate: JS uses its result (R21)", InScope(Find)),
+        ("ForEach calls back with each item and its index (R21)", InScope(ForEach)),
+        ("a callback property is setter-only, and JS uses its result (R21)", InScope(LabelFormatter)),
+        ("callbacks are released with their scope (R21)", InScope(CallbacksAreReleasedWithTheirScope)),
     ];
 
     private static void CreateSnapshotApply(JsScope scope)
@@ -257,6 +264,104 @@ public static class GoldenSyncSuite
         tile.Title = null;
         tile.Visible = false;
         Equal(new TileLayerSnapshot { Url = "", Title = null, Visible = false }, tile.Snapshot());
+    }
+
+    private static void Collections(JsScope scope)
+    {
+        var view = MapView.Create(scope, new MapViewSnapshot());
+        var markers = view.GetMarkers(scope);
+        Expect(ReferenceEquals(markers, view.GetMarkers(scope)), "one JS collection to be one C# object");
+        var (a, b) = (Marker.Create(scope, new MarkerSnapshot { Label = "a" }), Marker.Create(scope, new MarkerSnapshot { Label = "b" }));
+        markers.Add(a);
+        markers.Add(b);
+        Equal(2.0, markers.Length);
+        Expect(markers.ToArray(scope) is [var first, var second] && ReferenceEquals(first, a) && ReferenceEquals(second, b), "toArray to give the markers, in order");
+        Expect(markers.Remove(a) && !markers.Remove(a), "remove to find the marker once");
+        Expect(markers.At(scope, 0).TryGetValue(out Marker? left) && ReferenceEquals(left, b), "the other marker to be at 0");
+        Expect(markers.At(scope, 1).IsUndefined, "nothing at 1");
+    }
+
+    private static void CollectionChange(JsScope scope)
+    {
+        var view = MapView.Create(scope, new MapViewSnapshot());
+        var markers = view.GetMarkers(scope);
+        var marker = Marker.Create(scope, new MarkerSnapshot());
+        var changes = new List<CollectionChangeEvent<Marker>>();
+        using (markers.OnChange(scope, changes.Add))
+        {
+            markers.Add(marker);
+            markers.Remove(marker);
+        }
+        markers.Add(marker); // released: no event
+        Expect(changes is [{ Added: [var added], Removed: [] }, { Added: [], Removed: [var removed] }] && ReferenceEquals(added, marker) && ReferenceEquals(removed, marker),
+            "an add and a remove, each with the marker itself");
+    }
+
+    private static void LayersOfAnAbstractClass(JsScope scope)
+    {
+        var view = MapView.Create(scope, new MapViewSnapshot());
+        var layers = view.GetLayers(scope);
+        var tile = TileLayer.Create(scope, new TileLayerSnapshot { Url = "u" });
+        layers.Add(tile);
+        Expect(layers.At(scope, 0).TryGetValue(out Layer? layer) && layer is TileLayer { Url: "u" } && ReferenceEquals(layer, tile), "the Layer to be the TileLayer");
+        Expect(layers.ToArray(scope) is [TileLayer], "toArray to give the TileLayer");
+    }
+
+    private static void Find(JsScope scope)
+    {
+        var markers = MapView.Create(scope, new MapViewSnapshot()).GetMarkers(scope);
+        var (a, b) = (Marker.Create(scope, new MarkerSnapshot { Label = "a" }), Marker.Create(scope, new MarkerSnapshot { Label = "b" }));
+        markers.Add(a);
+        markers.Add(b);
+        var indexes = new List<double>();
+        var found = markers.Find(scope, (marker, index) =>
+        {
+            indexes.Add(index);
+            return marker.DisplayLabel == "b"; // a call back into JS, from JS
+        });
+        Expect(found.TryGetValue(out Marker? m) && ReferenceEquals(m, b), "find to return the marker the predicate accepts");
+        Equal("0,1", string.Join(",", indexes));
+        Expect(markers.Find(scope, (_, _) => false).IsUndefined, "nothing when the predicate accepts none");
+    }
+
+    private static void ForEach(JsScope scope)
+    {
+        var markers = MapView.Create(scope, new MapViewSnapshot()).GetMarkers(scope);
+        var (a, b) = (Marker.Create(scope, new MarkerSnapshot { Label = "a" }), Marker.Create(scope, new MarkerSnapshot { Label = "b" }));
+        markers.Add(a);
+        markers.Add(b);
+        var seen = new List<string>();
+        markers.ForEach(scope, (marker, index) => seen.Add($"{index} {marker.Label} {ReferenceEquals(marker, index == 0 ? a : b)}"));
+        Equal("0 a True; 1 b True", string.Join("; ", seen));
+    }
+
+    private static void LabelFormatter(JsScope scope)
+    {
+        var marker = Marker.Create(scope, new MarkerSnapshot { Label = "a" });
+        Marker? formatted = null;
+        marker.SetLabelFormatter(scope, m =>
+        {
+            formatted = m;
+            return $"{m.Label}!";
+        });
+        Equal("a!", marker.DisplayLabel); // JS calls the formatter, and uses what it returns
+        Expect(ReferenceEquals(formatted, marker), "the formatter to get the marker itself");
+        marker.SetLabelFormatter(scope, null);
+        Equal("a", marker.DisplayLabel);
+    }
+
+    private static async Task CallbacksAreReleasedWithTheirScope(JsScope scope)
+    {
+        var markers = MapView.Create(scope, new MapViewSnapshot()).GetMarkers(scope);
+        markers.Add(Marker.Create(scope, new MarkerSnapshot()));
+        var baseline = await Count(scope.Realm);
+        using (var inner = new JsScope(scope.Realm))
+        {
+            markers.ForEach(inner, (_, _) => { });
+            Expect(markers.Find(inner, (_, _) => true).HasValue, "a marker");
+            Equal(baseline.Callbacks + 2, (await Count(scope.Realm)).Callbacks); // the inner scope owns both
+        }
+        Equal(baseline, await Count(scope.Realm));
     }
 
     // --- Helpers ---

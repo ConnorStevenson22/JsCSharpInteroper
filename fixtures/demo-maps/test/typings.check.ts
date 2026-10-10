@@ -12,6 +12,7 @@ view.on("click", (event) => event.mapPoint.x satisfies number);
 view.on("dblclick", () => {});
 view.watch("zoom", (zoom, old) => zoom - old);
 view.markers.on("change", ({ added }) => added.map((m) => m.displayLabel));
+view.markers.forEach((m, index) => void (m.position.x + index));
 
 const marker = new Marker({ position: [1, 2], labelFormatter: (m) => `${m.position.x}` });
 marker.position = [3, 4];
