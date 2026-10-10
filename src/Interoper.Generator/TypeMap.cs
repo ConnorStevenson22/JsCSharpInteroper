@@ -454,7 +454,8 @@ internal sealed class TypeMap
     {
         var type = Name(c);
         var result = SnapshotBase(c) is { } b ? Fields(b).Select(f => f with { Inherited = true }).ToList() : [];
-        var taken = new HashSet<string>(result.Select(f => f.Name)) { SnapshotName(c), "Write", "WriteMembers", "Read" };
+        // Diff's code names the runtime's JsDiff, which a member of that name would hide.
+        var taken = new HashSet<string>(result.Select(f => f.Name)) { SnapshotName(c), "Write", "WriteMembers", "Read", "Diff", "JsDiff" };
         foreach (var p in c.Members.OfType<PropertyMember>().Where(p => !p.Static))
         {
             if (p.Type is LiteralType constant)

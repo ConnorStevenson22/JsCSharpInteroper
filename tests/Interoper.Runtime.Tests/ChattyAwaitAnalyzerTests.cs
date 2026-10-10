@@ -94,9 +94,113 @@ public sealed class ChattyAwaitAnalyzerTests
             """));
     }
 
+    [Fact] // IOP3001: also with ConfigureAwait
+    public async Task ItFlagsWritesWithConfigureAwait()
+    {
+        var found = await Analyze("""
+            await view.SetZoomAsync(5).ConfigureAwait(false);
+            await view.SetRotationAsync(15).ConfigureAwait(false);
+            """);
+        Assert.Equal(["await view.SetRotationAsync(15).ConfigureAwait(false);"], found.Select(d => d.Code));
+    }
+
+    [Fact] // IOP3001: a run is consecutive statements, in a block or a switch section
+    public async Task ARunIsConsecutiveStatements()
+    {
+        var found = await Analyze("""
+            await view.SetZoomAsync(5);
+            level++;
+            await view.SetRotationAsync(15);
+            switch (level)
+            {
+                case 1:
+                    await view.SetZoomAsync(5);
+                    await view.SetRotationAsync(15); // in a case
+                    break;
+            }
+            """);
+        Assert.Equal(["await view.SetRotationAsync(15); // in a case"], found.Select(d => d.Code));
+    }
+
+    [Fact] // IOP3001, design §3.3: however the batch is declared
+    public async Task ItDoesNotFlagWritesInABatchFromALocal()
+    {
+        Assert.Empty(await Analyze("""
+            var batch = scope.BeginBatch();
+            await using (batch)
+            {
+                await view.SetZoomAsync(5);
+                await view.SetRotationAsync(15);
+            }
+            {
+                await using IAsyncDisposable typed = scope.BeginBatch();
+                await view.SetZoomAsync(5);
+                await view.SetRotationAsync(15);
+            }
+            switch (level)
+            {
+                case 1:
+                    await using (var b = scope.BeginBatch())
+                    {
+                        await view.SetZoomAsync(5);
+                        await view.SetRotationAsync(15);
+                    }
+                    break;
+            }
+            """));
+    }
+
+    [Fact] // IOP3001: a local function in a batch may run after it
+    public async Task ALocalFunctionIsNotInItsMethodsBatch()
+    {
+        var found = await Analyze("""
+            await using (scope.BeginBatch())
+            {
+                async Task Later()
+                {
+                    await view.SetZoomAsync(5);
+                    await view.SetRotationAsync(15);
+                }
+                await Later();
+            }
+            """);
+        Assert.Equal(["await view.SetRotationAsync(15);"], found.Select(d => d.Code));
+    }
+
+    [Fact] // IOP3001: top-level statements too
+    public async Task ItAnalyzesTopLevelStatements()
+    {
+        Assert.Equal(["await view.SetRotationAsync(15);"], (await AnalyzeTopLevel("""
+            await view.SetZoomAsync(5);
+            await view.SetRotationAsync(15);
+            """)).Select(d => d.Code));
+        Assert.Empty(await AnalyzeTopLevel("""
+            await using var batch = scope.BeginBatch();
+            await view.SetZoomAsync(5);
+            await view.SetRotationAsync(15);
+            """));
+    }
+
     private sealed record Found(string Id, DiagnosticSeverity Severity, string Code);
 
-    private static async Task<List<Found>> Analyze(string body)
+    private static Task<List<Found>> Analyze(string body) => Compile($$"""
+        public static class Snippet
+        {
+            public static async Task Run(JsScope scope, MapView view, Marker marker, Other other, double level)
+            {
+        {{body}}
+            }
+        }
+        """, OutputKind.DynamicallyLinkedLibrary);
+
+    // Top-level statements, with the same locals.
+    private static Task<List<Found>> AnalyzeTopLevel(string body) => Compile($$"""
+        JsScope scope = null!;
+        MapView view = null!;
+        {{body}}
+        """, OutputKind.ConsoleApplication);
+
+    private static async Task<List<Found>> Compile(string code, OutputKind kind)
     {
         var source = $$"""
             using System;
@@ -104,22 +208,16 @@ public sealed class ChattyAwaitAnalyzerTests
             using GoldenSlice.Async;
             using Interoper;
 
+            {{code}}
+
             public sealed class Other
             {
                 public Task WriteAsync() => Task.CompletedTask;
             }
-
-            public static class Snippet
-            {
-                public static async Task Run(JsScope scope, MapView view, Marker marker, Other other, double level)
-                {
-            {{body}}
-                }
-            }
             """;
         var tree = CSharpSyntaxTree.ParseText(source, new CSharpParseOptions(LanguageVersion.Preview));
         var compilation = CSharpCompilation.Create("Snippet", [tree], References.Value,
-            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary, nullableContextOptions: NullableContextOptions.Enable));
+            new CSharpCompilationOptions(kind, nullableContextOptions: NullableContextOptions.Enable));
         Assert.Empty(compilation.GetDiagnostics().Where(d => d.Severity == DiagnosticSeverity.Error));
 
         var diagnostics = await compilation.WithAnalyzers([new ChattyAwaitAnalyzer()]).GetAnalyzerDiagnosticsAsync(TestContext.Current.CancellationToken);

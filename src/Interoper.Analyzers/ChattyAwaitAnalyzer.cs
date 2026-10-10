@@ -37,83 +37,110 @@ public sealed class ChattyAwaitAnalyzer : DiagnosticAnalyzer
                 && compilation.GetTypeByMetadataName("Interoper.JsScope") is { } jsScope
                 && compilation.GetTypeByMetadataName("System.Threading.Tasks.Task") is { } task)
             {
-                var types = new Types(jsObject, jsScope, task);
-                start.RegisterSyntaxNodeAction(c => Analyze(c, types), SyntaxKind.Block, SyntaxKind.SwitchSection);
+                start.RegisterSyntaxNodeAction(new Analysis(jsObject, jsScope, task).Run,
+                    SyntaxKind.Block, SyntaxKind.SwitchSection, SyntaxKind.CompilationUnit);
             }
         });
     }
 
-    private sealed class Types(INamedTypeSymbol jsObject, INamedTypeSymbol jsScope, INamedTypeSymbol task)
+    /// <summary>The statements of a block, a switch section or the top-level statements.</summary>
+    private static IEnumerable<StatementSyntax> Statements(SyntaxNode node) => node switch
     {
-        public INamedTypeSymbol JsObject => jsObject;
-        public INamedTypeSymbol JsScope => jsScope;
-        public INamedTypeSymbol Task => task;
-    }
+        BlockSyntax b => b.Statements,
+        SwitchSectionSyntax s => s.Statements,
+        CompilationUnitSyntax u => u.Members.OfType<GlobalStatementSyntax>().Select(g => g.Statement),
+        _ => Enumerable.Empty<StatementSyntax>(),
+    };
 
-    /// <summary>One report per run of writes, on its second statement.</summary>
-    private static void Analyze(SyntaxNodeAnalysisContext context, Types types)
+    private sealed class Analysis(INamedTypeSymbol jsObject, INamedTypeSymbol jsScope, INamedTypeSymbol task)
     {
-        var statements = context.Node is BlockSyntax block ? block.Statements : ((SwitchSectionSyntax)context.Node).Statements;
-        var run = 0;
-        foreach (var statement in statements)
+        /// <summary>One report per run of writes, on its second statement.</summary>
+        public void Run(SyntaxNodeAnalysisContext context)
         {
-            run = IsWrite(context.SemanticModel, statement, types, context.CancellationToken) ? run + 1 : 0;
-            if (run == 2 && !InBatch(context.SemanticModel, statement, types, context.CancellationToken))
+            var run = 0;
+            foreach (var statement in Statements(context.Node))
             {
-                context.ReportDiagnostic(Diagnostic.Create(Rule, statement.GetLocation()));
+                run = IsWrite(context.SemanticModel, statement, context.CancellationToken) ? run + 1 : 0;
+                if (run == 2 && !InBatch(context.SemanticModel, statement, context.CancellationToken))
+                {
+                    context.ReportDiagnostic(Diagnostic.Create(Rule, statement.GetLocation()));
+                }
             }
         }
-    }
 
-    /// <summary><c>await x.SetZoomAsync(5);</c> where <c>x</c> is a live object and the method returns <c>Task</c>.</summary>
-    private static bool IsWrite(SemanticModel model, StatementSyntax statement, Types types, CancellationToken cancellationToken) =>
-        statement is ExpressionStatementSyntax { Expression: AwaitExpressionSyntax { Expression: InvocationExpressionSyntax call } }
-        && model.GetSymbolInfo(call, cancellationToken).Symbol is IMethodSymbol { IsStatic: false } method
-        && SymbolEqualityComparer.Default.Equals(method.ReturnType, types.Task)
-        && DerivesFrom(method.ContainingType, types.JsObject);
-
-    private static bool DerivesFrom(INamedTypeSymbol? type, INamedTypeSymbol baseType)
-    {
-        for (; type is not null; type = type.BaseType)
+        /// <summary>
+        /// <c>await x.SetZoomAsync(5);</c>, with or without <c>.ConfigureAwait(…)</c>, where <c>x</c> is a live object
+        /// and the method returns <c>Task</c>.
+        /// </summary>
+        private bool IsWrite(SemanticModel model, StatementSyntax statement, CancellationToken cancellationToken)
         {
-            if (SymbolEqualityComparer.Default.Equals(type, baseType))
+            if (statement is not ExpressionStatementSyntax { Expression: AwaitExpressionSyntax { Expression: InvocationExpressionSyntax call } })
             {
-                return true;
+                return false;
             }
+            if (call is { Expression: MemberAccessExpressionSyntax { Name.Identifier.ValueText: "ConfigureAwait", Expression: InvocationExpressionSyntax inner } }
+                && model.GetSymbolInfo(call, cancellationToken).Symbol is IMethodSymbol configureAwait
+                && SymbolEqualityComparer.Default.Equals(configureAwait.ContainingType, task))
+            {
+                call = inner;
+            }
+            return model.GetSymbolInfo(call, cancellationToken).Symbol is IMethodSymbol { IsStatic: false } method
+                && SymbolEqualityComparer.Default.Equals(method.ReturnType, task)
+                && DerivesFromJsObject(method.ContainingType);
         }
-        return false;
-    }
 
-    /// <summary>
-    /// Inside <c>await using (scope.BeginBatch())</c>, or after <c>await using var batch = scope.BeginBatch();</c>, in
-    /// the same function: a lambda or local function may run after the batch.
-    /// </summary>
-    private static bool InBatch(SemanticModel model, StatementSyntax statement, Types types, CancellationToken cancellationToken)
-    {
-        bool IsBeginBatch(ExpressionSyntax? e) =>
-            e is InvocationExpressionSyntax
-            && model.GetSymbolInfo(e, cancellationToken).Symbol is IMethodSymbol { Name: "BeginBatch" } m
-            && SymbolEqualityComparer.Default.Equals(m.ContainingType, types.JsScope);
-
-        bool Declares(VariableDeclarationSyntax? d) => d is not null && d.Variables.Any(v => IsBeginBatch(v.Initializer?.Value));
-
-        for (SyntaxNode node = statement; node.Parent is { } parent; node = parent)
+        private bool DerivesFromJsObject(INamedTypeSymbol? type)
         {
-            switch (parent)
+            for (; type is not null; type = type.BaseType)
             {
-                case UsingStatementSyntax u when u.AwaitKeyword != default && (IsBeginBatch(u.Expression) || Declares(u.Declaration)):
+                if (SymbolEqualityComparer.Default.Equals(type, jsObject))
+                {
                     return true;
-                case BlockSyntax b when b.Statements.TakeWhile(s => s != node).Any(s => IsUsingBatch(s)):
-                    return true;
-                case SwitchSectionSyntax s when s.Statements.TakeWhile(x => x != node).Any(x => IsUsingBatch(x)):
-                    return true;
-                case AnonymousFunctionExpressionSyntax or LocalFunctionStatementSyntax or MemberDeclarationSyntax:
-                    return false;
+                }
             }
+            return false;
         }
-        return false;
 
-        bool IsUsingBatch(StatementSyntax s) =>
-            s is LocalDeclarationStatementSyntax l && l.UsingKeyword != default && l.AwaitKeyword != default && Declares(l.Declaration);
+        /// <summary>
+        /// Inside <c>await using (scope.BeginBatch())</c> (or of a local it initialised), or after
+        /// <c>await using var batch = scope.BeginBatch();</c>, in the same function: a lambda or local function may run
+        /// after the batch.
+        /// </summary>
+        private bool InBatch(SemanticModel model, StatementSyntax statement, CancellationToken cancellationToken)
+        {
+            for (SyntaxNode node = statement; node.Parent is { } parent; node = parent)
+            {
+                switch (parent)
+                {
+                    case UsingStatementSyntax u when u.AwaitKeyword.IsKind(SyntaxKind.AwaitKeyword)
+                        && (IsBeginBatch(u.Expression) || Declares(u.Declaration)):
+                        return true;
+                    case GlobalStatementSyntax:
+                        continue; // a top-level statement: its compilation unit holds the ones before it
+                    case AnonymousFunctionExpressionSyntax or LocalFunctionStatementSyntax or MemberDeclarationSyntax:
+                        return false;
+                }
+                // The statements before this one (a top-level one is in a GlobalStatementSyntax).
+                if (Statements(parent).TakeWhile(s => s != node && s.Parent != node).Any(IsUsingBatch))
+                {
+                    return true;
+                }
+            }
+            return false;
+
+            bool IsUsingBatch(StatementSyntax s) =>
+                s is LocalDeclarationStatementSyntax l && l.UsingKeyword.IsKind(SyntaxKind.UsingKeyword) && l.AwaitKeyword.IsKind(SyntaxKind.AwaitKeyword)
+                && Declares(l.Declaration);
+
+            bool Declares(VariableDeclarationSyntax? d) => d is not null && d.Variables.Any(v => IsBeginBatch(v.Initializer?.Value));
+
+            // scope.BeginBatch(), or a local it initialised: var batch = scope.BeginBatch(); await using (batch) { … }
+            bool IsBeginBatch(ExpressionSyntax? e) => e is not null && model.GetSymbolInfo(e, cancellationToken).Symbol switch
+            {
+                IMethodSymbol { Name: "BeginBatch" } m => e is InvocationExpressionSyntax && SymbolEqualityComparer.Default.Equals(m.ContainingType, jsScope),
+                ILocalSymbol local => local.DeclaringSyntaxReferences.Any(r => r.GetSyntax(cancellationToken) is VariableDeclaratorSyntax v && IsBeginBatch(v.Initializer?.Value)),
+                _ => false,
+            };
+        }
     }
 }

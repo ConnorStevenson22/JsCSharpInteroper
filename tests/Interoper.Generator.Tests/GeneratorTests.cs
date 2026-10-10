@@ -37,6 +37,18 @@ public sealed class GeneratorTests
         Assert.Equal("IOP2006 Options.options: JsOptions: Options is taken (R26)", Assert.Single(result.Diagnostics).ToString());
     }
 
+    [Fact] // R18, R26: a snapshot member can't take Diff's name, nor that of the JsDiff it calls
+    public void ASnapshotMemberNamedDiffIsRenamed()
+    {
+        var result = Generate("""
+            { "kind": "class", "name": "Track", "members": [{ "kind": "property", "name": "diff", "type": { "kind": "primitive", "name": "number" } }] }
+            """);
+        var snapshot = File(result, "TrackSnapshot.cs");
+        Assert.Contains("public Opt<double> JsDiff2 { get; init; }", snapshot);
+        Assert.Contains("JsDiff2 = after.JsDiff2.IsUndefined || JsDiff.Same(before.JsDiff2, after.JsDiff2) ? default : after.JsDiff2,", snapshot);
+        Assert.Equal("IOP2006 TrackSnapshot.diff: JsDiff2: Diff is taken (R26)", Assert.Single(result.Diagnostics).ToString());
+    }
+
     [Fact] // R3
     public void AnAliasOfOneTypeIsThatType()
     {
