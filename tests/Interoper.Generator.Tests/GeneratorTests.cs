@@ -146,8 +146,8 @@ public sealed class GeneratorTests
         Assert.Contains("public static partial class Maps", File(result, "Maps.cs")); // the registry keeps its name
         Assert.Equal(
         [
-            "IOP2006 LayerSnapshot: skipped: `LayerSnapshot.cs` is taken (R27)",
-            "IOP2006 Maps: skipped: `Maps.cs` is taken (R27)",
+            "IOP2006 Acme.Maps.LayerSnapshot: skipped: `LayerSnapshot.cs` is taken (R27)",
+            "IOP2006 Acme.Maps.Maps: skipped: `Maps.cs` is taken (R27)",
         ], result.Diagnostics.Select(d => d.ToString()));
     }
 
@@ -200,27 +200,62 @@ public sealed class GeneratorTests
         Assert.Empty(result.Diagnostics);
     }
 
-    [Fact] // R27: class id constants of classes with one name get a suffix; a type named like a namespace is skipped
+    [Fact] // R27: class id constants of classes with one name get a prefix; a type named like a namespace is skipped
     public void NamesThatClashAcrossNamespacesCompile()
     {
+        const string Function = """{ "kind": "function", "name": "f", "signatures": [{ "returns": { "kind": "primitive", "name": "void" } }] }""";
         var result = Generate(Api.Sync, ("layers/Point.js", """{ "kind": "class", "name": "Point" }"""), ("Point.js", """{ "kind": "class", "name": "Point" }"""),
-            ("Layers.js", """{ "kind": "interface", "name": "Layers" }"""));
+            ("Layers.js", """{ "kind": "interface", "name": "Layers" }"""), ("layers.js", Function));
 
-        Assert.Equal(["Layers/Point.cs", "Layers/PointSnapshot.cs", "Point.cs", "PointSnapshot.cs", "Maps.cs", "maps.meta.js"], result.Files.Select(f => f.Path));
+        Assert.Equal(["Layers/Point.cs", "Layers/PointSnapshot.cs", "Point.cs", "PointSnapshot.cs", "Layers2.cs", "Maps.cs", "maps.meta.js"],
+            result.Files.Select(f => f.Path));
+        // Whatever the IR order, the root namespace's class keeps its name, and the others are prefixed by their namespace.
         Assert.Contains("""
-                public const int PointId = 1;
-                public const int Point2Id = 2;
+                public const int LayersPointId = 1;
+                public const int PointId = 2;
 
                 public static JsClassRegistry Classes { get; } = new JsClassRegistry()
-                    .Add(PointId, static (realm, handle) => new global::Acme.Maps.Layers.Point(realm, handle))
-                    .Add(Point2Id, static (realm, handle) => new Point(realm, handle))
+                    .Add(LayersPointId, static (realm, handle) => new global::Acme.Maps.Layers.Point(realm, handle))
+                    .Add(PointId, static (realm, handle) => new Point(realm, handle))
             """, File(result, "Maps.cs"));
-        Assert.Contains("JsOp.Create(Maps.Point2Id, ", File(result, "Point.cs"));
+        Assert.Contains("JsOp.Create(global::Acme.Maps.Maps.LayersPointId, ", File(result, "Layers/Point.cs"));
+        Assert.Contains("public static partial class Layers2", File(result, "Layers2.cs")); // a module's functions take a free name
         Assert.Equal(
         [
-            "IOP2006 @acme/maps/Point.js Point: its class id is Point2Id: PointId is taken (R27)",
-            "IOP2006 Layers: skipped: `Acme.Maps.Layers` is a namespace (R27)",
+            "IOP2006 Acme.Maps.Layers.Point: its class id is LayersPointId: other classes are named Point (R27)",
+            "IOP2006 Acme.Maps.Layers: skipped: a namespace has its name (R27)",
+            "IOP2006 @acme/maps/layers.js: its functions are Layers2: Layers is taken (R27)",
         ], result.Diagnostics.Select(d => d.ToString()));
+    }
+
+    [Fact] // R2, R5, R27: cases are told apart by their full names
+    public void AUnionOfSameNamedTypesFromTwoFoldersHasBoth()
+    {
+        string Point(string member) =>
+            $$"""{ "kind": "interface", "name": "Point", "members": [{ "kind": "property", "name": "{{member}}", "type": { "kind": "primitive", "name": "number" } }] }""";
+        var result = Generate(Api.Sync, ("Point.js", Point("x")), ("geo/Point.js", Point("lat")), ("Spot.js", """
+            { "kind": "alias", "name": "Spot", "type": { "kind": "union", "types": [
+              { "kind": "ref", "name": "Point", "module": "@acme/maps/Point.js" }, { "kind": "ref", "name": "Point", "module": "@acme/maps/geo/Point.js" }] } }
+            """));
+        var spot = File(result, "Spot.cs");
+        Assert.Contains("public Spot(Point value) : this(value, 2) { }", spot);
+        Assert.Contains("public Spot(global::Acme.Maps.Geo.Point value) : this(value, 3) { }", spot);
+        Assert.Empty(result.Diagnostics);
+    }
+
+    [Fact] // R22: a rest parameter of entities
+    public void ARestParameterOfEntitiesIsDropped()
+    {
+        var result = Generate("""
+            { "kind": "class", "name": "Marker" },
+            { "kind": "class", "name": "Layer", "members": [{ "kind": "method", "name": "add", "signatures": [{ "params": [
+              { "name": "markers", "rest": true, "type": { "kind": "array", "element": { "kind": "ref", "name": "Marker", "module": "@acme/maps/a.js" } } }],
+              "returns": { "kind": "primitive", "name": "void" } }] }] }
+            """);
+        // An array is copied by value, so an entity element is a data position (R17): there is no handle spread.
+        Assert.Contains("public void Add() => Realm.Send(JsOp.Call(Handle, \"add\"));", File(result, "Layer.cs"));
+        Assert.Equal("IOP2007 Layer.add(markers): rest parameter dropped (R22): uses the entity `Marker` in a data position (R17)",
+            Assert.Single(result.Diagnostics).ToString());
     }
 
     [Theory] // R26

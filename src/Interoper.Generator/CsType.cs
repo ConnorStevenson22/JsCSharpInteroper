@@ -45,9 +45,9 @@ internal sealed class CsType
     public string? Namespace { get; private set; }
 
     /// <summary>The name with its namespace, the same from any namespace: what tells two types apart.</summary>
-    public string FullName => Element is not null ? Element.FullName + "[]" : Namespace is null ? Name : $"global::{Namespace}.{Name}";
+    public string FullName => Element is not null ? Element.FullName + "[]" : Namespace is null ? Name : new TypeName(Namespace, Name).FullName;
 
-    /// <summary>Makes this type under another spelling of its name: <c>global::</c>-qualified (R27, <see cref="Unhidden"/>).</summary>
+    /// <summary>Makes this type under another spelling of its name: <c>global::</c>-qualified, for <see cref="In"/>.</summary>
     private Func<string, CsType>? named;
 
     public JsonKind Json { get; }
@@ -115,7 +115,7 @@ internal sealed class CsType
     public CsType In(string ns) =>
         Element is not null ? Array(Element.In(ns))
         : Namespace is null || Namespace == ns ? this
-        : named!($"global::{Namespace}.{Name}");
+        : named!(new TypeName(Namespace, Name).In(ns));
 
     /// <summary>
     /// This type, calling its static methods through <c>global::</c> where a member of the type's name hides it

@@ -54,9 +54,9 @@ internal sealed class TypeMap
 
     /// <summary>
     /// <paramref name="selected"/> stand for themselves (a class trimmed to what can be mapped); its classes are the
-    /// live classes to emit. <paramref name="ns"/> is the root namespace (R27); the mapping checks don't need it.
+    /// live classes to emit. <paramref name="ns"/> is the root namespace (R27).
     /// </summary>
-    public TypeMap(IrDocument ir, Profile profile, IEnumerable<Selected> selected, ICollection<Diagnostic> diagnostics, string ns = "")
+    public TypeMap(IrDocument ir, Profile profile, IEnumerable<Selected> selected, ICollection<Diagnostic> diagnostics, string ns)
     {
         foreach (var module in ir.Modules)
         {
@@ -88,20 +88,20 @@ internal sealed class TypeMap
         this.diagnostics = diagnostics;
         (package, root) = (ir.Package.Name, ns);
         Registry = Naming.Type(ir.Package.Name.Split('/')[^1]);
-        // Classes of one name in different namespaces need different class id constants: the later ones get a suffix.
-        var taken = new HashSet<string>();
-        foreach (var c in classes)
+        // R27: classes of one name in different namespaces need different class id constants. Each one outside the root
+        // namespace gets its namespace below the root as a prefix (LayersPointId), whatever the IR order.
+        foreach (var group in classes.GroupBy(c => Naming.Type(c.Name)))
         {
-            var (wanted, id) = (Naming.Type(c.Name), Naming.Type(c.Name));
-            for (var n = 2; !taken.Add(id); n++)
+            foreach (var c in group)
             {
-                id = $"{wanted}{n}";
+                var type = Name(c);
+                var id = group.Count() == 1 || type.Namespace == root ? type.Name : type.Namespace[(root.Length + 1)..].Replace(".", "") + type.Name;
+                if (id != type.Name)
+                {
+                    diagnostics.Add(new(Diagnostic.Renamed, type.ToString(), $"its class id is {id}Id: other classes are named {type.Name} (R27)"));
+                }
+                ids[c] = id + "Id";
             }
-            if (id != wanted)
-            {
-                diagnostics.Add(new(Diagnostic.Renamed, $"{moduleOf[c]} {c.Name}", $"its class id is {id}Id: {wanted}Id is taken (R27)"));
-            }
-            ids[c] = id + "Id";
         }
     }
 
@@ -183,7 +183,7 @@ internal sealed class TypeMap
         RefType { Module: not null } r when Find(r) is { } declaration => Named(declaration),
         ArrayType a => CsType.Array(Map(a.Element, owner)),
         TupleType { Required: null, Rest: false, Elements.Count: > 0 } t
-            when t.Elements.Select(e => Map(e, owner).Name).Distinct().Count() == 1 => CsType.Array(Map(t.Elements[0], owner)), // R5
+            when t.Elements.Select(e => Map(e, owner).FullName).Distinct().Count() == 1 => CsType.Array(Map(t.Elements[0], owner)), // R5
         UnionType u when Union(owner, u) is { } union => Own(union),
         _ => throw Unreachable(owner.Name),
     };
@@ -291,7 +291,7 @@ internal sealed class TypeMap
         foreach (var type in types)
         {
             var mapped = Map(type, name);
-            if (cases.All(c => c.Type.Name != mapped.Name))
+            if (cases.All(c => c.Type.FullName != mapped.FullName))
             {
                 cases.Add(new(mapped, type is RefType r ? Find(r) : null));
             }
@@ -495,7 +495,7 @@ internal sealed class TypeMap
             d is ClassDeclaration c && !IsValueLike(c) ? new($"the entity `{c.Name}` in a data position (R17)") : null,
         ArrayType a => MapProblem(a.Element),
         TupleType { Required: null, Rest: false, Elements.Count: > 0 } t => t.Elements.Select(MapProblem).FirstOrDefault(p => p is not null)
-            ?? (NameOf(t) is null ? new("a tuple of different types") : null), // R5
+            ?? (NameOf(t, full: true) is null ? new("a tuple of different types") : null), // R5
         UnionType u => Values(u).Count < 2 ? new("a nullable array or tuple element") : UnionProblem(u, null),
         PrimitiveType p => new($"`{p.Name}` here"),
         LiteralType => new("a literal here"),
@@ -529,7 +529,7 @@ internal sealed class TypeMap
         {
             return new($"{label} of a literal and other types");
         }
-        var cases = new List<(string? Name, JsonKind Json, Declaration? Declaration)>();
+        var cases = new List<(string? Name, string? FullName, JsonKind Json, Declaration? Declaration)>();
         foreach (var t in flat)
         {
             if (MapProblem(t) is { } problem)
@@ -540,9 +540,9 @@ internal sealed class TypeMap
             {
                 return new($"{label} with the value-type case {valueType} (R2)");
             }
-            if (NameOf(t) is not { } caseName || cases.All(c => c.Name != caseName)) // R5
+            if (NameOf(t, full: true) is not { } caseName || cases.All(c => c.FullName != caseName)) // R5, as Cases dedupes
             {
-                cases.Add((NameOf(t), JsonOf(t), t is RefType r ? Find(r) : null));
+                cases.Add((NameOf(t), NameOf(t, full: true), JsonOf(t), t is RefType r ? Find(r) : null));
             }
         }
         if (type is UnionType u && u.Types.Count(t => !IsNullish(t)) == flat.Count && u.Discriminant is { } discriminant) // as Union() reads it
@@ -632,24 +632,29 @@ internal sealed class TypeMap
         _ => null,
     };
 
-    /// <summary>The name of the C# type <see cref="Map"/> gives, or null for an anonymous one.</summary>
-    private string? NameOf(IrType type) => type switch
+    /// <summary>
+    /// The name of the C# type <see cref="Map"/> gives, or null for an anonymous one; <paramref name="full"/>: its
+    /// <see cref="CsType.FullName"/>, which tells same-named types of two namespaces apart.
+    /// </summary>
+    private string? NameOf(IrType type, bool full = false) => type switch
     {
         PrimitiveType { Name: "number" } => "double",
         PrimitiveType { Name: "string" } => "string",
         PrimitiveType { Name: "boolean" } => "bool",
         RefType { Module: not null } r => Find(r) switch
         {
-            ClassDeclaration c => IsValueLike(c) ? SnapshotName(c) : Naming.Type(c.Name),
-            AliasDeclaration { Type: not ObjectType } a when Values(a.Type) is [var single] => NameOf(single),
-            { } d => Naming.Type(d.Name),
+            ClassDeclaration c => Spell(IsValueLike(c) ? Snapshot(c) : Name(c), full),
+            AliasDeclaration { Type: not ObjectType } a when Values(a.Type) is [var single] => NameOf(single, full),
+            { } d => Spell(Name(d), full),
             null => null,
         },
-        ArrayType a => NameOf(a.Element) is { } element ? element + "[]" : null,
+        ArrayType a => NameOf(a.Element, full) is { } element ? element + "[]" : null,
         TupleType { Required: null, Rest: false, Elements.Count: > 0 } t =>
-            t.Elements.Select(NameOf).Distinct().ToList() is [{ } element] ? element + "[]" : null,
+            t.Elements.Select(e => NameOf(e, full)).Distinct().ToList() is [{ } element] ? element + "[]" : null,
         _ => null,
     };
+
+    private static string Spell(TypeName name, bool full) => full ? name.FullName : name.Name;
 
     /// <summary>The JSON a union case starts with (R19 step 4), once value types are ruled out.</summary>
     private JsonKind JsonOf(IrType type) => type switch

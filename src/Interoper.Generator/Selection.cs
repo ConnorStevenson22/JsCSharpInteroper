@@ -108,9 +108,12 @@ public sealed class Selection
         return result;
     }
 
-    /// <summary>A type map over the IR and the classes to emit, for its mapping checks.</summary>
+    /// <summary>
+    /// A type map over the IR and the classes to emit, for its mapping checks. They compare namespaces, not spell them, so
+    /// any root namespace does.
+    /// </summary>
     private TypeMap Checker() =>
-        new(ir, profile, all.Where(x => x.Declaration is ClassDeclaration c && classes.Contains(c)).Select(x => new Selected(x.Module, x.Declaration)), []);
+        new(ir, profile, all.Where(x => x.Declaration is ClassDeclaration c && classes.Contains(c)).Select(x => new Selected(x.Module, x.Declaration)), [], ns: "");
 
     private ClassDeclaration? Base(ClassDeclaration c) => c.Extends is RefType { Module: not null } r ? Find(r) as ClassDeclaration : null;
 

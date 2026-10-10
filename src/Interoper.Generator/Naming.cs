@@ -38,7 +38,8 @@ public static class Naming
 
     /// <summary>
     /// R27: a module's namespace is the root namespace plus the module's folder in its package, each segment
-    /// PascalCased: <c>@acme/maps/layers/TileLayer.js</c> is in <c>Acme.Maps.Layers</c>.
+    /// PascalCased: <c>@acme/maps/layers/TileLayer.js</c> is in <c>Acme.Maps.Layers</c>. (A module of another package
+    /// gets that package's segment first with multi-package IRs, D11.)
     /// </summary>
     public static string Namespace(string root, string package, string specifier)
     {
@@ -112,9 +113,14 @@ public static class Naming
 /// <summary>A generated type's namespace and name (R27).</summary>
 internal sealed record TypeName(string Namespace, string Name)
 {
-    /// <summary>How code in namespace <paramref name="ns"/> names it: plainly in its own namespace, otherwise <c>global::</c>-qualified.</summary>
-    public string In(string ns) => ns == Namespace ? Name : $"global::{Namespace}.{Name}";
+    /// <summary>Its name with its namespace, as any namespace names it: <c>global::Acme.Maps.Layers.TileLayer</c>.</summary>
+    public string FullName => $"global::{Namespace}.{Name}";
+
+    /// <summary>How code in namespace <paramref name="ns"/> names it: plainly in its own namespace, otherwise <see cref="FullName"/>.</summary>
+    public string In(string ns) => ns == Namespace ? Name : FullName;
 
     /// <summary>R27: an anonymous type named after this one (<see cref="Naming.OwnedType"/>), in its namespace.</summary>
-    public TypeName Owned(string member, bool input = false) => this with { Name = Naming.OwnedType(Name, member, input) };
+    public TypeName Owned(string member) => this with { Name = Naming.OwnedType(Name, member) };
+
+    public override string ToString() => $"{Namespace}.{Name}";
 }

@@ -52,18 +52,24 @@ internal sealed class LiveEmitter
     /// <c>Snapshot</c>/<c>Apply</c>. An abstract value-like class is closed (R4). A member its emitted bases also declare,
     /// with the same parameter types, is <c>new</c> (R26).
     /// </summary>
-    public static string Class(TypeMap types, Profile profile, GeneratorOptions options, ICollection<Diagnostic> diagnostics, Selected selected)
+    /// <param name="declared">What each class declares, by name and parameter types, as far as known: filled as needed.</param>
+    public static string Class(TypeMap types, Profile profile, GeneratorOptions options, ICollection<Diagnostic> diagnostics,
+        Dictionary<ClassDeclaration, IReadOnlySet<string>> declared, ClassDeclaration c)
     {
-        var c = (ClassDeclaration)selected.Declaration;
         var e = new LiveEmitter(types, profile, options, diagnostics, types.Namespace(c));
         for (var b = types.LiveBase(c); b is not null; b = types.LiveBase(b))
         {
-            // What a base declares is what emitting it declares; its diagnostics are reported where it's emitted.
-            var emitted = new LiveEmitter(types, profile, options, [], types.Namespace(b));
-            emitted.ClassBody(b);
-            e.inherited.UnionWith(emitted.declared);
+            if (!declared.TryGetValue(b, out var members))
+            {
+                // What a base declares is what emitting it declares; its diagnostics are reported where it's emitted.
+                var emitted = new LiveEmitter(types, profile, options, [], types.Namespace(b));
+                emitted.ClassBody(b);
+                declared[b] = members = emitted.declared;
+            }
+            e.inherited.UnionWith(members);
         }
         e.ClassBody(c);
+        declared[c] = e.declared;
         return e.File();
     }
 
@@ -106,7 +112,7 @@ internal sealed class LiveEmitter
                 var (type, body) = Run("scope.Realm", $"JsOp.Create({types.ClassId(c, ns)}, w => {snapshot}.WriteMembers(w, props))",
                     new(CsType.Live(new(ns, name)), false), async);
                 var create = Claim(Mode("Create"), c.Name);
-                Expression($"public static {New(create, ["JsScope", snapshotKey])}{type} {create}(JsScope scope, {snapshot} props)", body);
+                Expression($"public static {Declare(create, ["JsScope", snapshotKey])}{type} {create}(JsScope scope, {snapshot} props)", body);
             }
             foreach (var p in c.Members.OfType<PropertyMember>().Where(p => p.Type is not LiteralType)) // R20: a constant is no property
             {
@@ -125,9 +131,9 @@ internal sealed class LiveEmitter
                 Subscription(name, "Watch" + Naming.Pascal(p.Name), profile.Watch!, p.Name, p.Type, $"{name}.watch:{p.Name}", p.Optional);
             }
             var (snapshotType, read) = Run("Realm", "JsOp.Snapshot(Handle)", new(CsType.Record(new(ns, snapshot)), false), async);
-            Expression($"public {New(Mode("Snapshot"), [])}{snapshotType} {Mode("Snapshot")}()", read);
+            Expression($"public {Declare(Mode("Snapshot"), [])}{snapshotType} {Mode("Snapshot")}()", read);
             var (applyType, apply) = Run("Realm", $"JsOp.Apply(Handle, w => {snapshot}.WriteMembers(w, patch))", null, async);
-            Expression($"public {New(Mode("Apply"), [snapshotKey])}{applyType} {Mode("Apply")}({snapshot} patch)", apply);
+            Expression($"public {Declare(Mode("Apply"), [snapshotKey])}{applyType} {Mode("Apply")}({snapshot} patch)", apply);
         }
     }
 
@@ -146,28 +152,28 @@ internal sealed class LiveEmitter
         if (async || get.Type.Scoped)
         {
             var (getName, scope) = (Claim(Mode("Get" + x), subject), get.Type.Scoped ? "JsScope scope" : "");
-            Expression($"public {New(getName, get.Type.Scoped ? ["JsScope"] : [])}{getType} {getName}({scope})", getter);
+            Expression($"public {Declare(getName, get.Type.Scoped ? ["JsScope"] : [])}{getType} {getName}({scope})", getter);
             if (set is not null)
             {
                 var setName = Claim(Mode("Set" + x), subject);
-                Expression($"public {New(setName, [set.Key])}{setType} {setName}({set.Name} value)", setter);
+                Expression($"public {Declare(setName, [set.Key])}{setType} {setName}({set.Name} value)", setter);
             }
         }
         else if (set is null || set.Name != get.Name)
         {
             var getName = Claim(x, subject);
-            Expression($"public {New(getName)}{getType} {getName}", getter);
+            Expression($"public {Declare(getName)}{getType} {getName}", getter);
             if (set is not null)
             {
                 var setName = Claim("Set" + x, subject);
-                Expression($"public {New(setName, [set.Key])}void {setName}({set.Name} value)", setter);
+                Expression($"public {Declare(setName, [set.Key])}void {setName}({set.Name} value)", setter);
             }
         }
         else
         {
             Separate();
             var getName = Claim(x, subject);
-            using (w.Block($"public {New(getName)}{getType} {getName}"))
+            using (w.Block($"public {Declare(getName)}{getType} {getName}"))
             {
                 w.Line($"get => {getter};");
                 w.Line($"set => {setter};");
@@ -215,7 +221,7 @@ internal sealed class LiveEmitter
             var op = $"JsOp.Call({(self is null ? "Module" : "Handle")}, {Syntax.Literal(export ?? js)}{args}{ByValue(returns)})";
             var (type, body) = Run(self is not null ? "Realm" : scoped ? "scope.Realm" : "realm", op, result, async || promise);
             var (first, firstType) = scoped ? ("JsScope scope", "JsScope") : self is null ? ("JsRealm realm", "JsRealm") : (null, null);
-            var hides = New(name, firstType is null ? keys : keys.Prepend(firstType));
+            var hides = Declare(name, firstType is null ? keys : keys.Prepend(firstType));
             Expression($"public {(self is null ? "static " : "")}{hides}{type} {name}({Join(first, parameters)})", body);
         }
     }
@@ -227,7 +233,7 @@ internal sealed class LiveEmitter
         usesSystem = true;
         var (type, subscribe) = async ? ("Task<IAsyncDisposable>", "SubscribeAsync") : ("IDisposable", "Subscribe");
         name = Claim(Mode(name), subject);
-        Expression($"public {New(name, ["JsScope", $"Action<{value.Key}>"])}{type} {name}(JsScope scope, Action<{value.Name}> handler)",
+        Expression($"public {Declare(name, ["JsScope", $"Action<{value.Key}>"])}{type} {name}(JsScope scope, Action<{value.Name}> handler)",
             $"scope.{subscribe}(Handle, {Syntax.Literal(method)}, {Syntax.Literal(js)}, {value.Reader}, handler)");
     }
 
@@ -370,14 +376,17 @@ internal sealed class LiveEmitter
     private string Claim(string name, string subject) => Naming.Member(taken, name, subject, diagnostics);
 
     /// <summary>
-    /// R26: a member's <c>new</c> modifier, when an emitted base declares one of the same name and parameter types (a
-    /// property has none), which it would hide (CS0108).
+    /// R26: records a member this class declares, by its name and parameter types (<paramref name="parameters"/> is null
+    /// for a property), and returns its <c>new</c> modifier when it hides a member an emitted base declares (CS0108): one
+    /// of the same name and parameter types, a property of its name, or for a property, any member of its name.
     /// </summary>
-    private string New(string name, IEnumerable<string>? parameters = null)
+    private string Declare(string name, IEnumerable<string>? parameters = null)
     {
-        var key = parameters is null ? name : $"{name}({string.Join(", ", parameters)})";
-        declared.Add(key);
-        return inherited.Contains(key) ? "new " : "";
+        // A property is its bare name; a method is its signature, plus its name with `(` for a property to find.
+        var keys = parameters is null ? [name] : new[] { $"{name}({string.Join(", ", parameters)})", name + "(" };
+        declared.UnionWith(keys);
+        var hides = parameters is null ? inherited.Contains(name) || inherited.Contains(name + "(") : inherited.Contains(keys[0]) || inherited.Contains(name);
+        return hides ? "new " : "";
     }
 
     private static string Join(string? first, string rest) =>

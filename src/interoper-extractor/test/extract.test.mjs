@@ -225,6 +225,20 @@ test("a default-exported function keeps its own name", () => {
   assert.deepEqual(declarations, [{ kind: "function", name: "area", export: "default", signatures: [{ returns: { kind: "primitive", name: "number" } }] }]);
 });
 
+test("an export of a declaration elsewhere in the file keeps the declaration, once", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "extract-"));
+  fs.writeFileSync(path.join(dir, "package.json"), JSON.stringify({ name: "@acme/extra", version: "1.0.0" }));
+  fs.writeFileSync(path.join(dir, "pin.d.ts"), "declare class Pin { x: number; }\nexport default Pin;");
+  fs.writeFileSync(path.join(dir, "both.d.ts"), "export declare class Tag { y: number; }\nexport default Tag;");
+  fs.writeFileSync(path.join(dir, "again.d.ts"), 'export { Tag } from "./both";');
+  const modules = extract(dir).modules;
+  fs.rmSync(dir, { recursive: true });
+  const property = (name) => ({ kind: "property", name, type: { kind: "primitive", name: "number" } });
+  assert.deepEqual(modules.map((m) => m.specifier), ["@acme/extra/both.js", "@acme/extra/pin.js"]); // a re-export isn't in IR v1
+  assert.deepEqual(modules[1].declarations, [{ kind: "class", name: "Pin", export: "default", constructors: [{}], members: [property("x")] }]);
+  assert.deepEqual(modules[0].declarations, [{ kind: "class", name: "Tag", constructors: [{}], members: [property("y")] }]); // exported under its own name too
+});
+
 test("a package without a manifest has no elements", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "extract-"));
   fs.writeFileSync(path.join(dir, "package.json"), JSON.stringify({ name: "@acme/plain", version: "1.0.0" }));

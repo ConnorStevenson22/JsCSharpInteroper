@@ -172,7 +172,7 @@ Sync mode needs .NET and JS on one thread, so it runs on WebAssembly only and fa
 
 **R22. Optional parameters** use the value model: `Opt<T> p = default` (or a union `= default`), and `default` is undefined. Omitted trailing arguments are omitted on the JS side too.
 - A rest parameter `...points: Point[]` becomes `params PointSnapshot[] points`, written as one argument per element (a spread). The optional parameters before it are written while a later one is defined or it has elements.
-- An optional trailing parameter or a rest parameter whose type isn't supported yet is dropped, with IOP2007; a rest parameter's type must be an array. A required one skips the member.
+- An optional trailing parameter or a rest parameter whose type isn't supported yet is dropped, with IOP2007; a rest parameter's type must be an array, and its element a data type: an array of entities is a data position (R17), so `...markers: Marker[]` is dropped. A required one skips the member.
 
 **R23. Overloads** map one to one. If two TypeScript overloads collapse to the same C# signature after mapping, they merge into one method with a union or enum parameter (IOP2004).
 
@@ -186,14 +186,14 @@ Sync mode needs .NET and JS on one thread, so it runs on WebAssembly only and fa
 
 **R26. Members** are PascalCased. Async mode appends `Async`.
 - A JS member that collides with a generated member (`getZoom()` next to `zoom` in async mode) or with an `object` member (`toString()`, `equals()`) is renamed (`JsToString`, `JsEquals`) with IOP2006.
-- A member with the C# name and parameter types of a member an emitted base declares (for a property, its name) is `new`, since it hides that one (CS0108): `TileLayer Clone(JsScope scope)` over `Layer Clone(JsScope scope)`, and every subclass's `Snapshot()`. Other parameter types make an overload.
+- A member with the C# name and parameter types of a member an emitted base declares (for a property, its name) is `new`, since it hides that one (CS0108): `TileLayer Clone(JsScope scope)` over `Layer Clone(JsScope scope)`, and every subclass's `Snapshot()`. Other parameter types make an overload. Across kinds the name alone decides: a property hides a base's methods of its name, and a method hides a base's property of its name. A collision with a base class is never a rename, only `new`.
 - C# keywords can't collide after PascalCasing.
 
 **R27. Types** keep the TypeScript name in PascalCase.
 - **Namespaces.** A type's namespace is the consumer's root namespace plus its module's folders in the package, each PascalCased: `layers/TileLayer.js` gives `Acme.Maps.Layers`. Its file's path mirrors the namespace (`Layers/TileLayer.cs`). The registry `{Package}.cs` and the metadata module stay at the root.
 - **References.** Generated code names a type in its own namespace plainly, and a type in another namespace by its `global::`-qualified name (`global::Acme.Maps.Geometry.Extent`). In `Acme.Maps.Geometry.Support`, say, `Geometry.Extent` would otherwise mean a member of the class `Acme.Maps.Geometry.Geometry`.
 
-Anonymous unions are named after their owner: `Feature.shape` becomes `FeatureShape`, and its setter-only wider type becomes `FeatureShapeInput`. A method's result is named after the method (`Feature.moveTo` → `FeatureMoveTo`), a parameter's after the method and the parameter (`FeatureMoveToTarget`), and an event's payload after the event (`FeatureClick`). When two generated types would share a path, the registry keeps its name and a module's static class takes the next free one (`Measure2`), since nothing refers to it; any other later type is skipped, and so is a type with the full name of a namespace (`Layers` next to the `layers/` folder). Classes of one name in different namespaces get class id constants with a suffix after the first (`PointId`, `Point2Id`). All of these are IOP2006.
+Anonymous unions are named after their owner: `Feature.shape` becomes `FeatureShape`, and its setter-only wider type becomes `FeatureShapeInput`. A method's result is named after the method (`Feature.moveTo` → `FeatureMoveTo`), a parameter's after the method and the parameter (`FeatureMoveToTarget`), and an event's payload after the event (`FeatureClick`). When two generated types would share a path, the registry keeps its name and a module's static class takes the next free one (`Measure2`), since nothing refers to it, and so does one whose full name is a namespace's; any other later type is skipped, and so is a type with the full name of a namespace (`Layers` next to the `layers/` folder). A skipped type's users are not removed with it, so they don't compile until the profile renames it. Classes of one name in different namespaces get class id constants prefixed with their namespace below the root (`LayersPointId`), whatever the order of the modules; a class in the root namespace keeps `PointId`. All of these are IOP2006, with the type's full name (or the module, for its static class) as the subject.
 
 ---
 
@@ -221,7 +221,7 @@ Every fallback is reported with a code so consumers can see and tune what didn't
 | IOP2003 | Skipped: an ambiguous union (R19), whose cases can't be told apart, and what uses it. Profile override needed |
 | IOP2004 | Overloads merged after mapping |
 | IOP2005 | Synchronous-result callback not supported in async mode |
-| IOP2006 | Name changed to avoid a collision, or a type whose name is taken skipped (R27) |
+| IOP2006 | Name changed to avoid a collision (R25, R26); a module's static class renamed, or a type skipped, because its path or full name is taken or is a namespace's; a class id prefixed because classes in other namespaces share its name (R27) |
 | IOP2007 | Skipped: a declaration, member or optional parameter the generator can't map (yet), or that uses one, or a class outside the selection |
 
 ---

@@ -46,9 +46,10 @@ export function extract(packageDir, { eventMap } = {}) {
 
   // --- Declarations ---
 
-  function declaration(sym, decl) {
+  /** `exported` is the name the module exports `sym` under (ir.md `export`). */
+  function declaration(sym, decl, exported = sym.name) {
     const name = nameOf(sym);
-    const base = { name, export: name !== sym.name ? sym.name : undefined, doc: doc(sym) };
+    const base = { name, export: name !== exported ? exported : undefined, doc: doc(sym) };
     if (sym.flags & F.Class) return classDecl(sym, base);
     if (sym.flags & F.Enum) return enumDecl(sym, base);
     if (sym.flags & F.Interface) {
@@ -341,11 +342,18 @@ export function extract(packageDir, { eventMap } = {}) {
   for (const sf of program.getSourceFiles()) {
     const moduleSym = own.has(path.resolve(sf.fileName)) && checker.getSymbolAtLocation(sf);
     if (!moduleSym) continue;
-    const declarations = checker.getExportsOfModule(moduleSym)
-      .map((sym) => [sym, sym.declarations?.find((d) => d.getSourceFile() === sf)])
-      .filter(([, d]) => d)
-      .sort(([, a], [, b]) => a.pos - b.pos)
-      .map(([sym, d]) => declaration(sym, d))
+    // An export of a declaration elsewhere in the file (`export default Pin;`, `export { Pin as Marker }`) is an alias:
+    // the declaration is kept once, under its own name when the module exports that too. Re-exports of another file's
+    // declarations aren't in IR v1.
+    const exports = new Map();
+    for (const sym of checker.getExportsOfModule(moduleSym)) {
+      const target = sym.flags & F.Alias ? checker.getAliasedSymbol(sym) : sym;
+      const d = target.declarations?.find((d) => d.getSourceFile() === sf);
+      if (d && (!exports.has(target) || sym.name === nameOf(target))) exports.set(target, { d, exported: sym.name });
+    }
+    const declarations = [...exports]
+      .sort(([, a], [, b]) => a.d.pos - b.d.pos)
+      .map(([sym, { d, exported }]) => declaration(sym, d, exported))
       .filter(Boolean);
     if (declarations.length) modules.push({ specifier: moduleOf(sf), declarations });
   }
