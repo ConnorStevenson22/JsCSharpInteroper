@@ -38,17 +38,27 @@ public class JsJsonTests
     {
         Assert.Equal("""{"a":[1,"b"]}""", Json.Write(JsAny.Parse("""{"a":[1,"b"]}"""), JsAny.Write));
         Assert.Equal(3, JsAny.From(3.0, JsJson.WriteNumber).Read(JsJson.ReadNumber));
+        Assert.Equal(JsAny.Parse("""{"a":1,"b":[2]}"""), JsAny.Parse("""{ "b": [2], "a": 1 }""")); // by its JSON
+        Assert.NotEqual(JsAny.Parse("[1]"), JsAny.Parse("[2]"));
 
         var transport = InMemoryDemoMaps.Create();
         var realm = new JsRealm(() => Task.FromResult<IJsTransport>(transport), DemoMaps.Classes);
         await realm.StartAsync();
-        var marker = transport.Invoke($$"""{"op":"create","t":{{DemoMaps.MarkerId}},"args":[]}""")[5..^1]; // {"v":{"$h":1,"$t":6}}
+        var marker = Create(); // {"$h":1,"$t":6}
         var scope = new JsScope(realm);
         var any = Json.Read($$"""{"items":[{{marker}}]}""", (ref r) => JsAny.Read(ref r, scope));
         Assert.Equal(marker, any.Json.GetProperty("items")[0].GetRawText());
         Assert.Equal(1, transport.Census());
         await scope.DisposeAsync();
         Assert.Equal(0, transport.Census()); // released with the scope
+
+        // Read after its scope is disposed, as when the call was in flight: every handle in it is released.
+        var (first, second) = (Create(), Create());
+        Assert.Equal(2, transport.Census());
+        Assert.Throws<ObjectDisposedException>(() => Json.Read($$"""[{{first}},{"m":{{second}}}]""", (ref r) => JsAny.Read(ref r, scope)));
+        Assert.Equal(0, transport.Census());
+
+        string Create() => transport.Invoke($$"""{"op":"create","t":{{DemoMaps.MarkerId}},"args":[]}""")[5..^1];
     }
 
     [Fact] // R21: a missing callback is JS null, or undefined when its type has no null

@@ -19,7 +19,7 @@ internal sealed class LiveEmitter
     private readonly HashSet<string> taken = [], hidden = [];
     /// <summary>R26: the members this class declares, and those its emitted bases do, by name and parameter types.</summary>
     private readonly HashSet<string> declared = [], inherited = [];
-    private bool usesSystem, usesTask, usesStreams, first = true;
+    private bool first = true;
     /// <summary>The live class being emitted, as its members name it (for <c>this</c>); none for a module.</summary>
     private CsType? self;
 
@@ -28,7 +28,6 @@ internal sealed class LiveEmitter
         this.types = types;
         this.profile = profile;
         async = options.Api == Api.Async;
-        usesTask = async;
         this.ns = ns;
         this.diagnostics = diagnostics;
     }
@@ -87,15 +86,7 @@ internal sealed class LiveEmitter
     /// <summary>The name of a module's static class: its file name (<c>measure.js</c> → <c>Measure</c>).</summary>
     public static string ModuleClass(string specifier) => Naming.Type(Path.GetFileNameWithoutExtension(specifier));
 
-    private string File()
-    {
-        var usings = new[]
-        {
-            usesSystem ? "System" : null, usesStreams ? "System.Collections.Generic" : null, usesStreams ? "System.Threading" : null,
-            usesTask ? "System.Threading.Tasks" : null,
-        };
-        return CodeWriter.CSharp(ns, [.. usings.OfType<string>()]) + w.ToString();
-    }
+    private string File() => CodeWriter.CSharp(ns) + w.ToString();
 
     private void ClassBody(ClassDeclaration c)
     {
@@ -227,8 +218,8 @@ internal sealed class LiveEmitter
             return Run("Realm", $"global::Interoper.JsOp.Get(Handle, {js}{byValue})", value, async);
         }
         var call = $"Realm.Get{fast}{(async ? "Async" : "")}(Handle, {js})";
-        return value.Type.Names is not { } names ? (async ? $"Task<{value.Name}>" : value.Name, call)
-            : async ? ($"async Task<{value.Name}>", $"{names}.FromJs(await {call})")
+        return value.Type.Names is not { } names ? (async ? $"global::System.Threading.Tasks.Task<{value.Name}>" : value.Name, call)
+            : async ? ($"async global::System.Threading.Tasks.Task<{value.Name}>", $"{names}.FromJs(await {call})")
             : (value.Name, $"{names}.FromJs({call})");
     }
 
@@ -239,7 +230,7 @@ internal sealed class LiveEmitter
             return Run("Realm", $"global::Interoper.JsOp.Set(Handle, {js}, w => {value.Write("value")})", null, async);
         }
         var converted = value.Type.Names is { } names ? $"{names}.ToJs(value)" : "value";
-        return async ? ("Task", $"Realm.SetAsync(Handle, {js}, {converted})") : ("void", $"Realm.Set(Handle, {js}, {converted})");
+        return async ? ("global::System.Threading.Tasks.Task", $"Realm.SetAsync(Handle, {js}, {converted})") : ("void", $"Realm.Set(Handle, {js}, {converted})");
     }
 
     /// <summary>
@@ -279,19 +270,17 @@ internal sealed class LiveEmitter
     private void Subscription(string owner, string name, string method, string js, IrType payload, string subject, bool optional, bool isEvent)
     {
         var value = Slot(payload, Naming.OwnedType(owner, js), owner, optional);
-        usesSystem = true;
-        var (type, subscribe) = async ? ("Task<IAsyncDisposable>", "SubscribeAsync") : ("IDisposable", "Subscribe");
+        var (type, subscribe) = async ? ("global::System.Threading.Tasks.Task<global::System.IAsyncDisposable>", "SubscribeAsync") : ("global::System.IDisposable", "Subscribe");
         var fields = isEvent && types.Projection(payload) is { } projection ? $"[{string.Join(", ", projection.Select(Syntax.Literal))}]" : "null";
         var (options, optionsKey, sent) = isEvent ? (", global::Interoper.EventOptions? options = null", new[] { "global::Interoper.EventOptions" }, "options") : ("", [], "null");
         var target = $"Handle, {Syntax.Literal(method)}, {Syntax.Literal(js)}, {value.Reader}";
         var subscription = Claim(Mode(name), subject);
-        Expression($"public {Declare(subscription, ["global::Interoper.JsScope", $"Action<{value.Key}>", .. optionsKey])}{type} {subscription}(global::Interoper.JsScope scope, Action<{value.Name}> handler{options})",
+        Expression($"public {Declare(subscription, ["global::Interoper.JsScope", $"global::System.Action<{value.Key}>", .. optionsKey])}{type} {subscription}(global::Interoper.JsScope scope, global::System.Action<{value.Name}> handler{options})",
             $"scope.{subscribe}({target}, handler, {sent}, {fields})");
         if (async)
         {
-            usesStreams = true;
             var stream = Claim(name + "StreamAsync", subject);
-            Expression($"public {Declare(stream, ["global::Interoper.JsScope", .. optionsKey, "CancellationToken"])}IAsyncEnumerable<{value.Name}> {stream}(global::Interoper.JsScope scope{options}, CancellationToken cancellationToken = default)",
+            Expression($"public {Declare(stream, ["global::Interoper.JsScope", .. optionsKey, "global::System.Threading.CancellationToken"])}global::System.Collections.Generic.IAsyncEnumerable<{value.Name}> {stream}(global::Interoper.JsScope scope{options}, global::System.Threading.CancellationToken cancellationToken = default)",
                 $"scope.StreamAsync({target}, {sent}, {fields}, cancellationToken)");
         }
     }
@@ -359,7 +348,6 @@ internal sealed class LiveEmitter
     {
         var (mapped, nullable) = types.Slot(type, new(ns, owner), self is null ? null : this.self);
         var named = mapped.In(ns).Unhidden(hidden);
-        usesSystem |= named.IsCallback; // Action, Func
         return named.IsCallback ? new(nullable || optional ? named.NullableCallback(jsNull: types.HasNull(type)) : named, false) : new(named, (nullable || optional) && !mapped.IsUnion);
     }
 
@@ -390,15 +378,14 @@ internal sealed class LiveEmitter
     /// </summary>
     private (string Type, string Body) Run(string realm, string op, Value? result, bool task)
     {
-        usesTask |= task;
         if (result is null)
         {
-            return task ? ("Task", $"{realm}.SendAsync({op})") : ("void", $"{realm}.Send({op})");
+            return task ? ("global::System.Threading.Tasks.Task", $"{realm}.SendAsync({op})") : ("void", $"{realm}.Send({op})");
         }
         var bang = result.MaybeNull ? "!" : "";
         return !task ? (result.Name, $"{realm}.Call({op}, {result.Reader}){bang}")
-            : result.MaybeNull ? ($"async Task<{result.Name}>", $"(await {realm}.CallAsync({op}, {result.Reader}))!")
-            : ($"Task<{result.Name}>", $"{realm}.CallAsync({op}, {result.Reader})");
+            : result.MaybeNull ? ($"async global::System.Threading.Tasks.Task<{result.Name}>", $"(await {realm}.CallAsync({op}, {result.Reader}))!")
+            : ($"global::System.Threading.Tasks.Task<{result.Name}>", $"{realm}.CallAsync({op}, {result.Reader})");
     }
 
     /// <summary>An expression-bodied member: on one line if it fits, otherwise its body on the next.</summary>

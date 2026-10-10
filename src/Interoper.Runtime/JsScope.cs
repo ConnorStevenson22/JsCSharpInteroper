@@ -280,6 +280,15 @@ public sealed class JsScope(JsRealm realm) : IDisposable, IAsyncDisposable
                 handles.Add(reader.GetInt32());
             }
         }
+        return OwnAll(handles);
+    }
+
+    /// <summary>
+    /// Owns every handle under one lock, or, once the scope is disposed, releases them all, so none leaks whichever comes
+    /// first. False when the scope is disposed.
+    /// </summary>
+    internal bool OwnAll(IEnumerable<int> handles)
+    {
         lock (gate)
         {
             foreach (var handle in handles)

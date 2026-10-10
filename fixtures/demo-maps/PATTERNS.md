@@ -15,7 +15,7 @@ node --test "fixtures/demo-maps/test/*.test.mjs"
 | Runtime class-name property | R19 (step 1) | `Observable.className` (`core`), e.g. `"geometry.Point"`, `"MapView"`, `"layers.TileLayer"` |
 | Module folders | R27 | `layers/Layer`, `layers/TileLayer`: the `Layers` namespace |
 | Same names in sibling modules | R27 | `ops/a` and `ops/b` each export an `Options` and an `execute(x, options?)` |
-| Mixin base | [IR `extends`](../../docs/ir.md#declarations), §2 | `class Pin extends PinSuperclass`, where `PinSuperclass: typeof Marker & typeof Draggable` (`pins`): a `Marker`, with the mixin's `dragBy` and `drag` event |
+| Mixin base | [IR `extends`](../../docs/ir.md#declarations), §2 | `class Pin extends PinBase`, where `PinBase: typeof Marker & typeof Draggable` (`pins`): a `Marker`, with the mixin's `dragBy` and `drag` event |
 | Default export | [IR `export`](../../docs/ir.md#declarations), [design §2](../../docs/design.md#2-what-we-generate) | `export default class TileLayer` (`layers/TileLayer`) |
 | Member a subclass redeclares | R26 (`new`) | `TileLayer.clone(): TileLayer` over `Layer.clone(): Layer` |
 | Value-like classes (live class + snapshot) | R16–R18 | `Shape` and subclasses, via `profile.json` |

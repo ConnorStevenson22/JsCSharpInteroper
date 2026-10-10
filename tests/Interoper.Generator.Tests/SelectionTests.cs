@@ -255,7 +255,7 @@ public sealed class SelectionTests
         Assert.Empty(result.Diagnostics);
         Assert.Contains("T.cs", result.Files.Select(f => f.Path));
         Assert.Contains("Holder.cs", result.Files.Select(f => f.Path));
-        Assert.Contains("public static Task FAsync(global::Interoper.JsRealm realm, ", result.Files.Single(f => f.Path == "A.cs").Text);
+        Assert.Contains("public static global::System.Threading.Tasks.Task FAsync(global::Interoper.JsRealm realm, ", result.Files.Single(f => f.Path == "A.cs").Text);
     }
 
     /// <summary>
@@ -278,8 +278,20 @@ public sealed class SelectionTests
             Assert.Single(result.Diagnostics).ToString());
         Assert.DoesNotContain("Holder.cs", result.Files.Select(f => f.Path));
         Assert.Contains("public static void F(global::Interoper.JsRealm realm, T x) =>", result.Files.Single(f => f.Path == "A.cs").Text);
-        Assert.Contains("public static T ReadValue(ref Utf8JsonReader reader) => throw new JsonException(\"T is only written (R2)\");",
+        Assert.Contains("public static T ReadValue(ref global::System.Text.Json.Utf8JsonReader reader) => throw new global::System.Text.Json.JsonException(\"T is only written (R2)\");",
             result.Files.Single(f => f.Path == "T.cs").Text);
+    }
+
+    [Fact] // §2, R2: a union struct isn't generic, so even a parameter's union has no case of a type parameter
+    public void AUnionWithATypeParameterCaseIsSkipped()
+    {
+        var result = Generator.Generate(Ir("""
+            { "kind": "class", "name": "Bag", "typeParameters": [{ "name": "T" }], "members": [
+              { "kind": "method", "name": "add", "signatures": [{ "params": [{ "name": "item", "type": { "kind": "union", "types": [
+                { "kind": "typeParameter", "name": "T" }, { "kind": "primitive", "name": "string" }] } }], "returns": { "kind": "primitive", "name": "void" } }] }] }
+            """), new Profile { Package = "@acme/maps", Collections = ["Bag"] }, new(Api.Sync, "Acme.Maps"));
+        Assert.Equal("IOP2007 Bag.add: skipped: uses a union with a case of the type parameter `T` (§2)", Assert.Single(result.Diagnostics).ToString());
+        Assert.DoesNotContain("Add(", result.Files.Single(f => f.Path == "Bag.cs").Text);
     }
 
     [Fact] // R2: where a union is only written, a case outside the selection is dropped; where it's read, it's still skipped
@@ -303,7 +315,7 @@ public sealed class SelectionTests
         Assert.Contains("public void GoTo(Target target) =>", result.Files.Single(f => f.Path == "View.cs").Text);
         var target = result.Files.Single(f => f.Path == "Target.cs").Text;
         Assert.Contains("private readonly byte _tag; // 0 = undefined, 1 = null, 2 = string, 3 = double[]", target);
-        Assert.Contains("throw new JsonException(\"Target is only written (R2)\")", target);
+        Assert.Contains("throw new global::System.Text.Json.JsonException(\"Target is only written (R2)\")", target);
     }
 
     [Fact] // R22: a rest parameter is params T[], so one that isn't an array is dropped, as an optional one is

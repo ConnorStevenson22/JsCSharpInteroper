@@ -170,7 +170,7 @@ internal sealed class CsType
         string Spell(IEnumerable<string> types)
         {
             var list = types.ToList();
-            var name = result is null ? (list.Count == 0 ? "Action" : $"Action<{string.Join(", ", list)}>") : $"Func<{string.Join(", ", list)}>";
+            var name = result is null ? (list.Count == 0 ? "global::System.Action" : $"global::System.Action<{string.Join(", ", list)}>") : $"global::System.Func<{string.Join(", ", list)}>";
             return nullable ? name + "?" : name;
         }
         static string OptName((CsType Type, bool Opt) p, Func<CsType, string> name) => p.Opt ? $"global::Interoper.Opt<{name(p.Type)}>" : name(p.Type);

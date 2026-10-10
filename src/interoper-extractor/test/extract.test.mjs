@@ -116,13 +116,34 @@ test("classes: base, abstract, own members, generics, statics", () => {
 });
 
 test("a mixin's base: the class it starts with, and the mixin's members as inherited", () => {
-  // `class Pin extends PinSuperclass`, where `PinSuperclass: typeof Marker & typeof Draggable`.
+  // `class Pin extends PinBase`, where `PinBase: typeof Marker & typeof Draggable`.
   const pin = decl("pins", "Pin");
   assert.deepEqual(pin.extends, ref("Marker", "Marker"));
   assert.deepEqual(pin.members.map((m) => `${m.name}${m.inherited ? " (inherited)" : ""}`), ["meta", "on (inherited)", "dragBy (inherited)"]);
   assert.deepEqual(pin.events, [{ name: "drag", type: ref("pins", "PinDragEvent") }]);
   // The mixin class and the constant aren't exported.
   assert.deepEqual(ir.modules.find((m) => m.specifier.endsWith("/pins.js")).declarations.map((d) => d.name), ["PinDragEvent", "PinEvents", "Pin"]);
+});
+
+test("a mixin's base in any order: the first named, exported class", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "extract-"));
+  fs.writeFileSync(path.join(dir, "package.json"), JSON.stringify({ name: "@acme/extra", version: "1.0.0" }));
+  fs.writeFileSync(path.join(dir, "index.d.ts"), `
+    export {};
+    export class Shape { area: number }
+    declare class Glow { constructor(...args: any[]); glow(): void }
+    declare const GlowFirst: typeof Glow & typeof Shape;
+    export class Lamp extends GlowFirst { watts: number }
+    declare const Anonymous: { new (...args: any[]): { spin(): void } } & typeof Shape;
+    export class Top extends Anonymous { speed: number }`);
+  const [{ declarations }] = extract(dir).modules;
+  fs.rmSync(dir, { recursive: true });
+  const shape = { kind: "ref", name: "Shape", module: "@acme/extra/index.js" };
+  const [lamp, top] = ["Lamp", "Top"].map((name) => declarations.find((d) => d.name === name));
+  assert.deepEqual(lamp.extends, shape);
+  assert.deepEqual(lamp.members.map((m) => `${m.name}${m.inherited ? " (inherited)" : ""}`), ["watts", "glow (inherited)"]);
+  assert.deepEqual(top.extends, shape);
+  assert.deepEqual(top.members.map((m) => `${m.name}${m.inherited ? " (inherited)" : ""}`), ["speed", "spin (inherited)"]);
 });
 
 test("R8, R22: Promise returns and optional parameters", () => {

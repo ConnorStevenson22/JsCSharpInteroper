@@ -44,6 +44,22 @@ export function extract(packageDir, { eventMap } = {}) {
   }
   const isPlatform = (node) => program.isSourceFileDefaultLibrary(node.getSourceFile());
 
+  /**
+   * The named class or interface a base is, or for an intersection its first constituent that is a named, exported
+   * class: a mixin's base `typeof Marker & typeof Draggable` is `Marker`, in either order, and so is TypeScript's own
+   * `{ new (...args: any[]): {...} } & typeof Marker`. The mixin's members are listed as inherited.
+   */
+  const namedBase = (type) =>
+    isNamed(type) ? type : type.isIntersection() ? type.types.find((t) => isNamed(t) && t.symbol.flags & F.Class && isExported(t.symbol)) : undefined;
+  const exportsOf = new Map();
+  /** Whether its module exports a symbol, under any name. */
+  function isExported(sym) {
+    const moduleSym = sym.declarations?.length && checker.getSymbolAtLocation(sym.declarations[0].getSourceFile());
+    if (!moduleSym) return false;
+    if (!exportsOf.has(moduleSym)) exportsOf.set(moduleSym, new Set(checker.getExportsOfModule(moduleSym).map((e) => (e.flags & F.Alias ? checker.getAliasedSymbol(e) : e))));
+    return exportsOf.get(moduleSym).has(sym);
+  }
+
   // --- Declarations ---
 
   /** `exported` is the name the module exports `sym` under (ir.md `export`). */
@@ -99,7 +115,7 @@ export function extract(packageDir, { eventMap } = {}) {
 
   /**
    * Checker-resolved members. Those a named base declares stay with that base (follow `extends`). Members of an
-   * anonymous base, a mixin or a mapped type are kept, as inherited, unless the platform declares them (DOM types are JsAny).
+   * anonymous base, a mixin or a mapped type are kept, as inherited, unless the platform declares them (DOM members aren't bound).
    */
   function members(type, isStatic = false) {
     const owners = type.symbol?.declarations ?? [];
@@ -414,11 +430,6 @@ function specifierOf(file) {
 
 /** A declaration's own name: the symbol of a default export is named `default` (its `export`, ir.md). */
 const nameOf = (sym) => sym.declarations?.map((d) => ts.getNameOfDeclaration(d)).find((n) => n && ts.isIdentifier(n))?.text ?? sym.name;
-/**
- * The named class or interface a base is, or starts with: a mixin's base `typeof Marker & typeof Draggable` is
- * `Marker`, and the mixin's members are listed as inherited.
- */
-const namedBase = (type) => (isNamed(type) ? type : type.isIntersection() && isNamed(type.types[0]) && type.types[0].symbol.flags & F.Class ? type.types[0] : undefined);
 const isNamed = (type) => type.symbol && type.symbol.flags & (F.Class | F.Interface) && !(type.objectFlags & (ts.ObjectFlags.Anonymous | ts.ObjectFlags.Mapped));
 const hasModifier = (decl, flag) => (decl && (ts.getCombinedModifierFlags(decl) & flag) !== 0) || undefined;
 const sameSet = (a, b) => a.length === b.length && a.every((x) => b.includes(x));

@@ -60,7 +60,7 @@ public sealed class TransportTests
         Assert.Equal(0, transport.Census());
     }
 
-    [Fact] // as interoper.js: a subscription's remove() serves for dispose(), and one with neither is refused
+    [Fact] // R24, as interoper.js: a subscription's remove() serves for dispose(), and one with neither is refused
     public void InMemorySubscriptionsMayHaveRemoveInsteadOfDispose()
     {
         var transport = new InMemoryTransport().Define(new(1, "Faulty", _ => new Faulty()));

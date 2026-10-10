@@ -119,12 +119,12 @@ internal sealed class TypeMap
         {
             foreach (var d in module.Declarations.Where(MakesType))
             {
-                var key = (Namespace(module.Specifier), Naming.Type(d.Name));
+                var key = (Namespace: Namespace(module.Specifier), Name: Naming.Type(d.Name));
                 if (owners.TryAdd(key, module.Specifier) || owners[key] == module.Specifier)
                 {
                     continue;
                 }
-                var name = LiveEmitter.ModuleClass(module.Specifier) + key.Item2;
+                var name = LiveEmitter.ModuleClass(module.Specifier) + key.Name;
                 renamed[(module.Specifier, d.Name)] = name;
                 if (emitted.Contains((module.Specifier, d.Name)))
                 {
@@ -133,7 +133,7 @@ internal sealed class TypeMap
             }
         }
         // R27: the namespaces of the emitted types, below the root and with the namespaces they're in. The registry
-        // takes the next free name when one of them has its name (Core2 next to a core/ folder).
+        // takes the next free name when one of them has its name (Widgets2 next to a widgets/ folder).
         Namespaces = selected.Select(s => Namespace(s.Module)).SelectMany(Parents).ToHashSet();
         var registry = Naming.Type(ir.Package.Name.Split('/')[^1]);
         Registry = registry;
@@ -383,16 +383,15 @@ internal sealed class TypeMap
             diagnostics.Add(new(Diagnostic.NotSupported, name.Name, $"case `{dropped.Name}` dropped: a class outside the selection, so it's only written (R2)"));
         }
         var literals = flat.OfType<LiteralType>().Select(l => l.Value).ToList();
-        var cases = new Lazy<List<UnionCase>>(() => Cases(name, flat));
         DataType? result =
             flat.Count < 2 ? null
             : flat.All(t => t is LiteralType { Value.ValueKind: JsonValueKind.String } || IsOpenString(t)) ? new EnumType(name,
                 EnumMembers(name.Name, literals, literals.Select(v => v.GetString()!)), literals.Count > MaxEnumMembers || flat.Any(IsOpenString))
             : flat.All(t => t is LiteralType { Value.ValueKind: JsonValueKind.Number }) ? new EnumType(name,
                 EnumMembers(name.Name, literals, literals.Select(v => v.GetRawText())), Extensible: false)
-            : new UnionStruct(name, cases.Value,
+            : new UnionStruct(name, Cases(name, flat),
                 type is UnionType u && u.Types.Count(t => !IsNullish(t)) == all.Count ? u.Discriminant : null,
-                WrittenOnly: flat.Count < all.Count || cases.Value.Any(c => c.Type.Scoped));
+                WrittenOnly(all, flat));
         unions[name] = result;
         return result;
     }
@@ -437,7 +436,6 @@ internal sealed class TypeMap
                 _ => $"{message}, and in {others} other enums",
             }));
         }
-        enumRenames.Clear();
     }
 
     /// <summary>The cases of a union, after mapping (R5: one per C# type).</summary>
@@ -473,8 +471,18 @@ internal sealed class TypeMap
 
     private static bool IsNullish(IrType type) => type is PrimitiveType { Name: "null" or "undefined" };
 
+    /// <summary>
+    /// R2: a union that dropped a case outside the selection, or has an entity case, which needs a scope to be read: only
+    /// a parameter's, never read.
+    /// </summary>
+    private bool WrittenOnly(List<IrType> all, List<IrType> flat) => flat.Count < all.Count || flat.Any(UsesEntity);
+
+    /// <summary>The first type parameter a type names, if any.</summary>
+    private static TypeParameterType? TypeParameterIn(IrType type) =>
+        type as TypeParameterType ?? Selection.Children(type).Select(TypeParameterIn).FirstOrDefault(t => t is not null);
+
     /// <summary>A class outside the selection: a parameter's union drops it as a case (R2).</summary>
-    private bool IsUnselected(IrType type) => type is RefType { Module: not null } r && Find(r) is ClassDeclaration c && !classes.Contains(c);
+    internal bool IsUnselected(IrType type) => type is RefType { Module: not null } r && Find(r) is ClassDeclaration c && !classes.Contains(c);
 
     /// <summary>Whether a type has JS null in it, which a missing callback is sent as; otherwise it's undefined (R21).</summary>
     public bool HasNull(IrType type) => Flatten(type).Any(t => t is PrimitiveType { Name: "null" });
@@ -819,7 +827,6 @@ internal sealed class TypeMap
             return new($"{label}, whose other cases are outside the selection");
         }
         var cases = new List<(string? Name, string? FullName, JsonKind Json, Declaration? Declaration)>();
-        var writtenOnly = flat.Count < all.Count;
         foreach (var t in flat)
         {
             if (t is PrimitiveType { Name: "any" or "unknown" or "object" } any)
@@ -834,20 +841,20 @@ internal sealed class TypeMap
             {
                 return new($"{label} with the value-type case {valueType} (R2)");
             }
-            if (UsesEntity(t))
+            if (TypeParameterIn(t) is { } parameter)
             {
-                if (!written)
-                {
-                    return new($"{label} with the case {NameOf(t) ?? (t as TypeParameterType)?.Name ?? "`this`"}, which needs a scope to be read (R17, R19)");
-                }
-                writtenOnly = true;
+                return new($"{label} with a case of the type parameter `{parameter.Name}` (§2)"); // a union struct isn't generic
+            }
+            if (!written && UsesEntity(t))
+            {
+                return new($"{label} with the case {NameOf(t) ?? "`this`"}, which needs a scope to be read (R17, R19)");
             }
             if (NameOf(t, full: true) is not { } caseName || cases.All(c => c.FullName != caseName)) // R5, as Cases dedupes
             {
                 cases.Add((NameOf(t), NameOf(t, full: true), JsonOf(t), t is RefType r ? Find(r) : null));
             }
         }
-        if (writtenOnly)
+        if (WrittenOnly(all, flat))
         {
             return null; // never read, so R19 doesn't apply
         }

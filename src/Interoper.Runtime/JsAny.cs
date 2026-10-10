@@ -1,5 +1,5 @@
 using System.Buffers;
-using System.Text;
+using System.Runtime.InteropServices;
 using System.Text.Json;
 
 namespace Interoper;
@@ -8,9 +8,10 @@ namespace Interoper;
 /// A value typed <c>any</c>, <c>unknown</c> or <c>object</c> (mapping §2, IOP2001): its JSON as JS sent it, untyped.
 /// Plain objects and arrays are copies; any other object is a handle, <c>{"$h":id,"$t":classId}</c>, which the scope
 /// that read the value owns. Read the value with a generated reader (<see cref="Read{T}"/>), such as
-/// <c>JsJson.ReadNumber</c> or <c>scope.Read&lt;Marker&gt;</c>; written back, a handle is the same JS object again.
+/// <c>JsJson.ReadNumber</c> or <c>scope.Read&lt;Marker&gt;</c>; written back, a handle is the same JS object again. Two
+/// values are equal when their JSON is (<see cref="JsonElement.DeepEquals"/>).
 /// </summary>
-public sealed class JsAny
+public sealed class JsAny : IEquatable<JsAny>
 {
     private JsAny(JsonElement json) => Json = json;
 
@@ -34,7 +35,7 @@ public sealed class JsAny
     /// <summary>The value as a typed one, read with <paramref name="read"/>.</summary>
     public T Read<T>(JsonRead<T> read)
     {
-        var reader = new Utf8JsonReader(Encoding.UTF8.GetBytes(Json.GetRawText()));
+        var reader = new Utf8JsonReader(JsonMarshal.GetRawUtf8Value(Json));
         reader.Read();
         return read(ref reader);
     }
@@ -49,31 +50,24 @@ public sealed class JsAny
     public static JsAny Read(ref Utf8JsonReader reader, JsScope scope)
     {
         var json = JsonElement.ParseValue(ref reader);
-        Own(json, scope);
-        return new(json);
+        // All at once: a scope disposed meanwhile releases every handle, not just those after the first.
+        return scope.OwnAll(Handles(json)) ? new(json) : throw new ObjectDisposedException(nameof(JsScope));
     }
 
-    private static void Own(JsonElement json, JsScope scope)
+    private static IEnumerable<int> Handles(JsonElement json) => json.ValueKind switch
     {
-        switch (json.ValueKind)
-        {
-            case JsonValueKind.Object when json.TryGetProperty("$h", out var handle) && handle.ValueKind == JsonValueKind.Number:
-                scope.Own(handle.GetInt32());
-                break;
-            case JsonValueKind.Object:
-                foreach (var property in json.EnumerateObject())
-                {
-                    Own(property.Value, scope);
-                }
-                break;
-            case JsonValueKind.Array:
-                foreach (var item in json.EnumerateArray())
-                {
-                    Own(item, scope);
-                }
-                break;
-        }
-    }
+        JsonValueKind.Object when json.TryGetProperty("$h", out var handle) && handle.ValueKind == JsonValueKind.Number => [handle.GetInt32()],
+        JsonValueKind.Object => json.EnumerateObject().SelectMany(p => Handles(p.Value)),
+        JsonValueKind.Array => json.EnumerateArray().SelectMany(Handles),
+        _ => [],
+    };
+
+    public bool Equals(JsAny? other) => other is not null && JsonElement.DeepEquals(Json, other.Json);
+
+    public override bool Equals(object? obj) => Equals(obj as JsAny);
+
+    /// <summary>Its kind: equal values have the same one, whatever their spacing or property order.</summary>
+    public override int GetHashCode() => Json.ValueKind.GetHashCode();
 
     /// <summary>The value's JSON text.</summary>
     public override string ToString() => Json.GetRawText();

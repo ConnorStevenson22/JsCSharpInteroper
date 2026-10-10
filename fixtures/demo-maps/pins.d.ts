@@ -22,10 +22,10 @@ declare class Draggable {
   dragBy(dx: number, dy: number): void;
 }
 
-declare const PinSuperclass: typeof Marker & typeof Draggable;
+declare const PinBase: typeof Marker & typeof Draggable;
 
 /** A marker with the `Draggable` mixin: its base is still `Marker`. */
-export class Pin extends PinSuperclass {
+export class Pin extends PinBase {
   /** Anything the app keeps with the pin. */
   meta: any;
 }

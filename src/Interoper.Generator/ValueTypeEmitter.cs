@@ -18,7 +18,7 @@ internal static class ValueTypeEmitter
     /// <summary>R9: an enum, and a name map between its members and the JS strings.</summary>
     private static string StringEnum(string ns, EnumType e)
     {
-        var w = CodeWriter.CSharp(ns, "System", "System.Text.Json");
+        var w = CodeWriter.CSharp(ns);
         Enum(w, e, _ => "");
         w.Line();
         using (w.Block($"public static partial class {e.Name}Names"))
@@ -29,7 +29,7 @@ internal static class ValueTypeEmitter
                 {
                     w.Line($"{e.Name}.{name} => {Syntax.Literal(value.GetString()!)},");
                 }
-                w.Line("_ => throw new ArgumentOutOfRangeException(nameof(value)),");
+                w.Line("_ => throw new global::System.ArgumentOutOfRangeException(nameof(value)),");
             }
             w.Line();
             using (w.Block($"public static {e.Name} FromJs(string value) => value switch", "};"))
@@ -38,12 +38,12 @@ internal static class ValueTypeEmitter
                 {
                     w.Line($"{Syntax.Literal(value.GetString()!)} => {e.Name}.{name},");
                 }
-                w.Line($"_ => throw new JsonException($\"{e.Name}: unexpected \\\"{{value}}\\\"\"),");
+                w.Line($"_ => throw new global::System.Text.Json.JsonException($\"{e.Name}: unexpected \\\"{{value}}\\\"\"),");
             }
             w.Line();
-            w.Line($"public static void Write(Utf8JsonWriter writer, {e.Name} value) => writer.WriteStringValue(ToJs(value));");
+            w.Line($"public static void Write(global::System.Text.Json.Utf8JsonWriter writer, {e.Name} value) => writer.WriteStringValue(ToJs(value));");
             w.Line();
-            w.Line($"public static {e.Name} Read(ref Utf8JsonReader reader) => FromJs(reader.GetString()!);");
+            w.Line($"public static {e.Name} Read(ref global::System.Text.Json.Utf8JsonReader reader) => FromJs(reader.GetString()!);");
         }
         return w.ToString();
     }
@@ -70,7 +70,7 @@ internal static class ValueTypeEmitter
     /// <summary>R10: a string wrapper with the known values, which also takes any other.</summary>
     private static string Extensible(string ns, EnumType e)
     {
-        var w = CodeWriter.CSharp(ns, "System.Text.Json");
+        var w = CodeWriter.CSharp(ns);
         using (w.Block($"public readonly partial record struct {e.Name}(string Value)"))
         {
             foreach (var (name, value) in e.Members)
@@ -78,9 +78,9 @@ internal static class ValueTypeEmitter
                 w.Line($"public static {e.Name} {name} {{ get; }} = new({Syntax.Literal(value.GetString()!)});");
             }
             w.Line();
-            w.Line($"public static void Write(Utf8JsonWriter writer, {e.Name} value) => writer.WriteStringValue(value.Value);");
+            w.Line($"public static void Write(global::System.Text.Json.Utf8JsonWriter writer, {e.Name} value) => writer.WriteStringValue(value.Value);");
             w.Line();
-            w.Line($"public static {e.Name} Read(ref Utf8JsonReader reader) => new(reader.GetString()!);");
+            w.Line($"public static {e.Name} Read(ref global::System.Text.Json.Utf8JsonReader reader) => new(reader.GetString()!);");
             w.Line();
             w.Line("public override string ToString() => Value;");
         }
@@ -96,9 +96,9 @@ internal static class ValueTypeEmitter
         var (ns, name) = u.Type;
         u = u with { Cases = [.. u.Cases.Select(c => c with { Type = c.Type.In(ns) })] }; // R27
         var cases = u.Cases.Select((c, i) => (c.Type, Tag: i + 2, c.Declaration)).ToList();
-        var w = CodeWriter.CSharp(ns, "System", "System.Diagnostics.CodeAnalysis", "System.Runtime.CompilerServices", "System.Text.Json");
-        w.Line("[Union]");
-        using (w.Block($"public readonly partial struct {name} : global::Interoper.IJsUnion<{name}>, IEquatable<{name}>"))
+        var w = CodeWriter.CSharp(ns);
+        w.Line("[global::System.Runtime.CompilerServices.Union]");
+        using (w.Block($"public readonly partial struct {name} : global::Interoper.IJsUnion<{name}>, global::System.IEquatable<{name}>"))
         {
             w.Line("private readonly object? _ref;");
             w.Line($"private readonly byte _tag; // 0 = undefined, 1 = null, {string.Join(", ", cases.Select(c => $"{c.Tag} = {c.Type.Name}"))}");
@@ -125,14 +125,14 @@ internal static class ValueTypeEmitter
             foreach (var (type, tag, _) in cases)
             {
                 w.Line();
-                using (w.Block($"public bool TryGetValue([MaybeNullWhen(false)] out {type.Name} value)"))
+                using (w.Block($"public bool TryGetValue([global::System.Diagnostics.CodeAnalysis.MaybeNullWhen(false)] out {type.Name} value)"))
                 {
                     w.Line($"value = _tag == {tag} ? ({type.Name})_ref! : null;");
                     w.Line($"return _tag == {tag};");
                 }
             }
             w.Line();
-            using (w.Block($"public static void WriteValue(Utf8JsonWriter writer, {name} value)"))
+            using (w.Block($"public static void WriteValue(global::System.Text.Json.Utf8JsonWriter writer, {name} value)"))
             using (w.Block("switch (value._tag)"))
             {
                 foreach (var (type, tag, _) in cases)
@@ -145,7 +145,7 @@ internal static class ValueTypeEmitter
             w.Line();
             w.Line($"public bool Equals({name} other) => _tag == other._tag && Equals(_ref, other._ref);");
             w.Line($"public override bool Equals(object? obj) => obj is {name} other && Equals(other);");
-            w.Line("public override int GetHashCode() => HashCode.Combine(_tag, _ref);");
+            w.Line("public override int GetHashCode() => global::System.HashCode.Combine(_tag, _ref);");
             w.Line("public override string ToString() => _tag switch { 0 => \"undefined\", 1 => \"null\", _ => $\"{_ref}\" };");
         }
         return w.ToString();
@@ -157,11 +157,11 @@ internal static class ValueTypeEmitter
     /// </summary>
     private static void ReadValue(CodeWriter w, TypeMap types, UnionStruct u)
     {
-        var header = $"public static {u.Name} ReadValue(ref Utf8JsonReader reader)";
+        var header = $"public static {u.Name} ReadValue(ref global::System.Text.Json.Utf8JsonReader reader)";
         if (u.WrittenOnly)
         {
             // R2: it has an entity case or dropped a case outside the selection, so it's only a parameter's.
-            w.Line($"{header} => throw new JsonException(\"{u.Name} is only written (R2)\");");
+            w.Line($"{header} => throw new global::System.Text.Json.JsonException(\"{u.Name} is only written (R2)\");");
             return;
         }
         if (u.Discriminant is { } discriminant)
@@ -176,14 +176,14 @@ internal static class ValueTypeEmitter
         {
             foreach (var c in others)
             {
-                w.Line($"JsonTokenType.{(c.Type.Json == JsonKind.String ? "String" : "StartArray")} => {c.Type.ReadCall("reader", 0)},");
+                w.Line($"global::System.Text.Json.JsonTokenType.{(c.Type.Json == JsonKind.String ? "String" : "StartArray")} => {c.Type.ReadCall("reader", 0)},");
             }
             foreach (var c in objects)
             {
                 var when = objects.Count == 1 ? "" : $" when global::Interoper.JsJson.HasProperty(reader, {Syntax.Utf8(Distinct(types, u, c, objects))})";
-                w.Line($"JsonTokenType.StartObject{when} => {c.Type.ReadCall("reader", 0)},");
+                w.Line($"global::System.Text.Json.JsonTokenType.StartObject{when} => {c.Type.ReadCall("reader", 0)},");
             }
-            w.Line($"var token => throw new JsonException($\"{u.Name}: unexpected {{token}}\"),");
+            w.Line($"var token => throw new global::System.Text.Json.JsonException($\"{u.Name}: unexpected {{token}}\"),");
         }
     }
 

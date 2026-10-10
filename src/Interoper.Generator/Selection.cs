@@ -326,7 +326,7 @@ public sealed class Selection
         RefType { Module: null, Name: "Promise" } r => FirstProblem(r.Args),
         // R2: where a union is only written, a case that is a class outside the selection is dropped; where it's read,
         // the type map refuses it.
-        UnionType u when u.Types.Count(t => !IsNullish(t)) > 1 => FirstProblem(u.Types.Where(t => !IsOutside(t))),
+        UnionType u when u.Types.Count(t => !IsNullish(t)) > 1 => FirstProblem(u.Types.Where(t => !types.IsUnselected(t))),
         RefType { Module: null } r => new($"`{r.Name}`"),
         RefType r => Find(r) is { } declaration ? DeclarationProblem(declaration) ?? FirstProblem(r.Args) : new($"`{r.Name}`"),
         ObjectType o => MembersProblem(o.Members, o.CallSignatures.Count + o.ConstructSignatures.Count) ?? FirstProblem(Children(o)),
@@ -448,9 +448,6 @@ public sealed class Selection
 
     private static bool IsNullish(IrType type) => type is PrimitiveType { Name: "null" or "undefined" };
 
-    /// <summary>A class outside the selection (R2).</summary>
-    private bool IsOutside(IrType type) => type is RefType { Module: not null } r && Find(r) is ClassDeclaration c && !classes.Contains(c);
-
     /// <summary>
     /// IOP2001: a member, parameter or result whose type has <c>any</c>, <c>unknown</c> or <c>object</c> in it, which
     /// is <c>JsAny</c> (mapping §2). The declarations it names report their own.
@@ -477,7 +474,7 @@ public sealed class Selection
     };
 
     /// <summary>The types a type is made of, one level down.</summary>
-    private static IEnumerable<IrType> Children(IrType type) => type switch
+    internal static IEnumerable<IrType> Children(IrType type) => type switch
     {
         RefType r => r.Args,
         ArrayType a => [a.Element],

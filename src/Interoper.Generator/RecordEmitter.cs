@@ -19,11 +19,11 @@ internal static class RecordEmitter
             name = $"{name}<{string.Join(", ", parameters)}>";
         }
         var fields = Unhidden(types.Fields(declaration), ns);
-        var w = CodeWriter.CSharp(ns, "System.Text.Json");
+        var w = CodeWriter.CSharp(ns);
         using (w.Block($"public sealed partial record {name}{string.Concat(parameters.Select(t => $" where {t} : global::Interoper.JsObject"))}"))
         {
             Properties(w, fields, required: true);
-            using (w.Block($"public static void Write(Utf8JsonWriter writer, {name} value)"))
+            using (w.Block($"public static void Write(global::System.Text.Json.Utf8JsonWriter writer, {name} value)"))
             {
                 w.Line("writer.WriteStartObject();");
                 WriteConstants(w, fields);
@@ -45,7 +45,7 @@ internal static class RecordEmitter
         var (ns, name) = types.Snapshot(c);
         var fields = Unhidden(types.Fields(c), ns);
         var b = types.SnapshotBase(c);
-        var w = CodeWriter.CSharp(ns, "System.Text.Json");
+        var w = CodeWriter.CSharp(ns);
         using (w.Block($"public {(types.IsClosed(c) ? "closed" : "sealed")} partial record {name}{(b is null ? "" : " : " + types.Snapshot(b).In(ns))}"))
         {
             Properties(w, fields, required: false);
@@ -66,7 +66,7 @@ internal static class RecordEmitter
     {
         if (types.IsValueLike(c))
         {
-            using (w.Block($"public static void Write(Utf8JsonWriter writer, {name} value)"))
+            using (w.Block($"public static void Write(global::System.Text.Json.Utf8JsonWriter writer, {name} value)"))
             {
                 w.Line("writer.WriteStartObject();");
                 w.Line($"writer.WriteNumber(\"$c\"u8, {types.ClassId(c, ns)});");
@@ -76,7 +76,7 @@ internal static class RecordEmitter
             }
             w.Line();
         }
-        using (w.Block($"public static void WriteMembers(Utf8JsonWriter writer, {name} value)"))
+        using (w.Block($"public static void WriteMembers(global::System.Text.Json.Utf8JsonWriter writer, {name} value)"))
         {
             WriteFields(w, fields);
         }
@@ -114,7 +114,7 @@ internal static class RecordEmitter
         var subclasses = types.ConcreteSubclasses(c);
         foreach (var method in new[] { "Write", "WriteMembers" })
         {
-            using (w.Block($"public static void {method}(Utf8JsonWriter writer, {name} value)"))
+            using (w.Block($"public static void {method}(global::System.Text.Json.Utf8JsonWriter writer, {name} value)"))
             using (w.Block("switch (value)"))
             {
                 foreach (var sub in subclasses)
@@ -127,7 +127,7 @@ internal static class RecordEmitter
         }
         var discriminant = types.Discriminant(c);
         var cases = subclasses.Select(sub => (types.Constant(sub, discriminant), types.Snapshot(sub).In(ns)));
-        DiscriminantSwitch(w, $"public static {modifier}{name} Read(ref Utf8JsonReader reader)", name, discriminant, cases);
+        DiscriminantSwitch(w, $"public static {modifier}{name} Read(ref global::System.Text.Json.Utf8JsonReader reader)", name, discriminant, cases);
     }
 
     /// <summary>R19 step 2: a switch on the discriminant's value.</summary>
@@ -140,7 +140,7 @@ internal static class RecordEmitter
             {
                 w.Line($"{Syntax.Literal(value)} => {read}.Read(ref reader),");
             }
-            w.Line($"var {local} => throw new JsonException($\"{type}: unexpected {discriminant} {{{local}}}\"),");
+            w.Line($"var {local} => throw new global::System.Text.Json.JsonException($\"{type}: unexpected {discriminant} {{{local}}}\"),");
         }
     }
 
@@ -212,7 +212,7 @@ internal static class RecordEmitter
     private static void Read(CodeWriter w, string name, string modifier, IReadOnlyList<Field> fields, bool scoped = false)
     {
         var read = fields.Where(f => f.Constant is null).Select(f => (Field: f, Local: Syntax.Local(f.Name, "reader", "property", "scope"))).ToList();
-        using (w.Block($"public static {modifier}{name} Read(ref Utf8JsonReader reader{(scoped ? ", global::Interoper.JsScope scope" : "")})"))
+        using (w.Block($"public static {modifier}{name} Read(ref global::System.Text.Json.Utf8JsonReader reader{(scoped ? ", global::Interoper.JsScope scope" : "")})"))
         {
             if (read.Count == 0)
             {
@@ -228,7 +228,7 @@ internal static class RecordEmitter
                 w.Line($"{type} {string.Join(", ", run.Select(x => $"{x.Local} = {Initial(x.Field)}"))};");
                 i += run.Count;
             }
-            using (w.Block("while (reader.Read() && reader.TokenType == JsonTokenType.PropertyName)"))
+            using (w.Block("while (reader.Read() && reader.TokenType == global::System.Text.Json.JsonTokenType.PropertyName)"))
             {
                 w.Line("var property = reader.GetString();");
                 w.Line("reader.Read();");
