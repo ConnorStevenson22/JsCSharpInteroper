@@ -19,7 +19,7 @@ internal sealed class LiveEmitter
     private readonly HashSet<string> taken = [], hidden = [];
     /// <summary>R26: the members this class declares, and those its emitted bases do, by name and parameter types.</summary>
     private readonly HashSet<string> declared = [], inherited = [];
-    private bool usesSystem, usesTask, first = true;
+    private bool usesSystem, usesTask, usesStreams, first = true;
 
     private LiveEmitter(TypeMap types, Profile profile, GeneratorOptions options, ICollection<Diagnostic> diagnostics, string ns)
     {
@@ -87,7 +87,11 @@ internal sealed class LiveEmitter
 
     private string File()
     {
-        var usings = new[] { usesSystem ? "System" : null, usesTask ? "System.Threading.Tasks" : null, "Interoper" };
+        var usings = new[]
+        {
+            usesSystem ? "System" : null, usesStreams ? "System.Collections.Generic" : null, usesStreams ? "System.Threading" : null,
+            usesTask ? "System.Threading.Tasks" : null, "Interoper",
+        };
         return CodeWriter.CSharp(ns, [.. usings.OfType<string>()]) + w.ToString();
     }
 
@@ -124,11 +128,11 @@ internal sealed class LiveEmitter
             }
             foreach (var e in c.Events)
             {
-                Subscription(name, "On" + Naming.Pascal(e.Name), profile.Events!.Subscribe!, e.Name, e.Type, $"{name}.on:{e.Name}", optional: false);
+                Subscription(name, "On" + Naming.Pascal(e.Name), profile.Events!.Subscribe!, e.Name, e.Type, $"{name}.on:{e.Name}", optional: false, isEvent: true);
             }
             foreach (var p in types.HasWatches(c) ? c.Members.OfType<PropertyMember>().Where(p => p.Type is not LiteralType) : []) // §5
             {
-                Subscription(name, "Watch" + Naming.Pascal(p.Name), profile.Watch!, p.Name, p.Type, $"{name}.watch:{p.Name}", p.Optional);
+                Subscription(name, "Watch" + Naming.Pascal(p.Name), profile.Watch!, p.Name, p.Type, $"{name}.watch:{p.Name}", p.Optional, isEvent: false);
             }
             var (snapshotType, read) = Run("Realm", "JsOp.Snapshot(Handle)", new(CsType.Record(new(ns, snapshot)), false), async);
             Expression($"public {Declare(Mode("Snapshot"), [])}{snapshotType} {Mode("Snapshot")}()", read);
@@ -226,15 +230,29 @@ internal sealed class LiveEmitter
         }
     }
 
-    /// <summary>R24: an event, or a property watch; the scope owns the subscription.</summary>
-    private void Subscription(string owner, string name, string method, string js, IrType payload, string subject, bool optional)
+    /// <summary>
+    /// R24: an event, with its <c>EventOptions</c>, or a property watch; the scope owns the subscription. An event whose
+    /// payload is a data record sends only the record's members unless the options name others. Async mode adds a stream
+    /// of each.
+    /// </summary>
+    private void Subscription(string owner, string name, string method, string js, IrType payload, string subject, bool optional, bool isEvent)
     {
         var value = Slot(payload, Naming.OwnedType(owner, js), owner, optional);
         usesSystem = true;
         var (type, subscribe) = async ? ("Task<IAsyncDisposable>", "SubscribeAsync") : ("IDisposable", "Subscribe");
-        name = Claim(Mode(name), subject);
-        Expression($"public {Declare(name, ["JsScope", $"Action<{value.Key}>"])}{type} {name}(JsScope scope, Action<{value.Name}> handler)",
-            $"scope.{subscribe}(Handle, {Syntax.Literal(method)}, {Syntax.Literal(js)}, {value.Reader}, handler)");
+        var fields = isEvent && types.Projection(payload) is { } projection ? $"[{string.Join(", ", projection.Select(Syntax.Literal))}]" : "null";
+        var (options, optionsKey, sent) = isEvent ? (", EventOptions? options = null", new[] { "EventOptions" }, "options") : ("", [], "null");
+        var target = $"Handle, {Syntax.Literal(method)}, {Syntax.Literal(js)}, {value.Reader}";
+        var subscription = Claim(Mode(name), subject);
+        Expression($"public {Declare(subscription, ["JsScope", $"Action<{value.Key}>", .. optionsKey])}{type} {subscription}(JsScope scope, Action<{value.Name}> handler{options})",
+            $"scope.{subscribe}({target}, handler, {sent}, {fields})");
+        if (async)
+        {
+            usesStreams = true;
+            var stream = Claim(name + "StreamAsync", subject);
+            Expression($"public {Declare(stream, ["JsScope", .. optionsKey, "CancellationToken"])}IAsyncEnumerable<{value.Name}> {stream}(JsScope scope{options}, CancellationToken cancellationToken = default)",
+                $"scope.StreamAsync({target}, {sent}, {fields}, cancellationToken)");
+        }
     }
 
     private void ModuleBody(string name, string specifier, IEnumerable<FunctionDeclaration> functions)

@@ -2,6 +2,8 @@
 #nullable enable
 
 using System;
+using System.Collections.Generic;
+using System.Threading;
 using System.Threading.Tasks;
 using Interoper;
 
@@ -17,7 +19,10 @@ public closed partial class Shape : Observable
         (await Realm.CallAsync(JsOp.Call(Handle, "clone"), scope.Read<Shape>))!;
 
     public Task<IAsyncDisposable> WatchBoundsAsync(JsScope scope, Action<Bounds> handler) =>
-        scope.SubscribeAsync(Handle, "watch", "bounds", Bounds.Read, handler);
+        scope.SubscribeAsync(Handle, "watch", "bounds", Bounds.Read, handler, null, null);
+
+    public IAsyncEnumerable<Bounds> WatchBoundsStreamAsync(JsScope scope, CancellationToken cancellationToken = default) =>
+        scope.StreamAsync(Handle, "watch", "bounds", Bounds.Read, null, null, cancellationToken);
 
     public new async Task<ShapeSnapshot> SnapshotAsync() =>
         (await Realm.CallAsync(JsOp.Snapshot(Handle), ShapeSnapshot.Read))!;

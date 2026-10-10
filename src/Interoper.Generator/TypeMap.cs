@@ -352,6 +352,15 @@ internal sealed class TypeMap
         return declaration is ClassDeclaration c && IsClosed(c) ? wire.Prepend((Discriminant(c), true)) : wire;
     }
 
+    /// <summary>
+    /// R24: an event payload's default projection, the wire members of its data record, constants included; null for
+    /// any other payload, which is sent whole.
+    /// </summary>
+    public IReadOnlyList<string>? Projection(IrType payload) =>
+        payload is RefType r && Find(r) is (InterfaceDeclaration { IndexSignatures.Count: 0 } or AliasDeclaration { Type: ObjectType { IndexSignatures.Count: 0 } }) and var d
+            ? [.. Fields(d).Select(f => f.JsName)]
+            : null;
+
     /// <summary>An interface's own members, then its bases' (as the IR orders inherited members).</summary>
     private IEnumerable<PropertyMember> Members(InterfaceDeclaration i)
     {

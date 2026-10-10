@@ -2,6 +2,8 @@
 #nullable enable
 
 using System;
+using System.Collections.Generic;
+using System.Threading;
 using System.Threading.Tasks;
 using Interoper;
 
@@ -34,16 +36,28 @@ public sealed partial class Marker : Observable
     public Task<string> GetDisplayLabelAsync() => Realm.GetStringAsync(Handle, "displayLabel");
 
     public Task<IAsyncDisposable> WatchPositionAsync(JsScope scope, Action<PointSnapshot> handler) =>
-        scope.SubscribeAsync(Handle, "watch", "position", PointSnapshot.Read, handler);
+        scope.SubscribeAsync(Handle, "watch", "position", PointSnapshot.Read, handler, null, null);
+
+    public IAsyncEnumerable<PointSnapshot> WatchPositionStreamAsync(JsScope scope, CancellationToken cancellationToken = default) =>
+        scope.StreamAsync(Handle, "watch", "position", PointSnapshot.Read, null, null, cancellationToken);
 
     public Task<IAsyncDisposable> WatchLabelAsync(JsScope scope, Action<Opt<string>> handler) =>
-        scope.SubscribeAsync(Handle, "watch", "label", static (ref r) => JsJson.ReadOpt(ref r, JsJson.ReadString), handler);
+        scope.SubscribeAsync(Handle, "watch", "label", static (ref r) => JsJson.ReadOpt(ref r, JsJson.ReadString), handler, null, null);
+
+    public IAsyncEnumerable<Opt<string>> WatchLabelStreamAsync(JsScope scope, CancellationToken cancellationToken = default) =>
+        scope.StreamAsync(Handle, "watch", "label", static (ref r) => JsJson.ReadOpt(ref r, JsJson.ReadString), null, null, cancellationToken);
 
     public Task<IAsyncDisposable> WatchStyleAsync(JsScope scope, Action<Style> handler) =>
-        scope.SubscribeAsync(Handle, "watch", "style", JsJson.ReadUnion<Style>, handler);
+        scope.SubscribeAsync(Handle, "watch", "style", JsJson.ReadUnion<Style>, handler, null, null);
+
+    public IAsyncEnumerable<Style> WatchStyleStreamAsync(JsScope scope, CancellationToken cancellationToken = default) =>
+        scope.StreamAsync(Handle, "watch", "style", JsJson.ReadUnion<Style>, null, null, cancellationToken);
 
     public Task<IAsyncDisposable> WatchDisplayLabelAsync(JsScope scope, Action<string> handler) =>
-        scope.SubscribeAsync(Handle, "watch", "displayLabel", JsJson.ReadString, handler);
+        scope.SubscribeAsync(Handle, "watch", "displayLabel", JsJson.ReadString, handler, null, null);
+
+    public IAsyncEnumerable<string> WatchDisplayLabelStreamAsync(JsScope scope, CancellationToken cancellationToken = default) =>
+        scope.StreamAsync(Handle, "watch", "displayLabel", JsJson.ReadString, null, null, cancellationToken);
 
     public new async Task<MarkerSnapshot> SnapshotAsync() =>
         (await Realm.CallAsync(JsOp.Snapshot(Handle), MarkerSnapshot.Read))!;

@@ -107,7 +107,7 @@ The central decision for every class and interface.
 
 **R15. Default classification.**
 - A `class` is an **entity**: a live object with identity, behind a handle.
-- An interface whose members are all data (no methods) is a **data record**.
+- An interface whose members are all data (no methods) is a **data record**. So is an interface that an event delivers: its methods are left out (R24).
 
 The profile overrides either way. Getting this wrong is the classic failure mode: a JSON copy of an entity loses identity and methods, and some libraries' `toJSON()` produces a different schema altogether.
 
@@ -155,8 +155,10 @@ When JS returns a value for a union position, the runtime must pick the case.
 | property or method returning an entity, or taking a callback (R21) | `R GetX(JsScope scope)` (+ `void SetX(T value)`), `R Foo(JsScope scope, A a)` | `Task<R> GetXAsync(JsScope scope)`, `Task<R> FooAsync(JsScope scope, A a)` |
 | method returning `Promise<R>` | `Task<R> FooAsync(A a)` | `Task<R> FooAsync(A a)` |
 | constructor `new X(props)` | `static X Create(JsScope scope, XSnapshot props)` | `static Task<X> CreateAsync(JsScope scope, XSnapshot props)` |
-| event (from an event map) | `IDisposable OnClick(JsScope scope, Action<ClickEvent>)` | `Task<IAsyncDisposable> OnClickAsync(JsScope scope, Action<ClickEvent>)` (`EventOptions` parameter comes in phase 3, R24) |
+| event (from an event map) | `IDisposable OnClick(JsScope scope, Action<ClickEvent> handler, EventOptions? options = null)` | `Task<IAsyncDisposable> OnClickAsync(JsScope scope, Action<ClickEvent> handler, EventOptions? options = null)` |
+| event stream | — | `IAsyncEnumerable<ClickEvent> OnClickStreamAsync(JsScope scope, EventOptions? options = null, CancellationToken cancellationToken = default)` |
 | property watch, for every property of a class with the profile's watch method (its own or a base's) | `IDisposable WatchZoom(JsScope scope, Action<double>)` | `Task<IAsyncDisposable> WatchZoomAsync(JsScope scope, Action<double>)` |
+| property watch stream | — | `IAsyncEnumerable<double> WatchZoomStreamAsync(JsScope scope, CancellationToken cancellationToken = default)` |
 | snapshot / patch | `XSnapshot Snapshot()`, `void Apply(XSnapshot)` | `Task<XSnapshot> SnapshotAsync()`, `Task ApplyAsync(XSnapshot)` |
 | module function | static method on a static class per module, same per-mode shape, with a leading `JsRealm realm`, or `JsScope scope` when it returns an entity or takes a callback | |
 
@@ -176,7 +178,11 @@ Sync mode needs .NET and JS on one thread, so it runs on WebAssembly only and fa
 
 **R23. Overloads** map one to one. If two TypeScript overloads collapse to the same C# signature after mapping, they merge into one method with a union or enum parameter (IOP2004).
 
-**R24. Events** come from the checker-resolved event map, including maps declared through a phantom property and an indexed access on `this`. `EventOptions` carry JS-side behaviour that must happen before the event reaches .NET (`PreventDefault`, `StopPropagation`), plus payload projection (`Fields`). Server and Hybrid can't call `preventDefault()` in time from .NET.
+**R24. Events** come from the checker-resolved event map, including maps declared through a phantom property and an indexed access on `this`.
+- **`EventOptions`** (`Interoper.Runtime`) carry what JS must do before the event reaches .NET, because Server and Hybrid can't call `preventDefault()` in time from .NET: `PreventDefault` and `StopPropagation` call the event's methods of those names when it has them, so library events with them work as DOM events do. `Fields` names the payload's top-level members to send. They travel with the `subscribe` op ([design §3.4](design.md#34-protocol)); watches take none.
+- **Default projection.** When the payload is a data record, the generated member passes the record's wire members, constants included, as the default fields, and `options.Fields` replaces them. What the record doesn't have (DOM values, methods, live objects) never crosses the wire, so payloads stay small and leak no handles. A member that isn't sent is `default` in the record (null for a reference). Any other payload is sent whole.
+- **Payload interfaces.** An interface an event delivers, and its bases, become data records with their methods left out, one IOP2007 per method, instead of being skipped whole.
+- **Streams** (async mode). `OnXStreamAsync` and `WatchXStreamAsync` (§5) subscribe when the enumeration first moves, and release the subscription when it ends: on `break`, cancellation or disposal. Disposing the scope ends its open streams normally, after what's already queued. JS can't be paused, so there's no backpressure: values queue without bound until they're read, and projection keeps them small.
 
 ---
 

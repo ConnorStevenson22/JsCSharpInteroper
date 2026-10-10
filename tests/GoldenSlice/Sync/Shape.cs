@@ -15,7 +15,7 @@ public closed partial class Shape : Observable
     public Shape Clone(JsScope scope) => Realm.Call(JsOp.Call(Handle, "clone"), scope.Read<Shape>)!;
 
     public IDisposable WatchBounds(JsScope scope, Action<Bounds> handler) =>
-        scope.Subscribe(Handle, "watch", "bounds", Bounds.Read, handler);
+        scope.Subscribe(Handle, "watch", "bounds", Bounds.Read, handler, null, null);
 
     public new ShapeSnapshot Snapshot() => Realm.Call(JsOp.Snapshot(Handle), ShapeSnapshot.Read)!;
 

@@ -148,7 +148,8 @@ const ops = {
   snapshot: (op) => toData(target(op.h)),
   apply: (op) => { const o = target(op.h); for (const [k, v] of Object.entries(op.value)) o[k] = v; },
   subscribe: (op) => {
-    const subscription = target(op.h)[op.method](op.name, op.callback);
+    const listener = op.options ? withOptions(op.callback, op.options) : op.callback;
+    const subscription = target(op.h)[op.method](op.name, listener);
     if (typeof subscription?.dispose !== "function") throw new InteroperError(`${op.method} returned no dispose()`);
     // An object .NET already holds is not a subscription; releasing it must not dispose it.
     if (ids.has(subscription)) throw new InteroperError(`${op.method} returned an object that already has a handle`);
@@ -168,6 +169,24 @@ function run(op) {
   const handler = Object.hasOwn(ops, op.op) && ops[op.op];
   if (!handler) throw new InteroperError(`Unknown op: ${op.op}`);
   return handler(op);
+}
+
+// R24: what JS does before an event reaches .NET, which can't do it in time on Server. Library events with these
+// methods work like DOM events.
+function withOptions(callback, o) {
+  return (event, ...rest) => {
+    if (o.preventDefault) event?.preventDefault?.();
+    if (o.stopPropagation) event?.stopPropagation?.();
+    return callback(o.fields ? pick(event, o.fields) : event, ...rest);
+  };
+}
+
+// The named top-level members of an object, so nothing else crosses the wire; any other value as it is.
+function pick(value, names) {
+  if (value === null || typeof value !== "object") return value;
+  const out = {};
+  for (const name of names) out[name] = value[name];
+  return out;
 }
 
 // Runs ops that return nothing (writes, void calls) in order. A Promise is awaited before the next op, or

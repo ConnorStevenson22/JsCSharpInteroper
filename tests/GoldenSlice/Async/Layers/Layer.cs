@@ -2,6 +2,8 @@
 #nullable enable
 
 using System;
+using System.Collections.Generic;
+using System.Threading;
 using System.Threading.Tasks;
 using Interoper;
 
@@ -25,10 +27,16 @@ public abstract partial class Layer : global::GoldenSlice.Async.Observable
         (await Realm.CallAsync(JsOp.Call(Handle, "clone"), scope.Read<Layer>))!;
 
     public Task<IAsyncDisposable> WatchTitleAsync(JsScope scope, Action<Opt<string>> handler) =>
-        scope.SubscribeAsync(Handle, "watch", "title", static (ref r) => JsJson.ReadOpt(ref r, JsJson.ReadString), handler);
+        scope.SubscribeAsync(Handle, "watch", "title", static (ref r) => JsJson.ReadOpt(ref r, JsJson.ReadString), handler, null, null);
+
+    public IAsyncEnumerable<Opt<string>> WatchTitleStreamAsync(JsScope scope, CancellationToken cancellationToken = default) =>
+        scope.StreamAsync(Handle, "watch", "title", static (ref r) => JsJson.ReadOpt(ref r, JsJson.ReadString), null, null, cancellationToken);
 
     public Task<IAsyncDisposable> WatchVisibleAsync(JsScope scope, Action<bool> handler) =>
-        scope.SubscribeAsync(Handle, "watch", "visible", JsJson.ReadBoolean, handler);
+        scope.SubscribeAsync(Handle, "watch", "visible", JsJson.ReadBoolean, handler, null, null);
+
+    public IAsyncEnumerable<bool> WatchVisibleStreamAsync(JsScope scope, CancellationToken cancellationToken = default) =>
+        scope.StreamAsync(Handle, "watch", "visible", JsJson.ReadBoolean, null, null, cancellationToken);
 
     public new async Task<LayerSnapshot> SnapshotAsync() =>
         (await Realm.CallAsync(JsOp.Snapshot(Handle), LayerSnapshot.Read))!;

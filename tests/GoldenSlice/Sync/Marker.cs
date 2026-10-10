@@ -33,16 +33,16 @@ public sealed partial class Marker : Observable
     public string DisplayLabel => Realm.GetString(Handle, "displayLabel");
 
     public IDisposable WatchPosition(JsScope scope, Action<PointSnapshot> handler) =>
-        scope.Subscribe(Handle, "watch", "position", PointSnapshot.Read, handler);
+        scope.Subscribe(Handle, "watch", "position", PointSnapshot.Read, handler, null, null);
 
     public IDisposable WatchLabel(JsScope scope, Action<Opt<string>> handler) =>
-        scope.Subscribe(Handle, "watch", "label", static (ref r) => JsJson.ReadOpt(ref r, JsJson.ReadString), handler);
+        scope.Subscribe(Handle, "watch", "label", static (ref r) => JsJson.ReadOpt(ref r, JsJson.ReadString), handler, null, null);
 
     public IDisposable WatchStyle(JsScope scope, Action<Style> handler) =>
-        scope.Subscribe(Handle, "watch", "style", JsJson.ReadUnion<Style>, handler);
+        scope.Subscribe(Handle, "watch", "style", JsJson.ReadUnion<Style>, handler, null, null);
 
     public IDisposable WatchDisplayLabel(JsScope scope, Action<string> handler) =>
-        scope.Subscribe(Handle, "watch", "displayLabel", JsJson.ReadString, handler);
+        scope.Subscribe(Handle, "watch", "displayLabel", JsJson.ReadString, handler, null, null);
 
     public new MarkerSnapshot Snapshot() => Realm.Call(JsOp.Snapshot(Handle), MarkerSnapshot.Read)!;
 

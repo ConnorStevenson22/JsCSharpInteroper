@@ -76,29 +76,29 @@ public sealed partial class MapView : Emitter
             JsJson.WriteNumber(w, y);
         }), (ref r) => JsJson.ReadOpt(ref r, scope.Read<Marker>));
 
-    public IDisposable OnClick(JsScope scope, Action<ClickEvent> handler) =>
-        scope.Subscribe(Handle, "on", "click", ClickEvent.Read, handler);
+    public IDisposable OnClick(JsScope scope, Action<ClickEvent> handler, EventOptions? options = null) =>
+        scope.Subscribe(Handle, "on", "click", ClickEvent.Read, handler, options, ["type", "x", "y", "button", "mapPoint"]);
 
     public IDisposable WatchCenter(JsScope scope, Action<PointSnapshot> handler) =>
-        scope.Subscribe(Handle, "watch", "center", PointSnapshot.Read, handler);
+        scope.Subscribe(Handle, "watch", "center", PointSnapshot.Read, handler, null, null);
 
     public IDisposable WatchZoom(JsScope scope, Action<double> handler) =>
-        scope.Subscribe(Handle, "watch", "zoom", JsJson.ReadNumber, handler);
+        scope.Subscribe(Handle, "watch", "zoom", JsJson.ReadNumber, handler, null, null);
 
     public IDisposable WatchRotation(JsScope scope, Action<double> handler) =>
-        scope.Subscribe(Handle, "watch", "rotation", JsJson.ReadNumber, handler);
+        scope.Subscribe(Handle, "watch", "rotation", JsJson.ReadNumber, handler, null, null);
 
     public IDisposable WatchBasemap(JsScope scope, Action<Basemap> handler) =>
-        scope.Subscribe(Handle, "watch", "basemap", BasemapNames.Read, handler);
+        scope.Subscribe(Handle, "watch", "basemap", BasemapNames.Read, handler, null, null);
 
     public IDisposable WatchCursor(JsScope scope, Action<Opt<Cursor>> handler) =>
-        scope.Subscribe(Handle, "watch", "cursor", static (ref r) => JsJson.ReadOpt(ref r, global::GoldenSlice.Sync.Cursor.Read), handler);
+        scope.Subscribe(Handle, "watch", "cursor", static (ref r) => JsJson.ReadOpt(ref r, global::GoldenSlice.Sync.Cursor.Read), handler, null, null);
 
     public IDisposable WatchTitle(JsScope scope, Action<Opt<string>> handler) =>
-        scope.Subscribe(Handle, "watch", "title", static (ref r) => JsJson.ReadOpt(ref r, JsJson.ReadString), handler);
+        scope.Subscribe(Handle, "watch", "title", static (ref r) => JsJson.ReadOpt(ref r, JsJson.ReadString), handler, null, null);
 
     public IDisposable WatchSelected(JsScope scope, Action<Opt<Marker>> handler) =>
-        scope.Subscribe(Handle, "watch", "selected", (ref r) => JsJson.ReadOpt(ref r, scope.Read<Marker>), handler);
+        scope.Subscribe(Handle, "watch", "selected", (ref r) => JsJson.ReadOpt(ref r, scope.Read<Marker>), handler, null, null);
 
     public new MapViewSnapshot Snapshot() => Realm.Call(JsOp.Snapshot(Handle), MapViewSnapshot.Read)!;
 

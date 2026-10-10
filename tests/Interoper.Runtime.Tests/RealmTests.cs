@@ -72,8 +72,8 @@ public sealed class RealmTests
         var scope = new JsScope(realm);
         var view = await MapView.CreateAsync(scope, new());
         var baseline = (transport.Census(), transport.Callbacks.Count);
-        var watch = scope.Subscribe(view.Handle, "watch", "zoom", JsJson.ReadNumber, _ => { }); // sync mode
-        var click = await scope.SubscribeAsync(view.Handle, "on", "click", ClickEvent.Read, _ => { }); // async mode
+        var watch = scope.Subscribe(view.Handle, "watch", "zoom", JsJson.ReadNumber, _ => { }, null, null); // sync mode
+        var click = await scope.SubscribeAsync(view.Handle, "on", "click", ClickEvent.Read, _ => { }, null, null); // async mode
 
         transport.Ops.Clear();
         watch.Dispose();
@@ -89,14 +89,39 @@ public sealed class RealmTests
     }
 
     [Fact]
+    public async Task AStreamSubscribesWhenFirstReadAndUnsubscribesWhenCancelled() // R24
+    {
+        var memory = InMemoryDemoMaps.Create();
+        var realm = new JsRealm(() => Task.FromResult<IJsTransport>(memory), Classes);
+        await realm.StartAsync();
+        var scope = new JsScope(realm);
+        var view = await MapView.CreateAsync(scope, new());
+        var baseline = (memory.Census(), memory.Callbacks.Count);
+        using var cancel = new CancellationTokenSource();
+        var clicks = view.OnClickStreamAsync(scope, new EventOptions { PreventDefault = true }, cancel.Token).GetAsyncEnumerator(TestContext.Current.CancellationToken);
+        Assert.Equal(baseline, (memory.Census(), memory.Callbacks.Count)); // nothing until it's read
+
+        var next = clicks.MoveNextAsync();
+        Assert.Equal((baseline.Item1 + 1, baseline.Item2 + 1), (memory.Census(), memory.Callbacks.Count));
+        // The options went with the subscribe op, projecting to the record's members by default.
+        Assert.Equal("""{"preventDefault":true,"fields":["type","x","y","button","mapPoint"]}""", Assert.Single(memory.SubscribeOptions));
+
+        cancel.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(async () => await next);
+        await clicks.DisposeAsync();
+        Assert.Equal(baseline, (memory.Census(), memory.Callbacks.Count));
+        await scope.DisposeAsync();
+    }
+
+    [Fact]
     public async Task AFailedSubscribeReleasesItsListener() // R24
     {
         var realm = await StartedRealm();
         var scope = new JsScope(realm);
         var view = await MapView.CreateAsync(scope, new());
         var baseline = (transport.Census(), transport.Callbacks.Count);
-        Assert.ThrowsAny<Exception>(() => scope.Subscribe(view.Handle, "noSuchMethod", "zoom", JsJson.ReadNumber, _ => { }));
-        await Assert.ThrowsAnyAsync<Exception>(() => scope.SubscribeAsync(view.Handle, "noSuchMethod", "click", ClickEvent.Read, _ => { }));
+        Assert.ThrowsAny<Exception>(() => scope.Subscribe(view.Handle, "noSuchMethod", "zoom", JsJson.ReadNumber, _ => { }, null, null));
+        await Assert.ThrowsAnyAsync<Exception>(() => scope.SubscribeAsync(view.Handle, "noSuchMethod", "click", ClickEvent.Read, _ => { }, null, null));
         Assert.Equal(baseline, (transport.Census(), transport.Callbacks.Count));
     }
 

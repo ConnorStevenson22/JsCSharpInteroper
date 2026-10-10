@@ -26,10 +26,10 @@ public sealed partial class Point : Shape
     }
 
     public IDisposable WatchX(JsScope scope, Action<double> handler) =>
-        scope.Subscribe(Handle, "watch", "x", JsJson.ReadNumber, handler);
+        scope.Subscribe(Handle, "watch", "x", JsJson.ReadNumber, handler, null, null);
 
     public IDisposable WatchY(JsScope scope, Action<double> handler) =>
-        scope.Subscribe(Handle, "watch", "y", JsJson.ReadNumber, handler);
+        scope.Subscribe(Handle, "watch", "y", JsJson.ReadNumber, handler, null, null);
 
     public new PointSnapshot Snapshot() => Realm.Call(JsOp.Snapshot(Handle), PointSnapshot.Read)!;
 

@@ -22,7 +22,7 @@ public sealed partial class TileLayer : Layer
     public new TileLayer Clone(JsScope scope) => Realm.Call(JsOp.Call(Handle, "clone"), scope.Read<TileLayer>)!;
 
     public IDisposable WatchUrl(JsScope scope, Action<string> handler) =>
-        scope.Subscribe(Handle, "watch", "url", JsJson.ReadString, handler);
+        scope.Subscribe(Handle, "watch", "url", JsJson.ReadString, handler, null, null);
 
     public new TileLayerSnapshot Snapshot() => Realm.Call(JsOp.Snapshot(Handle), TileLayerSnapshot.Read)!;
 

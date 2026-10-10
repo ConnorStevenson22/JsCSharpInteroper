@@ -20,6 +20,19 @@ public sealed class JsOpTests
         Assert.Equal("""{"op":"subscribe","h":1,"method":"on","name":"click","callback":{"$f":2}}""", JsOp.Subscribe(1, "on", "click", 2));
     }
 
+    [Fact] // R24
+    public void SubscribeSendsEventOptionsOnlyWhenTheySetSomething()
+    {
+        const string Plain = """{"op":"subscribe","h":1,"method":"on","name":"click","callback":{"$f":2}}""";
+        Assert.Equal(Plain, JsOp.Subscribe(1, "on", "click", 2, new EventOptions()));
+        Assert.Equal(
+            """{"op":"subscribe","h":1,"method":"on","name":"click","callback":{"$f":2},"options":{"preventDefault":true,"stopPropagation":true,"fields":["x","y"]}}""",
+            JsOp.Subscribe(1, "on", "click", 2, new EventOptions { PreventDefault = true, StopPropagation = true, Fields = ["x", "y"] }));
+        Assert.Equal(
+            """{"op":"subscribe","h":1,"method":"on","name":"click","callback":{"$f":2},"options":{"fields":[]}}""",
+            JsOp.Subscribe(1, "on", "click", 2, new EventOptions { Fields = [] }));
+    }
+
     [Fact]
     public void ALiveArgumentIsItsHandle()
     {

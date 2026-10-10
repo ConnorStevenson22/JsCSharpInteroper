@@ -5,7 +5,8 @@ namespace Interoper.Generator;
 
 /// <summary>
 /// A declaration to emit, trimmed to what can be mapped: a class keeps only the members, events and signatures that
-/// can be, and a dropped optional or rest parameter is gone from its signature (R22).
+/// can be, a dropped optional or rest parameter is gone from its signature (R22), and an event payload's interface has
+/// no methods (R24).
 /// </summary>
 public sealed record Selected(string Module, Declaration Declaration);
 
@@ -15,7 +16,8 @@ public sealed record Selected(string Module, Declaration Declaration);
 /// data types (interfaces, aliases, enums) they use, whole. What can't be mapped is found here, so that a skipped type
 /// takes the members that use it along with it (mapping §8): a member that uses a class outside the selection, or a
 /// type the type map can't map (<see cref="TypeMap.Problem(IrType, bool)"/>), is skipped with IOP2007, or IOP2003 for
-/// an ambiguous union; an optional trailing parameter or a rest parameter is dropped instead (R22).
+/// an ambiguous union; an optional trailing parameter or a rest parameter is dropped instead (R22), and so is a method
+/// of an interface that an event delivers (R24).
 /// </summary>
 public sealed class Selection
 {
@@ -31,6 +33,7 @@ public sealed class Selection
     private readonly Dictionary<ClassDeclaration, Unmappable> skippedClasses = new(ReferenceEqualityComparer.Instance);
     private readonly Dictionary<Declaration, Unmappable?> problems = new(ReferenceEqualityComparer.Instance);
     private readonly HashSet<Declaration> checking = new(ReferenceEqualityComparer.Instance);
+    private readonly HashSet<InterfaceDeclaration> payloads = new(ReferenceEqualityComparer.Instance);
     private readonly List<Diagnostic> diagnostics = [];
     private readonly TypeMap types;
     private bool recursed;
@@ -67,6 +70,18 @@ public sealed class Selection
             skippedClasses[closed] = types.Problem(closed)!;
             classes.Remove(closed);
             types = Checker();
+        }
+        // R24: an interface an emitted class's event delivers, and its bases, are data records without their methods.
+        var payloadTypes = new Stack<IrType>(classes.SelectMany(c => c.Events).Select(e => e.Type));
+        while (payloadTypes.TryPop(out var type))
+        {
+            if (type is RefType { Module: not null } r && Find(r) is InterfaceDeclaration i && payloads.Add(i))
+            {
+                foreach (var b in i.Extends)
+                {
+                    payloadTypes.Push(b);
+                }
+            }
         }
         foreach (var (_, declaration) in all.Where(x => roots.Contains(x.Declaration)))
         {
@@ -319,7 +334,8 @@ public sealed class Selection
             ClassDeclaration c => classes.Contains(c) ? null
                 : skippedClasses.GetValueOrDefault(c) ?? new(c.TypeParameters.Count > 0 ? $"generic `{c.Name}`" : $"class `{c.Name}` outside the selection"),
             InterfaceDeclaration { TypeParameters.Count: > 0 } or AliasDeclaration { TypeParameters.Count: > 0 } => new($"generic `{declaration.Name}`"),
-            InterfaceDeclaration i => MembersProblem(i.Members, i.CallSignatures.Count + i.ConstructSignatures.Count) ?? FirstProblem(Parts(i)) ?? types.Problem(i),
+            InterfaceDeclaration i => MembersProblem(payloads.Contains(i) ? i.Members.OfType<PropertyMember>() : i.Members, i.CallSignatures.Count + i.ConstructSignatures.Count)
+                ?? FirstProblem(Parts(i)) ?? types.Problem(i),
             AliasDeclaration a => Problem(a.Type) ?? types.Problem(a),
             EnumDeclaration e => types.Problem(e),
             _ => new($"`{declaration.Name}`"),
@@ -362,7 +378,16 @@ public sealed class Selection
 
     private void AddDataType(Declaration declaration)
     {
-        if (selected.TryAdd(declaration, new(moduleOf[declaration], declaration)))
+        var emitted = declaration;
+        if (declaration is InterfaceDeclaration i && payloads.Contains(i) && !selected.ContainsKey(i))
+        {
+            foreach (var method in i.Members.OfType<MethodMember>())
+            {
+                Report(new(Diagnostic.NotSupported, $"{i.Name}.{method.Name}", "skipped: a method of an event payload (R24)"));
+            }
+            emitted = i with { Members = [.. i.Members.OfType<PropertyMember>()] };
+        }
+        if (selected.TryAdd(declaration, new(moduleOf[declaration], emitted)))
         {
             foreach (var type in Parts(declaration))
             {

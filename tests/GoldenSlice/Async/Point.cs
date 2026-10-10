@@ -2,6 +2,8 @@
 #nullable enable
 
 using System;
+using System.Collections.Generic;
+using System.Threading;
 using System.Threading.Tasks;
 using Interoper;
 
@@ -23,10 +25,16 @@ public sealed partial class Point : Shape
     public Task SetYAsync(double value) => Realm.SetAsync(Handle, "y", value);
 
     public Task<IAsyncDisposable> WatchXAsync(JsScope scope, Action<double> handler) =>
-        scope.SubscribeAsync(Handle, "watch", "x", JsJson.ReadNumber, handler);
+        scope.SubscribeAsync(Handle, "watch", "x", JsJson.ReadNumber, handler, null, null);
+
+    public IAsyncEnumerable<double> WatchXStreamAsync(JsScope scope, CancellationToken cancellationToken = default) =>
+        scope.StreamAsync(Handle, "watch", "x", JsJson.ReadNumber, null, null, cancellationToken);
 
     public Task<IAsyncDisposable> WatchYAsync(JsScope scope, Action<double> handler) =>
-        scope.SubscribeAsync(Handle, "watch", "y", JsJson.ReadNumber, handler);
+        scope.SubscribeAsync(Handle, "watch", "y", JsJson.ReadNumber, handler, null, null);
+
+    public IAsyncEnumerable<double> WatchYStreamAsync(JsScope scope, CancellationToken cancellationToken = default) =>
+        scope.StreamAsync(Handle, "watch", "y", JsJson.ReadNumber, null, null, cancellationToken);
 
     public new async Task<PointSnapshot> SnapshotAsync() =>
         (await Realm.CallAsync(JsOp.Snapshot(Handle), PointSnapshot.Read))!;

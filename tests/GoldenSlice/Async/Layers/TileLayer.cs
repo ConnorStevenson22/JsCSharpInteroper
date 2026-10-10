@@ -2,6 +2,8 @@
 #nullable enable
 
 using System;
+using System.Collections.Generic;
+using System.Threading;
 using System.Threading.Tasks;
 using Interoper;
 
@@ -22,7 +24,10 @@ public sealed partial class TileLayer : Layer
         (await Realm.CallAsync(JsOp.Call(Handle, "clone"), scope.Read<TileLayer>))!;
 
     public Task<IAsyncDisposable> WatchUrlAsync(JsScope scope, Action<string> handler) =>
-        scope.SubscribeAsync(Handle, "watch", "url", JsJson.ReadString, handler);
+        scope.SubscribeAsync(Handle, "watch", "url", JsJson.ReadString, handler, null, null);
+
+    public IAsyncEnumerable<string> WatchUrlStreamAsync(JsScope scope, CancellationToken cancellationToken = default) =>
+        scope.StreamAsync(Handle, "watch", "url", JsJson.ReadString, null, null, cancellationToken);
 
     public new async Task<TileLayerSnapshot> SnapshotAsync() =>
         (await Realm.CallAsync(JsOp.Snapshot(Handle), TileLayerSnapshot.Read))!;

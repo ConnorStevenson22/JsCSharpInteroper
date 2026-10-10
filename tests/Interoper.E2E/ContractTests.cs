@@ -25,6 +25,12 @@ public sealed class ContractTests(BrowserHost host)
         Assert.Equal("PASS two transports on one page", await host.RunPageAsync("wasm-two-transports"));
     }
 
+    [Fact] // R24: JS calls preventDefault() before the event leaves for .NET, so a later DOM listener sees it
+    public async Task PreventDefaultWorksOnServer()
+    {
+        Assert.Equal("""prevented True {"type":"click"}, plain False {"type":"click"}, census +1""", await host.RunPageAsync("server-prevent-default"));
+    }
+
     [Fact]
     public async Task SyncModeFailsFastOnServer()
     {

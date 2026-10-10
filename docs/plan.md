@@ -33,7 +33,7 @@ Hand-written bindings for a slice of the fixture, running on every host.
 
 ## Phase 3 · Full surface
 
-- [ ] Events and watches, with options and projection.
+- [x] Events and watches, with options, projection and streams.
 - [ ] Collections, callbacks (R21), module functions, `Diff`, and the chatty-await analyzer.
 - [ ] Razor components from the CEM, with custom events, `@bind` and slots.
 - [x] Generator gaps the whole fixture reaches: rest parameters (R22), namespaces from module folders (R27), `new` on members a subclass redeclares, and IOP2007 instead of `NotSupportedException`.

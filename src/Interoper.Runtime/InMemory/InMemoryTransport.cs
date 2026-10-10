@@ -18,10 +18,17 @@ public sealed class InMemoryTransport : IJsSyncTransport, IJsTransport
     private readonly Dictionary<int, InMemoryClass> classes = [];
     private readonly Dictionary<string, int> classIds = [];
     private readonly Dictionary<string, InMemoryObject> modules = [];
+    private readonly List<string> subscribeOptions = [];
     private int lastId;
     private bool syncOnly; // set while Invoke runs, as invokeSync sets it
 
     public JsCallbacks Callbacks { get; } = new();
+
+    /// <summary>
+    /// The <c>options</c> of each <c>subscribe</c> op that had them (R24), as JSON, in order: what a test checks that
+    /// <c>preventDefault</c> and <c>stopPropagation</c> were sent, since in-memory events rarely have those methods.
+    /// </summary>
+    public IReadOnlyList<string> SubscribeOptions => subscribeOptions;
 
     /// <summary>Registers a fake class, as the generated metadata table would list it.</summary>
     public InMemoryTransport Define(InMemoryClass entry)
@@ -143,7 +150,7 @@ public sealed class InMemoryTransport : IJsSyncTransport, IJsTransport
                 }
                 return Undefined.Value;
             case "subscribe":
-                return Subscribe(Target(), (string)op["method"]!, Name(), op["callback"]);
+                return Subscribe(Target(), (string)op["method"]!, Name(), op["callback"], op.GetValueOrDefault("options") as Dictionary<string, object?>);
             case "release":
                 ReleaseAll((List<object?>)op["ids"]!);
                 return Undefined.Value;
@@ -206,8 +213,13 @@ public sealed class InMemoryTransport : IJsSyncTransport, IJsTransport
         return rest is Task<object?> next ? await next : rest;
     }
 
-    private JsonNode Subscribe(InMemoryObject target, string method, string name, object? callback)
+    private JsonNode Subscribe(InMemoryObject target, string method, string name, object? callback, Dictionary<string, object?>? options)
     {
+        if (options is not null)
+        {
+            subscribeOptions.Add(((JsonNode)Wire(options)!).ToJsonString());
+            callback = WithOptions((JsFunction)callback!, options);
+        }
         if (target.Call(method, [name, callback]) is not IDisposable subscription)
         {
             throw InteroperError($"{method} returned no dispose()");
@@ -220,6 +232,36 @@ public sealed class InMemoryTransport : IJsSyncTransport, IJsTransport
         subscriptions.Add(id);
         return id;
     }
+
+    // R24, as interoper.js does: the event's preventDefault() and stopPropagation(), when it has them, then the listener
+    // with the payload projected to the fields.
+    private static JsFunction WithOptions(JsFunction callback, Dictionary<string, object?> options) => args =>
+    {
+        var e = args.FirstOrDefault(Undefined.Value);
+        foreach (var flag in new[] { "preventDefault", "stopPropagation" })
+        {
+            if (options.GetValueOrDefault(flag) is true && Member(e, flag) is JsFunction method)
+            {
+                method();
+            }
+        }
+        if (options.GetValueOrDefault("fields") is List<object?> fields)
+        {
+            args = [Pick(e, fields.Cast<string>()), .. args.Skip(1)];
+        }
+        return callback(args);
+    };
+
+    private static object? Member(object? value, string name) => value switch
+    {
+        Dictionary<string, object?> bag => bag.GetValueOrDefault(name, Undefined.Value),
+        InMemoryObject o => o.Get(name),
+        _ => Undefined.Value,
+    };
+
+    // The named top-level members of an object; any other value as it is.
+    private static object? Pick(object? value, IEnumerable<string> names) =>
+        value is Dictionary<string, object?> or InMemoryObject ? names.ToDictionary(name => name, name => Member(value, name)) : value;
 
     // Releases every id, even when a Dispose() throws; then reports what failed.
     private void ReleaseAll(List<object?> list)

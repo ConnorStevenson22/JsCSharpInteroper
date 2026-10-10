@@ -20,7 +20,7 @@ public sealed partial class Polygon : Shape
     }
 
     public IDisposable WatchVertices(JsScope scope, Action<double[][]> handler) =>
-        scope.Subscribe(Handle, "watch", "vertices", static (ref r) => JsJson.ReadArray(ref r, static (ref r1) => JsJson.ReadArray(ref r1, JsJson.ReadNumber)), handler);
+        scope.Subscribe(Handle, "watch", "vertices", static (ref r) => JsJson.ReadArray(ref r, static (ref r1) => JsJson.ReadArray(ref r1, JsJson.ReadNumber)), handler, null, null);
 
     public new PolygonSnapshot Snapshot() => Realm.Call(JsOp.Snapshot(Handle), PolygonSnapshot.Read)!;
 

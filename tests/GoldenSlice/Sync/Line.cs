@@ -20,7 +20,7 @@ public sealed partial class Line : Shape
     }
 
     public IDisposable WatchPath(JsScope scope, Action<double[][]> handler) =>
-        scope.Subscribe(Handle, "watch", "path", static (ref r) => JsJson.ReadArray(ref r, static (ref r1) => JsJson.ReadArray(ref r1, JsJson.ReadNumber)), handler);
+        scope.Subscribe(Handle, "watch", "path", static (ref r) => JsJson.ReadArray(ref r, static (ref r1) => JsJson.ReadArray(ref r1, JsJson.ReadNumber)), handler, null, null);
 
     public new LineSnapshot Snapshot() => Realm.Call(JsOp.Snapshot(Handle), LineSnapshot.Read)!;
 

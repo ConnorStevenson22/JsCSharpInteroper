@@ -1,6 +1,8 @@
+using System.Runtime.CompilerServices;
 using System.Runtime.ExceptionServices;
 using System.Text;
 using System.Text.Json;
+using System.Threading.Channels;
 using Microsoft.JSInterop;
 
 namespace Interoper;
@@ -16,6 +18,7 @@ public sealed class JsScope(JsRealm realm) : IDisposable, IAsyncDisposable
     private readonly Lock gate = new(); // covers disposed, callbacks and this scope's ownership in the realm
     private readonly List<int> callbacks = [];
     private readonly List<JsBatch> batches = []; // open batches this scope began, flushed before its release
+    private readonly List<Func<bool>> streams = []; // completes each open stream (StreamAsync)
     private bool disposed;
 
     public JsRealm Realm { get; } = realm;
@@ -138,15 +141,16 @@ public sealed class JsScope(JsRealm realm) : IDisposable, IAsyncDisposable
     /// <summary>
     /// Subscribes through the sync seam (sync mode): calls <c>target[method](name, listener)</c> (R24) with a listener
     /// that reads the first argument and calls <paramref name="handler"/>. The subscription and the listener belong to
-    /// this scope; disposing the result releases both sooner.
+    /// this scope; disposing the result releases both sooner. JS applies <paramref name="options"/> first; their
+    /// <see cref="EventOptions.Fields"/> replace <paramref name="fields"/>, the generated default projection.
     /// </summary>
-    public IDisposable Subscribe<T>(int handle, string method, string name, JsonRead<T> read, Action<T> handler)
+    public IDisposable Subscribe<T>(int handle, string method, string name, JsonRead<T> read, Action<T> handler, EventOptions? options, string[]? fields)
     {
         var listener = Register(Listener(read, handler));
         int subscription;
         try
         {
-            subscription = (int)Realm.Call(JsOp.Subscribe(handle, method, name, listener), JsJson.ReadNumber);
+            subscription = (int)Realm.Call(JsOp.Subscribe(handle, method, name, listener, Projected(options, fields)), JsJson.ReadNumber);
         }
         catch
         {
@@ -158,13 +162,14 @@ public sealed class JsScope(JsRealm realm) : IDisposable, IAsyncDisposable
     }
 
     /// <summary>Subscribes through the async seam (async mode); see <see cref="Subscribe{T}"/>.</summary>
-    public async Task<IAsyncDisposable> SubscribeAsync<T>(int handle, string method, string name, JsonRead<T> read, Action<T> handler)
+    public async Task<IAsyncDisposable> SubscribeAsync<T>(int handle, string method, string name, JsonRead<T> read, Action<T> handler,
+        EventOptions? options, string[]? fields)
     {
         var listener = Register(Listener(read, handler));
         int subscription;
         try
         {
-            subscription = (int)await Realm.CallAsync(JsOp.Subscribe(handle, method, name, listener), JsJson.ReadNumber);
+            subscription = (int)await Realm.CallAsync(JsOp.Subscribe(handle, method, name, listener, Projected(options, fields)), JsJson.ReadNumber);
         }
         catch
         {
@@ -174,6 +179,42 @@ public sealed class JsScope(JsRealm realm) : IDisposable, IAsyncDisposable
         Own(subscription);
         return new Subscription(this, subscription, listener);
     }
+
+    /// <summary>
+    /// The events or changes of <see cref="SubscribeAsync{T}"/> as a stream (async mode, R24). It subscribes when the
+    /// enumeration starts, and unsubscribes when it ends: on <c>break</c>, cancellation or disposal. Disposing the scope
+    /// completes it, so <c>await foreach</c> ends normally. JS can't be paused, so values queue without bound until read.
+    /// </summary>
+    public async IAsyncEnumerable<T> StreamAsync<T>(int handle, string method, string name, JsonRead<T> read, EventOptions? options,
+        string[]? fields, [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        var channel = Channel.CreateUnbounded<T>(new() { SingleReader = true });
+        Func<bool> complete = () => channel.Writer.TryComplete();
+        lock (gate)
+        {
+            ObjectDisposedException.ThrowIf(disposed, this);
+            streams.Add(complete);
+        }
+        try
+        {
+            await using var subscription = await SubscribeAsync(handle, method, name, read, value => channel.Writer.TryWrite(value), options, fields);
+            await foreach (var value in channel.Reader.ReadAllAsync(cancellationToken))
+            {
+                yield return value;
+            }
+        }
+        finally
+        {
+            lock (gate)
+            {
+                streams.Remove(complete);
+            }
+        }
+    }
+
+    // What JS applies before the listener (R24): the options, projecting to the default fields unless they name others.
+    private static EventOptions? Projected(EventOptions? options, string[]? fields) =>
+        options?.Fields is not null || fields is null ? options : (options ?? new()) with { Fields = fields };
 
     // Arguments arrive as a JSON array (R21); events and watches use the first.
     private static Func<string, string?> Listener<T>(JsonRead<T> read, Action<T> handler) => args =>
@@ -258,11 +299,13 @@ public sealed class JsScope(JsRealm realm) : IDisposable, IAsyncDisposable
         }
     }
 
-    // Marks the scope disposed and returns the op that releases its handles (null if none), its callbacks and its
-    // open batches.
+    // Marks the scope disposed, completes its open streams, and returns the op that releases its handles (null if none),
+    // its callbacks and its open batches.
     // A scope that never reached JS (prerendering) has neither, and touches no transport.
     private (string? Release, int[] Callbacks, JsBatch[] Batches) Take()
     {
+        (string?, int[], JsBatch[]) taken;
+        Func<bool>[] open;
         lock (gate)
         {
             if (disposed)
@@ -273,8 +316,15 @@ public sealed class JsScope(JsRealm realm) : IDisposable, IAsyncDisposable
             var handles = Realm.Forget(this);
             int[] owned = [.. callbacks];
             callbacks.Clear();
-            return (handles.Count == 0 ? null : JsOp.Release(handles), owned, [.. batches]);
+            open = [.. streams];
+            streams.Clear();
+            taken = (handles.Count == 0 ? null : JsOp.Release(handles), owned, [.. batches]);
         }
+        foreach (var complete in open)
+        {
+            complete(); // what's queued is still read, then the enumeration ends
+        }
+        return taken;
     }
 
     private void ReleaseListener(int listener)

@@ -25,10 +25,10 @@ public abstract partial class Layer : global::GoldenSlice.Sync.Observable
     public Layer Clone(JsScope scope) => Realm.Call(JsOp.Call(Handle, "clone"), scope.Read<Layer>)!;
 
     public IDisposable WatchTitle(JsScope scope, Action<Opt<string>> handler) =>
-        scope.Subscribe(Handle, "watch", "title", static (ref r) => JsJson.ReadOpt(ref r, JsJson.ReadString), handler);
+        scope.Subscribe(Handle, "watch", "title", static (ref r) => JsJson.ReadOpt(ref r, JsJson.ReadString), handler, null, null);
 
     public IDisposable WatchVisible(JsScope scope, Action<bool> handler) =>
-        scope.Subscribe(Handle, "watch", "visible", JsJson.ReadBoolean, handler);
+        scope.Subscribe(Handle, "watch", "visible", JsJson.ReadBoolean, handler, null, null);
 
     public new LayerSnapshot Snapshot() => Realm.Call(JsOp.Snapshot(Handle), LayerSnapshot.Read)!;
 

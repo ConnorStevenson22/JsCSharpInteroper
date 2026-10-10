@@ -28,6 +28,7 @@ public static class GoldenSyncSuite
         ("a default export: create, a redeclared clone and the most-derived type (R4, R19, R26)", InScope(DefaultExport)),
         ("module function with a rest parameter (R22)", InScope(RestParameter)),
         ("module folders are namespaces (R27)", InScope(Namespaces)),
+        ("click event options: Fields send only those members (R24)", InScope(EventOptionsAndFields)),
     ];
 
     private static void CreateSnapshotApply(JsScope scope)
@@ -137,6 +138,22 @@ public static class GoldenSyncSuite
 
         Equal(new ClickEvent { X = 1, Y = -2, Button = ClickEventButton._0, MapPoint = new PointSnapshot { X = 1, Y = 2 } }, clicks.Single());
         Equal(5.0, zooms.Single());
+    }
+
+    private static async Task EventOptionsAndFields(JsScope scope)
+    {
+        var view = MapView.Create(scope, new MapViewSnapshot());
+        var baseline = await Count(scope.Realm);
+        var (whole, some) = (new List<ClickEvent>(), new List<ClickEvent>());
+        // By default JS sends the record's members; the flags are harmless on an event without the methods.
+        using (view.OnClick(scope, whole.Add, new EventOptions { PreventDefault = true, StopPropagation = true }))
+        using (view.OnClick(scope, some.Add, new EventOptions { Fields = ["x", "mapPoint"] }))
+        {
+            Expect(Click(scope, view), "the click to reach a listener");
+        }
+        Equal(baseline, await Count(scope.Realm));
+        Equal(new ClickEvent { X = 1, Y = -2, Button = ClickEventButton._0, MapPoint = new PointSnapshot { X = 1, Y = 2 } }, whole.Single());
+        Equal(new ClickEvent { X = 1, Y = 0, Button = ClickEventButton._0, MapPoint = new PointSnapshot { X = 1, Y = 2 } }, some.Single()); // y wasn't sent
     }
 
     private static void ModuleFunction(JsScope scope) =>

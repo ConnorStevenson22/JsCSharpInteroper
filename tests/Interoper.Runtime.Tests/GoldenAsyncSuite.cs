@@ -31,6 +31,9 @@ public static class GoldenAsyncSuite
         ("a default export: create, a redeclared clone and the most-derived type (R4, R19, R26)", InScope(DefaultExport)),
         ("module function with a rest parameter (R22)", InScope(RestParameter)),
         ("module folders are namespaces (R27)", InScope(Namespaces)),
+        ("click event options: Fields send only those members (R24)", InScope(EventOptionsAndFields)),
+        ("event and watch streams: delivered, then released on break (R24)", InScope(Streams)),
+        ("a stream ends when its scope is disposed (R24)", InScope(StreamEndsWithItsScope)),
     ];
 
     private static async Task CreateSnapshotApply(JsScope scope)
@@ -143,6 +146,87 @@ public static class GoldenAsyncSuite
         await view.SetZoomAsync(6);
         await view.GetZoomAsync(); // a round trip after the change: a call back would have come first
         Equal(1, calls);
+    }
+
+    private static async Task EventOptionsAndFields(JsScope scope)
+    {
+        var view = await MapView.CreateAsync(scope, new MapViewSnapshot());
+        var baseline = await Count(scope.Realm);
+        var whole = new TaskCompletionSource<ClickEvent>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var some = new TaskCompletionSource<ClickEvent>(TaskCreationOptions.RunContinuationsAsynchronously);
+        // By default JS sends the record's members; the flags are harmless on an event without the methods.
+        await using (await view.OnClickAsync(scope, click => whole.TrySetResult(click), new EventOptions { PreventDefault = true, StopPropagation = true }))
+        await using (await view.OnClickAsync(scope, click => some.TrySetResult(click), new EventOptions { Fields = ["x", "mapPoint"] }))
+        {
+            Expect(await Click(scope, view), "the click to reach a listener");
+            Equal(new ClickEvent { X = 1, Y = -2, Button = ClickEventButton._0, MapPoint = new PointSnapshot { X = 1, Y = 2 } }, await whole.Task.WaitAsync(Timeout));
+            Equal(new ClickEvent { X = 1, Y = 0, Button = ClickEventButton._0, MapPoint = new PointSnapshot { X = 1, Y = 2 } }, await some.Task.WaitAsync(Timeout)); // y wasn't sent
+        }
+        Equal(baseline, await Count(scope.Realm));
+    }
+
+    private static async Task Streams(JsScope scope)
+    {
+        var view = await MapView.CreateAsync(scope, new MapViewSnapshot());
+        var baseline = await Count(scope.Realm);
+
+        // The stream subscribes when it's first read; the clicks go out once JS holds the subscription.
+        var clicking = WhenSubscribed(scope.Realm, baseline, async () =>
+        {
+            for (var x = 1; x <= 3; x++)
+            {
+                await Click(scope, view, x);
+            }
+        });
+        var xs = new List<double>();
+        await foreach (var click in view.OnClickStreamAsync(scope, new EventOptions { Fields = ["x"] }))
+        {
+            xs.Add(click.X);
+            if (xs.Count == 3) break;
+        }
+        await clicking;
+        Equal("1,2,3", string.Join(",", xs));
+        Equal(baseline, await Count(scope.Realm)); // break released the subscription
+        Expect(!await Click(scope, view), "no listener after break");
+
+        var zooming = WhenSubscribed(scope.Realm, baseline, async () =>
+        {
+            await view.SetZoomAsync(4);
+            await view.SetZoomAsync(5);
+        });
+        var zooms = new List<double>();
+        await foreach (var zoom in view.WatchZoomStreamAsync(scope))
+        {
+            zooms.Add(zoom);
+            if (zoom == 5) break;
+        }
+        await zooming;
+        Equal("4,5", string.Join(",", zooms));
+        Equal(baseline, await Count(scope.Realm));
+    }
+
+    private static async Task StreamEndsWithItsScope(JsScope scope)
+    {
+        var baseline = await Count(scope.Realm);
+        var inner = new JsScope(scope.Realm);
+        var view = await MapView.CreateAsync(inner, new MapViewSnapshot());
+        var zooms = new List<double>();
+        var first = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        async Task Read()
+        {
+            await foreach (var zoom in view.WatchZoomStreamAsync(inner))
+            {
+                zooms.Add(zoom);
+                first.TrySetResult();
+            }
+        }
+        var reading = Read();
+        await WhenSubscribed(scope.Realm, (baseline.Handles + 1, baseline.Callbacks), () => view.SetZoomAsync(2));
+        await first.Task.WaitAsync(Timeout);
+        await inner.DisposeAsync();
+        await reading.WaitAsync(Timeout); // ends normally
+        Equal("2", string.Join(",", zooms));
+        Equal(baseline, await Count(scope.Realm));
     }
 
     private static async Task ModuleFunction(JsScope scope) =>
@@ -310,9 +394,21 @@ public static class GoldenAsyncSuite
     private static async Task<Shape> Held(JsScope scope, JsObject target, string name) =>
         (await scope.Realm.CallAsync(JsOp.Get(target.Handle, name), scope.Read<Shape>))!;
 
-    private static Task<bool> Click(JsScope scope, MapView view) => scope.Realm.CallAsync(JsOp.Call(view.Handle, "emit", w =>
+    private static Task<bool> Click(JsScope scope, MapView view, double x = 1) => scope.Realm.CallAsync(JsOp.Call(view.Handle, "emit", w =>
     {
         w.WriteStringValue("click");
-        ClickEvent.Write(w, new ClickEvent { X = 1, Y = -2, Button = ClickEventButton._0, MapPoint = new PointSnapshot { X = 1, Y = 2 } });
+        ClickEvent.Write(w, new ClickEvent { X = x, Y = -2, Button = ClickEventButton._0, MapPoint = new PointSnapshot { X = 1, Y = 2 } });
     }), JsJson.ReadBoolean);
+
+    // Runs the action once a stream has subscribed: JS then holds one more handle, and .NET one more listener.
+    private static async Task WhenSubscribed(JsRealm realm, (int Handles, int Callbacks) before, Func<Task> action)
+    {
+        var deadline = DateTime.UtcNow + Timeout;
+        while (await Count(realm) == before)
+        {
+            Expect(DateTime.UtcNow < deadline, "the stream to subscribe");
+            await Task.Delay(10);
+        }
+        await action();
+    }
 }

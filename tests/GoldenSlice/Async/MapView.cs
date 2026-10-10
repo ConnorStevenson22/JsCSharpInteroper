@@ -2,6 +2,8 @@
 #nullable enable
 
 using System;
+using System.Collections.Generic;
+using System.Threading;
 using System.Threading.Tasks;
 using Interoper;
 
@@ -70,29 +72,53 @@ public sealed partial class MapView : Emitter
             JsJson.WriteNumber(w, y);
         }), (ref r) => JsJson.ReadOpt(ref r, scope.Read<Marker>));
 
-    public Task<IAsyncDisposable> OnClickAsync(JsScope scope, Action<ClickEvent> handler) =>
-        scope.SubscribeAsync(Handle, "on", "click", ClickEvent.Read, handler);
+    public Task<IAsyncDisposable> OnClickAsync(JsScope scope, Action<ClickEvent> handler, EventOptions? options = null) =>
+        scope.SubscribeAsync(Handle, "on", "click", ClickEvent.Read, handler, options, ["type", "x", "y", "button", "mapPoint"]);
+
+    public IAsyncEnumerable<ClickEvent> OnClickStreamAsync(JsScope scope, EventOptions? options = null, CancellationToken cancellationToken = default) =>
+        scope.StreamAsync(Handle, "on", "click", ClickEvent.Read, options, ["type", "x", "y", "button", "mapPoint"], cancellationToken);
 
     public Task<IAsyncDisposable> WatchCenterAsync(JsScope scope, Action<PointSnapshot> handler) =>
-        scope.SubscribeAsync(Handle, "watch", "center", PointSnapshot.Read, handler);
+        scope.SubscribeAsync(Handle, "watch", "center", PointSnapshot.Read, handler, null, null);
+
+    public IAsyncEnumerable<PointSnapshot> WatchCenterStreamAsync(JsScope scope, CancellationToken cancellationToken = default) =>
+        scope.StreamAsync(Handle, "watch", "center", PointSnapshot.Read, null, null, cancellationToken);
 
     public Task<IAsyncDisposable> WatchZoomAsync(JsScope scope, Action<double> handler) =>
-        scope.SubscribeAsync(Handle, "watch", "zoom", JsJson.ReadNumber, handler);
+        scope.SubscribeAsync(Handle, "watch", "zoom", JsJson.ReadNumber, handler, null, null);
+
+    public IAsyncEnumerable<double> WatchZoomStreamAsync(JsScope scope, CancellationToken cancellationToken = default) =>
+        scope.StreamAsync(Handle, "watch", "zoom", JsJson.ReadNumber, null, null, cancellationToken);
 
     public Task<IAsyncDisposable> WatchRotationAsync(JsScope scope, Action<double> handler) =>
-        scope.SubscribeAsync(Handle, "watch", "rotation", JsJson.ReadNumber, handler);
+        scope.SubscribeAsync(Handle, "watch", "rotation", JsJson.ReadNumber, handler, null, null);
+
+    public IAsyncEnumerable<double> WatchRotationStreamAsync(JsScope scope, CancellationToken cancellationToken = default) =>
+        scope.StreamAsync(Handle, "watch", "rotation", JsJson.ReadNumber, null, null, cancellationToken);
 
     public Task<IAsyncDisposable> WatchBasemapAsync(JsScope scope, Action<Basemap> handler) =>
-        scope.SubscribeAsync(Handle, "watch", "basemap", BasemapNames.Read, handler);
+        scope.SubscribeAsync(Handle, "watch", "basemap", BasemapNames.Read, handler, null, null);
+
+    public IAsyncEnumerable<Basemap> WatchBasemapStreamAsync(JsScope scope, CancellationToken cancellationToken = default) =>
+        scope.StreamAsync(Handle, "watch", "basemap", BasemapNames.Read, null, null, cancellationToken);
 
     public Task<IAsyncDisposable> WatchCursorAsync(JsScope scope, Action<Opt<Cursor>> handler) =>
-        scope.SubscribeAsync(Handle, "watch", "cursor", static (ref r) => JsJson.ReadOpt(ref r, Cursor.Read), handler);
+        scope.SubscribeAsync(Handle, "watch", "cursor", static (ref r) => JsJson.ReadOpt(ref r, Cursor.Read), handler, null, null);
+
+    public IAsyncEnumerable<Opt<Cursor>> WatchCursorStreamAsync(JsScope scope, CancellationToken cancellationToken = default) =>
+        scope.StreamAsync(Handle, "watch", "cursor", static (ref r) => JsJson.ReadOpt(ref r, Cursor.Read), null, null, cancellationToken);
 
     public Task<IAsyncDisposable> WatchTitleAsync(JsScope scope, Action<Opt<string>> handler) =>
-        scope.SubscribeAsync(Handle, "watch", "title", static (ref r) => JsJson.ReadOpt(ref r, JsJson.ReadString), handler);
+        scope.SubscribeAsync(Handle, "watch", "title", static (ref r) => JsJson.ReadOpt(ref r, JsJson.ReadString), handler, null, null);
+
+    public IAsyncEnumerable<Opt<string>> WatchTitleStreamAsync(JsScope scope, CancellationToken cancellationToken = default) =>
+        scope.StreamAsync(Handle, "watch", "title", static (ref r) => JsJson.ReadOpt(ref r, JsJson.ReadString), null, null, cancellationToken);
 
     public Task<IAsyncDisposable> WatchSelectedAsync(JsScope scope, Action<Opt<Marker>> handler) =>
-        scope.SubscribeAsync(Handle, "watch", "selected", (ref r) => JsJson.ReadOpt(ref r, scope.Read<Marker>), handler);
+        scope.SubscribeAsync(Handle, "watch", "selected", (ref r) => JsJson.ReadOpt(ref r, scope.Read<Marker>), handler, null, null);
+
+    public IAsyncEnumerable<Opt<Marker>> WatchSelectedStreamAsync(JsScope scope, CancellationToken cancellationToken = default) =>
+        scope.StreamAsync(Handle, "watch", "selected", (ref r) => JsJson.ReadOpt(ref r, scope.Read<Marker>), null, null, cancellationToken);
 
     public new async Task<MapViewSnapshot> SnapshotAsync() =>
         (await Realm.CallAsync(JsOp.Snapshot(Handle), MapViewSnapshot.Read))!;

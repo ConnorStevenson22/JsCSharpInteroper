@@ -2,6 +2,8 @@
 #nullable enable
 
 using System;
+using System.Collections.Generic;
+using System.Threading;
 using System.Threading.Tasks;
 using Interoper;
 
@@ -21,7 +23,10 @@ public sealed partial class Line : Shape
         Realm.SendAsync(JsOp.Set(Handle, "path", w => JsJson.WriteArray(w, value, static (w1, v1) => JsJson.WriteArray(w1, v1, JsJson.WriteNumber))));
 
     public Task<IAsyncDisposable> WatchPathAsync(JsScope scope, Action<double[][]> handler) =>
-        scope.SubscribeAsync(Handle, "watch", "path", static (ref r) => JsJson.ReadArray(ref r, static (ref r1) => JsJson.ReadArray(ref r1, JsJson.ReadNumber)), handler);
+        scope.SubscribeAsync(Handle, "watch", "path", static (ref r) => JsJson.ReadArray(ref r, static (ref r1) => JsJson.ReadArray(ref r1, JsJson.ReadNumber)), handler, null, null);
+
+    public IAsyncEnumerable<double[][]> WatchPathStreamAsync(JsScope scope, CancellationToken cancellationToken = default) =>
+        scope.StreamAsync(Handle, "watch", "path", static (ref r) => JsJson.ReadArray(ref r, static (ref r1) => JsJson.ReadArray(ref r1, JsJson.ReadNumber)), null, null, cancellationToken);
 
     public new async Task<LineSnapshot> SnapshotAsync() =>
         (await Realm.CallAsync(JsOp.Snapshot(Handle), LineSnapshot.Read))!;

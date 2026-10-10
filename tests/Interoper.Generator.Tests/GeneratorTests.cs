@@ -165,6 +165,65 @@ public sealed class GeneratorTests
         Assert.DoesNotContain("Watch", File(result, "Graphic.cs"));
     }
 
+    [Theory] // R24
+    [InlineData(Api.Sync)]
+    [InlineData(Api.Async)]
+    public void AnEventPayloadIsARecordWithoutMethodsAndItsMembersAreTheDefaultProjection(Api api)
+    {
+        const string Number = """{ "kind": "primitive", "name": "number" }""";
+        const string Void = """{ "kind": "primitive", "name": "void" }""";
+        var result = Generate(new Profile { Package = "@acme/maps", Events = new(Subscribe: "on"), Watch = "watch" }, api, ("a.js", $$"""
+            { "kind": "interface", "name": "BaseEvent", "members": [
+              { "kind": "property", "name": "time", "type": {{Number}} },
+              { "kind": "method", "name": "stopPropagation", "signatures": [{ "params": [], "returns": {{Void}} }] }] },
+            { "kind": "interface", "name": "PointerEvent", "extends": [{ "kind": "ref", "name": "BaseEvent", "module": "@acme/maps/a.js" }], "members": [
+              { "kind": "property", "name": "kind", "type": { "kind": "literal", "value": "pointer" } },
+              { "kind": "property", "name": "x", "type": {{Number}} },
+              { "kind": "method", "name": "preventDefault", "signatures": [{ "params": [], "returns": {{Void}} }] }] },
+            { "kind": "class", "name": "Layer", "members": [
+              { "kind": "property", "name": "opacity", "type": {{Number}} },
+              { "kind": "method", "name": "watch", "signatures": [{ "params": [], "returns": {{Void}} }] }],
+              "events": [{ "name": "pointer", "type": { "kind": "ref", "name": "PointerEvent", "module": "@acme/maps/a.js" } }] }
+            """));
+
+        Assert.Contains("public required double X { get; init; }", File(result, "PointerEvent.cs"));
+        Assert.DoesNotContain("PreventDefault", File(result, "PointerEvent.cs"));
+        Assert.DoesNotContain("StopPropagation", File(result, "BaseEvent.cs"));
+        Assert.Equal(
+        [
+            "IOP2007 BaseEvent.stopPropagation: skipped: a method of an event payload (R24)",
+            "IOP2007 PointerEvent.preventDefault: skipped: a method of an event payload (R24)",
+        ], result.Diagnostics.Select(d => d.ToString()));
+
+        // The record's wire members, constants and bases' members included, are the fields JS sends by default.
+        var layer = File(result, "Layer.cs");
+        const string Fields = """["kind", "x", "time"]""";
+        if (api == Api.Sync)
+        {
+            Assert.Contains($"""
+                    public IDisposable OnPointer(JsScope scope, Action<PointerEvent> handler, EventOptions? options = null) =>
+                        scope.Subscribe(Handle, "on", "pointer", PointerEvent.Read, handler, options, {Fields});
+                """, layer);
+            Assert.Contains("""
+                    public IDisposable WatchOpacity(JsScope scope, Action<double> handler) =>
+                        scope.Subscribe(Handle, "watch", "opacity", JsJson.ReadNumber, handler, null, null);
+                """, layer);
+            Assert.DoesNotContain("StreamAsync", layer);
+            return;
+        }
+        Assert.Contains($"""
+                public Task<IAsyncDisposable> OnPointerAsync(JsScope scope, Action<PointerEvent> handler, EventOptions? options = null) =>
+                    scope.SubscribeAsync(Handle, "on", "pointer", PointerEvent.Read, handler, options, {Fields});
+
+                public IAsyncEnumerable<PointerEvent> OnPointerStreamAsync(JsScope scope, EventOptions? options = null, CancellationToken cancellationToken = default) =>
+                    scope.StreamAsync(Handle, "on", "pointer", PointerEvent.Read, options, {Fields}, cancellationToken);
+            """, layer);
+        Assert.Contains("""
+                public IAsyncEnumerable<double> WatchOpacityStreamAsync(JsScope scope, CancellationToken cancellationToken = default) =>
+                    scope.StreamAsync(Handle, "watch", "opacity", JsJson.ReadNumber, null, null, cancellationToken);
+            """, layer);
+    }
+
     [Theory] // R27
     [InlineData(Api.Sync)]
     [InlineData(Api.Async)]
