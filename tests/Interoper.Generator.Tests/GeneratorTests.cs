@@ -360,33 +360,33 @@ public sealed class GeneratorTests
     [InlineData(Api.Async)]
     public void ATypeInAnotherNamespaceIsGloballyQualified(Api api)
     {
-        var result = Generate(api, ("geometry/Geometry.js", """
-            { "kind": "class", "name": "Geometry", "abstract": true },
-            { "kind": "interface", "name": "Extent", "members": [{ "kind": "property", "name": "width", "type": { "kind": "primitive", "name": "number" } }] },
-            { "kind": "class", "name": "Polyline", "extends": { "kind": "ref", "name": "Geometry", "module": "@acme/maps/geometry/Geometry.js" }, "members": [
-              { "kind": "property", "name": "extent", "type": { "kind": "ref", "name": "Extent", "module": "@acme/maps/geometry/Geometry.js" } }] }
+        var result = Generate(api, ("figure/Figure.js", """
+            { "kind": "class", "name": "Figure", "abstract": true },
+            { "kind": "interface", "name": "Frame", "members": [{ "kind": "property", "name": "width", "type": { "kind": "primitive", "name": "number" } }] },
+            { "kind": "class", "name": "Trail", "extends": { "kind": "ref", "name": "Figure", "module": "@acme/maps/figure/Figure.js" }, "members": [
+              { "kind": "property", "name": "frame", "type": { "kind": "ref", "name": "Frame", "module": "@acme/maps/figure/Figure.js" } }] }
             """), ("View.js", """
             { "kind": "class", "name": "View", "members": [
-              { "kind": "property", "name": "extent", "type": { "kind": "ref", "name": "Extent", "module": "@acme/maps/geometry/Geometry.js" } },
-              { "kind": "method", "name": "goTo", "signatures": [{ "params": [{ "name": "target", "type": { "kind": "ref", "name": "Geometry", "module": "@acme/maps/geometry/Geometry.js" } }],
+              { "kind": "property", "name": "frame", "type": { "kind": "ref", "name": "Frame", "module": "@acme/maps/figure/Figure.js" } },
+              { "kind": "method", "name": "goTo", "signatures": [{ "params": [{ "name": "target", "type": { "kind": "ref", "name": "Figure", "module": "@acme/maps/figure/Figure.js" } }],
                 "returns": { "kind": "primitive", "name": "void" } }] }] }
             """));
 
-        Assert.Equal(["Geometry/Geometry.cs", "Geometry/GeometrySnapshot.cs", "Geometry/Extent.cs", "Geometry/Polyline.cs", "Geometry/PolylineSnapshot.cs",
+        Assert.Equal(["Figure/Figure.cs", "Figure/FigureSnapshot.cs", "Figure/Frame.cs", "Figure/Trail.cs", "Figure/TrailSnapshot.cs",
             "View.cs", "ViewSnapshot.cs", "Maps.cs", "maps.meta.js"], result.Files.Select(f => f.Path));
-        // In namespace Acme.Maps.Geometry, `Geometry` alone would be the class, so another namespace's types are qualified.
+        // In namespace Acme.Maps.Figure, `Figure` alone would be the class, so another namespace's types are qualified.
         var view = File(result, "View.cs");
         Assert.Contains("namespace Acme.Maps;", view);
-        Assert.Contains("global::Acme.Maps.Geometry.Extent.Read", view);
-        Assert.Contains("global::Acme.Maps.Geometry.Geometry target", view);
-        Assert.Contains("public global::Interoper.Opt<global::Acme.Maps.Geometry.Extent> Extent { get; init; }", File(result, "ViewSnapshot.cs"));
+        Assert.Contains("global::Acme.Maps.Figure.Frame.Read", view);
+        Assert.Contains("global::Acme.Maps.Figure.Figure target", view);
+        Assert.Contains("public global::Interoper.Opt<global::Acme.Maps.Figure.Frame> Frame { get; init; }", File(result, "ViewSnapshot.cs"));
         // A type in the same namespace keeps its plain name; the registry is in the root namespace.
-        var polyline = File(result, "Geometry/Polyline.cs");
-        Assert.Contains("namespace Acme.Maps.Geometry;", polyline);
-        Assert.Contains("public sealed partial class Polyline : Geometry", polyline);
-        Assert.Contains("global::Interoper.JsOp.Create(global::Acme.Maps.Maps.PolylineId, ", polyline);
-        Assert.Contains("Extent.Read", polyline);
-        Assert.DoesNotContain("global::Acme.Maps.Geometry.Extent", polyline);
+        var trail = File(result, "Figure/Trail.cs");
+        Assert.Contains("namespace Acme.Maps.Figure;", trail);
+        Assert.Contains("public sealed partial class Trail : Figure", trail);
+        Assert.Contains("global::Interoper.JsOp.Create(global::Acme.Maps.Maps.TrailId, ", trail);
+        Assert.Contains("Frame.Read", trail);
+        Assert.DoesNotContain("global::Acme.Maps.Figure.Frame", trail);
         Assert.Empty(result.Diagnostics);
     }
 
