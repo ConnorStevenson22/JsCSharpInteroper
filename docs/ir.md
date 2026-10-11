@@ -66,7 +66,7 @@ The custom elements of the listed packages' Custom Elements Manifests (`customEl
 ```
 
 - An element's tag is its declaration's `tagName`, or the name of a `custom-element-definition` export of it.
-- **Attributes** are `{ name, property?, type?, doc? }`. `property` names the class member the attribute reflects, which has the type; `type` is given only when there's no `property`.
+- **Attributes** are `{ name, property?, type?, doc? }`. `property` names the class member the attribute reflects, which has the property's type; `type` is the manifest's type for the attribute, which can be narrower (a `string` attribute over a union property).
 - **Events** are `{ name, detail?, type?, doc? }`. A `CustomEvent<T>` gives `detail` (T), and so does a type that isn't an `Event`, because some manifests give the detail's type; any other event type is `type`. Neither means a plain `Event`.
 - **Slots** are `{ name, doc? }`; the default slot's name is `""`.
 - **Docs** come from the manifest: `summary` is its `description` (or `summary`), `default` an attribute's default (a JS expression), `deprecated` as for JSDoc.

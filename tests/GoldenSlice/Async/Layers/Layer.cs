@@ -3,7 +3,7 @@
 
 namespace GoldenSlice.Async.Layers;
 
-public abstract partial class Layer : global::GoldenSlice.Async.Observable
+public partial class Layer : global::GoldenSlice.Async.Observable
 {
     internal Layer(global::Interoper.JsRealm realm, int handle) : base(realm, handle) { }
 

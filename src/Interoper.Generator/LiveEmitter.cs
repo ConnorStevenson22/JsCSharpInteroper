@@ -94,7 +94,9 @@ internal sealed class LiveEmitter
         var snapshot = types.SnapshotName(c);
         var snapshotKey = CsType.Record(new(ns, snapshot)).FullName;
         self = types.Self(c);
-        var modifier = types.IsClosed(c) ? "closed " : c.Abstract ? "abstract " : types.HasSubclasses(c) ? "" : "sealed ";
+        // An abstract entity class isn't abstract in C#: JS can hand back an instance whose class id is its own (an element's
+        // class, by its tag; a subclass that keeps its runtime class name), so the registry makes it (design §2).
+        var modifier = types.IsClosed(c) ? "closed " : types.HasSubclasses(c) ? "" : "sealed ";
         taken.UnionWith([name, "Realm", "Handle", "Write", Mode("Snapshot"), Mode("Apply")]);
         if (!async)
         {
@@ -273,13 +275,21 @@ internal sealed class LiveEmitter
 
     /// <summary>
     /// R24: an event, with its <c>EventOptions</c>, or a property watch; the scope owns the subscription. An event whose
-    /// payload is a data record sends only the record's members unless the options name others. Async mode adds a stream
-    /// of each.
+    /// payload is a data record sends only the record's members unless the options name others, and one without a payload
+    /// (<c>void</c>) has a parameterless handler and sends nothing. Async mode adds a stream of each that has a payload.
     /// </summary>
     private void Subscription(string owner, string name, string method, string js, IrType payload, string subject, bool optional, bool isEvent)
     {
-        var value = Slot(payload, Naming.OwnedType(owner, js), owner, optional);
         var (type, subscribe) = async ? ("global::System.Threading.Tasks.Task<global::System.IAsyncDisposable>", "SubscribeAsync") : ("global::System.IDisposable", "Subscribe");
+        if (isEvent && TypeMap.IsVoid(payload))
+        {
+            // No payload: a parameterless handler, and no stream, since it would have nothing to yield.
+            var handler = Claim(Mode(name), subject);
+            Expression($"public {Declare(handler, ["global::Interoper.JsScope", "global::System.Action", "global::Interoper.EventOptions"])}{type} {handler}(global::Interoper.JsScope scope, global::System.Action handler, global::Interoper.EventOptions? options = null)",
+                $"scope.{subscribe}(Handle, {Syntax.Literal(method)}, {Syntax.Literal(js)}, handler, options)");
+            return;
+        }
+        var value = Slot(payload, Naming.OwnedType(owner, js), owner, optional);
         var fields = isEvent && types.Projection(payload) is { } projection ? $"[{string.Join(", ", projection.Select(Syntax.Literal))}]" : "null";
         var (options, optionsKey, sent) = isEvent ? (", global::Interoper.EventOptions? options = null", new[] { "global::Interoper.EventOptions" }, "options") : ("", [], "null");
         var target = $"Handle, {Syntax.Literal(method)}, {Syntax.Literal(js)}, {value.Reader}";

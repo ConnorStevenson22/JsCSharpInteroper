@@ -472,7 +472,7 @@ function readManifest(dir, pkg) {
   };
   for (const { decl, type } of elements) {
     add(type);
-    for (const a of decl.attributes ?? []) if (!a.fieldName) add(a.type);
+    for (const a of decl.attributes ?? []) add(a.type);
     for (const e of decl.events ?? []) add(e.type);
   }
   return { elements, types };

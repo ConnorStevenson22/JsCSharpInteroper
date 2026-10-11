@@ -195,10 +195,11 @@ test("design §2: custom elements come from the manifest, linked to the typings"
   const [element] = ir.elements;
   assert.deepEqual(element.class, ref("demo-map", "DemoMapElement"));
   assert.deepEqual(element.doc, { summary: "A map view as an element." });
-  // Attributes link to the class's properties, which carry the types (R9: `basemap` is a `Basemap`).
+  // Attributes link to the class's properties (R9: `basemap` is a `Basemap`), and keep the manifest's own type, which
+  // can be narrower than the property's (R28: a primitive one renders as an HTML attribute).
   assert.deepEqual(element.attributes, [
-    { name: "basemap", property: "basemap", doc: { default: '"plain"' } },
-    { name: "zoom", property: "zoom", doc: { default: "1" } },
+    { name: "basemap", property: "basemap", type: ref("MapView", "Basemap"), doc: { default: '"plain"' } },
+    { name: "zoom", property: "zoom", type: num, doc: { default: "1" } },
   ]);
   assert.deepEqual(member("demo-map", "DemoMapElement", "basemap").type, ref("MapView", "Basemap"));
   // Event types are resolved by the checker; a CustomEvent<T> gives its detail type.

@@ -72,6 +72,10 @@ internal sealed class TypeMap
     private readonly Dictionary<TypeName, DataType?> unions = [];
     private readonly Dictionary<Declaration, IReadOnlyList<Field>> fields = new(ReferenceEqualityComparer.Instance);
     private readonly List<DataType> owned = [];
+    /// <summary>R11: each inline object type's record (unnamed until it's mapped), and the names of those mapped, in order.</summary>
+    private readonly Dictionary<ObjectType, AliasDeclaration> bags = new(ReferenceEqualityComparer.Instance);
+    private readonly Dictionary<Declaration, TypeName> inline = new(ReferenceEqualityComparer.Instance);
+    private readonly List<Declaration> records = [];
     private readonly HashSet<ClassDeclaration> watchable = new(ReferenceEqualityComparer.Instance);
     private readonly Dictionary<Declaration, bool> scoped = new(ReferenceEqualityComparer.Instance);
     private readonly HashSet<Declaration> scoping = new(ReferenceEqualityComparer.Instance);
@@ -200,7 +204,7 @@ internal sealed class TypeMap
     };
 
     /// <summary>R27: the namespace of a declaration's types: the root namespace plus its module's folders.</summary>
-    public string Namespace(Declaration declaration) => Namespace(moduleOf[declaration]);
+    public string Namespace(Declaration declaration) => inline.TryGetValue(declaration, out var name) ? name.Namespace : Namespace(moduleOf[declaration]);
 
     /// <summary>R27: the namespace of a module's types: the root namespace, another package's name, and its folders.</summary>
     public string Namespace(string module) => modules.GetValueOrDefault(module)?.Package is { } other
@@ -221,8 +225,8 @@ internal sealed class TypeMap
         : null;
 
     /// <summary>The type a declaration becomes, in its namespace (R27).</summary>
-    public TypeName Name(Declaration declaration) =>
-        new(Namespace(declaration), renamed.GetValueOrDefault((moduleOf[declaration], declaration.Name)) ?? Naming.Type(declaration.Name));
+    public TypeName Name(Declaration declaration) => inline.TryGetValue(declaration, out var name) ? name
+        : new(Namespace(declaration), renamed.GetValueOrDefault((moduleOf[declaration], declaration.Name)) ?? Naming.Type(declaration.Name));
 
     /// <summary>A class's snapshot record (R18), in the class's namespace.</summary>
     public TypeName Snapshot(ClassDeclaration c) => new(Namespace(c), SnapshotName(c));
@@ -235,6 +239,9 @@ internal sealed class TypeMap
 
     /// <summary>Anonymous enums and unions named after their owner (R27), in the order they were met.</summary>
     public IReadOnlyList<DataType> Owned => owned;
+
+    /// <summary>The records of inline object types (R11), named after their owner (R27), in the order they were met.</summary>
+    public IReadOnlyList<Declaration> Records => records;
 
     public string SnapshotName(ClassDeclaration c) => Name(c).Name + "Snapshot";
 
@@ -338,6 +345,8 @@ internal sealed class TypeMap
         TupleType { Required: null, Rest: false, Elements.Count: > 0 } t
             when t.Elements.Select(e => Map(e, owner).FullName).Distinct().Count() == 1 => CsType.Array(Map(t.Elements[0], owner)), // R5
         UnionType u when Union(owner, u) is { } union => Own(union),
+        UnionType u when Kept(u) is [var single] => Map(single, owner), // R2: the one case left in the selection
+        ObjectType o => CsType.Record(Name(Inline(o, owner)), scoped: IsScoped(Bag(o))), // R11
         _ => throw Unreachable(owner.Name),
     };
 
@@ -397,7 +406,7 @@ internal sealed class TypeMap
         ClassDeclaration c => CsType.Live(Name(c), [.. args.Select(a => Map(a, owner))]),
         EnumDeclaration e => TypeOf(Enum(e)),
         AliasDeclaration a when Union(Name(a), a.Type) is { } union => TypeOf(union),
-        AliasDeclaration a => Map(Flatten(a.Type).Single(t => !IsNullish(t)), Name(a)),
+        AliasDeclaration a when Kept(a.Type) is [var single] => Map(single, Name(a)), // R2: one type, or one case left in the selection
         _ => throw Unreachable(declaration.Name),
     };
 
@@ -432,7 +441,7 @@ internal sealed class TypeMap
         }
         var all = Values(type);
         // R2: a union drops its cases outside the selection.
-        var flat = all.Where(t => !IsUnselected(t)).ToList();
+        var flat = Kept(type);
         foreach (var dropped in all.Except(flat).OfType<RefType>())
         {
             diagnostics.Add(new(Diagnostic.NotSupported, name.Name, $"case `{dropped.Name}` dropped: a class outside the selection (R2)"));
@@ -444,7 +453,7 @@ internal sealed class TypeMap
                 EnumMembers(name.Name, literals, literals.Select(v => v.GetString()!)), literals.Count > MaxEnumMembers || flat.Any(IsOpenString))
             : flat.All(t => t is LiteralType { Value.ValueKind: JsonValueKind.Number }) ? new EnumType(name,
                 EnumMembers(name.Name, literals, literals.Select(v => v.GetRawText())), Extensible: false)
-            : new UnionStruct(name, Cases(name, flat),
+            : new UnionStruct(name, Cases(name, flat, type is UnionType d ? d.Discriminant : null),
                 type is UnionType u && u.Types.Count(t => !IsNullish(t)) == all.Count ? u.Discriminant : null,
                 WrittenOnly(type, all, flat), Dropped: flat.Count < all.Count);
         unions[name] = result;
@@ -493,19 +502,58 @@ internal sealed class TypeMap
         }
     }
 
-    /// <summary>The cases of a union, after mapping (R5: one per C# type).</summary>
-    private List<UnionCase> Cases(TypeName name, List<IrType> types)
+    /// <summary>
+    /// The cases of a union, after mapping (R5: one per C# type). An inline object case's record is named after the
+    /// union and its discriminant's value (<c>FeatureShapePoly</c>), or its position (<c>FeatureShape2</c>, R27).
+    /// </summary>
+    private List<UnionCase> Cases(TypeName name, List<IrType> types, string? discriminant)
     {
         var cases = new List<UnionCase>();
-        foreach (var type in types)
+        foreach (var (type, i) in types.Select((t, i) => (t, i)))
         {
-            var mapped = Map(type, name);
+            var mapped = Map(type, type is ObjectType o ? name with { Name = name.Name + CaseName(o, discriminant, i) } : name);
             if (cases.All(c => c.Type.FullName != mapped.FullName))
             {
-                cases.Add(new(mapped, type is RefType r ? Find(r) : null));
+                cases.Add(new(mapped, type is RefType r ? Find(r) : type is ObjectType bag ? Bag(bag) : null));
             }
         }
         return cases;
+    }
+
+    private static string CaseName(ObjectType o, string? discriminant, int index) =>
+        o.Members.OfType<PropertyMember>().FirstOrDefault(p => p.Name == discriminant)?.Type is LiteralType { Value.ValueKind: JsonValueKind.String } value &&
+        Naming.Pascal(value.Value.GetString()!) is { Length: > 0 } pascal ? pascal : (index + 1).ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+    /// <summary>R11: an inline object type as a record, unnamed: what the mapping checks look at.</summary>
+    private AliasDeclaration Bag(ObjectType o)
+    {
+        if (!bags.TryGetValue(o, out var bag))
+        {
+            bags[o] = bag = new AliasDeclaration { Name = "", Type = o };
+        }
+        return bag;
+    }
+
+    /// <summary>
+    /// R11: an inline object type's record, named after its owner (R27) where it's first mapped; a name another inline
+    /// type has taken gets a numeric suffix. Its members are mapped now, so the types they own are met before it's emitted.
+    /// </summary>
+    private AliasDeclaration Inline(ObjectType o, TypeName owner)
+    {
+        var bag = Bag(o);
+        if (inline.ContainsKey(bag))
+        {
+            return bag;
+        }
+        var name = owner;
+        for (var n = 2; inline.ContainsValue(name); n++)
+        {
+            name = owner with { Name = owner.Name + n };
+        }
+        inline[bag] = name;
+        records.Add(bag);
+        Fields(bag);
+        return bag;
     }
 
     /// <summary>R6: a union's members, with the members of union aliases in their place.</summary>
@@ -519,12 +567,18 @@ internal sealed class TypeMap
     /// <summary>A union's members after R6, without null and undefined.</summary>
     private List<IrType> Values(IrType type) => [.. Flatten(type).Where(t => !IsNullish(t))];
 
+    /// <summary>R2: a union's members after R6 that it keeps: without null, undefined and the classes outside the selection.</summary>
+    private List<IrType> Kept(IrType type) => [.. Values(type).Where(t => !IsUnselected(t))];
+
     /// <summary>R10: <c>string &amp; {}</c>, which keeps a literal union open-ended.</summary>
     private static bool IsOpenString(IrType type) =>
         type is IntersectionType { Types.Count: 2 } i && i.Types.Contains(new PrimitiveType("string")) &&
         i.Types.Any(t => t is ObjectType { Members.Count: 0, IndexSignatures.Count: 0, CallSignatures.Count: 0, ConstructSignatures.Count: 0 });
 
     private static bool IsNullish(IrType type) => type is PrimitiveType { Name: "null" or "undefined" };
+
+    /// <summary>R24: an event payload that is none: <c>void</c>, <c>undefined</c> or <c>null</c>, or a union of them.</summary>
+    public static bool IsVoid(IrType type) => type is PrimitiveType { Name: "void" } || IsNullish(type) || type is UnionType u && u.Types.All(IsVoid);
 
     /// <summary>
     /// R2: a union that has an entity case, which needs a scope to be read, or that dropped a case outside the selection
@@ -537,8 +591,13 @@ internal sealed class TypeMap
     private static TypeParameterType? TypeParameterIn(IrType type) =>
         type as TypeParameterType ?? Selection.Children(type).Select(TypeParameterIn).FirstOrDefault(t => t is not null);
 
-    /// <summary>A class outside the selection: a union drops it as a case (R2).</summary>
-    internal bool IsUnselected(IrType type) => type is RefType { Module: not null } r && Find(r) is ClassDeclaration c && !classes.Contains(c);
+    /// <summary>A class outside the selection, or an alias of one: a union drops it as a case (R2).</summary>
+    internal bool IsUnselected(IrType type) => type is RefType { Module: not null } r && Find(r) switch
+    {
+        ClassDeclaration c => !classes.Contains(c),
+        AliasDeclaration { Type: not (ObjectType or UnionType) } a => IsUnselected(a.Type),
+        _ => false,
+    };
 
     /// <summary>Whether a type has JS null in it, which a missing callback is sent as; otherwise it's undefined (R21).</summary>
     public bool HasNull(IrType type) => Flatten(type).Any(t => t is PrimitiveType { Name: "null" });
@@ -683,6 +742,7 @@ internal sealed class TypeMap
         UnionType u => u.Types.Any(UsesEntity),
         ArrayType a => UsesEntity(a.Element),
         TupleType t => t.Elements.Any(UsesEntity),
+        ObjectType o => IsScoped(Bag(o)), // R11
         _ => false,
     };
 
@@ -857,7 +917,10 @@ internal sealed class TypeMap
         LiteralType => new("a literal here"),
         ThisType => new("`this` outside a live member"),
         RefType r => new($"`{r.Name}` here"),
-        ObjectType => new("an inline object type"),
+        ObjectType { CallSignatures.Count: > 0 } or ObjectType { ConstructSignatures.Count: > 0 } => new("a callable object"),
+        ObjectType o when o.Members.OfType<MethodMember>().FirstOrDefault() is { } method => new($"method `{method.Name}`"),
+        ObjectType o when !written && HoldsElement(Bag(o)) => new("an inline record that holds a DOM element JS can't return (R13)"),
+        ObjectType o => RecordProblem(o.IndexSignatures.Count, o.Members.OfType<PropertyMember>()), // R11, R15
         TupleType => new("a tuple with optional or rest elements"),
         IntersectionType => new("an intersection"),
         _ => new($"the IR type {type.GetType().Name}"),
@@ -876,7 +939,8 @@ internal sealed class TypeMap
     /// <summary>
     /// What <see cref="Union"/> and the union reader (R19) refuse: a literal next to other types, a value-type case (R2
     /// keeps unions non-boxing), a non-integer number, a discriminant that isn't a string on every case, or cases it
-    /// can't tell apart, which is IOP2003. Any union drops its cases outside the selection. A union that is only
+    /// can't tell apart, which is IOP2003. Any union drops its cases outside the selection: with one left it's that case,
+    /// and with none it can't be mapped. A union that is only
     /// <paramref name="written"/> (a parameter's, R2) may have an entity case, which needs no scope to be written, and may
     /// fail R19 when it dropped a case; it's never read then.
     /// </summary>
@@ -885,7 +949,15 @@ internal sealed class TypeMap
         var all = Values(type);
         var label = name is null ? "a union" : $"the union `{name}`";
         var ambiguous = name is null ? "an ambiguous union" : $"the ambiguous union `{name}`";
-        var flat = all.Where(t => !IsUnselected(t)).ToList(); // as Union() drops them
+        var flat = Kept(type); // as Union() drops them
+        if (flat.Count == 0)
+        {
+            return new($"{label}, whose cases are all outside the selection");
+        }
+        if (flat.Count == 1)
+        {
+            return MapProblem(flat[0], written); // R2: the one case left, as Map() narrows to it
+        }
         if (flat.All(t => t is LiteralType { Value.ValueKind: JsonValueKind.String } || IsOpenString(t)))
         {
             return null; // R9, R10
@@ -897,10 +969,6 @@ internal sealed class TypeMap
         if (flat.Any(t => t is LiteralType))
         {
             return new($"{label} of a literal and other types");
-        }
-        if (flat.Count < 2)
-        {
-            return new($"{label}, whose other cases are outside the selection");
         }
         var cases = new List<(string? Name, string? FullName, JsonKind Json, Declaration? Declaration)>();
         foreach (var t in flat)
@@ -931,7 +999,7 @@ internal sealed class TypeMap
             }
             if (NameOf(t, full: true) is not { } caseName || cases.All(c => c.FullName != caseName)) // R5, as Cases dedupes
             {
-                cases.Add((NameOf(t), NameOf(t, full: true), JsonOf(t), t is RefType r ? Find(r) : null));
+                cases.Add((NameOf(t), NameOf(t, full: true), JsonOf(t), t is RefType r ? Find(r) : t is ObjectType o ? Bag(o) : null));
             }
         }
         if (flat.Any(UsesEntity))

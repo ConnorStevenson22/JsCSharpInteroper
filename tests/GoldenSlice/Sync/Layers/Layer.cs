@@ -3,7 +3,7 @@
 
 namespace GoldenSlice.Sync.Layers;
 
-public abstract partial class Layer : global::GoldenSlice.Sync.Observable
+public partial class Layer : global::GoldenSlice.Sync.Observable
 {
     internal Layer(global::Interoper.JsRealm realm, int handle) : base(realm, handle) { }
 

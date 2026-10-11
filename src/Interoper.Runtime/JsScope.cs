@@ -330,6 +330,23 @@ public sealed class JsScope(JsRealm realm) : IDisposable, IAsyncDisposable
         return new Subscription(this, subscription, listener);
     }
 
+    /// <summary>
+    /// Subscribes to an event without a payload (sync mode, R24): <paramref name="handler"/> takes nothing, and nothing of
+    /// the event crosses the wire unless the options name fields; see <see cref="Subscribe{T}"/>.
+    /// </summary>
+    public IDisposable Subscribe(int handle, string method, string name, Action handler, EventOptions? options) =>
+        Subscribe(handle, method, name, Ignore, _ => handler(), options, []);
+
+    /// <summary>Subscribes to an event without a payload through the async seam (async mode); see <see cref="Subscribe(int, string, string, Action, EventOptions?)"/>.</summary>
+    public Task<IAsyncDisposable> SubscribeAsync(int handle, string method, string name, Action handler, EventOptions? options) =>
+        SubscribeAsync(handle, method, name, Ignore, _ => handler(), options, []);
+
+    private static bool Ignore(ref Utf8JsonReader reader)
+    {
+        reader.Skip();
+        return true;
+    }
+
     /// <summary>Subscribes through the async seam (async mode); see <see cref="Subscribe{T}"/>.</summary>
     public Task<IAsyncDisposable> SubscribeAsync<T>(int handle, string method, string name, JsonRead<T> read, Action<T> handler,
         EventOptions? options, IReadOnlyList<string>? fields) =>

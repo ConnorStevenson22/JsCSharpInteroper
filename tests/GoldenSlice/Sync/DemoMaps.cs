@@ -28,6 +28,7 @@ public static partial class DemoMaps
         .Add(ObservableId, static (realm, handle) => new Observable(realm, handle))
         .Add(EmitterId, static (realm, handle) => new Emitter(realm, handle))
         .Add(DemoMapElementId, static (realm, handle) => new DemoMapElement(realm, handle))
+        .Add(LayerId, static (realm, handle) => new global::GoldenSlice.Sync.Layers.Layer(realm, handle))
         .Add(TileLayerId, static (realm, handle) => new global::GoldenSlice.Sync.Layers.TileLayer(realm, handle))
         .Add(PinId, static (realm, handle) => new Pin(realm, handle))
         .Preload("@acme/demo-maps/geometry.js", "@acme/demo-maps/MapView.js", "@acme/demo-maps/Marker.js", "@acme/demo-maps/core.js", "@acme/demo-maps/demo-map.js", "@acme/demo-maps/layers/Layer.js", "@acme/demo-maps/layers/TileLayer.js", "@acme/demo-maps/pins.js", "@acme/demo-maps/measure.js", "@acme/demo-maps/ops/a.js", "@acme/demo-maps/ops/b.js", "@acme/demo-maps/styles.js");

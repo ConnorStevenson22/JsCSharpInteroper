@@ -16,8 +16,8 @@ internal static class MetadataEmitter
         [.. selection.Declarations.Where(s => s.Declaration is ClassDeclaration).OrderBy(s => !types.IsValueLike((ClassDeclaration)s.Declaration))];
 
     /// <summary>
-    /// The class id constants and the registry of live types (R19 step 1); an abstract class has none, and nor has a
-    /// generic one, whose readers make it (mapping §2). Sync mode preloads the modules of its classes and module functions
+    /// The class id constants and the registry of live types (R19 step 1), an abstract entity class's too; a closed one
+    /// has none (it's read by value, R16), and nor has a generic one, whose readers make it (mapping §2). Sync mode preloads the modules of its classes and module functions
     /// and custom elements (design §3.5, R28): the modules they're imported from, which for an internal module's
     /// declarations are the modules that re-export them; one that can't be imported has none.
     /// </summary>
@@ -35,7 +35,7 @@ internal static class MetadataEmitter
             {
                 w.Line();
             }
-            var calls = classes.Select(s => (ClassDeclaration)s.Declaration).Where(c => !c.Abstract && c.TypeParameters.Count == 0)
+            var calls = classes.Select(s => (ClassDeclaration)s.Declaration).Where(c => !types.IsClosed(c) && c.TypeParameters.Count == 0)
                 .Select(c => $".Add({types.ClassIdName(c)}, static (realm, handle) => new {types.Name(c).In(options.Namespace)}(realm, handle))").ToList();
             var modules = classes.Select(s => s.Declaration).Concat(functions.Select(s => s.Declaration)).Concat(elements.Select(e => e.Class))
                 .Select(types.Import).OfType<(string Module, string Export)>().Select(i => i.Module).Distinct().ToList();

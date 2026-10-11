@@ -179,13 +179,18 @@ internal sealed class ComponentEmitter
                 .Select(p => (p, k)));
         }
         var result = new List<Parameter>();
-        Parameter Property(PropertyMember p, ClassDeclaration owner, string? attribute)
+        Parameter Property(PropertyMember p, ClassDeclaration owner, ElementAttribute? attribute)
         {
             var type = p.WriteType ?? p.Type;
             var ownerName = types.Name(owner);
             var (mapped, nullable) = types.Slot(type, ownerName with { Name = Naming.OwnedType(ownerName.Name, p.Name, input: p.WriteType is not null) });
             mapped = mapped.In(ns);
-            return new(Claim(Naming.Pascal(p.Name), $"{component}.{p.Name}"), mapped, nullable || p.Optional, HasNull(type), p.Name, mapped.Fast is null ? null : attribute);
+            // A property of another type is still an HTML attribute when the manifest gives the attribute a primitive one.
+            if (mapped.Fast is null && attribute?.Type is PrimitiveType { Name: "string" or "number" or "boolean" } primitive)
+            {
+                (mapped, type) = (types.Slot(primitive, ownerName).Type, primitive);
+            }
+            return new(Claim(Naming.Pascal(p.Name), $"{component}.{p.Name}"), mapped, nullable || p.Optional, HasNull(type), p.Name, mapped.Fast is null ? null : attribute?.Name);
         }
         foreach (var a in s.Element.Attributes)
         {
@@ -193,7 +198,7 @@ internal sealed class ComponentEmitter
             {
                 if (properties.FirstOrDefault(x => x.Property.Name == name) is ({ } p, var owner) && result.All(r => r.Js != name))
                 {
-                    result.Add(Property(p, owner, a.Name));
+                    result.Add(Property(p, owner, a));
                 }
                 continue;
             }

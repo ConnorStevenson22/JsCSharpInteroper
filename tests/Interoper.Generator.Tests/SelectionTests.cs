@@ -164,9 +164,9 @@ public sealed class SelectionTests
         { "kind": "interface", "name": "Box", "typeParameters": [{ "name": "U" }], "members": [{ "kind": "property", "name": "items", "type": { "kind": "array", "element": { "kind": "typeParameter", "name": "U" } } }] }
         """,
         "IOP2007", "`Box` of a type that isn't an entity (§2)")]
-    [InlineData( // §2: a type the generator doesn't map
-        """{ "kind": "interface", "name": "T", "members": [{ "kind": "property", "name": "size", "type": { "kind": "object", "members": [] } }] }""",
-        "IOP2007", "an inline object type")]
+    [InlineData( // R11: an inline record, like a named one, has no index signature
+        """{ "kind": "interface", "name": "T", "members": [{ "kind": "property", "name": "size", "type": { "kind": "object", "indexSignatures": [{ "key": { "kind": "primitive", "name": "string" }, "type": { "kind": "primitive", "name": "number" } }] } }] }""",
+        "IOP2007", "an index signature")]
     [InlineData( // R19 step 2: the discriminant is read as a string
         """
         { "kind": "alias", "name": "T", "type": { "kind": "union", "discriminant": "kind", "types": [{ "kind": "ref", "name": "X", "module": "@acme/maps/a.js" }, { "kind": "ref", "name": "Y", "module": "@acme/maps/a.js" }] } },
@@ -240,6 +240,7 @@ public sealed class SelectionTests
         { "kind": "interface", "name": "Box", "typeParameters": [{ "name": "U", "default": { "kind": "primitive", "name": "any" } }], "members": [{ "kind": "property", "name": "items", "type": { "kind": "array", "element": { "kind": "typeParameter", "name": "U" } } }] },
         { "kind": "class", "name": "Layer" }
         """)]
+    [InlineData("""{ "kind": "interface", "name": "T", "members": [{ "kind": "property", "name": "size", "type": { "kind": "object", "members": [{ "kind": "property", "name": "w", "type": { "kind": "primitive", "name": "number" } }] } }] }""")] // R11
     [InlineData( // R16: a value-like class in a data record
         """
         { "kind": "interface", "name": "T", "members": [{ "kind": "property", "name": "at", "type": { "kind": "ref", "name": "Spot", "module": "@acme/maps/a.js" } }] },
@@ -338,6 +339,55 @@ public sealed class SelectionTests
         Assert.Contains("throw new global::System.Text.Json.JsonException(\"Spot is only written (R2)\")", result.Files.Single(f => f.Path == "Spot.cs").Text);
     }
 
+    [Fact] // R2, R6, R17: a union with one case left in the selection is that case; with none, what uses it is skipped
+    public void AUnionWithOneCaseLeftIsThatCaseAndOneWithNoneIsSkipped()
+    {
+        static string A(string name) => $$"""{ "kind": "ref", "name": "{{name}}", "module": "@acme/maps/a.js" }""";
+        static string B(string name) => $$"""{ "kind": "ref", "name": "{{name}}", "module": "@acme/maps/b.js" }""";
+        static string OrNull(string type) => $$"""{ "kind": "union", "types": [{{type}}, { "kind": "primitive", "name": "null" }] }""";
+        var ir = Ir($$"""
+            { "kind": "class", "name": "Layer" },
+            { "kind": "class", "name": "Sheet" },
+            { "kind": "alias", "name": "Glyph", "type": { "kind": "union", "types": [{{B("FlatGlyph")}}, {{B("DeepGlyph")}}, {{B("NamedGlyph")}}] } },
+            { "kind": "alias", "name": "Owner", "type": { "kind": "union", "types": [{{A("Layer")}}, {{B("TileLayer")}}, {{B("Folder")}}] } },
+            { "kind": "interface", "name": "Holder", "members": [{ "kind": "property", "name": "layer", "optional": true, "type": {{OrNull(A("Owner"))}} }] },
+            { "kind": "alias", "name": "LayerProps", "type": { "kind": "object", "members": [
+              { "kind": "property", "name": "owner", "optional": true, "type": { "kind": "union", "types": [{{A("Sheet")}}, {{B("Basemap")}}, {{B("Folder")}}, { "kind": "primitive", "name": "null" }] } }] } },
+            { "kind": "class", "name": "View", "members": [
+              { "kind": "property", "name": "glyph", "readonly": true, "type": {{A("Glyph")}} },
+              { "kind": "property", "name": "owner", "type": {{OrNull(A("Owner"))}} },
+              { "kind": "property", "name": "props", "type": {{A("LayerProps")}} },
+              { "kind": "property", "name": "holder", "type": {{A("Holder")}} }] }
+            """, $$"""
+            { "kind": "class", "name": "Dot" }, { "kind": "class", "name": "Star" }, { "kind": "class", "name": "Ring" }, { "kind": "class", "name": "Cross" },
+            { "kind": "class", "name": "TileLayer" }, { "kind": "class", "name": "Folder" }, { "kind": "class", "name": "Basemap" },
+            { "kind": "alias", "name": "FlatGlyph", "type": { "kind": "union", "types": [{{B("Dot")}}, {{B("Star")}}] } },
+            { "kind": "alias", "name": "DeepGlyph", "type": {{B("Cross")}} },
+            { "kind": "alias", "name": "NamedGlyph", "type": { "kind": "union", "types": [{{B("Ring")}}, {{B("DeepGlyph")}}] } }
+            """);
+        foreach (var api in new[] { Api.Sync, Api.Async }) // and the generator doesn't throw
+        {
+            var result = Generator.Generate(ir, new Profile { Package = "@acme/maps", Include = ["@acme/maps/a.js"] }, new(api, "Acme.Maps"));
+            const string None = "the union `Glyph`, whose cases are all outside the selection (in `Glyph`)";
+            Assert.Equal(
+            [
+                $"IOP2007 Glyph: skipped: uses {None}",
+                $"IOP2007 View.glyph: skipped: uses {None}",
+                "IOP2007 Owner: case `TileLayer` dropped: a class outside the selection (R2)",
+                "IOP2007 Owner: case `Folder` dropped: a class outside the selection (R2)",
+                "IOP2007 LayerPropsOwner: case `Basemap` dropped: a class outside the selection (R2)",
+                "IOP2007 LayerPropsOwner: case `Folder` dropped: a class outside the selection (R2)",
+            ], result.Diagnostics.Select(d => d.ToString()));
+            // Owner is Layer, and LayerProps.owner is Sheet: entities, so the records that hold them are read with a scope (R17).
+            Assert.Contains("public global::Interoper.Opt<Layer> Layer { get; init; }", File(result, "Holder.cs"));
+            Assert.Contains("public static Holder Read(ref global::System.Text.Json.Utf8JsonReader reader, global::Interoper.JsScope scope)", File(result, "Holder.cs"));
+            Assert.Contains("public global::Interoper.Opt<Sheet> Owner { get; init; }", File(result, "LayerProps.cs"));
+            Assert.Contains(api == Api.Sync ? "public global::Interoper.Opt<Layer> GetOwner(global::Interoper.JsScope scope) =>"
+                : "public global::System.Threading.Tasks.Task<global::Interoper.Opt<Layer>> GetOwnerAsync(global::Interoper.JsScope scope) =>", File(result, "View.cs"));
+            Assert.DoesNotContain(result.Files, f => f.Path is "Owner.cs" or "Glyph.cs");
+        }
+    }
+
     [Fact] // R22: a rest parameter is params T[], so one that isn't an array is dropped, as an optional one is
     public void ARestParameterThatIsntAnArrayIsDropped()
     {
@@ -371,6 +421,8 @@ public sealed class SelectionTests
     [Fact]
     public void TheProfileMustBeForTheIrsPackage() =>
         Assert.Throws<InvalidDataException>(() => Selection.Select(Fixture.Ir, Fixture.Profile with { Package = "@acme/maps" }));
+
+    private static string File(GeneratorResult result, string path) => result.Files.Single(f => f.Path == path).Text;
 
     private static Selection Select(params string[] include) => Selection.Select(Fixture.Ir, Fixture.Profile with { Include = include });
 

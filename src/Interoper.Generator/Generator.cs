@@ -93,12 +93,15 @@ public static class Generator
         }
         foreach (var element in selection.Elements)
         {
-            // R28: nothing refers to a component either, so it takes a free name too.
+            // R28: nothing refers to a component either, so it takes a free name too: with Component (the element's own
+            // class is often named like its tag), then a number.
             var ns = types.Namespace(element.Class);
-            var (wanted, name) = (Naming.Type(element.Element.Tag), Naming.Type(element.Element.Tag));
-            for (var n = 2; paths.Contains(Naming.FilePath(root, ns, name)) || namespaces.Contains($"{ns}.{name}"); n++)
+            var wanted = Naming.Type(element.Element.Tag);
+            bool Taken(string name) => paths.Contains(Naming.FilePath(root, ns, name)) || namespaces.Contains($"{ns}.{name}");
+            var name = Taken(wanted) ? wanted + "Component" : wanted;
+            for (var n = 2; Taken(name); n++)
             {
-                name = $"{wanted}{n}";
+                name = $"{wanted}Component{n}";
             }
             if (name != wanted)
             {
@@ -109,9 +112,19 @@ public static class Generator
         var classes = MetadataEmitter.ClassIds(types, selection);
         files.Add(new($"{types.Registry}.cs", MetadataEmitter.Registry(types, options, classes, modules.SelectMany(m => m), selection.Elements)));
         files.Add(new(MetadataEmitter.FileName(ir), MetadataEmitter.Module(ir, profile, types, classes, selection.Elements)));
-        foreach (var type in types.Owned)
+        // The anonymous unions and inline records (R11, R27); emitting a record can meet more of them.
+        for (int i = 0, j = 0; i < types.Owned.Count || j < types.Records.Count;)
         {
-            Add(type.Type, ValueTypeEmitter.Emit(types, type));
+            if (i < types.Owned.Count)
+            {
+                var type = types.Owned[i++];
+                Add(type.Type, ValueTypeEmitter.Emit(types, type));
+            }
+            else
+            {
+                var record = types.Records[j++];
+                Add(types.Name(record), RecordEmitter.Data(types, record));
+            }
         }
         // R28: Razor finds custom events' [EventHandler]s only on a class named EventHandlers. It's partial, so the
         // bindings of two packages in one namespace share it; a type of that name in the root namespace takes it.

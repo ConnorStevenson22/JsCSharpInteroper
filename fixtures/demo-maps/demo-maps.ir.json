@@ -3527,6 +3527,11 @@
         {
           "name": "basemap",
           "property": "basemap",
+          "type": {
+            "kind": "ref",
+            "name": "Basemap",
+            "module": "@acme/demo-maps/MapView.js"
+          },
           "doc": {
             "default": "\"plain\""
           }
@@ -3534,6 +3539,10 @@
         {
           "name": "zoom",
           "property": "zoom",
+          "type": {
+            "kind": "primitive",
+            "name": "number"
+          },
           "doc": {
             "default": "1"
           }

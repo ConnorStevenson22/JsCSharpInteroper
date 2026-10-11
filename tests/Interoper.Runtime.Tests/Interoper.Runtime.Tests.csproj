@@ -13,6 +13,7 @@
     <ProjectReference Include="..\..\src\Interoper.Analyzers\Interoper.Analyzers.csproj" />
     <ProjectReference Include="..\..\src\Interoper.Blazor\Interoper.Blazor.csproj" />
     <ProjectReference Include="..\GoldenSlice\GoldenSlice.csproj" />
+    <ProjectReference Include="..\..\src\Interoper.Generator\Interoper.Generator.csproj" />
   </ItemGroup>
 
   <ItemGroup>

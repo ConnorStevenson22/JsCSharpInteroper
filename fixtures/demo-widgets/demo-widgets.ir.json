@@ -378,6 +378,10 @@
         {
           "name": "heading",
           "property": "heading",
+          "type": {
+            "kind": "primitive",
+            "name": "string"
+          },
           "doc": {
             "default": "\"Legend\""
           }
@@ -408,6 +412,10 @@
         {
           "name": "precision",
           "property": "precision",
+          "type": {
+            "kind": "primitive",
+            "name": "number"
+          },
           "doc": {
             "default": "0"
           }

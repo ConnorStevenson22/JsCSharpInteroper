@@ -74,7 +74,9 @@ public sealed class GeneratorTests
             """);
         var result = Generator.Generate(ir, new Profile { Package = "@acme/maps", ValueClasses = ["Length"] }, new(api, "Acme.Maps"));
 
-        Assert.Contains("public abstract partial class Layer : global::Interoper.JsObject", File(result, "Layers/Layer.cs"));
+        // An abstract entity class has no Create, but the registry makes it: JS can hand one back by its own class id.
+        Assert.Contains("public partial class Layer : global::Interoper.JsObject", File(result, "Layers/Layer.cs"));
+        Assert.DoesNotContain("Create", File(result, "Layers/Layer.cs"));
         Assert.Contains("public sealed partial class TileLayer : Layer", File(result, "Layers/TileLayer.cs"));
         var registry = File(result, "Maps.cs");
         Assert.Contains("""
@@ -84,6 +86,7 @@ public sealed class GeneratorTests
 
                 public static global::Interoper.JsClassRegistry Classes { get; } = new global::Interoper.JsClassRegistry()
                     .Add(LengthId, static (realm, handle) => new Length(realm, handle))
+                    .Add(LayerId, static (realm, handle) => new global::Acme.Maps.Layers.Layer(realm, handle))
                     .Add(TileLayerId, static (realm, handle) => new global::Acme.Maps.Layers.TileLayer(realm, handle))
             """, registry);
         Assert.Equal(api == Api.Sync, registry.Contains("""        .Preload("@acme/maps/units.js", "@acme/maps/layers/Layer.js");"""));
@@ -353,6 +356,58 @@ public sealed class GeneratorTests
                 public global::System.Collections.Generic.IAsyncEnumerable<double> WatchOpacityStreamAsync(global::Interoper.JsScope scope, global::System.Threading.CancellationToken cancellationToken = default) =>
                     scope.StreamAsync(Handle, "watch", "opacity", global::Interoper.JsJson.ReadNumber, null, null, cancellationToken);
             """, layer);
+    }
+
+    [Fact] // R15, §5: an iterator method is left out, of a class as of an interface, which is still a data record
+    public void AnIteratorMethodIsLeftOut()
+    {
+        static string Iterating(string kind, string name) => $$"""
+            { "kind": "{{kind}}", "name": "{{name}}", "members": [
+              { "kind": "property", "name": "size", "type": {{Number}} },
+              { "kind": "method", "name": "values", "signatures": [{ "params": [], "returns": { "kind": "ref", "name": "IterableIterator", "args": [{{Number}}] } }] },
+              { "kind": "method", "name": "__@iterator@10", "signatures": [{ "params": [], "returns": { "kind": "ref", "name": "Generator", "args": [{{Number}}] } }] }] }
+            """;
+        var result = Generate(Iterating("class", "Bag") + ", " + Iterating("interface", "Entries") + """
+            , { "kind": "function", "name": "count", "signatures": [{ "params": [{ "name": "entries", "type": { "kind": "ref", "name": "Entries", "module": "@acme/maps/a.js" } }], "returns": { "kind": "primitive", "name": "number" } }] }
+            """);
+
+        Assert.Equal(
+        [
+            "IOP2007 Bag.values: skipped: uses `IterableIterator`",
+            "IOP2007 Bag.__@iterator@10: skipped: uses `Generator`",
+            "IOP2007 Entries.values: skipped: uses `IterableIterator`",
+            "IOP2007 Entries.__@iterator@10: skipped: uses `Generator`",
+        ], result.Diagnostics.Select(d => d.ToString()));
+        Assert.Contains("public double Size", File(result, "Bag.cs"));
+        Assert.Contains("public sealed partial record Entries", File(result, "Entries.cs"));
+        Assert.Contains("public required double Size { get; init; }", File(result, "Entries.cs"));
+        Assert.Contains("public static double Count(global::Interoper.JsRealm realm, Entries entries) =>", File(result, "A.cs"));
+    }
+
+    [Theory] // R24: an event without a payload has a parameterless handler, sends nothing and has no stream
+    [InlineData(Api.Sync)]
+    [InlineData(Api.Async)]
+    public void AnEventWithoutAPayloadHasAParameterlessHandler(Api api)
+    {
+        var result = Generate(new Profile { Package = "@acme/maps", Events = new(Subscribe: "on") }, api, ("a.js", """
+            { "kind": "class", "name": "Session", "events": [
+              { "name": "tick", "type": { "kind": "primitive", "name": "void" } },
+              { "name": "expire", "type": { "kind": "union", "types": [{ "kind": "primitive", "name": "null" }, { "kind": "primitive", "name": "undefined" }] } }] }
+            """));
+
+        Assert.Empty(result.Diagnostics);
+        var session = File(result, "Session.cs");
+        Assert.Contains(api == Api.Sync
+            ? """
+                    public global::System.IDisposable OnTick(global::Interoper.JsScope scope, global::System.Action handler, global::Interoper.EventOptions? options = null) =>
+                        scope.Subscribe(Handle, "on", "tick", handler, options);
+                """
+            : """
+                    public global::System.Threading.Tasks.Task<global::System.IAsyncDisposable> OnTickAsync(global::Interoper.JsScope scope, global::System.Action handler, global::Interoper.EventOptions? options = null) =>
+                        scope.SubscribeAsync(Handle, "on", "tick", handler, options);
+                """, session);
+        Assert.Contains(api == Api.Sync ? "OnExpire(global::Interoper.JsScope scope, global::System.Action handler" : "OnExpireAsync(global::Interoper.JsScope scope, global::System.Action handler", session);
+        Assert.DoesNotContain("StreamAsync", session);
     }
 
     [Theory] // R27
@@ -800,13 +855,13 @@ public sealed class GeneratorTests
         Assert.Equal([
             "IOP2007 ChartElement.frame: skipped: uses a DOM element JS returns (R13)",
             "IOP2007 <x-chart> data: skipped: an attribute without a property is a string, number, boolean or string enum (R28)",
-            "IOP2006 <x-chart>: its component is XChart2: XChart is taken (R28)",
+            "IOP2006 <x-chart>: its component is XChartComponent: XChart is taken (R28)",
         ], result.Diagnostics.Select(d => d.ToString()));
         var element = File(result, "ChartElement.cs");
         Assert.Contains(api == Api.Sync ? "public void SetHost(global::Microsoft.AspNetCore.Components.ElementReference value)" : "public global::System.Threading.Tasks.Task SetHostAsync(global::Microsoft.AspNetCore.Components.ElementReference value)", element);
         Assert.DoesNotContain("GetHost", element);
-        var component = File(result, "XChart2.cs");
-        Assert.Contains("public sealed partial class XChart2 : global::Interoper.JsComponentBase", component);
+        var component = File(result, "XChartComponent.cs");
+        Assert.Contains("public sealed partial class XChartComponent : global::Interoper.JsComponentBase", component);
         Assert.Contains("public bool Compact { get; set; }", component);
         Assert.Contains("public global::Microsoft.AspNetCore.Components.EventCallback<ChartElement> OnElementReady { get; set; }", component);
         Assert.Contains("""if (supplied.Contains(nameof(Compact))) builder.AddAttribute(3, "compact", Compact);""", component); // present or absent
@@ -826,6 +881,34 @@ public sealed class GeneratorTests
         var meta = File(result, "maps.meta.js");
         Assert.Contains("""tag: "x-chart", members: ["level", "maxLevel", "note", "caption"] },""", meta);
         Assert.Contains("""{ name: "level-change", fields: ["level"] },""", meta);
+    }
+
+    [Theory] // R28, design §2: an abstract element class named like its tag; an attribute the manifest types as a primitive
+    [InlineData(Api.Sync)]
+    [InlineData(Api.Async)]
+    public void AnAbstractElementClassNamedLikeItsTagIsRegisteredAndItsComponentIsSuffixed(Api api)
+    {
+        var result = Elements(api, [("chart.js", $$"""
+            { "kind": "class", "name": "XChart", "abstract": true, "members": [
+              { "kind": "property", "name": "label", "type": { "kind": "union", "types": [{{String}}, { "kind": "array", "element": {{String}} }] } },
+              { "kind": "property", "name": "tags", "type": { "kind": "union", "types": [{{String}}, { "kind": "array", "element": {{String}} }] } }] }
+            """)], $$"""
+            { "tag": "x-chart", "class": { "kind": "ref", "name": "XChart", "module": "@acme/maps/chart.js" },
+              "attributes": [{ "name": "label", "property": "label", "type": {{String}} }, { "name": "tags", "property": "tags" }], "events": [], "slots": [] }
+            """);
+
+        Assert.Equal(["IOP2006 <x-chart>: its component is XChartComponent: XChart is taken (R28)"], result.Diagnostics.Select(d => d.ToString()));
+        // The element's live object is read by its tag's class id, so the registry makes the abstract class (design §2).
+        Assert.Contains("public sealed partial class XChart : global::Interoper.JsObject", File(result, "XChart.cs"));
+        Assert.Contains(".Add(XChartId, static (realm, handle) => new XChart(realm, handle))", File(result, "Maps.cs"));
+        var component = File(result, "XChartComponent.cs");
+        Assert.Contains("public sealed partial class XChartComponent : global::Interoper.JsComponentBase", component);
+        // label renders as the manifest's string attribute; tags, without one, is set as its union property.
+        Assert.Contains("public string Label { get; set; } = default!;", component);
+        Assert.Contains("""if (supplied.Contains(nameof(Label))) builder.AddAttribute(""", component);
+        Assert.Contains("public XChartTags Tags { get; set; }", component);
+        Assert.Contains("""global::Interoper.JsOp.Set(Element.Handle, "tags", """, component);
+        Assert.DoesNotContain("""JsOp.Set(Element.Handle, "label", """, component);
     }
 
     [Fact] // R28, R24: elements that share an event name share its registration, which sends all their fields
@@ -1042,6 +1125,39 @@ public sealed class GeneratorTests
         // demo-maps' own types are where they are without demo-widgets.
         var alone = Generator.Generate(Fixture.Ir, Fixture.Profile, new(Api.Async, "Acme.Maps"));
         Assert.Empty(alone.Files.Select(f => f.Path).Except(result.Files.Select(f => f.Path)));
+    }
+
+    [Theory] // R11, R15, R19, R27: an inline object type is a record named after its owner, without the optional members it can't map
+    [InlineData(Api.Sync)]
+    [InlineData(Api.Async)]
+    public void AnInlineObjectTypeIsARecordWithoutTheOptionalMembersItCantMap(Api api)
+    {
+        // set shape(v: (PolyProps & { type: "poly" }) | (DotProps & { type: "dot" })), the intersections resolved (ir.md).
+        var result = Generate(api, ("a.js", $$"""
+            { "kind": "class", "name": "Feature", "members": [
+              { "kind": "property", "name": "shape", "type": {{Number}}, "writeType": { "kind": "union", "discriminant": "type", "types": [
+                { "kind": "object", "members": [
+                  { "kind": "property", "name": "stops", "optional": true, "type": { "kind": "array", "element": { "kind": "array", "element": {{Number}} } } },
+                  { "kind": "property", "name": "legs", "optional": true, "type": { "kind": "array", "element": { "kind": "tuple", "elements": [{{Number}}, {{String}}] } } },
+                  { "kind": "property", "name": "type", "type": { "kind": "literal", "value": "poly" } }] },
+                { "kind": "object", "members": [
+                  { "kind": "property", "name": "radius", "type": {{Number}} },
+                  { "kind": "property", "name": "type", "type": { "kind": "literal", "value": "dot" } }] }] } },
+              { "kind": "property", "name": "size", "type": { "kind": "object", "members": [{ "kind": "property", "name": "w", "type": {{Number}} }] } }] }
+            """));
+
+        Assert.Equal(["IOP2007 Feature.shape.legs: skipped: uses a tuple of different types"], result.Diagnostics.Select(d => d.ToString()));
+        Assert.Contains(api == Api.Sync ? "public void SetShape(FeatureShapeInput value) =>" : "public global::System.Threading.Tasks.Task SetShapeAsync(FeatureShapeInput value) =>",
+            File(result, "Feature.cs"));
+        Assert.Contains("public FeatureShapeInput(FeatureShapeInputPoly value) : this(value, 2) { }", File(result, "FeatureShapeInput.cs"));
+        Assert.Contains("public FeatureShapeInput(FeatureShapeInputDot value) : this(value, 3) { }", File(result, "FeatureShapeInput.cs"));
+        var poly = File(result, "FeatureShapeInputPoly.cs");
+        Assert.Contains("public sealed partial record FeatureShapeInputPoly", poly);
+        Assert.Contains("public global::Interoper.Opt<double[][]> Stops { get; init; }", poly);
+        Assert.Contains("""writer.WriteString("type"u8, "poly"u8);""", poly); // R20
+        Assert.DoesNotContain("Legs", poly);
+        Assert.Contains("public required double W { get; init; }", File(result, "FeatureSize.cs"));
+        Assert.Contains("public global::Interoper.Opt<FeatureSize> Size { get; init; }", File(result, "FeatureSnapshot.cs"));
     }
 
     private const string Number = """{ "kind": "primitive", "name": "number" }""";

@@ -6,8 +6,9 @@ namespace Interoper.Generator;
 /// <summary>
 /// A declaration to emit, trimmed to what can be mapped: a class keeps only the members, events and signatures that
 /// can be, a property whose setter can't be is read-only (§5), a dropped optional or rest parameter is gone from its
-/// signature (R22), a data record has no optional members that can't be (R15), and an event payload's interface has no
-/// methods (R24). A callback alias is never one: it has no C# type of its own (R21).
+/// signature (R22), a data record or inline object type has no optional members that can't be (R15, R11), an event
+/// payload's interface has no methods (R24), and any other interface no iterator methods. A callback alias is never one:
+/// it has no C# type of its own (R21).
 /// </summary>
 public sealed record Selected(string Module, Declaration Declaration);
 
@@ -25,8 +26,9 @@ public sealed record SelectedElement(string Module, Element Element, ClassDeclar
 /// takes the members that use it along with it (mapping §8): a member that uses a class outside the selection, or a
 /// type the type map can't map (<see cref="TypeMap.Problem(IrType, Position)"/>), is skipped with IOP2007, or IOP2003
 /// for an ambiguous union; an optional trailing parameter or a rest parameter is dropped instead (R22), and so are a
-/// setter (§5), a data record's optional member (R15) and a method of an interface that an event delivers (R24). A
-/// union drops its cases outside the selection instead (R2). The profile's collection classes are generic live
+/// setter (§5), a data record's or inline record's optional member (R15, R11), a method of an interface that an event
+/// delivers (R24) and an interface's iterator method. A union drops its cases outside the selection instead, and with one
+/// left it's that case (R2). The profile's collection classes are generic live
 /// classes, and generic interfaces generic records; their type parameters are entities (mapping §2). A use of
 /// <c>any</c>, <c>unknown</c> or <c>object</c> is reported as IOP2001. Each custom element of an emitted class gets a
 /// component (R28); an element's event map, whose events the component binds from the manifest, isn't emitted. A
@@ -250,7 +252,8 @@ public sealed class Selection
                 Skip(subject, problem);
                 continue;
             }
-            foreach (var type in parts)
+            property = Bags(subject, property);
+            foreach (var type in property.WriteType is { } trimmed ? [property.Type, trimmed] : new[] { property.Type })
             {
                 Collect(type);
                 ReportUntyped(subject, type);
@@ -265,14 +268,20 @@ public sealed class Selection
                 Report(new(Diagnostic.NotSupported, $"{c.Name}.on:{e.Name}", "skipped: the profile names no subscribe method"));
                 continue;
             }
+            if (TypeMap.IsVoid(e.Type))
+            {
+                events.Add(e); // R24: no payload, so a parameterless handler
+                continue;
+            }
             if ((Problem(e.Type) ?? types.Problem(e.Type, Position.Member)) is { } problem)
             {
                 Skip($"{c.Name}.on:{e.Name}", problem);
                 continue;
             }
-            Collect(e.Type);
-            ReportUntyped($"{c.Name}.on:{e.Name}", e.Type);
-            events.Add(e);
+            var payload = Bags($"{c.Name}.on:{e.Name}", e.Type);
+            Collect(payload);
+            ReportUntyped($"{c.Name}.on:{e.Name}", payload);
+            events.Add(e with { Type = payload });
         }
         selected[c] = new(moduleOf[c], c with { Members = members, Events = events });
         typeParameters = [];
@@ -363,6 +372,7 @@ public sealed class Selection
             }
             if (detail is not null)
             {
+                detail = Bags(subject, detail);
                 Collect(detail);
                 ReportUntyped(subject, detail);
             }
@@ -405,6 +415,14 @@ public sealed class Selection
     /// <summary>A union's members, with nested unions in their place; any other type as it is.</summary>
     private static IEnumerable<IrType> Flatten(IrType type) => type is UnionType u ? u.Types.SelectMany(Flatten) : [type];
 
+    /// <summary>R6: a union's members, with nested unions and the members of union aliases in their place, as the type map flattens them.</summary>
+    private IEnumerable<IrType> Cases(IrType type) => type switch
+    {
+        UnionType u => u.Types.SelectMany(Cases),
+        RefType { Module: not null } r when Find(r) is AliasDeclaration { TypeParameters.Count: 0, Type: UnionType inner } => Cases(inner),
+        _ => [type],
+    };
+
     /// <summary>
     /// The runtime-class property (never bound) and the event and watch methods (bound as events and watches): left out
     /// of a class without a diagnostic.
@@ -439,7 +457,11 @@ public sealed class Selection
                 Report(new(Diagnostic.NotSupported, $"{subject}({dropped.Name})",
                     $"{(dropped.Rest ? "rest" : "optional")} parameter dropped (R22): uses {ParameterProblem(dropped)}"));
             }
-            var trimmed = signature with { Params = kept };
+            var trimmed = signature with
+            {
+                Params = [.. kept.Select(p => p with { Type = Bags($"{subject}({p.Name})", p.Type) })],
+                Returns = signature.Returns is { } returned ? Bags(subject, returned) : null,
+            };
             foreach (var type in trimmed.Params.Select(p => p.Type).Append(trimmed.Returns).OfType<IrType>())
             {
                 Collect(type);
@@ -491,17 +513,32 @@ public sealed class Selection
         PrimitiveType p => SupportedPrimitives.Contains(p.Name) ? null : new($"`{p.Name}`"),
         LiteralType or ThisType => null,
         RefType { Module: null, Name: "Promise" } r => FirstProblem(r.Args),
-        // R2: a union drops a case that is a class outside the selection.
-        UnionType u when u.Types.Count(t => !IsNullish(t)) > 1 => FirstProblem(u.Types.Where(t => !types.IsUnselected(t))),
+        // R2: a union drops a case that is a class outside the selection; R6: a union alias in it is flattened, so its
+        // own cases are what's checked, not the alias on its own (the type map checks the whole union).
+        UnionType u when u.Types.Count(t => !IsNullish(t)) > 1 => FirstProblem(Cases(u).Where(t => !types.IsUnselected(t))),
         RefType { Module: null } r => TypeMap.IsElement(r) ? null : new($"`{r.Name}`"), // R13: a DOM element is an ElementReference
         RefType r => Find(r) is { } declaration ? DeclarationProblem(declaration) ?? FirstProblem(r.Args) : new($"`{r.Name}`"),
-        ObjectType o => MembersProblem(o.Members, o.CallSignatures.Count + o.ConstructSignatures.Count) ?? FirstProblem(Children(o)),
+        // R11, R15: an inline record drops an optional member that can't be mapped (Bags).
+        ObjectType o => MembersProblem(o.Members, o.CallSignatures.Count + o.ConstructSignatures.Count)
+            ?? FirstProblem(MemberTypes(o.Members.Where(m => m is PropertyMember { Optional: false }), o.IndexSignatures)),
         TypeParameterType t => typeParameters.Any(p => p.Name == t.Name) ? null : new($"type parameter `{t.Name}`"),
         UnresolvedType u => new($"unresolved `{u.Text}`"),
         _ => FirstProblem(Children(type)),
     };
 
     private Unmappable? FirstProblem(IEnumerable<IrType> types) => types.Select(Problem).FirstOrDefault(p => p is not null);
+
+    /// <summary>
+    /// An iterator method (<c>values(): IterableIterator&lt;T&gt;</c>, <c>[Symbol.iterator]()</c>), which iterators aren't
+    /// mapped for: it's left out of an interface (IOP2007), so the interface can still be a data record (R15).
+    /// </summary>
+    private static bool IsIterator(Member member) =>
+        member is MethodMember { Signatures.Count: > 0 } method && method.Signatures.All(s => s.Returns is RefType
+        {
+            Module: null,
+            Name: "Iterator" or "IterableIterator" or "IteratorObject" or "Generator" or "ArrayIterator" or "MapIterator" or "SetIterator" or "StringIterator"
+                or "AsyncIterator" or "AsyncIterableIterator" or "AsyncIteratorObject" or "AsyncGenerator",
+        });
 
     private static Unmappable? MembersProblem(IEnumerable<Member> members, int callSignatures) =>
         callSignatures > 0 ? new("a callable object")
@@ -528,7 +565,7 @@ public sealed class Selection
                 : skippedClasses.GetValueOrDefault(c)
                     ?? new(c.TypeParameters.Count > 0 && !profile.Collections.Contains(c.Name) ? $"generic `{c.Name}`" : $"class `{c.Name}` outside the selection"),
             AliasDeclaration { TypeParameters.Count: > 0 } => new($"generic `{declaration.Name}`"),
-            InterfaceDeclaration i when Trim(i) is var t => MembersProblem(payloads.Contains(i) ? t.Members.OfType<PropertyMember>() : t.Members, i.CallSignatures.Count + i.ConstructSignatures.Count)
+            InterfaceDeclaration i when Trim(i) is var t => MembersProblem(payloads.Contains(i) ? t.Members.OfType<PropertyMember>() : t.Members.Where(m => !IsIterator(m)), i.CallSignatures.Count + i.ConstructSignatures.Count)
                 ?? FirstProblem(Parts(t)) ?? types.Problem(t),
             AliasDeclaration a => Problem(Trim(a).Type) ?? types.Problem(a),
             EnumDeclaration e => types.Problem(e),
@@ -590,7 +627,7 @@ public sealed class Selection
         {
             Skip($"{declaration.Name}.{member.Name}", problem);
         }
-        var emitted = Trim(declaration);
+        var emitted = Bags(Trim(declaration));
         if (emitted is InterfaceDeclaration i && payloads.Contains((InterfaceDeclaration)declaration))
         {
             foreach (var method in i.Members.OfType<MethodMember>())
@@ -598,6 +635,14 @@ public sealed class Selection
                 Report(new(Diagnostic.NotSupported, $"{i.Name}.{method.Name}", "skipped: a method of an event payload (R24)"));
             }
             emitted = i with { Members = [.. i.Members.OfType<PropertyMember>()] };
+        }
+        else if (emitted is InterfaceDeclaration record && record.Members.Any(IsIterator))
+        {
+            foreach (var method in record.Members.Where(IsIterator).Cast<MethodMember>())
+            {
+                Skip($"{record.Name}.{method.Name}", Problem(method.Signatures[0].Returns!)!);
+            }
+            emitted = record with { Members = [.. record.Members.Where(m => !IsIterator(m))] };
         }
         selected[declaration] = new(moduleOf[declaration], emitted);
         foreach (var type in Parts(emitted))
@@ -654,6 +699,74 @@ public sealed class Selection
             AliasDeclaration { Type: ObjectType o } a => (T)(Declaration)(a with { Type = o with { Members = [.. o.Members.Where(m => !dropped.Contains(m))] } }),
             _ => declaration,
         };
+    }
+
+    /// <summary>R11, R15: a data record whose members' inline object types drop what they can't map (<see cref="Bags(string, IrType)"/>).</summary>
+    private Declaration Bags(Declaration declaration)
+    {
+        var outer = typeParameters;
+        typeParameters = declaration is InterfaceDeclaration generic ? generic.TypeParameters : [];
+        var result = declaration switch
+        {
+            InterfaceDeclaration i when Members(i.Name, i.Members) is { } members => i with { Members = members },
+            AliasDeclaration { Type: ObjectType o } a when Members(a.Name, o.Members) is { } members => a with { Type = o with { Members = members } },
+            AliasDeclaration { Type: not ObjectType } a when Bags(a.Name, a.Type) is var type && !ReferenceEquals(type, a.Type) => a with { Type = type },
+            _ => declaration,
+        };
+        typeParameters = outer;
+        return result;
+
+        // The members with their inline object types trimmed, or null when nothing changes.
+        List<Member>? Members(string name, IReadOnlyList<Member> members)
+        {
+            var trimmed = members.Select(m => m is PropertyMember p ? Bags($"{name}.{p.Name}", p) : m).ToList();
+            return trimmed.SequenceEqual(members, ReferenceEqualityComparer.Instance) ? null : trimmed;
+        }
+    }
+
+    private PropertyMember Bags(string subject, PropertyMember p)
+    {
+        var (type, writeType) = (Bags(subject, p.Type), p.WriteType is { } w ? Bags(subject, w) : null);
+        return ReferenceEquals(type, p.Type) && ReferenceEquals(writeType, p.WriteType) ? p : p with { Type = type, WriteType = writeType };
+    }
+
+    /// <summary>
+    /// R11, R15: a type whose inline object types leave out the optional members they can't map, each reported (IOP2007)
+    /// as <c>subject.member</c>, as a data record does (<see cref="Dropped"/>); the same type when nothing is left out.
+    /// </summary>
+    private IrType Bags(string subject, IrType type)
+    {
+        switch (type)
+        {
+            case ObjectType o:
+                var members = new List<Member>();
+                foreach (var m in o.Members)
+                {
+                    if (m is PropertyMember { Optional: true, Static: false } p && (Problem(p.Type) ?? types.DroppedProblem(p)) is { } problem)
+                    {
+                        Skip($"{subject}.{p.Name}", problem);
+                        continue;
+                    }
+                    members.Add(m is PropertyMember property ? Bags($"{subject}.{property.Name}", property) : m);
+                }
+                return members.SequenceEqual(o.Members, ReferenceEqualityComparer.Instance) ? o : o with { Members = members };
+            case UnionType u:
+                return Same(u.Types, out var cases) ? u : u with { Types = cases };
+            case ArrayType a:
+                return Bags(subject, a.Element) is var element && ReferenceEquals(element, a.Element) ? a : a with { Element = element };
+            case TupleType t:
+                return Same(t.Elements, out var elements) ? t : t with { Elements = elements };
+            case RefType r:
+                return Same(r.Args, out var args) ? r : r with { Args = args };
+            default:
+                return type; // a callback's types aren't trimmed: it's a parameter's, read and written whole
+        }
+
+        bool Same(IReadOnlyList<IrType> types, out List<IrType> trimmed)
+        {
+            trimmed = [.. types.Select(t => Bags(subject, t))];
+            return trimmed.SequenceEqual(types, ReferenceEqualityComparer.Instance);
+        }
     }
 
     /// <summary>

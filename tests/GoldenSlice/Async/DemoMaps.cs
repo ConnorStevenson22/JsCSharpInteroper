@@ -28,6 +28,7 @@ public static partial class DemoMaps
         .Add(ObservableId, static (realm, handle) => new Observable(realm, handle))
         .Add(EmitterId, static (realm, handle) => new Emitter(realm, handle))
         .Add(DemoMapElementId, static (realm, handle) => new DemoMapElement(realm, handle))
+        .Add(LayerId, static (realm, handle) => new global::GoldenSlice.Async.Layers.Layer(realm, handle))
         .Add(TileLayerId, static (realm, handle) => new global::GoldenSlice.Async.Layers.TileLayer(realm, handle))
         .Add(PinId, static (realm, handle) => new Pin(realm, handle));
 }

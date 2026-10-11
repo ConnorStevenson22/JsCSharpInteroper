@@ -279,6 +279,30 @@ public sealed class RealmTests
         Assert.Equal(0, transport.Census());
     }
 
+    [Fact] // R24: an event without a payload calls a parameterless handler, and nothing of the event is sent
+    public async Task AnEventWithoutAPayloadCallsAParameterlessHandler()
+    {
+        var scope = new JsScope(await StartedRealm());
+        var emitter = (int)(await Send(scope, $$"""{"op":"create","t":{{DemoMaps.EmitterId}},"args":[]}"""))!["$h"]!;
+        var fired = 0;
+        using var sync = scope.Subscribe(emitter, "on", "tick", () => fired++, null);
+        await using var async = await scope.SubscribeAsync(emitter, "on", "tick", () => fired++, null);
+        Assert.Equal(2, transport.Ops.Count(op => op.Contains("\"name\":\"tick\"", StringComparison.Ordinal) && op.EndsWith("\"options\":{\"fields\":[]}}", StringComparison.Ordinal)));
+
+        await scope.Realm.CallAsync(JsOp.Call(emitter, "emit", w => { w.WriteStringValue("tick"); w.WriteStartObject(); w.WriteNumber("x", 1); w.WriteEndObject(); }), JsJson.ReadBoolean);
+        Assert.Equal(2, fired);
+        await scope.DisposeAsync();
+    }
+
+    [Fact] // design §2, R19 step 1: JS can hand back an abstract class's own instance (an element's class by its tag, say)
+    public async Task AnAbstractClassIdIsRegisteredAsItsOwnLiveType()
+    {
+        var scope = new JsScope(await StartedRealm());
+        var handle = (int)(await Send(scope, """{"op":"create","t":5,"args":[]}"""))!["$h"]!;
+        Assert.Equal(typeof(GoldenSlice.Async.Layers.Layer), scope.Wrap<JsObject>(handle, DemoMaps.LayerId).GetType());
+        await scope.DisposeAsync();
+    }
+
     [Fact]
     public async Task DisposalSwallowsADroppedCircuit()
     {
