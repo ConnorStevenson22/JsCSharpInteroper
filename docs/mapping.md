@@ -242,6 +242,11 @@ Anonymous unions and inline records (R11) are named after their owner: `Feature.
 - **Prerendering.** Attributes and slots render; events, properties and `Element` wait for interactivity.
 - **Modes.** Both: the element is fetched through the async seam in either mode, and properties are set with the mode's send (`SendAsync` or `Send`).
 
+**R29. Docs.** A declaration's JSDoc ([ir.md](ir.md#declarations)) becomes its XML docs, the same in both modes: on a live class, each property (both `GetXAsync` and `SetXAsync` in async mode), each overload of a method or module function, `Create` (the constructor's), each event, each record and its members (a snapshot record's members too), each enum or union struct, and a TS enum's members. A component (R28) has its element's manifest docs, and its parameters, events and slots theirs; a parameter without an attribute doc has its property's.
+- The summary is `<summary>`; `@default`, `@since`, `@deprecated` and `@see` are lines of `<remarks>` (`Default: 0`, `Since: 0.2`, `Deprecated: …`, `See: …`). `@deprecated` isn't `[Obsolete]`: its CS0618 would break a consumer's build under `TreatWarningsAsErrors`.
+- Text is XML-escaped; `{@link X}` and `` `code` `` become `<c>X</c>`, and `{@link X text}` its text. Each line of the text is a `///` line.
+- No doc, no comment: never an empty `<summary>`. Undocumented members stay so, so a project that compiles the bindings with `GenerateDocumentationFile` turns CS1591 off for them, as the golden slice does.
+
 ---
 
 ## 7. What the extractor must resolve with the checker
@@ -252,7 +257,7 @@ A syntax walk isn't enough. The extractor asks the TypeScript checker for *resol
 - event maps declared through phantom properties;
 - inherited members, accessor get/set pairs (with each side's type), overloads;
 - discriminants (R19);
-- JSDoc: summary, `@default`, `@deprecated` → `[Obsolete]`, `@since`, `@see`;
+- JSDoc: summary, `@default`, `@deprecated`, `@since`, `@see` (R29);
 - the module specifier for every declaration.
 
 ---

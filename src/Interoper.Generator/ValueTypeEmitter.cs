@@ -1,25 +1,41 @@
 using System.Diagnostics;
 using System.Text.Json;
+using Interoper.Generator.Ir;
 
 namespace Interoper.Generator;
 
 /// <summary>Enums (R9, numeric), extensible enums (R10) and union structs (R2, R19, R20).</summary>
 internal static class ValueTypeEmitter
 {
-    /// <summary>The type, in its namespace (R27).</summary>
-    public static string Emit(TypeMap types, DataType type) => type switch
+    /// <summary>The type, in its namespace (R27), with the docs of the <paramref name="declaration"/> it is, if any (R29).</summary>
+    public static string Emit(TypeMap types, DataType type, Declaration? declaration = null)
     {
-        EnumType { Extensible: true } e => Extensible(e.Type.Namespace, e),
-        EnumType { IsNumber: true } e => NumberEnum(e.Type.Namespace, e),
-        EnumType e => StringEnum(e.Type.Namespace, e),
-        _ => Union(types, (UnionStruct)type),
-    };
+        var w = CodeWriter.CSharp(type.Type.Namespace);
+        XmlDoc.Write(w, declaration?.Doc);
+        // A TS enum's members have their own docs; a literal union's have none.
+        var docs = declaration is EnumDeclaration e ? e.Members.Select(m => m.Doc).ToList() : null;
+        switch (type)
+        {
+            case EnumType { Extensible: true } extensible:
+                Extensible(w, extensible, docs);
+                break;
+            case EnumType { IsNumber: true } number:
+                Enum(w, number, docs, value => $" = {value.GetRawText()}");
+                break;
+            case EnumType strings:
+                StringEnum(w, strings, docs);
+                break;
+            default:
+                Union(w, types, (UnionStruct)type);
+                break;
+        }
+        return w.ToString();
+    }
 
     /// <summary>R9: an enum, and a name map between its members and the JS strings.</summary>
-    private static string StringEnum(string ns, EnumType e)
+    private static void StringEnum(CodeWriter w, EnumType e, List<Doc?>? docs)
     {
-        var w = CodeWriter.CSharp(ns);
-        Enum(w, e, _ => "");
+        Enum(w, e, docs, _ => "");
         w.Line();
         using (w.Block($"public static partial class {e.Name}Names"))
         {
@@ -45,36 +61,29 @@ internal static class ValueTypeEmitter
             w.Line();
             w.Line($"public static {e.Name} Read(ref global::System.Text.Json.Utf8JsonReader reader) => FromJs(global::Interoper.JsJson.ReadString(ref reader));");
         }
-        return w.ToString();
     }
 
-    /// <summary>A number-literal union: an enum with explicit values, written as numbers.</summary>
-    private static string NumberEnum(string ns, EnumType e)
-    {
-        var w = CodeWriter.CSharp(ns);
-        Enum(w, e, value => $" = {value.GetRawText()}");
-        return w.ToString();
-    }
-
-    private static void Enum(CodeWriter w, EnumType e, Func<JsonElement, string> value)
+    /// <summary>The enum; a number-literal union's has explicit values (<paramref name="value"/>), written as numbers.</summary>
+    private static void Enum(CodeWriter w, EnumType e, List<Doc?>? docs, Func<JsonElement, string> value)
     {
         using (w.Block($"public enum {e.Name}"))
         {
-            foreach (var (name, v) in e.Members)
+            foreach (var (i, (name, v)) in e.Members.Index())
             {
+                XmlDoc.Write(w, docs?[i]);
                 w.Line($"{name}{value(v)},");
             }
         }
     }
 
     /// <summary>R10: a string wrapper with the known values, which also takes any other.</summary>
-    private static string Extensible(string ns, EnumType e)
+    private static void Extensible(CodeWriter w, EnumType e, List<Doc?>? docs)
     {
-        var w = CodeWriter.CSharp(ns);
         using (w.Block($"public readonly partial record struct {e.Name}(string Value)"))
         {
-            foreach (var (name, value) in e.Members)
+            foreach (var (i, (name, value)) in e.Members.Index())
             {
+                XmlDoc.Write(w, docs?[i]);
                 w.Line($"public static {e.Name} {name} {{ get; }} = new({Syntax.Literal(value.GetString()!)});");
             }
             w.Line();
@@ -84,19 +93,17 @@ internal static class ValueTypeEmitter
             w.Line();
             w.Line("public override string ToString() => Value;");
         }
-        return w.ToString();
     }
 
     /// <summary>
     /// R2: a non-boxing struct with a tag per case (0 undefined, 1 null), written by its tag (R20) and read by R19:
     /// the discriminant's value, or the JSON token, and for several object cases a required member only one has.
     /// </summary>
-    private static string Union(TypeMap types, UnionStruct u)
+    private static void Union(CodeWriter w, TypeMap types, UnionStruct u)
     {
         var (ns, name) = u.Type;
         u = u with { Cases = [.. u.Cases.Select(c => c with { Type = c.Type.In(ns) })] }; // R27
         var cases = u.Cases.Select((c, i) => (c.Type, Tag: i + 2, c.Declaration)).ToList();
-        var w = CodeWriter.CSharp(ns);
         w.Line("[global::System.Runtime.CompilerServices.Union]");
         using (w.Block($"public readonly partial struct {name} : global::Interoper.IJsUnion<{name}>, global::System.IEquatable<{name}>"))
         {
@@ -148,7 +155,6 @@ internal static class ValueTypeEmitter
             w.Line("public override int GetHashCode() => global::System.HashCode.Combine(_tag, _ref);");
             w.Line("public override string ToString() => _tag switch { 0 => \"undefined\", 1 => \"null\", _ => $\"{_ref}\" };");
         }
-        return w.ToString();
     }
 
     /// <summary>

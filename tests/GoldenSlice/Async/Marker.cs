@@ -28,6 +28,7 @@ public partial class Marker : Observable
     public global::System.Threading.Tasks.Task SetStyleAsync(Style value) =>
         Realm.SendAsync(global::Interoper.JsOp.Set(Handle, "style", w => global::Interoper.JsJson.WriteValue(w, value)));
 
+    /// <summary><c>labelFormatter(this)</c> if set, otherwise <c>label</c>, otherwise "".</summary>
     public global::System.Threading.Tasks.Task<string> GetDisplayLabelAsync() =>
         Realm.GetStringAsync(Handle, "displayLabel");
 

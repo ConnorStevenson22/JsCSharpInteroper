@@ -96,6 +96,15 @@ test("R23: overloads are separate signatures, each with its own JSDoc", () => {
 test("JSDoc: summary and @default", () => {
   assert.deepEqual(member("MapView", "FlyToOptions", "duration").doc, { summary: "Milliseconds.", default: "0" });
   assert.deepEqual(member("styles", "Rgba", "a").doc, { summary: "0–1.", default: "1" });
+  assert.deepEqual(member("MapView", "MapView", "basemap").doc, { default: '"plain"' });
+});
+
+test("JSDoc: {@link} is spelled {@link Name} or {@link Name text}, and line breaks stay (R29)", () => {
+  assert.deepEqual(member("MapView", "MapView", "selected").doc, { summary: "The {@link Marker} the user picked last, or `null` when none is." });
+  assert.deepEqual(member("MapView", "MapView", "flyTo").signatures[0].doc, {
+    summary: "Animates to {@link FlyToTarget a shape, a point or a camera}.\nResolves when the view has arrived & settled.",
+    since: "0.3",
+  });
 });
 
 test("classes: base, abstract, own members, generics, statics", () => {
@@ -200,7 +209,7 @@ test("design §2: custom elements come from the manifest, linked to the typings"
   // can be narrower than the property's (R28: a primitive one renders as an HTML attribute).
   assert.deepEqual(element.attributes, [
     { name: "basemap", property: "basemap", type: ref("MapView", "Basemap"), doc: { default: '"plain"' } },
-    { name: "zoom", property: "zoom", type: num, doc: { default: "1" } },
+    { name: "zoom", property: "zoom", type: num, doc: { summary: "Clamped to 0–20, like the view's.", default: "1" } },
   ]);
   assert.deepEqual(member("demo-map", "DemoMapElement", "basemap").type, ref("MapView", "Basemap"));
   // Event types are resolved by the checker; a CustomEvent<T> gives its detail type.

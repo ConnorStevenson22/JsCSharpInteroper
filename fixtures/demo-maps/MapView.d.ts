@@ -52,12 +52,14 @@ export class MapView extends Emitter {
   zoom: number;
   /** Degrees, normalized to 0–360. */
   rotation: number;
+  /** @default "plain" */
   basemap: Basemap;
   /** Undefined: the container's own CSS cursor. */
   cursor?: Cursor;
   title?: string | null;
   /** The element the map draws into. */
   container: HTMLElement | null;
+  /** The {@link Marker} the user picked last, or `null` when none is. */
   selected: Marker | null;
   readonly markers: Collection<Marker>;
   /** Drawn in order, the first at the bottom. */
@@ -73,6 +75,11 @@ export class MapView extends Emitter {
    * @see MapView.flyTo
    */
   screenToMap(offset: [number, number]): Point;
+  /**
+   * Animates to {@link FlyToTarget a shape, a point or a camera}.
+   * Resolves when the view has arrived & settled.
+   * @since 0.3
+   */
   flyTo(target: FlyToTarget, options?: FlyToOptions): Promise<void>;
   markerAt(x: number, y: number): Promise<Marker | null>;
 }

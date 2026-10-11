@@ -53,7 +53,7 @@ Every declaration has `kind`, `name` and an optional `doc` (a function's are on 
 - **Signatures** are `{ typeParameters?, params, returns, doc? }`, one per overload (R23), each with its own JSDoc. Constructors have no `returns`. A parameter is `{ name, type, optional?, rest? }`; a rest parameter's type is its array.
 - **Type parameters** are `{ name, constraint?, default? }`.
 - **Index signatures** are `{ key, type, readonly? }`.
-- **Docs** are `{ summary?, default?, deprecated?, since?, see? }`, from the declaration's own JSDoc (an override doesn't copy its base's): `see` is a list, and `deprecated` is `""` when the tag has no message.
+- **Docs** are `{ summary?, default?, deprecated?, since?, see? }`, from the declaration's own JSDoc (an override doesn't copy its base's): `see` is a list, and `deprecated` is `""` when the tag has no message. Line breaks stay, and a link (`{@link}`, `{@linkcode}`, `{@linkplain}`) is spelled `{@link Name}` or `{@link Name text}`.
 - An `optional` member or parameter's `type` doesn't include the `undefined` that `?` adds.
 
 ## Elements

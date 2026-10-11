@@ -3,6 +3,7 @@
 
 namespace GoldenSlice.Async;
 
+/// <summary>A map view as an element.</summary>
 public sealed partial class DemoMap : global::Interoper.JsComponentBase
 {
     private readonly global::System.Collections.Generic.HashSet<string> supplied = new(global::System.StringComparer.OrdinalIgnoreCase);
@@ -10,14 +11,20 @@ public sealed partial class DemoMap : global::Interoper.JsComponentBase
     private (bool Done, PointSnapshot Value) sentCenter;
     private readonly global::Interoper.JsEchoes<double> echoesZoom = new();
 
+    /// <remarks>Default: "plain"</remarks>
     [global::Microsoft.AspNetCore.Components.Parameter] public Basemap Basemap { get; set; }
+    /// <summary>Clamped to 0–20, like the view's.</summary>
+    /// <remarks>Default: 1</remarks>
     [global::Microsoft.AspNetCore.Components.Parameter] public double Zoom { get; set; }
     [global::Microsoft.AspNetCore.Components.Parameter] public PointSnapshot Center { get; set; } = default!;
     [global::Microsoft.AspNetCore.Components.Parameter] public global::Microsoft.AspNetCore.Components.EventCallback<DemoMapClickDetail> OnDemoMapClick { get; set; }
+    /// <summary>Fires when zoom changes; pairs with <c>zoom</c> for two-way binding.</summary>
     [global::Microsoft.AspNetCore.Components.Parameter] public global::Microsoft.AspNetCore.Components.EventCallback<DemoMapZoomChangeDetail> OnDemoMapZoomChange { get; set; }
     [global::Microsoft.AspNetCore.Components.Parameter] public global::Microsoft.AspNetCore.Components.EventCallback<double> ZoomChanged { get; set; }
     [global::Microsoft.AspNetCore.Components.Parameter] public global::Microsoft.AspNetCore.Components.EventCallback OnDemoMapReady { get; set; }
+    /// <summary>Overlay content.</summary>
     [global::Microsoft.AspNetCore.Components.Parameter] public global::Microsoft.AspNetCore.Components.RenderFragment? ChildContent { get; set; }
+    /// <summary>Controls above the map.</summary>
     [global::Microsoft.AspNetCore.Components.Parameter] public global::Microsoft.AspNetCore.Components.RenderFragment? Toolbar { get; set; }
     [global::Microsoft.AspNetCore.Components.Parameter(CaptureUnmatchedValues = true)] public global::System.Collections.Generic.IReadOnlyDictionary<string, object>? AdditionalAttributes { get; set; }
     [global::Microsoft.AspNetCore.Components.Parameter] public global::Microsoft.AspNetCore.Components.EventCallback<DemoMapElement> OnElementReady { get; set; }

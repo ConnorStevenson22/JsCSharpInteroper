@@ -7,6 +7,7 @@ public static partial class A
 {
     private const string Module = "@acme/demo-maps/ops/a.js";
 
+    /// <summary><c>x * options.scale</c> (1 by default).</summary>
     public static global::System.Threading.Tasks.Task<double> ExecuteAsync(global::Interoper.JsRealm realm, double x, global::Interoper.Opt<Options> options = default) =>
         realm.CallAsync(global::Interoper.JsOp.Call(Module, "execute", w =>
         {

@@ -9,8 +9,9 @@ namespace Interoper.Generator;
 /// <param name="Opt">The property is <c>Opt&lt;T&gt;</c> (R3); a union never is (R2).</param>
 /// <param name="Inherited">Declared by the base snapshot record (R16).</param>
 /// <param name="Hides">Redeclares a base snapshot record's member with another type, so it's <c>new</c> (R18, R26).</param>
+/// <param name="Doc">The property's docs (R29).</param>
 internal sealed record Field(string JsName, string Name, CsType? Type, bool Required, bool Opt = false, JsonElement? Constant = null, bool Inherited = false,
-    bool Hides = false)
+    bool Hides = false, Doc? Doc = null)
 {
     public string TypeName => Opt ? $"global::Interoper.Opt<{Type!.Name}>" : Type!.Name;
 }
@@ -723,7 +724,7 @@ internal sealed class TypeMap
             }
             var (mapped, nullable) = Slot(p.Type, type.Owned(p.Name));
             var name = Naming.Member(taken, Naming.Pascal(p.Name), $"{type.Name}.{p.Name}", diagnostics);
-            result.Add(new(p.Name, name, mapped, Required: !p.Optional, Opt: (nullable || p.Optional) && !mapped.IsUnion));
+            result.Add(new(p.Name, name, mapped, Required: !p.Optional, Opt: (nullable || p.Optional) && !mapped.IsUnion, Doc: p.Doc));
         }
         return result;
     }
@@ -755,11 +756,11 @@ internal sealed class TypeMap
                 if (inherited < 0)
                 {
                     var name = Naming.Member(taken, Naming.Pascal(p.Name), $"{SnapshotName(c)}.{p.Name}", diagnostics);
-                    result.Add(new(p.Name, name, mapped, Required: false, Opt: !mapped.IsUnion));
+                    result.Add(new(p.Name, name, mapped, Required: false, Opt: !mapped.IsUnion, Doc: p.Doc));
                 }
                 else if (result[inherited] is { Constant: null } own && own.Type!.FullName != mapped.FullName)
                 {
-                    result[inherited] = new(p.Name, own.Name, mapped, Required: false, Opt: !mapped.IsUnion, Hides: true);
+                    result[inherited] = new(p.Name, own.Name, mapped, Required: false, Opt: !mapped.IsUnion, Hides: true, Doc: p.Doc);
                 }
             }
         }

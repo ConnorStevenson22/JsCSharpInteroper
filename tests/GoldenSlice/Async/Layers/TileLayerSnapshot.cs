@@ -5,6 +5,7 @@ namespace GoldenSlice.Async.Layers;
 
 public sealed partial record TileLayerSnapshot
 {
+    /// <summary>The URL template of the tiles.</summary>
     public global::Interoper.Opt<string> Url { get; init; }
     public global::Interoper.Opt<string> Title { get; init; }
     public global::Interoper.Opt<bool> Visible { get; init; }

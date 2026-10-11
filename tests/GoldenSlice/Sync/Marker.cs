@@ -31,6 +31,7 @@ public partial class Marker : Observable
     public void SetLabelFormatter(global::Interoper.JsScope scope, global::System.Func<Marker, string>? value) =>
         Realm.Send(global::Interoper.JsOp.Set(Handle, "labelFormatter", w => global::Interoper.JsJson.WriteCallback(w, value is null ? null : scope.Callback(value, scope.Read<Marker>, global::Interoper.JsJson.WriteString))));
 
+    /// <summary><c>labelFormatter(this)</c> if set, otherwise <c>label</c>, otherwise "".</summary>
     public string DisplayLabel => Realm.GetString(Handle, "displayLabel");
 
     public global::System.IDisposable WatchPosition(global::Interoper.JsScope scope, global::System.Action<PointSnapshot> handler) =>

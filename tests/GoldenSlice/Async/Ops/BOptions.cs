@@ -3,6 +3,7 @@
 
 namespace GoldenSlice.Async.Ops;
 
+/// <summary>The same names as <c>ops/a</c>, with other members (R27).</summary>
 public sealed partial record BOptions
 {
     public global::Interoper.Opt<double> Offset { get; init; }

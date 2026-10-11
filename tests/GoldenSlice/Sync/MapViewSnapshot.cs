@@ -6,9 +6,13 @@ namespace GoldenSlice.Sync;
 public sealed partial record MapViewSnapshot
 {
     public global::Interoper.Opt<PointSnapshot> Center { get; init; }
+    /// <summary>Clamped to 0–20.</summary>
     public global::Interoper.Opt<double> Zoom { get; init; }
+    /// <summary>Degrees, normalized to 0–360.</summary>
     public global::Interoper.Opt<double> Rotation { get; init; }
+    /// <remarks>Default: "plain"</remarks>
     public global::Interoper.Opt<Basemap> Basemap { get; init; }
+    /// <summary>Undefined: the container's own CSS cursor.</summary>
     public global::Interoper.Opt<Cursor> Cursor { get; init; }
     public global::Interoper.Opt<string> Title { get; init; }
 

@@ -64,10 +64,10 @@ public static class Generator
                     Add(types.Name(selected.Declaration), RecordEmitter.Data(types, selected.Declaration));
                     break;
                 case AliasDeclaration a when types.Union(types.Name(a), a.Type) is { } type:
-                    Add(type.Type, ValueTypeEmitter.Emit(types, type));
+                    Add(type.Type, ValueTypeEmitter.Emit(types, type, a));
                     break;
                 case EnumDeclaration e:
-                    Add(types.Name(e), ValueTypeEmitter.Emit(types, types.Enum(e)));
+                    Add(types.Name(e), ValueTypeEmitter.Emit(types, types.Enum(e), e));
                     break;
                 case ClassDeclaration c:
                     Add(types.Name(c), LiveEmitter.Class(types, profile, options, diagnostics, declared, c));

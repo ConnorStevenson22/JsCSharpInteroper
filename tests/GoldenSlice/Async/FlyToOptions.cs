@@ -5,6 +5,8 @@ namespace GoldenSlice.Async;
 
 public sealed partial record FlyToOptions
 {
+    /// <summary>Milliseconds.</summary>
+    /// <remarks>Default: 0</remarks>
     public global::Interoper.Opt<double> Duration { get; init; }
 
     public static void Write(global::System.Text.Json.Utf8JsonWriter writer, FlyToOptions value)

@@ -359,7 +359,7 @@ export function extract(packageDirs, { eventMap } = {}) {
 
   /** Its own JSDoc only: without the checker, TypeScript doesn't copy an overridden member's docs from its base. */
   function doc(symOrSig) {
-    const text = (parts) => ts.displayPartsToString(parts).trim();
+    const text = (parts = []) => parts.map(linkPart).join("").trim();
     const tags = symOrSig.getJsDocTags();
     const tag = (...names) => tags.filter((t) => names.includes(t.name)).map((t) => text(t.text));
     const d = compact({
@@ -478,6 +478,19 @@ function readManifest(dir, pkg) {
     for (const e of decl.events ?? []) add(e.type);
   }
   return { elements, types };
+}
+
+/**
+ * A JSDoc display part, with each `{@link}` (or `@linkcode`, `@linkplain`) spelled `{@link Name}` or `{@link Name text}`:
+ * TypeScript's own `displayPartsToString` runs a link's name into its text (`{@link Xtext}`).
+ */
+function linkPart(part, i, parts) {
+  switch (part.kind) {
+    case "link": return part.text.startsWith("{") ? "{@link " : part.text;
+    case "linkName": return part.text.trim();
+    case "linkText": return (parts[i - 1].kind === "linkName" ? " " : "") + part.text.trim();
+    default: return part.text;
+  }
 }
 
 /** A manifest entry's docs: its description (or summary), default and deprecation. */

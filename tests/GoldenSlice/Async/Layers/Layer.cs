@@ -3,6 +3,7 @@
 
 namespace GoldenSlice.Async.Layers;
 
+/// <summary>Abstract: only its subclasses are constructed.</summary>
 public partial class Layer : global::GoldenSlice.Async.Observable
 {
     internal Layer(global::Interoper.JsRealm realm, int handle) : base(realm, handle) { }
@@ -17,6 +18,7 @@ public partial class Layer : global::GoldenSlice.Async.Observable
 
     public global::System.Threading.Tasks.Task SetVisibleAsync(bool value) => Realm.SetAsync(Handle, "visible", value);
 
+    /// <summary>A copy, of the same class.</summary>
     public async global::System.Threading.Tasks.Task<Layer> CloneAsync(global::Interoper.JsScope scope) =>
         (await Realm.CallAsync(global::Interoper.JsOp.Call(Handle, "clone"), scope.Read<Layer>))!;
 

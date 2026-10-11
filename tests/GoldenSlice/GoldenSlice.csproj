@@ -4,6 +4,14 @@
        tests/Interoper.Generator.Tests/GoldenSliceTests. Its metadata module, wwwroot/demo-maps.meta.js, is served at
        /_content/GoldenSlice/. -->
 
+  <!-- R29: the generated XML docs are compiled, so malformed ones fail the build (CS1570 and kin, as errors). Most of
+       the fixture has no JSDoc, and an undocumented declaration gets no doc comment, so CS1591 (missing XML comment)
+       would fire on nearly every member: it's off here, for generated code only. -->
+  <PropertyGroup>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+  </PropertyGroup>
+
   <ItemGroup>
     <SupportedPlatform Include="browser" />
     <!-- The components (R28) and DOM elements (R13) need Interoper.Blazor, which brings Interoper.Runtime. -->

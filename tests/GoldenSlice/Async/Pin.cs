@@ -3,6 +3,7 @@
 
 namespace GoldenSlice.Async;
 
+/// <summary>A marker with the <c>Draggable</c> mixin: its base is still <c>Marker</c>.</summary>
 public sealed partial class Pin : Marker
 {
     internal Pin(global::Interoper.JsRealm realm, int handle) : base(realm, handle) { }
@@ -10,12 +11,15 @@ public sealed partial class Pin : Marker
     public static async global::System.Threading.Tasks.Task<Pin> CreateAsync(global::Interoper.JsScope scope, PinSnapshot props) =>
         (await scope.Realm.CallAsync(global::Interoper.JsOp.Create(DemoMaps.PinId, w => PinSnapshot.WriteMembers(w, props)), scope.Read<Pin>))!;
 
+    /// <summary>Anything the app keeps with the pin.</summary>
     public global::System.Threading.Tasks.Task<global::Interoper.Opt<global::Interoper.JsAny>> GetMetaAsync(global::Interoper.JsScope scope) =>
         Realm.CallAsync(global::Interoper.JsOp.Get(Handle, "meta"), (ref r) => global::Interoper.JsJson.ReadOpt(ref r, (ref r1) => global::Interoper.JsAny.Read(ref r1, scope)));
 
+    /// <summary>Anything the app keeps with the pin.</summary>
     public global::System.Threading.Tasks.Task SetMetaAsync(global::Interoper.Opt<global::Interoper.JsAny> value) =>
         Realm.SendAsync(global::Interoper.JsOp.Set(Handle, "meta", w => global::Interoper.JsJson.WriteValue(w, value, global::Interoper.JsAny.Write)));
 
+    /// <summary>Moves the position and emits <c>drag</c>.</summary>
     public global::System.Threading.Tasks.Task DragByAsync(double dx, double dy) =>
         Realm.SendAsync(global::Interoper.JsOp.Call(Handle, "dragBy", w =>
         {

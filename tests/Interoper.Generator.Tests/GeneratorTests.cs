@@ -17,6 +17,25 @@ public sealed class GeneratorTests
         Assert.Contains("    Low = 1,\n    High = 10,\n", File(result, "Level.cs"));
     }
 
+    [Fact] // R29: a TS enum's members have their own docs, which the golden slice's literal unions don't
+    public void EnumMembersHaveTheirDocs()
+    {
+        var result = Generate("""
+            { "kind": "enum", "name": "Speed", "doc": { "summary": "How fast <i>it</i> goes." },
+              "members": [{ "name": "Fast", "value": 1, "doc": { "summary": "Skips frames.", "deprecated": "" } }, { "name": "Slow", "value": 2 }] }
+            """);
+        Assert.Contains("""
+            /// <summary>How fast &lt;i&gt;it&lt;/i&gt; goes.</summary>
+            public enum Speed
+            {
+                /// <summary>Skips frames.</summary>
+                /// <remarks>Deprecated.</remarks>
+                Fast = 1,
+                Slow = 2,
+            }
+            """.ReplaceLineEndings("\n"), File(result, "Speed.cs"));
+    }
+
     [Fact] // R15, R3, R26
     public void ADataRecordHasItsBasesMembers()
     {

@@ -10,9 +10,11 @@ public sealed partial class Polygon : Shape
     public static async global::System.Threading.Tasks.Task<Polygon> CreateAsync(global::Interoper.JsScope scope, PolygonSnapshot props) =>
         (await scope.Realm.CallAsync(global::Interoper.JsOp.Create(DemoMaps.PolygonId, w => PolygonSnapshot.WriteMembers(w, props)), scope.Read<Polygon>))!;
 
+    /// <summary>The closing edge from the last vertex back to the first is implied.</summary>
     public async global::System.Threading.Tasks.Task<double[][]> GetVerticesAsync() =>
         (await Realm.CallAsync(global::Interoper.JsOp.Get(Handle, "vertices"), static (ref r) => global::Interoper.JsJson.ReadArray(ref r, static (ref r1) => global::Interoper.JsJson.ReadArray(ref r1, global::Interoper.JsJson.ReadNumber))))!;
 
+    /// <summary>The closing edge from the last vertex back to the first is implied.</summary>
     public global::System.Threading.Tasks.Task SetVerticesAsync(double[][] value) =>
         Realm.SendAsync(global::Interoper.JsOp.Set(Handle, "vertices", w => global::Interoper.JsJson.WriteArray(w, value, static (w1, v1) => global::Interoper.JsJson.WriteArray(w1, v1, global::Interoper.JsJson.WriteNumber))));
 

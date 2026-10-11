@@ -3,6 +3,7 @@
 
 namespace GoldenSlice.Sync.Layers;
 
+/// <summary>The module's default export, as many libraries' one-class modules have.</summary>
 public sealed partial class TileLayer : Layer
 {
     internal TileLayer(global::Interoper.JsRealm realm, int handle) : base(realm, handle) { }
@@ -10,20 +11,28 @@ public sealed partial class TileLayer : Layer
     public static TileLayer Create(global::Interoper.JsScope scope, TileLayerSnapshot props) =>
         scope.Realm.Call(global::Interoper.JsOp.Create(global::GoldenSlice.Sync.DemoMaps.TileLayerId, w => TileLayerSnapshot.WriteMembers(w, props)), scope.Read<TileLayer>)!;
 
+    /// <summary>The URL template of the tiles.</summary>
     public string Url
     {
         get => Realm.GetString(Handle, "url");
         set => Realm.Set(Handle, "url", value);
     }
 
+    /// <summary>
+    /// The tiles' edge in pixels. The setter also takes one per zoom level, a union with a value-type case (R2), which
+    /// isn't mapped: the getter is kept, read-only (§5).
+    /// </summary>
     public double TileSize => Realm.GetNumber(Handle, "tileSize");
 
+    /// <summary>The markers drawn on top of the tiles.</summary>
     public global::GoldenSlice.Sync.Marker[] GetEmphasized(global::Interoper.JsScope scope) =>
         Realm.Call(global::Interoper.JsOp.Get(Handle, "emphasized"), (ref r) => global::Interoper.JsJson.ReadArray(ref r, scope.Read<global::GoldenSlice.Sync.Marker>))!;
 
+    /// <summary>Highlights one marker or several: <c>OneOrMany&lt;Marker&gt;</c> is <c>Marker | Marker[]</c> (§2).</summary>
     public void Emphasize(TileLayerEmphasizeMarkers markers) =>
         Realm.Send(global::Interoper.JsOp.Call(Handle, "emphasize", w => global::Interoper.JsJson.WriteValue(w, markers)));
 
+    /// <summary>Redeclared with the subclass's type.</summary>
     public new TileLayer Clone(global::Interoper.JsScope scope) =>
         Realm.Call(global::Interoper.JsOp.Call(Handle, "clone"), scope.Read<TileLayer>)!;
 

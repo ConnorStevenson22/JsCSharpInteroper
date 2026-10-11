@@ -424,6 +424,9 @@
             {
               "kind": "property",
               "name": "basemap",
+              "doc": {
+                "default": "\"plain\""
+              },
               "type": {
                 "kind": "ref",
                 "name": "Basemap",
@@ -484,6 +487,9 @@
             {
               "kind": "property",
               "name": "selected",
+              "doc": {
+                "summary": "The {@link Marker} the user picked last, or `null` when none is."
+              },
               "type": {
                 "kind": "union",
                 "types": [
@@ -634,6 +640,10 @@
                         "name": "void"
                       }
                     ]
+                  },
+                  "doc": {
+                    "summary": "Animates to {@link FlyToTarget a shape, a point or a camera}.\nResolves when the view has arrived & settled.",
+                    "since": "0.3"
                   }
                 }
               ]
@@ -3567,6 +3577,7 @@
             "name": "number"
           },
           "doc": {
+            "summary": "Clamped to 0–20, like the view's.",
             "default": "1"
           }
         }

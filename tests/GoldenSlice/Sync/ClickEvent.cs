@@ -5,6 +5,7 @@ namespace GoldenSlice.Sync;
 
 public sealed partial record ClickEvent
 {
+    /// <summary>Pixels from the view's center.</summary>
     public required double X { get; init; }
     public required double Y { get; init; }
     public required ClickEventButton Button { get; init; }

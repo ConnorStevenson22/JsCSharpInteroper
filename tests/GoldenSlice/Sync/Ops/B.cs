@@ -7,6 +7,7 @@ public static partial class B
 {
     private const string Module = "@acme/demo-maps/ops/b.js";
 
+    /// <summary><c>x + options.offset</c> (0 by default).</summary>
     public static double Execute(global::Interoper.JsRealm realm, double x, global::Interoper.Opt<BOptions> options = default) =>
         realm.Call(global::Interoper.JsOp.Call(Module, "execute", w =>
         {

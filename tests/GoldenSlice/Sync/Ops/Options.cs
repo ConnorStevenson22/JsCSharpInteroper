@@ -3,6 +3,7 @@
 
 namespace GoldenSlice.Sync.Ops;
 
+/// <summary>Sibling modules <c>ops/a</c> and <c>ops/b</c> each export an <c>Options</c> and an <c>execute</c> (R27).</summary>
 public sealed partial record Options
 {
     public global::Interoper.Opt<double> Scale { get; init; }
