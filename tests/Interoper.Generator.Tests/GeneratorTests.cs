@@ -365,7 +365,7 @@ public sealed class GeneratorTests
             { "kind": "{{kind}}", "name": "{{name}}", "members": [
               { "kind": "property", "name": "size", "type": {{Number}} },
               { "kind": "method", "name": "values", "signatures": [{ "params": [], "returns": { "kind": "ref", "name": "IterableIterator", "args": [{{Number}}] } }] },
-              { "kind": "method", "name": "__@iterator@10", "signatures": [{ "params": [], "returns": { "kind": "ref", "name": "Generator", "args": [{{Number}}] } }] }] }
+              { "kind": "method", "name": "entries", "signatures": [{ "params": [], "returns": { "kind": "ref", "name": "Generator", "args": [{{Number}}] } }] }] }
             """;
         var result = Generate(Iterating("class", "Bag") + ", " + Iterating("interface", "Entries") + """
             , { "kind": "function", "name": "count", "signatures": [{ "params": [{ "name": "entries", "type": { "kind": "ref", "name": "Entries", "module": "@acme/maps/a.js" } }], "returns": { "kind": "primitive", "name": "number" } }] }
@@ -374,9 +374,9 @@ public sealed class GeneratorTests
         Assert.Equal(
         [
             "IOP2007 Bag.values: skipped: uses `IterableIterator`",
-            "IOP2007 Bag.__@iterator@10: skipped: uses `Generator`",
+            "IOP2007 Bag.entries: skipped: uses `Generator`",
             "IOP2007 Entries.values: skipped: uses `IterableIterator`",
-            "IOP2007 Entries.__@iterator@10: skipped: uses `Generator`",
+            "IOP2007 Entries.entries: skipped: uses `Generator`",
         ], result.Diagnostics.Select(d => d.ToString()));
         Assert.Contains("public double Size", File(result, "Bag.cs"));
         Assert.Contains("public sealed partial record Entries", File(result, "Entries.cs"));
@@ -855,7 +855,6 @@ public sealed class GeneratorTests
         Assert.Equal([
             "IOP2007 ChartElement.frame: skipped: uses a DOM element JS returns (R13)",
             "IOP2007 <x-chart> data: skipped: an attribute without a property is a string, number, boolean or string enum (R28)",
-            "IOP2006 <x-chart>: its component is XChartComponent: XChart is taken (R28)",
         ], result.Diagnostics.Select(d => d.ToString()));
         var element = File(result, "ChartElement.cs");
         Assert.Contains(api == Api.Sync ? "public void SetHost(global::Microsoft.AspNetCore.Components.ElementReference value)" : "public global::System.Threading.Tasks.Task SetHostAsync(global::Microsoft.AspNetCore.Components.ElementReference value)", element);
@@ -883,7 +882,7 @@ public sealed class GeneratorTests
         Assert.Contains("""{ name: "level-change", fields: ["level"] },""", meta);
     }
 
-    [Theory] // R28, design §2: an abstract element class named like its tag; an attribute the manifest types as a primitive
+    [Theory] // R28, design §3.2: an abstract element class named like its tag; an attribute the manifest types as a primitive
     [InlineData(Api.Sync)]
     [InlineData(Api.Async)]
     public void AnAbstractElementClassNamedLikeItsTagIsRegisteredAndItsComponentIsSuffixed(Api api)
@@ -897,8 +896,8 @@ public sealed class GeneratorTests
               "attributes": [{ "name": "label", "property": "label", "type": {{String}} }, { "name": "tags", "property": "tags" }], "events": [], "slots": [] }
             """);
 
-        Assert.Equal(["IOP2006 <x-chart>: its component is XChartComponent: XChart is taken (R28)"], result.Diagnostics.Select(d => d.ToString()));
-        // The element's live object is read by its tag's class id, so the registry makes the abstract class (design §2).
+        Assert.Empty(result.Diagnostics); // R28: {Name}Component is the convention, not a rename
+        // The element's live object is read by its tag's class id, so the registry makes the abstract class (design §3.2).
         Assert.Contains("public sealed partial class XChart : global::Interoper.JsObject", File(result, "XChart.cs"));
         Assert.Contains(".Add(XChartId, static (realm, handle) => new XChart(realm, handle))", File(result, "Maps.cs"));
         var component = File(result, "XChartComponent.cs");
@@ -928,7 +927,7 @@ public sealed class GeneratorTests
         Assert.Single(File(result, "MapsEvents.cs").Split('\n'), l => l.Contains("\"onpick\"", StringComparison.Ordinal));
     }
 
-    [Fact] // R28, R27: an inline detail's record takes the next free name in its module, and a sibling module's type of its name keeps it
+    [Fact] // R28, R11, R27: an inline detail is an inline record; a name a declared type has, in its namespace, gets a suffix
     public void AnInlineDetailWhoseNameIsTakenGetsASuffix()
     {
         var result = Elements(Api.Async, [
@@ -944,15 +943,16 @@ public sealed class GeneratorTests
             """);
 
         Assert.Equal([
-            "IOP2006 <x-chart> on:level-change: its detail is LevelChangeDetail2: LevelChangeDetail is taken (R27)",
-            "IOP2006 @acme/maps/chart.js: its ZoomChangeDetail is ChartZoomChangeDetail: @acme/maps/other.js has one too (R27)",
+            "IOP2006 Acme.Maps.LevelChangeDetail: the inline record is LevelChangeDetail2: LevelChangeDetail is taken (R27)",
+            "IOP2006 Acme.Maps.ZoomChangeDetail: the inline record is ZoomChangeDetail2: ZoomChangeDetail is taken (R27)",
         ], result.Diagnostics.Select(d => d.ToString()));
         var component = File(result, "XChart.cs");
         Assert.Contains("EventCallback<LevelChangeDetail2> OnLevelChange", component);
         Assert.Contains("OnLevelChange.InvokeAsync(e.Read(LevelChangeDetail2.Read));", component);
         Assert.Contains("public required double Level { get; init; }", File(result, "LevelChangeDetail2.cs"));
         Assert.Contains("public required string Other { get; init; }", File(result, "LevelChangeDetail.cs"));
-        Assert.Contains("OnZoomChange.InvokeAsync(e.Read(ChartZoomChangeDetail.Read));", component); // the inline one comes last
+        Assert.Contains("OnZoomChange.InvokeAsync(e.Read(ZoomChangeDetail2.Read));", component); // a sibling module's declared name too
+        Assert.Contains("public required double Zoom { get; init; }", File(result, "ZoomChangeDetail2.cs"));
         Assert.Contains("public required string Other { get; init; }", File(result, "ZoomChangeDetail.cs"));
         var meta = File(result, "maps.meta.js");
         Assert.Contains("""{ name: "level-change", fields: ["level"] },""", meta);
@@ -1159,6 +1159,111 @@ public sealed class GeneratorTests
         Assert.Contains("public required double W { get; init; }", File(result, "FeatureSize.cs"));
         Assert.Contains("public global::Interoper.Opt<FeatureSize> Size { get; init; }", File(result, "FeatureSnapshot.cs"));
     }
+
+    [Fact] // R11, R15, R21: a callback's arguments are data, so their inline records drop the optional members they can't map, a callback alias's too
+    public void ACallbacksInlineRecordsDropTheOptionalMembersTheyCantMap()
+    {
+        // Bag can't be mapped; nothing that only an inline record's dropped member reaches is emitted.
+        var result = Generate($$"""
+            { "kind": "alias", "name": "Visit", "type": { "kind": "function", "params": [{ "name": "e", "type": { "kind": "object", "members": [{{X}}, {{Legs}}] } }], "returns": {{Void}} } },
+            { "kind": "interface", "name": "Bag", "members": [{ "kind": "property", "name": "run", "inherited": true, "type": { "kind": "function", "returns": { "kind": "ref", "name": "IterableIterator", "args": [{{Number}}] } } }] },
+            { "kind": "class", "name": "Feature", "members": [
+              { "kind": "method", "name": "each", "signatures": [{ "params": [{ "name": "cb", "type": { "kind": "function", "params": [{ "name": "e", "type": { "kind": "object", "members": [{{X}}, {{Legs}},
+                { "kind": "property", "name": "bag", "optional": true, "type": { "kind": "ref", "name": "Bag", "module": "@acme/maps/a.js" } }] } }], "returns": {{Void}} } }], "returns": {{Void}} }] },
+              { "kind": "method", "name": "visit", "signatures": [{ "params": [{ "name": "cb", "type": { "kind": "ref", "name": "Visit", "module": "@acme/maps/a.js" } }], "returns": {{Void}} }] }] }
+            """);
+
+        Assert.Equal([
+            "IOP2007 Bag: skipped: uses `IterableIterator` (in `Bag`)",
+            "IOP2007 Feature.each(cb)(e).legs: skipped: uses a tuple of different types",
+            "IOP2007 Feature.each(cb)(e).bag: skipped: uses `IterableIterator` (in `Bag`)",
+            "IOP2007 Feature.visit(cb)(e).legs: skipped: uses a tuple of different types",
+        ], result.Diagnostics.Select(d => d.ToString()));
+        Assert.Contains("public void Each(global::Interoper.JsScope scope, global::System.Action<FeatureEachCbE> cb) =>", File(result, "Feature.cs"));
+        Assert.Contains("public void Visit(global::Interoper.JsScope scope, global::System.Action<FeatureVisitCbE> cb) =>", File(result, "Feature.cs"));
+        foreach (var record in new[] { File(result, "FeatureEachCbE.cs"), File(result, "FeatureVisitCbE.cs") })
+        {
+            Assert.Contains("public required double X { get; init; }", record);
+            Assert.DoesNotContain("Legs", record);
+            Assert.DoesNotContain("Bag", record);
+        }
+        Assert.DoesNotContain("Bag.cs", result.Files.Select(f => f.Path));
+    }
+
+    [Fact] // R11, §2: an inline record isn't generic, so one with a type parameter can't be mapped; an optional member is dropped
+    public void AnInlineRecordWithATypeParameterCantBeMapped()
+    {
+        var meta = """{ "kind": "object", "members": [{ "kind": "property", "name": "item", "type": { "kind": "typeParameter", "name": "T" } }] }""";
+        var result = Generate($$"""
+            { "kind": "interface", "name": "Box", "typeParameters": [{ "name": "T" }], "members": [{{X}}, { "kind": "property", "name": "meta", "optional": true, "type": {{meta}} }] },
+            { "kind": "interface", "name": "Crate", "typeParameters": [{ "name": "T" }], "members": [{ "kind": "property", "name": "meta", "type": {{meta}} }] }
+            """);
+
+        Assert.Equal([
+            "IOP2007 Box.meta: skipped: uses an inline record with the type parameter `T` (§2)",
+            "IOP2007 Crate: skipped: uses an inline record with the type parameter `T` (§2) (in `Crate`)",
+        ], result.Diagnostics.Select(d => d.ToString()));
+        Assert.DoesNotContain("Meta", File(result, "Box.cs"));
+        Assert.DoesNotContain(result.Files, f => f.Path.StartsWith("Crate", StringComparison.Ordinal) || f.Path.StartsWith("BoxMeta", StringComparison.Ordinal));
+    }
+
+    [Fact] // R11, R27: an inline record doesn't take a declared type's name; it gets a suffix
+    public void AnInlineRecordTakesANameNoDeclaredTypeHas()
+    {
+        var result = Generate($$"""
+            { "kind": "interface", "name": "FeatureSize", "members": [{{X}}] },
+            { "kind": "class", "name": "Feature", "members": [
+              { "kind": "property", "name": "size", "type": { "kind": "object", "members": [{ "kind": "property", "name": "w", "type": {{Number}} }] } },
+              { "kind": "property", "name": "box", "type": { "kind": "ref", "name": "FeatureSize", "module": "@acme/maps/a.js" } }] }
+            """);
+
+        Assert.Equal(["IOP2006 Acme.Maps.FeatureSize: the inline record is FeatureSize2: FeatureSize is taken (R27)"], result.Diagnostics.Select(d => d.ToString()));
+        Assert.Contains("public FeatureSize2 Size", File(result, "Feature.cs"));
+        Assert.Contains("public FeatureSize Box", File(result, "Feature.cs"));
+        Assert.Contains("public required double W { get; init; }", File(result, "FeatureSize2.cs"));
+        Assert.Contains("public required double X { get; init; }", File(result, "FeatureSize.cs"));
+    }
+
+    [Fact] // R11, R27, R2: a union's inline cases are named by a string tag they share, or else by their position in the union (IOP2006)
+    public void InlineUnionCasesAreNamedByTheirTagOrPosition()
+    {
+        // draw(shape: (PolyProps & { type: "poly" }) | (PointProps & { type: "point" }), mark: Layer | { x: number } | { y: string }), resolved.
+        var result = Generate(new Profile { Package = "@acme/maps", Include = ["@acme/maps/a.js"] }, Api.Sync, ("a.js", $$"""
+            { "kind": "class", "name": "Feature", "members": [
+              { "kind": "method", "name": "draw", "signatures": [{ "params": [{ "name": "shape", "type": { "kind": "union", "types": [
+                { "kind": "object", "members": [{ "kind": "property", "name": "type", "type": { "kind": "literal", "value": "poly" } }, { "kind": "property", "name": "stops", "type": { "kind": "array", "element": {{Number}} } }] },
+                { "kind": "object", "members": [{ "kind": "property", "name": "type", "type": { "kind": "literal", "value": "point" } }, {{X}}] }] } },
+                { "name": "mark", "type": { "kind": "union", "types": [{ "kind": "ref", "name": "Layer", "module": "@acme/maps/b.js" },
+                  { "kind": "object", "members": [{{X}}] }, { "kind": "object", "members": [{ "kind": "property", "name": "y", "type": {{String}} }] }] } }],
+                "returns": {{Void}} }] }] }
+            """), ("b.js", """{ "kind": "class", "name": "Layer" }"""));
+
+        Assert.Equal([
+            "IOP2007 FeatureDrawMark: case `Layer` dropped: a class outside the selection (R2)",
+            "IOP2006 Acme.Maps.FeatureDrawMark: its case 2 is FeatureDrawMarkCase2: the inline cases have no string tag (R27)",
+            "IOP2006 Acme.Maps.FeatureDrawMark: its case 3 is FeatureDrawMarkCase3: the inline cases have no string tag (R27)",
+        ], result.Diagnostics.Select(d => d.ToString()));
+        Assert.Contains("public FeatureDrawShape(FeatureDrawShapePoly value)", File(result, "FeatureDrawShape.cs"));
+        Assert.Contains("public FeatureDrawShape(FeatureDrawShapePoint value)", File(result, "FeatureDrawShape.cs"));
+        Assert.Contains("public FeatureDrawMark(FeatureDrawMarkCase2 value)", File(result, "FeatureDrawMark.cs"));
+        Assert.Contains("public FeatureDrawMark(FeatureDrawMarkCase3 value)", File(result, "FeatureDrawMark.cs"));
+    }
+
+    [Fact] // R24, R11: an inline payload is projected to its record's members, as a named one is
+    public void AnInlinePayloadIsProjected()
+    {
+        var result = Generate($$"""
+            { "kind": "class", "name": "Feature", "events": [{ "name": "move", "type": { "kind": "object", "members": [{{X}}, { "kind": "property", "name": "y", "type": {{Number}} }] } }] }
+            """, new Profile { Package = "@acme/maps", Events = new(Subscribe: "on") });
+
+        Assert.Empty(result.Diagnostics);
+        Assert.Contains("""scope.Subscribe(Handle, "on", "move", FeatureMove.Read, handler, options, ["x", "y"]);""", File(result, "Feature.cs"));
+        Assert.Contains("public required double Y { get; init; }", File(result, "FeatureMove.cs"));
+    }
+
+    private const string Void = """{ "kind": "primitive", "name": "void" }""";
+    private const string X = """{ "kind": "property", "name": "x", "type": { "kind": "primitive", "name": "number" } }""";
+    private const string Legs = """{ "kind": "property", "name": "legs", "optional": true, "type": { "kind": "tuple", "elements": [{ "kind": "primitive", "name": "number" }, { "kind": "primitive", "name": "string" }] } }""";
 
     private const string Number = """{ "kind": "primitive", "name": "number" }""";
     private const string String = """{ "kind": "primitive", "name": "string" }""";

@@ -94,7 +94,7 @@ public static class Generator
         foreach (var element in selection.Elements)
         {
             // R28: nothing refers to a component either, so it takes a free name too: with Component (the element's own
-            // class is often named like its tag), then a number.
+            // class is often named like its tag, so that's the convention, not reported), then a number (IOP2006).
             var ns = types.Namespace(element.Class);
             var wanted = Naming.Type(element.Element.Tag);
             bool Taken(string name) => paths.Contains(Naming.FilePath(root, ns, name)) || namespaces.Contains($"{ns}.{name}");
@@ -103,28 +103,27 @@ public static class Generator
             {
                 name = $"{wanted}Component{n}";
             }
-            if (name != wanted)
+            if (name != wanted && name != wanted + "Component")
             {
-                diagnostics.Add(new(Diagnostic.Renamed, $"<{element.Element.Tag}>", $"its component is {name}: {wanted} is taken (R28)"));
+                diagnostics.Add(new(Diagnostic.Renamed, $"<{element.Element.Tag}>", $"its component is {name}: {wanted} and {wanted}Component are taken (R28)"));
             }
             Add(new(ns, name), ComponentEmitter.Component(types, options, diagnostics, element, name));
         }
         var classes = MetadataEmitter.ClassIds(types, selection);
         files.Add(new($"{types.Registry}.cs", MetadataEmitter.Registry(types, options, classes, modules.SelectMany(m => m), selection.Elements)));
         files.Add(new(MetadataEmitter.FileName(ir), MetadataEmitter.Module(ir, profile, types, classes, selection.Elements)));
-        // The anonymous unions and inline records (R11, R27); emitting a record can meet more of them.
-        for (int i = 0, j = 0; i < types.Owned.Count || j < types.Records.Count;)
+        // The anonymous unions and inline records (R11, R27), unions first; emitting one can meet more of them.
+        var (unions, records) = (0, 0);
+        while (unions < types.Owned.Count || records < types.Records.Count)
         {
-            if (i < types.Owned.Count)
+            if (unions < types.Owned.Count)
             {
-                var type = types.Owned[i++];
+                var type = types.Owned[unions++];
                 Add(type.Type, ValueTypeEmitter.Emit(types, type));
+                continue;
             }
-            else
-            {
-                var record = types.Records[j++];
-                Add(types.Name(record), RecordEmitter.Data(types, record));
-            }
+            var record = types.Records[records++];
+            Add(types.Name(record), RecordEmitter.Data(types, record));
         }
         // R28: Razor finds custom events' [EventHandler]s only on a class named EventHandlers. It's partial, so the
         // bindings of two packages in one namespace share it; a type of that name in the root namespace takes it.

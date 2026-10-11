@@ -95,7 +95,7 @@ internal sealed class LiveEmitter
         var snapshotKey = CsType.Record(new(ns, snapshot)).FullName;
         self = types.Self(c);
         // An abstract entity class isn't abstract in C#: JS can hand back an instance whose class id is its own (an element's
-        // class, by its tag; a subclass that keeps its runtime class name), so the registry makes it (design §2).
+        // class, by its tag; a subclass that keeps its runtime class name), so the registry makes it (design §3.2).
         var modifier = types.IsClosed(c) ? "closed " : types.HasSubclasses(c) ? "" : "sealed ";
         taken.UnionWith([name, "Realm", "Handle", "Write", Mode("Snapshot"), Mode("Apply")]);
         if (!async)

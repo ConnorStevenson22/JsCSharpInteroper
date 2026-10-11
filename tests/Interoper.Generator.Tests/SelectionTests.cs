@@ -15,7 +15,7 @@ public sealed class SelectionTests
             "MapView.js: Basemap, Cursor, CenterAndZoom, Camera, FlyToTarget, FlyToOptions, ClickEvent, MapViewEvents, MapViewOptions, MapView", // R15: FlyToOptions without its signal
             "Marker.js: MarkerOptions, Marker", // R15: without its callback
             "core.js: Observable, Emitter, CollectionChangeEvent, CollectionEvents, Collection",
-            "demo-map.js: DemoMapClickDetail, DemoMapElement, DemoMapZoomChangeDetail", // R28: not the event map; a record for an inline detail
+            "demo-map.js: DemoMapClickDetail, DemoMapElement", // R28: not the event map; an inline detail is an inline record (R11)
             "geometry.js: ShapeType, Bounds, Shape, Point, Line, Polygon",
             "layers/Layer.js: Layer",
             "layers/TileLayer.js: TileLayer",

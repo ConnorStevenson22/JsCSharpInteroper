@@ -240,7 +240,7 @@ internal sealed class ComponentEmitter
             var reader = opt ? $"{mapped.Static}(ref r) => global::Interoper.JsJson.ReadOpt(ref r, {mapped.Reader(1)})" : mapped.Reader(0);
             var typeName = opt ? $"global::Interoper.Opt<{mapped.Name}>" : mapped.Name;
             (Parameter, string, string)? bind = null;
-            if (!opt && detail is RefType r && types.Declaration(r) is { } record and (InterfaceDeclaration or AliasDeclaration { Type: ObjectType }))
+            if (!opt && types.RecordOf(detail) is { } record)
             {
                 var members = types.Fields(record).Where(f => f.Constant is null && !f.Opt).ToList();
                 foreach (var p in parameters.Where(p => !bound.Contains(p) && !p.Nullable && Changes(e.Name, p.Js)).OrderByDescending(p => p.Js.Length))

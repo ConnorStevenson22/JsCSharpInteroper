@@ -248,6 +248,18 @@ test("design §2: manifest types the typings don't give, ones that don't resolve
   }]);
 });
 
+test("a member keyed by a symbol is left out, own or picked", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "extract-"));
+  fs.writeFileSync(path.join(dir, "package.json"), JSON.stringify({ name: "@acme/extra", version: "1.0.0" }));
+  fs.writeFileSync(path.join(dir, "index.d.ts"), `
+    export declare class Bag { size: number; [Symbol.iterator](): IterableIterator<number>; }
+    export interface Entries { [Symbol.iterator](): Iterator<string>; count: number }
+    export interface View extends Pick<Bag, "size" | typeof Symbol.iterator> {}`);
+  const [{ declarations }] = extract(dir).modules;
+  fs.rmSync(dir, { recursive: true });
+  assert.deepEqual(declarations.map((d) => [d.name, d.members.map((m) => m.name)]), [["Bag", ["size"]], ["Entries", ["count"]], ["View", ["size"]]]);
+});
+
 test("a default-exported function keeps its own name", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "extract-"));
   fs.writeFileSync(path.join(dir, "package.json"), JSON.stringify({ name: "@acme/extra", version: "1.0.0" }));

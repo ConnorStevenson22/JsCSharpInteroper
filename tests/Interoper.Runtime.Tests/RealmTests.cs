@@ -294,7 +294,7 @@ public sealed class RealmTests
         await scope.DisposeAsync();
     }
 
-    [Fact] // design §2, R19 step 1: JS can hand back an abstract class's own instance (an element's class by its tag, say)
+    [Fact] // design §3.2, R19 step 1: JS can hand back an abstract class's own instance (an element's class by its tag, say)
     public async Task AnAbstractClassIdIsRegisteredAsItsOwnLiveType()
     {
         var scope = new JsScope(await StartedRealm());

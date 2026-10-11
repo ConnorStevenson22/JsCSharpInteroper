@@ -76,6 +76,8 @@ internal sealed class TypeMap
     private readonly Dictionary<ObjectType, AliasDeclaration> bags = new(ReferenceEqualityComparer.Instance);
     private readonly Dictionary<Declaration, TypeName> inline = new(ReferenceEqualityComparer.Instance);
     private readonly List<Declaration> records = [];
+    /// <summary>R27: the names an inline record can't take (<see cref="Taken"/>), filled when the first one is named.</summary>
+    private readonly HashSet<TypeName> taken = [];
     private readonly HashSet<ClassDeclaration> watchable = new(ReferenceEqualityComparer.Instance);
     private readonly Dictionary<Declaration, bool> scoped = new(ReferenceEqualityComparer.Instance);
     private readonly HashSet<Declaration> scoping = new(ReferenceEqualityComparer.Instance);
@@ -124,12 +126,9 @@ internal sealed class TypeMap
         (package, root) = (ir.Package.Name, ns);
         var emitted = selected.Select(s => (s.Module, s.Declaration.Name)).ToHashSet();
         // R27: sibling modules' types of one name. The first in IR order keeps it; a later one is prefixed with its
-        // module's class name (ops/b.js's Options is BOptions), so both compile, and so do their users. The records of
-        // inline event details (R28), which the IR doesn't declare, come last.
+        // module's class name (ops/b.js's Options is BOptions), so both compile, and so do their users.
         var owners = new Dictionary<(string Namespace, string Name), string>();
-        var declared = ir.Modules.SelectMany(m => m.Declarations.Select(d => (Module: m.Specifier, Declaration: d))).ToList();
-        var inIr = declared.Select(x => (x.Module, x.Declaration.Name)).ToHashSet();
-        foreach (var (module, d) in declared.Concat(selected.Where(s => !inIr.Contains((s.Module, s.Declaration.Name))).Select(s => (s.Module, s.Declaration))))
+        foreach (var (module, d) in ir.Modules.SelectMany(m => m.Declarations.Select(d => (m.Specifier, d))))
         {
             if (!MakesType(d))
             {
@@ -453,7 +452,7 @@ internal sealed class TypeMap
                 EnumMembers(name.Name, literals, literals.Select(v => v.GetString()!)), literals.Count > MaxEnumMembers || flat.Any(IsOpenString))
             : flat.All(t => t is LiteralType { Value.ValueKind: JsonValueKind.Number }) ? new EnumType(name,
                 EnumMembers(name.Name, literals, literals.Select(v => v.GetRawText())), Extensible: false)
-            : new UnionStruct(name, Cases(name, flat, type is UnionType d ? d.Discriminant : null),
+            : new UnionStruct(name, Cases(name, all, flat, type is UnionType d ? d.Discriminant : null),
                 type is UnionType u && u.Types.Count(t => !IsNullish(t)) == all.Count ? u.Discriminant : null,
                 WrittenOnly(type, all, flat), Dropped: flat.Count < all.Count);
         unions[name] = result;
@@ -503,15 +502,31 @@ internal sealed class TypeMap
     }
 
     /// <summary>
-    /// The cases of a union, after mapping (R5: one per C# type). An inline object case's record is named after the
-    /// union and its discriminant's value (<c>FeatureShapePoly</c>), or its position (<c>FeatureShape2</c>, R27).
+    /// The cases of a union (<paramref name="types"/>, of <paramref name="all"/> before R2 dropped any), after mapping
+    /// (R5: one per C# type). An inline object case's record is named after the union and its tag's value
+    /// (<c>FeatureShapePoly</c>, R27): the discriminant's, or else a member every inline case has with a string literal
+    /// of its own. Without one it's named by its position in the union (<c>FeatureShapeCase2</c>), reported as IOP2006.
     /// </summary>
-    private List<UnionCase> Cases(TypeName name, List<IrType> types, string? discriminant)
+    private List<UnionCase> Cases(TypeName name, List<IrType> all, List<IrType> types, string? discriminant)
     {
+        var objects = types.OfType<ObjectType>().ToList();
+        var tag = discriminant is not null && objects.All(o => Tag(o, discriminant) is not null) ? discriminant
+            : objects.SelectMany(o => o.Members.OfType<PropertyMember>()).Select(p => p.Name).Distinct()
+                .FirstOrDefault(m => objects.Select(o => Tag(o, m)).ToList() is var values && values.All(v => v is not null) && values.Distinct().Count() == values.Count);
         var cases = new List<UnionCase>();
-        foreach (var (type, i) in types.Select((t, i) => (t, i)))
+        foreach (var type in types)
         {
-            var mapped = Map(type, type is ObjectType o ? name with { Name = name.Name + CaseName(o, discriminant, i) } : name);
+            var owner = name;
+            if (type is ObjectType o)
+            {
+                var position = (all.FindIndex(t => ReferenceEquals(t, o)) + 1).ToString(System.Globalization.CultureInfo.InvariantCulture);
+                owner = name with { Name = name.Name + (tag is not null ? Tag(o, tag) : "Case" + position) };
+                if (tag is null)
+                {
+                    diagnostics.Add(new(Diagnostic.Renamed, name.ToString(), $"its case {position} is {owner.Name}: the inline cases have no string tag (R27)"));
+                }
+            }
+            var mapped = Map(type, owner);
             if (cases.All(c => c.Type.FullName != mapped.FullName))
             {
                 cases.Add(new(mapped, type is RefType r ? Find(r) : type is ObjectType bag ? Bag(bag) : null));
@@ -520,9 +535,10 @@ internal sealed class TypeMap
         return cases;
     }
 
-    private static string CaseName(ObjectType o, string? discriminant, int index) =>
-        o.Members.OfType<PropertyMember>().FirstOrDefault(p => p.Name == discriminant)?.Type is LiteralType { Value.ValueKind: JsonValueKind.String } value &&
-        Naming.Pascal(value.Value.GetString()!) is { Length: > 0 } pascal ? pascal : (index + 1).ToString(System.Globalization.CultureInfo.InvariantCulture);
+    /// <summary>An inline case's tag: the PascalCased string literal of its member <paramref name="member"/>, if it has one.</summary>
+    private static string? Tag(ObjectType o, string member) =>
+        o.Members.OfType<PropertyMember>().FirstOrDefault(p => p.Name == member)?.Type is LiteralType { Value.ValueKind: JsonValueKind.String } value &&
+        Naming.Pascal(value.Value.GetString()!) is { Length: > 0 } pascal ? pascal : null;
 
     /// <summary>R11: an inline object type as a record, unnamed: what the mapping checks look at.</summary>
     private AliasDeclaration Bag(ObjectType o)
@@ -535,8 +551,10 @@ internal sealed class TypeMap
     }
 
     /// <summary>
-    /// R11: an inline object type's record, named after its owner (R27) where it's first mapped; a name another inline
-    /// type has taken gets a numeric suffix. Its members are mapped now, so the types they own are met before it's emitted.
+    /// R11: an inline object type's record, named after its owner (R27) where it's first mapped. A name that is taken (by
+    /// a declared type, a snapshot, the registry, a module's functions, an anonymous union or enum, or another inline
+    /// record) gets a numeric suffix, reported as IOP2006. Its members are mapped now, so the types they own are met
+    /// before it's emitted.
     /// </summary>
     private AliasDeclaration Inline(ObjectType o, TypeName owner)
     {
@@ -546,14 +564,39 @@ internal sealed class TypeMap
             return bag;
         }
         var name = owner;
-        for (var n = 2; inline.ContainsValue(name); n++)
+        for (var n = 2; Taken(name); n++)
         {
             name = owner with { Name = owner.Name + n };
         }
+        if (name != owner)
+        {
+            diagnostics.Add(new(Diagnostic.Renamed, owner.ToString(), $"the inline record is {name.Name}: {owner.Name} is taken (R27)"));
+        }
         inline[bag] = name;
+        taken.Add(name);
         records.Add(bag);
         Fields(bag);
         return bag;
+    }
+
+    /// <summary>Whether a type of that name is declared, or named already (<see cref="Inline"/>).</summary>
+    private bool Taken(TypeName name)
+    {
+        if (taken.Count == 0)
+        {
+            foreach (var d in declarations.Values.Where(MakesType))
+            {
+                taken.Add(Name(d));
+                if (d is ClassDeclaration c)
+                {
+                    taken.Add(Snapshot(c));
+                }
+            }
+            taken.UnionWith(modules.Values.Where(m => m.Declarations.Any(d => d is FunctionDeclaration))
+                .Select(m => new TypeName(Namespace(m.Specifier), LiveEmitter.ModuleClass(m.Specifier))));
+            taken.Add(new(root, Registry));
+        }
+        return taken.Contains(name) || unions.ContainsKey(name);
     }
 
     /// <summary>R6: a union's members, with the members of union aliases in their place.</summary>
@@ -588,7 +631,7 @@ internal sealed class TypeMap
         flat.Any(UsesEntity) || flat.Count < all.Count && UnionProblem(type, null, written: false) is not null;
 
     /// <summary>The first type parameter a type names, if any.</summary>
-    private static TypeParameterType? TypeParameterIn(IrType type) =>
+    internal static TypeParameterType? TypeParameterIn(IrType type) =>
         type as TypeParameterType ?? Selection.Children(type).Select(TypeParameterIn).FirstOrDefault(t => t is not null);
 
     /// <summary>A class outside the selection, or an alias of one: a union drops it as a case (R2).</summary>
@@ -638,13 +681,18 @@ internal sealed class TypeMap
     }
 
     /// <summary>
-    /// R24: an event payload's default projection, the wire members of its data record, constants included; null for
-    /// any other payload, which is sent whole.
+    /// R24: an event payload's default projection, the wire members of its data record or inline record (R11),
+    /// constants included; null for any other payload, which is sent whole.
     /// </summary>
-    public IReadOnlyList<string>? Projection(IrType payload) =>
-        payload is RefType r && Find(r) is (InterfaceDeclaration { IndexSignatures.Count: 0 } or AliasDeclaration { Type: ObjectType { IndexSignatures.Count: 0 } }) and var d
-            ? [.. Fields(d).Select(f => f.JsName)]
-            : null;
+    public IReadOnlyList<string>? Projection(IrType payload) => RecordOf(payload) is { } d ? [.. Fields(d).Select(f => f.JsName)] : null;
+
+    /// <summary>The data record a type is, named (R15) or inline (R11, mapped already); null for any other type.</summary>
+    public Declaration? RecordOf(IrType type) => type switch
+    {
+        RefType r when Find(r) is (InterfaceDeclaration { IndexSignatures.Count: 0 } or AliasDeclaration { Type: ObjectType { IndexSignatures.Count: 0 } }) and var d => d,
+        ObjectType { IndexSignatures.Count: 0 } o when bags.TryGetValue(o, out var bag) && inline.ContainsKey(bag) => bag,
+        _ => null,
+    };
 
     /// <summary>An interface's own members, then its bases' (as the IR orders inherited members).</summary>
     private IEnumerable<PropertyMember> Members(InterfaceDeclaration i)
@@ -919,6 +967,7 @@ internal sealed class TypeMap
         RefType r => new($"`{r.Name}` here"),
         ObjectType { CallSignatures.Count: > 0 } or ObjectType { ConstructSignatures.Count: > 0 } => new("a callable object"),
         ObjectType o when o.Members.OfType<MethodMember>().FirstOrDefault() is { } method => new($"method `{method.Name}`"),
+        ObjectType o when TypeParameterIn(o) is { } parameter => new($"an inline record with the type parameter `{parameter.Name}` (§2)"), // it isn't generic
         ObjectType o when !written && HoldsElement(Bag(o)) => new("an inline record that holds a DOM element JS can't return (R13)"),
         ObjectType o => RecordProblem(o.IndexSignatures.Count, o.Members.OfType<PropertyMember>()), // R11, R15
         TupleType => new("a tuple with optional or rest elements"),

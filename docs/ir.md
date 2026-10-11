@@ -47,7 +47,7 @@ Every declaration has `kind`, `name` and an optional `doc` (a function's are on 
 
 - **Members** are `{ kind: "property", name, type, writeType?, readonly?, optional?, static?, abstract?, inherited?, doc? }` or `{ kind: "method", name, signatures, optional?, static?, abstract?, inherited? }`, whose docs are on its signatures.
   - `writeType` is the setter's type when an accessor pair's types differ (§5).
-  - Members a named base declares are listed on that base only: follow `extends`. Members of an anonymous base or a mapped type are listed, with `inherited`. Members the platform declares (the DOM's) are left out.
+  - Members a named base declares are listed on that base only: follow `extends`. Members of an anonymous base or a mapped type are listed, with `inherited`. Members the platform declares (the DOM's) are left out. So are members keyed by a symbol (`[Symbol.iterator]()`), which have no name to bind.
   - A mixin's base, an intersection (`class Pin extends PinBase`, where `PinBase: typeof Marker & typeof Draggable`), is its first part that is a named, exported class, in any order and next to anonymous parts (`{ new (...args: any[]): {…} } & typeof Marker`): `extends` is `Marker`, and the other parts' members are listed with `inherited`.
 - **Events** (R24) are `{ name, type, doc? }`, the checker-resolved properties of the event-map property's type on that class. The event-map property itself isn't a member.
 - **Signatures** are `{ typeParameters?, params, returns, doc? }`, one per overload (R23), each with its own JSDoc. Constructors have no `returns`. A parameter is `{ name, type, optional?, rest? }`; a rest parameter's type is its array.

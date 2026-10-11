@@ -14,8 +14,8 @@ public sealed record Selected(string Module, Declaration Declaration);
 
 /// <summary>
 /// A custom element's component (R28): the element, with the attributes and events that can be bound, and its class as
-/// selected. An event's <see cref="ElementEvent.Detail"/> is null when it has none, and an inline object type is a
-/// record named after the event (<c>DemoMapZoomChangeDetail</c>), among the selected declarations.
+/// selected. An event's <see cref="ElementEvent.Detail"/> is null when it has none; an inline object type is an inline
+/// record (R11) named after the event (<c>DemoMapZoomChangeDetail</c>).
 /// </summary>
 public sealed record SelectedElement(string Module, Element Element, ClassDeclaration Class);
 
@@ -57,8 +57,6 @@ public sealed class Selection
     private readonly HashSet<Declaration> checking = new(ReferenceEqualityComparer.Instance);
     private readonly HashSet<InterfaceDeclaration> payloads = new(ReferenceEqualityComparer.Instance);
     private readonly HashSet<AliasDeclaration> callbacks = new(ReferenceEqualityComparer.Instance);
-    /// <summary>R28: the records of the elements' inline event details, which the IR has no declaration for.</summary>
-    private readonly List<AliasDeclaration> details = [];
     private readonly List<SelectedElement> elements = [];
     /// <summary>The type parameters of the generic declaration being checked or added, which its types can use (mapping §2).</summary>
     private IReadOnlyList<TypeParameter> typeParameters = [];
@@ -119,10 +117,10 @@ public sealed class Selection
         {
             AddElement(element);
         }
-        Declarations = [.. all.Where(x => selected.ContainsKey(x.Declaration)).Select(x => selected[x.Declaration]), .. details.Select(d => selected[d])];
+        Declarations = [.. all.Where(x => selected.ContainsKey(x.Declaration)).Select(x => selected[x.Declaration])];
     }
 
-    /// <summary>The declarations to emit, in IR order, then the records of inline event details (R28).</summary>
+    /// <summary>The declarations to emit, in IR order.</summary>
     public IReadOnlyList<Selected> Declarations { get; }
 
     /// <summary>The custom elements to make components of (R28), in IR order.</summary>
@@ -252,7 +250,7 @@ public sealed class Selection
                 Skip(subject, problem);
                 continue;
             }
-            property = Bags(subject, property);
+            property = TrimInline(subject, property);
             foreach (var type in property.WriteType is { } trimmed ? [property.Type, trimmed] : new[] { property.Type })
             {
                 Collect(type);
@@ -278,7 +276,7 @@ public sealed class Selection
                 Skip($"{c.Name}.on:{e.Name}", problem);
                 continue;
             }
-            var payload = Bags($"{c.Name}.on:{e.Name}", e.Type);
+            var payload = TrimInline($"{c.Name}.on:{e.Name}", e.Type);
             Collect(payload);
             ReportUntyped($"{c.Name}.on:{e.Name}", payload);
             events.Add(e with { Type = payload });
@@ -355,52 +353,20 @@ public sealed class Selection
         {
             var subject = $"<{element.Tag}> on:{e.Name}";
             var detail = e.Detail is { } d && Flatten(d).Any(t => !IsNullish(t) && t is not PrimitiveType { Name: "void" }) ? d : null;
-            if (detail is ObjectType o)
-            {
-                var record = new AliasDeclaration { Name = Naming.Type(e.Name) + "Detail", Type = o };
-                if ((Problem(o) ?? types.Problem(record) ?? (types.HoldsElement(record) ? new("a DOM element JS returns (R13)") : null)) is { } problem)
-                {
-                    Skip(subject, problem);
-                    continue;
-                }
-                detail = Detail(s.Module, record, subject);
-            }
-            else if (detail is not null && (Problem(detail) ?? types.Problem(detail, Position.Member)) is { } problem)
+            if (detail is not null && (Problem(detail) ?? types.Problem(detail, Position.Member)) is { } problem)
             {
                 Skip(subject, problem);
                 continue;
             }
             if (detail is not null)
             {
-                detail = Bags(subject, detail);
+                detail = TrimInline(subject, detail);
                 Collect(detail);
                 ReportUntyped(subject, detail);
             }
             events.Add(e with { Detail = detail });
         }
         elements.Add(new(s.Module, element with { Attributes = attributes, Events = events }, (ClassDeclaration)s.Declaration));
-    }
-
-    /// <summary>
-    /// R28: the record of an inline event detail, in the element's module, and a reference to it. A name that module
-    /// already has gets a numeric suffix (IOP2006).
-    /// </summary>
-    private RefType Detail(string module, AliasDeclaration record, string subject)
-    {
-        var name = record.Name;
-        for (var n = 2; byName.ContainsKey((module, name)); n++)
-        {
-            name = $"{record.Name}{n}";
-        }
-        if (name != record.Name)
-        {
-            Report(new(Diagnostic.Renamed, subject, $"its detail is {name}: {record.Name} is taken (R27)"));
-            record = record with { Name = name };
-        }
-        byName[(module, name)] = record;
-        moduleOf[record] = module;
-        details.Add(record);
-        return new(name, module);
     }
 
     /// <summary>
@@ -459,8 +425,8 @@ public sealed class Selection
             }
             var trimmed = signature with
             {
-                Params = [.. kept.Select(p => p with { Type = Bags($"{subject}({p.Name})", p.Type) })],
-                Returns = signature.Returns is { } returned ? Bags(subject, returned) : null,
+                Params = [.. kept.Select(p => p with { Type = TrimInline($"{subject}({p.Name})", p.Type) })],
+                Returns = signature.Returns is { } returned ? TrimInline(subject, returned) : null,
             };
             foreach (var type in trimmed.Params.Select(p => p.Type).Append(trimmed.Returns).OfType<IrType>())
             {
@@ -518,9 +484,10 @@ public sealed class Selection
         UnionType u when u.Types.Count(t => !IsNullish(t)) > 1 => FirstProblem(Cases(u).Where(t => !types.IsUnselected(t))),
         RefType { Module: null } r => TypeMap.IsElement(r) ? null : new($"`{r.Name}`"), // R13: a DOM element is an ElementReference
         RefType r => Find(r) is { } declaration ? DeclarationProblem(declaration) ?? FirstProblem(r.Args) : new($"`{r.Name}`"),
-        // R11, R15: an inline record drops an optional member that can't be mapped (Bags).
+        // R11, R15: an inline record drops an optional member that can't be mapped (TrimInline); it isn't generic (§2).
         ObjectType o => MembersProblem(o.Members, o.CallSignatures.Count + o.ConstructSignatures.Count)
-            ?? FirstProblem(MemberTypes(o.Members.Where(m => m is PropertyMember { Optional: false }), o.IndexSignatures)),
+            ?? FirstProblem(MemberTypes(o.Members.Where(m => m is PropertyMember { Optional: false }), o.IndexSignatures))
+            ?? (TypeMap.TypeParameterIn(o) is { } parameter ? new($"an inline record with the type parameter `{parameter.Name}` (§2)") : null),
         TypeParameterType t => typeParameters.Any(p => p.Name == t.Name) ? null : new($"type parameter `{t.Name}`"),
         UnresolvedType u => new($"unresolved `{u.Text}`"),
         _ => FirstProblem(Children(type)),
@@ -591,7 +558,8 @@ public sealed class Selection
     /// <summary>Adds the data types a mappable type uses.</summary>
     private void Collect(IrType type)
     {
-        if (type is RefType { Module: not null } r && Find(r) is { } declaration and not ClassDeclaration)
+        // A declaration that can't be used isn't added, whatever reaches it: what uses it was checked, or dropped.
+        if (type is RefType { Module: not null } r && Find(r) is { } declaration and not ClassDeclaration && DeclarationProblem(declaration) is null)
         {
             AddDataType(declaration);
         }
@@ -627,7 +595,7 @@ public sealed class Selection
         {
             Skip($"{declaration.Name}.{member.Name}", problem);
         }
-        var emitted = Bags(Trim(declaration));
+        var emitted = TrimInline(Trim(declaration));
         if (emitted is InterfaceDeclaration i && payloads.Contains((InterfaceDeclaration)declaration))
         {
             foreach (var method in i.Members.OfType<MethodMember>())
@@ -701,8 +669,8 @@ public sealed class Selection
         };
     }
 
-    /// <summary>R11, R15: a data record whose members' inline object types drop what they can't map (<see cref="Bags(string, IrType)"/>).</summary>
-    private Declaration Bags(Declaration declaration)
+    /// <summary>R11, R15: a data record whose members' inline object types drop what they can't map (<see cref="TrimInline(string, IrType)"/>).</summary>
+    private Declaration TrimInline(Declaration declaration)
     {
         var outer = typeParameters;
         typeParameters = declaration is InterfaceDeclaration generic ? generic.TypeParameters : [];
@@ -710,7 +678,7 @@ public sealed class Selection
         {
             InterfaceDeclaration i when Members(i.Name, i.Members) is { } members => i with { Members = members },
             AliasDeclaration { Type: ObjectType o } a when Members(a.Name, o.Members) is { } members => a with { Type = o with { Members = members } },
-            AliasDeclaration { Type: not ObjectType } a when Bags(a.Name, a.Type) is var type && !ReferenceEquals(type, a.Type) => a with { Type = type },
+            AliasDeclaration { Type: not ObjectType } a when TrimInline(a.Name, a.Type) is var type && !ReferenceEquals(type, a.Type) => a with { Type = type },
             _ => declaration,
         };
         typeParameters = outer;
@@ -719,14 +687,14 @@ public sealed class Selection
         // The members with their inline object types trimmed, or null when nothing changes.
         List<Member>? Members(string name, IReadOnlyList<Member> members)
         {
-            var trimmed = members.Select(m => m is PropertyMember p ? Bags($"{name}.{p.Name}", p) : m).ToList();
+            var trimmed = members.Select(m => m is PropertyMember p ? TrimInline($"{name}.{p.Name}", p) : m).ToList();
             return trimmed.SequenceEqual(members, ReferenceEqualityComparer.Instance) ? null : trimmed;
         }
     }
 
-    private PropertyMember Bags(string subject, PropertyMember p)
+    private PropertyMember TrimInline(string subject, PropertyMember p)
     {
-        var (type, writeType) = (Bags(subject, p.Type), p.WriteType is { } w ? Bags(subject, w) : null);
+        var (type, writeType) = (TrimInline(subject, p.Type), p.WriteType is { } w ? TrimInline(subject, w) : null);
         return ReferenceEquals(type, p.Type) && ReferenceEquals(writeType, p.WriteType) ? p : p with { Type = type, WriteType = writeType };
     }
 
@@ -734,7 +702,7 @@ public sealed class Selection
     /// R11, R15: a type whose inline object types leave out the optional members they can't map, each reported (IOP2007)
     /// as <c>subject.member</c>, as a data record does (<see cref="Dropped"/>); the same type when nothing is left out.
     /// </summary>
-    private IrType Bags(string subject, IrType type)
+    private IrType TrimInline(string subject, IrType type)
     {
         switch (type)
         {
@@ -747,24 +715,33 @@ public sealed class Selection
                         Skip($"{subject}.{p.Name}", problem);
                         continue;
                     }
-                    members.Add(m is PropertyMember property ? Bags($"{subject}.{property.Name}", property) : m);
+                    members.Add(m is PropertyMember property ? TrimInline($"{subject}.{property.Name}", property) : m);
                 }
                 return members.SequenceEqual(o.Members, ReferenceEqualityComparer.Instance) ? o : o with { Members = members };
             case UnionType u:
                 return Same(u.Types, out var cases) ? u : u with { Types = cases };
             case ArrayType a:
-                return Bags(subject, a.Element) is var element && ReferenceEquals(element, a.Element) ? a : a with { Element = element };
+                return TrimInline(subject, a.Element) is var element && ReferenceEquals(element, a.Element) ? a : a with { Element = element };
             case TupleType t:
                 return Same(t.Elements, out var elements) ? t : t with { Elements = elements };
+            case RefType { Module: not null } r when Find(r) is AliasDeclaration { TypeParameters.Count: 0, Type: FunctionType callback }:
+                // R21: a callback alias is its callback; one whose inline records drop a member is that callback, in its place.
+                return TrimInline(subject, callback) is var trimmedCallback && ReferenceEquals(trimmedCallback, callback) ? r : trimmedCallback;
             case RefType r:
                 return Same(r.Args, out var args) ? r : r with { Args = args };
+            case FunctionType f:
+                // A callback's arguments are read and its result written as data, so their inline records drop members too.
+                var parameters = f.Params.Select(p => TrimInline($"{subject}({p.Name})", p.Type) is var t && ReferenceEquals(t, p.Type) ? p : p with { Type = t }).ToList();
+                var returned = TrimInline(subject, f.Returns);
+                return parameters.SequenceEqual(f.Params, ReferenceEqualityComparer.Instance) && ReferenceEquals(returned, f.Returns) ? f
+                    : f with { Params = parameters, Returns = returned };
             default:
-                return type; // a callback's types aren't trimmed: it's a parameter's, read and written whole
+                return type;
         }
 
         bool Same(IReadOnlyList<IrType> types, out List<IrType> trimmed)
         {
-            trimmed = [.. types.Select(t => Bags(subject, t))];
+            trimmed = [.. types.Select(t => TrimInline(subject, t))];
             return trimmed.SequenceEqual(types, ReferenceEqualityComparer.Instance);
         }
     }
