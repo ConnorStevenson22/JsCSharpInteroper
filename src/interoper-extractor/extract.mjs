@@ -511,8 +511,9 @@ function readPackage(dir) {
 /**
  * A declaration file's module (ir.md): the nearest package.json with a name is its package, and its specifier is how
  * that package's `exports` reach the file (`@acme/widgets/legend`). Without `exports` it's `<name>/<path of the .js
- * next to the .d.ts>`, and so it is when no export reaches the file, which is then internal. `file` is that `.js`'s path
- * in the package when the specifier isn't the package's name plus it (an export that maps it elsewhere), for import maps.
+ * next to the .d.ts>`, and so it is when no export reaches the file, which is then internal. `file` is, for import
+ * maps, the JS file a browser loads for the subpath (its JS conditions' target, else that `.js`), when that isn't the
+ * subpath itself.
  */
 function moduleInfo(file) {
   for (let d = path.dirname(file); d !== path.dirname(d); d = path.dirname(d)) {
@@ -520,9 +521,12 @@ function moduleInfo(file) {
     if (!pkg?.name) continue;
     const dts = `./${path.relative(d, file).split(path.sep).join("/")}`;
     const js = dts.replace(/\.d\.([mc]?)ts$/, ".$1js");
-    const subpath = pkg.exports === undefined ? js : exportOf(exportsMap(pkg.exports), [js, dts]);
-    const specifier = pkg.name + (subpath ?? js).slice(1);
-    return compact({ specifier, package: pkg.name, file: specifier !== pkg.name + js.slice(1) ? js.slice(2) : undefined, internal: subpath === undefined || undefined });
+    const map = pkg.exports === undefined ? undefined : exportsMap(pkg.exports);
+    const subpath = map ? exportOf(map, [js, dts]) : js;
+    const loaded = map && subpath !== undefined ? resolveExport(map, subpath, JS_CONDITIONS) : undefined;
+    const real = typeof loaded === "string" ? loaded : js;
+    return compact({ specifier: pkg.name + (subpath ?? js).slice(1), package: pkg.name, file: subpath !== undefined && real !== subpath ? real.slice(2) : undefined,
+      internal: subpath === undefined || undefined });
   }
   return undefined;
 }
@@ -552,8 +556,8 @@ function exportOf(map, files) {
  * What a subpath resolves to through an `exports` map, as Node resolves it: its exact key, or else the pattern whose
  * prefix is the longest (then the longest key), with `*` replaced; null or undefined when nothing is exported there.
  */
-function resolveExport(map, subpath) {
-  if (!subpath.includes("*") && Object.hasOwn(map, subpath)) return target(map[subpath]);
+function resolveExport(map, subpath, conditions = CONDITIONS) {
+  if (!subpath.includes("*") && Object.hasOwn(map, subpath)) return target(map[subpath], conditions);
   let best;
   for (const key of Object.keys(map)) {
     const star = key.indexOf("*");
@@ -562,23 +566,25 @@ function resolveExport(map, subpath) {
     if (subpath.length < key.length || !subpath.startsWith(prefix) || !subpath.endsWith(suffix)) continue;
     if (!best || prefix.length > best.prefix.length || (prefix.length === best.prefix.length && key.length > best.key.length)) best = { key, prefix, suffix };
   }
-  const t = best && target(map[best.key]);
+  const t = best && target(map[best.key], conditions);
   return typeof t === "string" ? t.replaceAll("*", subpath.slice(best.prefix.length, subpath.length - best.suffix.length)) : t;
 }
 
+/** The conditions TypeScript resolves an `import`'s typings with, and those a browser loads its JS with (import maps). */
 const CONDITIONS = new Set(["types", "import", "default"]);
+const JS_CONDITIONS = new Set(["browser", "import", "default"]);
 
 /**
- * What an export's value resolves to, as TypeScript resolves an `import` (conditions `types`, `import`, `default`):
- * a string; a condition object's first of those conditions that resolves, nested ones too; an array's first entry that
- * resolves to a string. Null excludes it, and undefined means none applies.
+ * What an export's value resolves to with the given conditions (by default as TypeScript resolves an `import`): a
+ * string; a condition object's first condition, in its own order, that is one of them and resolves, nested ones too;
+ * an array's first entry that resolves to a string. Null excludes it, and undefined means none applies.
  */
-function target(value) {
+function target(value, conditions = CONDITIONS) {
   if (typeof value === "string" || value === null) return value;
-  if (Array.isArray(value)) return value.map(target).find((t) => typeof t === "string");
+  if (Array.isArray(value)) return value.map((v) => target(v, conditions)).find((t) => typeof t === "string");
   if (typeof value !== "object") return undefined;
   for (const [condition, nested] of Object.entries(value)) {
-    const t = CONDITIONS.has(condition) ? target(nested) : undefined;
+    const t = conditions.has(condition) ? target(nested, conditions) : undefined;
     if (t !== undefined) return t;
   }
   return undefined;

@@ -19,5 +19,5 @@
     // The app's assets plus the generated map of the fixture, served from /node_modules/ as a consumer would (design §3.5).
     ImportMapDefinition importMap => ImportMapDefinition.Combine(
         ImportMapDefinition.FromResourceCollection(Assets),
-        new ImportMapDefinition(GoldenSlice.Async.DemoMaps.ImportMap("/node_modules/"), null, null));
+        new ImportMapDefinition(GoldenSlice.Async.DemoMaps.ImportMap("/node_modules"), null, null));
 }

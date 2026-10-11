@@ -44,7 +44,8 @@ Hand-written bindings for a slice of the fixture, running on every host.
 ## Phase 4 · Ship
 
 - [x] XML docs from JSDoc (R29).
-- [ ] The `dotnet interoper generate` command, the IR cache, the report with `--warnings-as-errors`, and the import-map helper.
+- [x] The import-map helper: the registry's `ImportMap(root)` (design §3.5).
+- [ ] The `dotnet interoper generate` command, the IR cache, and the report with `--warnings-as-errors`.
 - [ ] The three NuGet packages and a quickstart.
 - [ ] Latency-throttled Server tests, a trim/size budget, and the Hybrid manual check.
 

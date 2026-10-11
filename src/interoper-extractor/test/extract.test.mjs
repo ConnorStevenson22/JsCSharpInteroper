@@ -386,6 +386,27 @@ test("a module's file is listed when its specifier isn't the package's name plus
   ]);
 });
 
+test("a module's file is the JS its export loads in a browser, not the .js next to its typings", () => {
+  const files = withPackage({
+    "package.json": { name: "@acme/extra", version: "1.0.0", type: "module", exports: {
+      "./geo": { types: "./types/geo.d.ts", import: "./esm/geo.js" }, // typings and JS in separate folders
+      "./a.js": { types: "./a.d.ts", import: "./esm/a.js" }, // a mirror for the typings only
+      "./tile": { types: "./types/tile.d.ts", browser: "./browser/tile.js", import: "./node/tile.js" },
+      "./only": { types: "./types/only.d.ts" }, // no JS target: the .js next to the typings
+    } },
+    "types/geo.d.ts": "export declare class Geo {}",
+    "a.d.ts": "export declare class A {}",
+    "types/tile.d.ts": "export declare class Tile {}",
+    "types/only.d.ts": "export declare class Only {}",
+  }, (dir) => extract(dir).modules.map((m) => [m.specifier, m.file]));
+  assert.deepEqual(files, [
+    ["@acme/extra/a.js", "esm/a.js"],
+    ["@acme/extra/geo", "esm/geo.js"],
+    ["@acme/extra/only", "types/only.js"],
+    ["@acme/extra/tile", "browser/tile.js"],
+  ]);
+});
+
 test("manifest references through `export { … } from` resolve to the declaring module", () => {
   const { modules, elements: [element] } = withPackage({
     "package.json": { name: "@acme/extra", version: "1.0.0", type: "module", customElements: "cem.json" },

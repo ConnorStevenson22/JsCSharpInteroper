@@ -53,12 +53,16 @@ internal static class MetadataEmitter
                 }
             }
             w.Line();
-            w.Line("/// <summary>The import map's entries for the packages' modules; <paramref name=\"root\"/> holds the packages' folders, as <c>node_modules</c> does, and ends in a slash (<c>\"/node_modules/\"</c>).</summary>");
-            using (w.Block("public static global::System.Collections.Generic.IReadOnlyDictionary<string, string> ImportMap(string root) => new global::System.Collections.Generic.Dictionary<string, string>", "};"))
+            w.Line("/// <summary>The import map's entries for the packages' modules; <paramref name=\"root\"/> holds the packages' folders, as <c>node_modules</c> does (<c>\"/node_modules/\"</c>).</summary>");
+            using (w.Block("public static global::System.Collections.Generic.IReadOnlyDictionary<string, string> ImportMap(string root)"))
             {
-                foreach (var (specifier, path) in ImportMap(ir))
+                w.Line("root = root.EndsWith('/') ? root : root + \"/\";");
+                using (w.Block("return new global::System.Collections.Generic.Dictionary<string, string>", "};"))
                 {
-                    w.Line($"[{Syntax.Literal(specifier)}] = root + {Syntax.Literal(path)},");
+                    foreach (var (specifier, path) in ImportMap(ir))
+                    {
+                        w.Line($"[{Syntax.Literal(specifier)}] = root + {Syntax.Literal(path)},");
+                    }
                 }
             }
         }
@@ -74,7 +78,7 @@ internal static class MetadataEmitter
         var mapped = ir.Modules.Select(m => (m.Specifier, m.File))
             .Concat(ir.Modules.SelectMany(m => m.Declarations).Select(d => d.ImportFrom).OfType<ImportFrom>().Select(i => (Specifier: i.Module, i.File)))
             .ToList();
-        var packages = mapped.Select(m => PackageName(m.Specifier)).Append(ir.Package.Name).Select(p => (Specifier: p + "/", Path: p + "/"));
+        var packages = mapped.Select(m => PackageName(m.Specifier)).Select(p => (Specifier: p + "/", Path: p + "/"));
         var files = mapped.Where(m => m.File is not null).Select(m => (m.Specifier, Path: $"{PackageName(m.Specifier)}/{m.File}"));
         return packages.Concat(files).Distinct().OrderBy(e => e.Specifier, StringComparer.Ordinal);
     }

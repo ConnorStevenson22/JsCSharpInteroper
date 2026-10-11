@@ -1154,20 +1154,25 @@ public sealed class GeneratorTests
         var registry = File(Generator.Generate(Fixture.WithWidgetsIr, Fixture.Profile, new(api, "Acme.Maps")), "DemoMaps.cs");
 
         // demo-maps' `./*.js` mirrors its files; demo-widgets' root, `./legend` and `./components/*` map into dist/.
+        // The root gets its trailing slash when it has none.
         Assert.Contains("""
-                public static global::System.Collections.Generic.IReadOnlyDictionary<string, string> ImportMap(string root) => new global::System.Collections.Generic.Dictionary<string, string>
+                public static global::System.Collections.Generic.IReadOnlyDictionary<string, string> ImportMap(string root)
                 {
-                    ["@acme/demo-maps/"] = root + "@acme/demo-maps/",
-                    ["@acme/demo-widgets"] = root + "@acme/demo-widgets/dist/index.js",
-                    ["@acme/demo-widgets/"] = root + "@acme/demo-widgets/",
-                    ["@acme/demo-widgets/components/zoom-label"] = root + "@acme/demo-widgets/dist/components/zoom-label/index.js",
-                    ["@acme/demo-widgets/legend"] = root + "@acme/demo-widgets/dist/legend.js",
-                };
+                    root = root.EndsWith('/') ? root : root + "/";
+                    return new global::System.Collections.Generic.Dictionary<string, string>
+                    {
+                        ["@acme/demo-maps/"] = root + "@acme/demo-maps/",
+                        ["@acme/demo-widgets"] = root + "@acme/demo-widgets/dist/index.js",
+                        ["@acme/demo-widgets/"] = root + "@acme/demo-widgets/",
+                        ["@acme/demo-widgets/components/zoom-label"] = root + "@acme/demo-widgets/dist/components/zoom-label/index.js",
+                        ["@acme/demo-widgets/legend"] = root + "@acme/demo-widgets/dist/legend.js",
+                    };
+                }
             """, registry);
         Assert.Contains("""
-                {
-                    ["@acme/demo-maps/"] = root + "@acme/demo-maps/",
-                };
+                    {
+                        ["@acme/demo-maps/"] = root + "@acme/demo-maps/",
+                    };
             """, File(Generator.Generate(Fixture.Ir, Fixture.Profile, new(api, "Acme.Maps")), "DemoMaps.cs"));
     }
 
@@ -1181,11 +1186,11 @@ public sealed class GeneratorTests
             """);
 
         Assert.Contains("""
-                {
-                    ["maps-extra/"] = root + "maps-extra/",
-                    ["maps-extra/a"] = root + "maps-extra/dist/a.mjs",
-                    ["maps/"] = root + "maps/",
-                };
+                    {
+                        ["maps-extra/"] = root + "maps-extra/",
+                        ["maps-extra/a"] = root + "maps-extra/dist/a.mjs",
+                        ["maps/"] = root + "maps/",
+                    };
             """, File(Generator.Generate(ir, new Profile { Package = "maps" }, new(Api.Async, "Maps")), "Maps.cs"));
     }
 

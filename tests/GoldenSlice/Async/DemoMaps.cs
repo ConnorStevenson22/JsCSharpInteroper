@@ -32,9 +32,13 @@ public static partial class DemoMaps
         .Add(TileLayerId, static (realm, handle) => new global::GoldenSlice.Async.Layers.TileLayer(realm, handle))
         .Add(PinId, static (realm, handle) => new Pin(realm, handle));
 
-    /// <summary>The import map's entries for the packages' modules; <paramref name="root"/> holds the packages' folders, as <c>node_modules</c> does, and ends in a slash (<c>"/node_modules/"</c>).</summary>
-    public static global::System.Collections.Generic.IReadOnlyDictionary<string, string> ImportMap(string root) => new global::System.Collections.Generic.Dictionary<string, string>
+    /// <summary>The import map's entries for the packages' modules; <paramref name="root"/> holds the packages' folders, as <c>node_modules</c> does (<c>"/node_modules/"</c>).</summary>
+    public static global::System.Collections.Generic.IReadOnlyDictionary<string, string> ImportMap(string root)
     {
-        ["@acme/demo-maps/"] = root + "@acme/demo-maps/",
-    };
+        root = root.EndsWith('/') ? root : root + "/";
+        return new global::System.Collections.Generic.Dictionary<string, string>
+        {
+            ["@acme/demo-maps/"] = root + "@acme/demo-maps/",
+        };
+    }
 }
