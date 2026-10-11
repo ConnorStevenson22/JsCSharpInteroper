@@ -97,7 +97,8 @@ public static class Generator
             // class is often named like its tag, so that's the convention, not reported), then a number (IOP2006).
             var ns = types.Namespace(element.Class);
             var wanted = Naming.Type(element.Element.Tag);
-            bool Taken(string name) => paths.Contains(Naming.FilePath(root, ns, name)) || namespaces.Contains($"{ns}.{name}");
+            // An inline record or anonymous union named already takes its name too, and the component's is reserved.
+            bool Taken(string name) => paths.Contains(Naming.FilePath(root, ns, name)) || namespaces.Contains($"{ns}.{name}") || types.Taken(new(ns, name));
             var name = Taken(wanted) ? wanted + "Component" : wanted;
             for (var n = 2; Taken(name); n++)
             {
@@ -107,6 +108,7 @@ public static class Generator
             {
                 diagnostics.Add(new(Diagnostic.Renamed, $"<{element.Element.Tag}>", $"its component is {name}: {wanted} and {wanted}Component are taken (R28)"));
             }
+            types.Reserve(new(ns, name));
             Add(new(ns, name), ComponentEmitter.Component(types, options, diagnostics, element, name));
         }
         var classes = MetadataEmitter.ClassIds(types, selection);

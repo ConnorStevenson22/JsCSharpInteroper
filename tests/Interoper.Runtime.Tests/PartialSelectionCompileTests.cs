@@ -38,9 +38,9 @@ public sealed class PartialSelectionCompileTests
     /// <summary>
     /// The shapes the fixture doesn't have compile too, with one module selected and with everything: inline records in a
     /// union, named by tag or position, a callback's and a payload's, one whose name a declared type has, and one with a
-    /// type parameter (R11, R27); a union narrowed to its one selected case (R2); an event without a payload (R24); an
+    /// type parameter (R11, R27); a union narrowed to its one selected case, an inline one too (R2); an event without a payload (R24); an
     /// interface with an iterator method, and one with an inherited callback; and an abstract element class named like
-    /// its tag, with a primitive attribute over a union property and an event whose detail is a union of inline records (R28).
+    /// its tag, with a property whose inline record has its component's name, a primitive attribute over a union property and an event whose detail is a union of inline records (R28).
     /// </summary>
     [Theory]
     [InlineData(Api.Sync, false)]
@@ -76,6 +76,7 @@ public sealed class PartialSelectionCompileTests
                     { "name": "mark", "type": { "kind": "union", "types": [{ "kind": "ref", "name": "Folder", "module": "@acme/maps/b.js" },
                       { "kind": "object", "members": [{{X}}] }, { "kind": "object", "members": [{ "kind": "property", "name": "y", "type": {{String}} }] }] } }], "returns": {{Void}} }] },
                   { "kind": "property", "name": "owner", "type": { "kind": "ref", "name": "Owner", "module": "@acme/maps/a.js" } },
+                  { "kind": "property", "name": "mark", "type": { "kind": "union", "types": [{ "kind": "ref", "name": "Folder", "module": "@acme/maps/b.js" }, { "kind": "object", "members": [{{X}}] }] } },
                   { "kind": "property", "name": "size", "type": { "kind": "object", "members": [{ "kind": "property", "name": "w", "type": {{Number}} }] } },
                   { "kind": "property", "name": "shape", "type": { "kind": "union", "discriminant": "type", "types": [
                     { "kind": "object", "members": [
@@ -91,7 +92,8 @@ public sealed class PartialSelectionCompileTests
                   { "kind": "method", "name": "values", "signatures": [{ "params": [], "returns": { "kind": "ref", "name": "IterableIterator", "args": [{{Number}}] } }] }] },
                 { "kind": "function", "name": "count", "signatures": [{ "params": [{ "name": "entries", "type": { "kind": "ref", "name": "Entries", "module": "@acme/maps/a.js" } }], "returns": {{Number}} }] },
                 { "kind": "class", "name": "XChart", "abstract": true, "members": [
-                  { "kind": "property", "name": "label", "type": { "kind": "union", "types": [{{String}}, { "kind": "array", "element": {{String}} }] } }] }] },
+                  { "kind": "property", "name": "label", "type": { "kind": "union", "types": [{{String}}, { "kind": "array", "element": {{String}} }] } },
+                  { "kind": "property", "name": "component", "type": { "kind": "object", "members": [{{X}}] } }] }] },
               { "specifier": "@acme/maps/b.js", "declarations": [{ "kind": "class", "name": "Folder" }] }],
               "elements": [{ "tag": "x-chart", "class": { "kind": "ref", "name": "XChart", "module": "@acme/maps/a.js" },
                 "attributes": [{ "name": "label", "property": "label", "type": {{String}} }],
@@ -102,7 +104,7 @@ public sealed class PartialSelectionCompileTests
             """);
         var profile = new Generator.Profile { Package = "@acme/maps", Events = new(Subscribe: "on"), Include = everything ? null : ["@acme/maps/a.js"] };
         var result = Generator.Generator.Generate(ir, profile, new(api, "Acme.Maps"));
-        Assert.Contains(result.Files, f => f.Path == "XChartComponent.cs");
+        Assert.Contains(result.Files, f => f.Path == "XChartComponent2.cs"); // XChartComponent is XChart.component's record
         Assert.Contains(result.Files, f => f.Path == "FeatureSize2.cs");
         Assert.Contains("IOP2007 <x-chart> on:pick.legs: skipped: uses a tuple of different types", result.Diagnostics.Select(d => d.ToString()));
         Assert.Contains("IOP2007 Feature.each(cb)(e).bag: skipped: uses `IterableIterator` (in `Bag`)", result.Diagnostics.Select(d => d.ToString()));

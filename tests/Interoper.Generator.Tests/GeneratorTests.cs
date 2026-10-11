@@ -1160,7 +1160,7 @@ public sealed class GeneratorTests
         Assert.Contains("public global::Interoper.Opt<FeatureSize> Size { get; init; }", File(result, "FeatureSnapshot.cs"));
     }
 
-    [Fact] // R11, R15, R21: a callback's arguments are data, so their inline records drop the optional members they can't map, a callback alias's too
+    [Fact] // R11, R15, R21: a callback's arguments are data, so their inline records drop the optional members they can't map; a callback alias's once
     public void ACallbacksInlineRecordsDropTheOptionalMembersTheyCantMap()
     {
         // Bag can't be mapped; nothing that only an inline record's dropped member reaches is emitted.
@@ -1170,18 +1170,22 @@ public sealed class GeneratorTests
             { "kind": "class", "name": "Feature", "members": [
               { "kind": "method", "name": "each", "signatures": [{ "params": [{ "name": "cb", "type": { "kind": "function", "params": [{ "name": "e", "type": { "kind": "object", "members": [{{X}}, {{Legs}},
                 { "kind": "property", "name": "bag", "optional": true, "type": { "kind": "ref", "name": "Bag", "module": "@acme/maps/a.js" } }] } }], "returns": {{Void}} } }], "returns": {{Void}} }] },
-              { "kind": "method", "name": "visit", "signatures": [{ "params": [{ "name": "cb", "type": { "kind": "ref", "name": "Visit", "module": "@acme/maps/a.js" } }], "returns": {{Void}} }] }] }
+              { "kind": "method", "name": "visit", "signatures": [{ "params": [{ "name": "cb", "type": { "kind": "ref", "name": "Visit", "module": "@acme/maps/a.js" } }], "returns": {{Void}} }] },
+              { "kind": "method", "name": "revisit", "signatures": [{ "params": [{ "name": "cb", "type": { "kind": "ref", "name": "Visit", "module": "@acme/maps/a.js" } }], "returns": {{Void}} }] }] }
             """);
 
         Assert.Equal([
+            "IOP2007 Visit(e).legs: skipped: uses a tuple of different types",
             "IOP2007 Bag: skipped: uses `IterableIterator` (in `Bag`)",
             "IOP2007 Feature.each(cb)(e).legs: skipped: uses a tuple of different types",
             "IOP2007 Feature.each(cb)(e).bag: skipped: uses `IterableIterator` (in `Bag`)",
-            "IOP2007 Feature.visit(cb)(e).legs: skipped: uses a tuple of different types",
         ], result.Diagnostics.Select(d => d.ToString()));
-        Assert.Contains("public void Each(global::Interoper.JsScope scope, global::System.Action<FeatureEachCbE> cb) =>", File(result, "Feature.cs"));
-        Assert.Contains("public void Visit(global::Interoper.JsScope scope, global::System.Action<FeatureVisitCbE> cb) =>", File(result, "Feature.cs"));
-        foreach (var record in new[] { File(result, "FeatureEachCbE.cs"), File(result, "FeatureVisitCbE.cs") })
+        var feature = File(result, "Feature.cs");
+        Assert.Contains("public void Each(global::Interoper.JsScope scope, global::System.Action<FeatureEachCbE> cb) =>", feature);
+        Assert.Contains("public void Visit(global::Interoper.JsScope scope, global::System.Action<VisitE> cb) =>", feature); // the alias's record, once
+        Assert.Contains("public void Revisit(global::Interoper.JsScope scope, global::System.Action<VisitE> cb) =>", feature);
+        Assert.DoesNotContain(result.Files, f => f.Path.StartsWith("FeatureVisit", StringComparison.Ordinal) || f.Path.StartsWith("FeatureRevisit", StringComparison.Ordinal));
+        foreach (var record in new[] { File(result, "FeatureEachCbE.cs"), File(result, "VisitE.cs") })
         {
             Assert.Contains("public required double X { get; init; }", record);
             Assert.DoesNotContain("Legs", record);
@@ -1222,6 +1226,40 @@ public sealed class GeneratorTests
         Assert.Contains("public FeatureSize Box", File(result, "Feature.cs"));
         Assert.Contains("public required double W { get; init; }", File(result, "FeatureSize2.cs"));
         Assert.Contains("public required double X { get; init; }", File(result, "FeatureSize.cs"));
+    }
+
+    [Fact] // R11, R27, R2: an inline record a union narrows to keeps its owner's name, as does a union alias's
+    public void ANarrowedInlineRecordKeepsItsName()
+    {
+        var result = Generate(new Profile { Package = "@acme/maps", Include = ["@acme/maps/a.js"] }, Api.Sync, ("a.js", $$"""
+            { "kind": "alias", "name": "Owner", "type": { "kind": "union", "types": [{ "kind": "ref", "name": "Layer", "module": "@acme/maps/b.js" }, { "kind": "object", "members": [{{X}}] }] } },
+            { "kind": "class", "name": "Feature", "members": [
+              { "kind": "property", "name": "mark", "type": { "kind": "union", "types": [{ "kind": "ref", "name": "Layer", "module": "@acme/maps/b.js" }, { "kind": "object", "members": [{{X}}] }] } },
+              { "kind": "property", "name": "owner", "type": { "kind": "ref", "name": "Owner", "module": "@acme/maps/a.js" } }] }
+            """), ("b.js", """{ "kind": "class", "name": "Layer" }"""));
+
+        Assert.Equal([
+            "IOP2007 FeatureMark: case `Layer` dropped: a class outside the selection (R2)",
+            "IOP2007 Owner: case `Layer` dropped: a class outside the selection (R2)",
+        ], result.Diagnostics.Select(d => d.ToString()).Order(StringComparer.Ordinal)); // no IOP2006
+        Assert.Contains("public FeatureMark Mark", File(result, "Feature.cs"));
+        Assert.Contains("public Owner Owner", File(result, "Feature.cs"));
+        Assert.Contains("public required double X { get; init; }", File(result, "FeatureMark.cs"));
+        Assert.Contains("public required double X { get; init; }", File(result, "Owner.cs"));
+    }
+
+    [Fact] // R28, R11, R27: a component doesn't take an inline record's name
+    public void AComponentDoesntTakeAnInlineRecordsName()
+    {
+        var result = Elements(Api.Sync, [("map.js", $$"""
+            { "kind": "class", "name": "DemoMap", "members": [{ "kind": "property", "name": "component", "type": { "kind": "object", "members": [{{X}}] } }] }
+            """)], """
+            { "tag": "demo-map", "class": { "kind": "ref", "name": "DemoMap", "module": "@acme/maps/map.js" }, "attributes": [], "events": [], "slots": [] }
+            """);
+
+        Assert.Equal(["IOP2006 <demo-map>: its component is DemoMapComponent2: DemoMap and DemoMapComponent are taken (R28)"], result.Diagnostics.Select(d => d.ToString()));
+        Assert.Contains("public sealed partial record DemoMapComponent", File(result, "DemoMapComponent.cs"));
+        Assert.Contains("public sealed partial class DemoMapComponent2 : global::Interoper.JsComponentBase", File(result, "DemoMapComponent2.cs"));
     }
 
     [Fact] // R11, R27, R2: a union's inline cases are named by a string tag they share, or else by their position in the union (IOP2006)

@@ -7,8 +7,8 @@ namespace Interoper.Generator;
 /// A declaration to emit, trimmed to what can be mapped: a class keeps only the members, events and signatures that
 /// can be, a property whose setter can't be is read-only (§5), a dropped optional or rest parameter is gone from its
 /// signature (R22), a data record or inline object type has no optional members that can't be (R15, R11), an event
-/// payload's interface has no methods (R24), and any other interface no iterator methods. A callback alias is never one:
-/// it has no C# type of its own (R21).
+/// payload's interface has no methods (R24), and any other interface no iterator methods. A callback alias is one only when
+/// its inline records drop a member, so its uses map the trimmed callback: it has no C# type of its own (R21).
 /// </summary>
 public sealed record Selected(string Module, Declaration Declaration);
 
@@ -487,11 +487,15 @@ public sealed class Selection
         // R11, R15: an inline record drops an optional member that can't be mapped (TrimInline); it isn't generic (§2).
         ObjectType o => MembersProblem(o.Members, o.CallSignatures.Count + o.ConstructSignatures.Count)
             ?? FirstProblem(MemberTypes(o.Members.Where(m => m is PropertyMember { Optional: false }), o.IndexSignatures))
-            ?? (TypeMap.TypeParameterIn(o) is { } parameter ? new($"an inline record with the type parameter `{parameter.Name}` (§2)") : null),
+            ?? (TypeParameterIn(o) is { } parameter ? new($"an inline record with the type parameter `{parameter.Name}` (§2)") : null),
         TypeParameterType t => typeParameters.Any(p => p.Name == t.Name) ? null : new($"type parameter `{t.Name}`"),
         UnresolvedType u => new($"unresolved `{u.Text}`"),
         _ => FirstProblem(Children(type)),
     };
+
+    /// <summary>The first type parameter a type names, if any.</summary>
+    private static TypeParameterType? TypeParameterIn(IrType type) =>
+        type as TypeParameterType ?? Children(type).Select(TypeParameterIn).FirstOrDefault(t => t is not null);
 
     private Unmappable? FirstProblem(IEnumerable<IrType> types) => types.Select(Problem).FirstOrDefault(p => p is not null);
 
@@ -558,8 +562,7 @@ public sealed class Selection
     /// <summary>Adds the data types a mappable type uses.</summary>
     private void Collect(IrType type)
     {
-        // A declaration that can't be used isn't added, whatever reaches it: what uses it was checked, or dropped.
-        if (type is RefType { Module: not null } r && Find(r) is { } declaration and not ClassDeclaration && DeclarationProblem(declaration) is null)
+        if (type is RefType { Module: not null } r && Find(r) is { } declaration and not ClassDeclaration)
         {
             AddDataType(declaration);
         }
@@ -578,12 +581,18 @@ public sealed class Selection
 
     private void AddDataType(Declaration declaration)
     {
-        if (declaration is AliasDeclaration { Type: FunctionType callback } alias)
+        if (declaration is AliasDeclaration { Type: FunctionType } alias)
         {
-            // R21: a callback alias has no C# type; its uses are delegates.
+            // R21: a callback alias has no C# type; its uses are delegates. Its inline records drop what they can't map
+            // once, for every use (Visit(e).legs), so it's selected trimmed when they do.
             if (callbacks.Add(alias))
             {
-                Collect(callback);
+                var trimmed = TrimInline(alias);
+                if (!ReferenceEquals(trimmed, alias))
+                {
+                    selected[alias] = new(moduleOf[alias], trimmed);
+                }
+                Collect(((AliasDeclaration)trimmed).Type);
             }
             return;
         }
@@ -724,9 +733,6 @@ public sealed class Selection
                 return TrimInline(subject, a.Element) is var element && ReferenceEquals(element, a.Element) ? a : a with { Element = element };
             case TupleType t:
                 return Same(t.Elements, out var elements) ? t : t with { Elements = elements };
-            case RefType { Module: not null } r when Find(r) is AliasDeclaration { TypeParameters.Count: 0, Type: FunctionType callback }:
-                // R21: a callback alias is its callback; one whose inline records drop a member is that callback, in its place.
-                return TrimInline(subject, callback) is var trimmedCallback && ReferenceEquals(trimmedCallback, callback) ? r : trimmedCallback;
             case RefType r:
                 return Same(r.Args, out var args) ? r : r with { Args = args };
             case FunctionType f:

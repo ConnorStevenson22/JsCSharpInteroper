@@ -76,7 +76,7 @@ internal sealed class TypeMap
     private readonly Dictionary<ObjectType, AliasDeclaration> bags = new(ReferenceEqualityComparer.Instance);
     private readonly Dictionary<Declaration, TypeName> inline = new(ReferenceEqualityComparer.Instance);
     private readonly List<Declaration> records = [];
-    /// <summary>R27: the names an inline record can't take (<see cref="Taken"/>), filled when the first one is named.</summary>
+    /// <summary>R27: the names an inline record can't take (<see cref="Taken"/>).</summary>
     private readonly HashSet<TypeName> taken = [];
     private readonly HashSet<ClassDeclaration> watchable = new(ReferenceEqualityComparer.Instance);
     private readonly Dictionary<Declaration, bool> scoped = new(ReferenceEqualityComparer.Instance);
@@ -174,6 +174,26 @@ internal sealed class TypeMap
                 ids[c] = id + "Id";
             }
         }
+        // R27: the names an inline record can't take, of the types that are emitted: the selected declarations that make
+        // one (a union alias only when it isn't narrowed to one case, R2), the snapshots, the modules' static classes and
+        // the registry.
+        foreach (var s in selected)
+        {
+            var d = s.Declaration;
+            if (d is FunctionDeclaration)
+            {
+                taken.Add(new(Namespace(s.Module), LiveEmitter.ModuleClass(s.Module)));
+            }
+            else if (MakesType(d) && (d is not AliasDeclaration { Type: not ObjectType } alias || Kept(alias.Type).Count > 1))
+            {
+                taken.Add(Name(d));
+                if (d is ClassDeclaration c)
+                {
+                    taken.Add(Snapshot(c));
+                }
+            }
+        }
+        taken.Add(new(root, Registry));
     }
 
     /// <summary>
@@ -552,8 +572,8 @@ internal sealed class TypeMap
 
     /// <summary>
     /// R11: an inline object type's record, named after its owner (R27) where it's first mapped. A name that is taken (by
-    /// a declared type, a snapshot, the registry, a module's functions, an anonymous union or enum, or another inline
-    /// record) gets a numeric suffix, reported as IOP2006. Its members are mapped now, so the types they own are met
+    /// an emitted declaration, a snapshot, the registry, a module's functions, an anonymous union or enum, a component,
+    /// or another inline record) gets a numeric suffix, reported as IOP2006. Its members are mapped now, so the types they own are met
     /// before it's emitted.
     /// </summary>
     private AliasDeclaration Inline(ObjectType o, TypeName owner)
@@ -579,25 +599,14 @@ internal sealed class TypeMap
         return bag;
     }
 
-    /// <summary>Whether a type of that name is declared, or named already (<see cref="Inline"/>).</summary>
-    private bool Taken(TypeName name)
-    {
-        if (taken.Count == 0)
-        {
-            foreach (var d in declarations.Values.Where(MakesType))
-            {
-                taken.Add(Name(d));
-                if (d is ClassDeclaration c)
-                {
-                    taken.Add(Snapshot(c));
-                }
-            }
-            taken.UnionWith(modules.Values.Where(m => m.Declarations.Any(d => d is FunctionDeclaration))
-                .Select(m => new TypeName(Namespace(m.Specifier), LiveEmitter.ModuleClass(m.Specifier))));
-            taken.Add(new(root, Registry));
-        }
-        return taken.Contains(name) || unions.ContainsKey(name);
-    }
+    /// <summary>
+    /// Whether an emitted type has that name, or an inline record, an anonymous union or enum, or a component (<see
+    /// cref="Reserve"/>) has taken it.
+    /// </summary>
+    public bool Taken(TypeName name) => taken.Contains(name) || unions.TryGetValue(name, out var union) && union is not null;
+
+    /// <summary>R28: takes a name for a component, so that an inline record met later doesn't take it too.</summary>
+    public void Reserve(TypeName name) => taken.Add(name);
 
     /// <summary>R6: a union's members, with the members of union aliases in their place.</summary>
     private IEnumerable<IrType> Flatten(IrType type) => type switch
@@ -631,7 +640,7 @@ internal sealed class TypeMap
         flat.Any(UsesEntity) || flat.Count < all.Count && UnionProblem(type, null, written: false) is not null;
 
     /// <summary>The first type parameter a type names, if any.</summary>
-    internal static TypeParameterType? TypeParameterIn(IrType type) =>
+    private static TypeParameterType? TypeParameterIn(IrType type) =>
         type as TypeParameterType ?? Selection.Children(type).Select(TypeParameterIn).FirstOrDefault(t => t is not null);
 
     /// <summary>A class outside the selection, or an alias of one: a union drops it as a case (R2).</summary>
@@ -967,7 +976,6 @@ internal sealed class TypeMap
         RefType r => new($"`{r.Name}` here"),
         ObjectType { CallSignatures.Count: > 0 } or ObjectType { ConstructSignatures.Count: > 0 } => new("a callable object"),
         ObjectType o when o.Members.OfType<MethodMember>().FirstOrDefault() is { } method => new($"method `{method.Name}`"),
-        ObjectType o when TypeParameterIn(o) is { } parameter => new($"an inline record with the type parameter `{parameter.Name}` (§2)"), // it isn't generic
         ObjectType o when !written && HoldsElement(Bag(o)) => new("an inline record that holds a DOM element JS can't return (R13)"),
         ObjectType o => RecordProblem(o.IndexSignatures.Count, o.Members.OfType<PropertyMember>()), // R11, R15
         TupleType => new("a tuple with optional or rest elements"),
