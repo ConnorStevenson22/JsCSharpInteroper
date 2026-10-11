@@ -244,7 +244,7 @@ Anonymous unions and inline records (R11) are named after their owner: `Feature.
 
 **R29. Docs.** A declaration's JSDoc ([ir.md](ir.md#declarations)) becomes its XML docs, the same in both modes: on a live class, each property (both `GetXAsync` and `SetXAsync` in async mode), each overload of a method or module function, `Create` (the constructor's), each event, each record and its members (a snapshot record's members too), each enum or union struct, and a TS enum's members. A component (R28) has its element's manifest docs, and its parameters, events and slots theirs; a parameter without an attribute doc has its property's.
 - The summary is `<summary>`; `@default`, `@since`, `@deprecated` and `@see` are lines of `<remarks>` (`Default: 0`, `Since: 0.2`, `Deprecated: …`, `See: …`). `@deprecated` isn't `[Obsolete]`: its CS0618 would break a consumer's build under `TreatWarningsAsErrors`.
-- Text is XML-escaped; `{@link X}` and `` `code` `` become `<c>X</c>`, and `{@link X text}` its text. Each line of the text is a `///` line.
+- Text is XML-escaped, without control characters but tab; `{@link X}` and `` `code` `` become `<c>X</c>`, `{@link X text}` (or `X | text`) its text, and a URL's link `<see href>`. Each line of the text is a `///` line.
 - No doc, no comment: never an empty `<summary>`. Undocumented members stay so, so a project that compiles the bindings with `GenerateDocumentationFile` turns CS1591 off for them, as the golden slice does.
 
 ---

@@ -27,9 +27,11 @@ public sealed partial class DemoMapElement : global::Interoper.JsObject
 
     public global::System.Threading.Tasks.Task SetZoomAsync(double value) => Realm.SetAsync(Handle, "zoom", value);
 
+    /// <summary>The view's center.</summary>
     public async global::System.Threading.Tasks.Task<PointSnapshot> GetCenterAsync() =>
         (await Realm.CallAsync(global::Interoper.JsOp.Get(Handle, "center", byValue: true), PointSnapshot.Read))!;
 
+    /// <summary>The view's center.</summary>
     public global::System.Threading.Tasks.Task SetCenterAsync(PointSnapshot value) =>
         Realm.SendAsync(global::Interoper.JsOp.Set(Handle, "center", w => PointSnapshot.Write(w, value)));
 

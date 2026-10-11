@@ -12,12 +12,13 @@ internal static class ValueTypeEmitter
     {
         var w = CodeWriter.CSharp(type.Type.Namespace);
         XmlDoc.Write(w, declaration?.Doc);
-        // A TS enum's members have their own docs; a literal union's have none.
+        // A TS enum's members have their own docs; a literal union's have none, nor has an extensible enum (R10), which
+        // only a literal union is.
         var docs = declaration is EnumDeclaration e ? e.Members.Select(m => m.Doc).ToList() : null;
         switch (type)
         {
             case EnumType { Extensible: true } extensible:
-                Extensible(w, extensible, docs);
+                Extensible(w, extensible);
                 break;
             case EnumType { IsNumber: true } number:
                 Enum(w, number, docs, value => $" = {value.GetRawText()}");
@@ -77,13 +78,12 @@ internal static class ValueTypeEmitter
     }
 
     /// <summary>R10: a string wrapper with the known values, which also takes any other.</summary>
-    private static void Extensible(CodeWriter w, EnumType e, List<Doc?>? docs)
+    private static void Extensible(CodeWriter w, EnumType e)
     {
         using (w.Block($"public readonly partial record struct {e.Name}(string Value)"))
         {
-            foreach (var (i, (name, value)) in e.Members.Index())
+            foreach (var (name, value) in e.Members)
             {
-                XmlDoc.Write(w, docs?[i]);
                 w.Line($"public static {e.Name} {name} {{ get; }} = new({Syntax.Literal(value.GetString()!)});");
             }
             w.Line();

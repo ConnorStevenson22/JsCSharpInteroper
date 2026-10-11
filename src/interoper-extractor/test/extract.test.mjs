@@ -45,7 +45,7 @@ test("§5: an accessor pair keeps the getter's and the setter's type", () => {
 });
 
 test("R24: events come from the event map, resolved per class", () => {
-  assert.deepEqual(decl("MapView", "MapView").events, [{ name: "click", type: ref("MapView", "ClickEvent") }]);
+  assert.deepEqual(decl("MapView", "MapView").events, [{ name: "click", type: ref("MapView", "ClickEvent"), doc: { summary: "A click on the map, after the view has handled it." } }]);
   assert.deepEqual(decl("core", "Collection").events, [{ name: "change", type: ref("core", "CollectionChangeEvent", [{ kind: "typeParameter", name: "T" }]) }]);
   assert.equal(decl("core", "Emitter").events, undefined); // `$events: object` declares none
   assert.equal(member("MapView", "MapView", "$events"), undefined); // the phantom property isn't a member

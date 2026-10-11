@@ -17,29 +17,20 @@ public static partial class XmlDoc
             return;
         }
         Element(w, "summary", Lines(doc.Summary));
-        var remarks = new List<string>();
-        if (doc.Default is { } value)
-        {
-            remarks.AddRange(Lines("Default: " + value));
-        }
-        if (doc.Since is { } since)
-        {
-            remarks.AddRange(Lines("Since: " + since));
-        }
-        if (doc.Deprecated is { } deprecated)
-        {
-            remarks.AddRange(Lines(deprecated.Length == 0 ? "Deprecated." : "Deprecated: " + deprecated));
-        }
-        foreach (var see in doc.See ?? [])
-        {
-            remarks.AddRange(Lines("See: " + see));
-        }
-        Element(w, "remarks", remarks);
+        string?[] remarks =
+        [
+            doc.Default is { } value ? "Default: " + value : null,
+            doc.Since is { } since ? "Since: " + since : null,
+            doc.Deprecated is { } deprecated ? deprecated.Length == 0 ? "Deprecated." : "Deprecated: " + deprecated : null,
+            .. (doc.See ?? []).Select(see => "See: " + see),
+        ];
+        Element(w, "remarks", [.. remarks.SelectMany(Lines)]);
     }
 
     /// <summary>
-    /// JSDoc text as XML doc lines, a line per line: XML-escaped, <c>{@link X}</c> as <c>&lt;c&gt;X&lt;/c&gt;</c>,
-    /// <c>{@link X text}</c> as its text, and a <c>`code`</c> span as <c>&lt;c&gt;code&lt;/c&gt;</c>.
+    /// JSDoc text as XML doc lines, a line per line: XML-escaped, control characters but tab dropped, <c>{@link X}</c>
+    /// as <c>&lt;c&gt;X&lt;/c&gt;</c>, <c>{@link X text}</c> as its text, a URL's as <c>&lt;see href&gt;</c>, and a
+    /// <c>`code`</c> span as <c>&lt;c&gt;code&lt;/c&gt;</c>.
     /// </summary>
     public static IReadOnlyList<string> Lines(string? text)
     {
@@ -50,13 +41,24 @@ public static partial class XmlDoc
         return [.. text.ReplaceLineEndings("\n").Trim().Split('\n').Select(line => Inline().Replace(line.TrimEnd(), Format))];
     }
 
-    private static string Format(Match m) =>
-        m.Groups["code"].Success ? $"<c>{Escape(m.Groups["code"].Value)}</c>"
-        : m.Groups["text"].Success ? Escape(m.Groups["text"].Value)
-        : m.Groups["name"].Success ? $"<c>{Escape(m.Groups["name"].Value)}</c>"
-        : Escape(m.Value);
+    private static string Format(Match m)
+    {
+        if (m.Groups["code"].Success)
+        {
+            return $"<c>{Escape(m.Groups["code"].Value)}</c>";
+        }
+        if (!m.Groups["name"].Success)
+        {
+            return Escape(m.Value);
+        }
+        var (name, text) = (m.Groups["name"].Value, m.Groups["text"].Value);
+        return name.Contains("://", StringComparison.Ordinal) ? $"<see href=\"{Escape(name).Replace("\"", "&quot;")}\">{Escape(text.Length > 0 ? text : name)}</see>"
+            : text.Length > 0 ? Escape(text)
+            : $"<c>{Escape(name)}</c>";
+    }
 
-    private static string Escape(string text) => text.Replace("&", "&amp;").Replace("<", "&lt;").Replace(">", "&gt;");
+    private static string Escape(string text) =>
+        string.Concat(text.Where(c => c >= ' ' || c == '\t')).Replace("&", "&amp;").Replace("<", "&lt;").Replace(">", "&gt;");
 
     private static void Element(CodeWriter w, string name, IReadOnlyList<string> lines)
     {
@@ -75,7 +77,7 @@ public static partial class XmlDoc
         }
     }
 
-    /// <summary>A link (its name, then its text if any), a code span, or one character to escape.</summary>
-    [GeneratedRegex(@"\{@link(?:code|plain)?\s+(?<name>[^\s}|]+)(?:[\s|]+(?<text>[^}]+?))?\s*\}|`(?<code>[^`]+)`|[&<>]")]
+    /// <summary>A link (its name, then its text if any, after a space or <c>|</c>), a code span, or one character to escape.</summary>
+    [GeneratedRegex(@"\{@link(?:code|plain)?\s+(?<name>[^\s}|]+)(?:[\s|]+(?<text>[^}]*?))?\s*\}|`(?<code>[^`]+)`|[&<>\x00-\x08\x0A-\x1F]")]
     private static partial Regex Inline();
 }

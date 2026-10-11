@@ -10,9 +10,11 @@ public partial class Marker : Observable
     public static async global::System.Threading.Tasks.Task<Marker> CreateAsync(global::Interoper.JsScope scope, MarkerSnapshot props) =>
         (await scope.Realm.CallAsync(global::Interoper.JsOp.Create(DemoMaps.MarkerId, w => MarkerSnapshot.WriteMembers(w, props)), scope.Read<Marker>))!;
 
+    /// <summary>Where the marker is; a pair is taken as <c>[x, y]</c>.</summary>
     public async global::System.Threading.Tasks.Task<PointSnapshot> GetPositionAsync() =>
         (await Realm.CallAsync(global::Interoper.JsOp.Get(Handle, "position", byValue: true), PointSnapshot.Read))!;
 
+    /// <summary>Where the marker is; a pair is taken as <c>[x, y]</c>.</summary>
     public global::System.Threading.Tasks.Task SetPositionAsync(MarkerPositionInput value) =>
         Realm.SendAsync(global::Interoper.JsOp.Set(Handle, "position", w => global::Interoper.JsJson.WriteValue(w, value)));
 

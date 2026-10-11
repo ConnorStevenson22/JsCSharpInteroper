@@ -7,6 +7,7 @@ public sealed partial class MapView : Emitter
 {
     internal MapView(global::Interoper.JsRealm realm, int handle) : base(realm, handle) { }
 
+    /// <summary>A view with the given options; the rest keep their defaults.</summary>
     public static MapView Create(global::Interoper.JsScope scope, MapViewSnapshot props) =>
         scope.Realm.Call(global::Interoper.JsOp.Create(DemoMaps.MapViewId, w => MapViewSnapshot.WriteMembers(w, props)), scope.Read<MapView>)!;
 
@@ -105,6 +106,7 @@ public sealed partial class MapView : Emitter
             global::Interoper.JsJson.WriteNumber(w, y);
         }), (ref r) => global::Interoper.JsJson.ReadOpt(ref r, scope.Read<Marker>));
 
+    /// <summary>A click on the map, after the view has handled it.</summary>
     public global::System.IDisposable OnClick(global::Interoper.JsScope scope, global::System.Action<ClickEvent> handler, global::Interoper.EventOptions? options = null) =>
         scope.Subscribe(Handle, "on", "click", ClickEvent.Read, handler, options, ["type", "x", "y", "button", "mapPoint"]);
 

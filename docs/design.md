@@ -183,7 +183,7 @@ dotnet interoper generate @acme/maps --api async --namespace Acme.Maps --out Gen
 - The output is plain files plus a report.
 - The runtime's public types live in the `Interoper` namespace (`Undefined`, `Opt<T>`, `JsJson`), whatever the assembly.
 - The IR cache is keyed by package version, profile hash and generator version.
-- JSDoc becomes XML docs in the consumer's output ([mapping R29](mapping.md#6-naming)): summaries, and `@default`, `@since` and `@deprecated` as remarks (not `[Obsolete]`, whose warning would break builds that treat warnings as errors). We never redistribute a library's docs.
+- JSDoc becomes XML docs in the consumer's output ([mapping R29](mapping.md#6-naming)): summaries, and `@default`, `@since`, `@deprecated` and `@see` as remarks (not `[Obsolete]`, whose warning would break builds that treat warnings as errors). We never redistribute a library's docs.
 - Fallbacks are reported with codes ([mapping.md §8](mapping.md#8-diagnostics)), and `--warnings-as-errors` fails the run on them.
 
 ---

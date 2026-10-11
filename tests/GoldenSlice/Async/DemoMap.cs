@@ -16,6 +16,7 @@ public sealed partial class DemoMap : global::Interoper.JsComponentBase
     /// <summary>Clamped to 0–20, like the view's.</summary>
     /// <remarks>Default: 1</remarks>
     [global::Microsoft.AspNetCore.Components.Parameter] public double Zoom { get; set; }
+    /// <summary>The view's center.</summary>
     [global::Microsoft.AspNetCore.Components.Parameter] public PointSnapshot Center { get; set; } = default!;
     [global::Microsoft.AspNetCore.Components.Parameter] public global::Microsoft.AspNetCore.Components.EventCallback<DemoMapClickDetail> OnDemoMapClick { get; set; }
     /// <summary>Fires when zoom changes; pairs with <c>zoom</c> for two-way binding.</summary>

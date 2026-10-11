@@ -17,6 +17,7 @@ export class DemoMapElement extends HTMLElement {
   readonly view: MapView;
   basemap: Basemap;
   zoom: number;
+  /** The view's center. */
   center: Point;
   /** Clicks the map at an offset from its center, in pixels. */
   clickAt(x: number, y: number, button?: 0 | 1 | 2): void;

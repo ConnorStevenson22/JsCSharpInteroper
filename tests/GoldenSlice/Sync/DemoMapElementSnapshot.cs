@@ -7,6 +7,7 @@ public sealed partial record DemoMapElementSnapshot
 {
     public global::Interoper.Opt<Basemap> Basemap { get; init; }
     public global::Interoper.Opt<double> Zoom { get; init; }
+    /// <summary>The view's center.</summary>
     public global::Interoper.Opt<PointSnapshot> Center { get; init; }
 
     public static void WriteMembers(global::System.Text.Json.Utf8JsonWriter writer, DemoMapElementSnapshot value)

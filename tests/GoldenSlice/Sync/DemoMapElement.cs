@@ -29,6 +29,7 @@ public sealed partial class DemoMapElement : global::Interoper.JsObject
         set => Realm.Set(Handle, "zoom", value);
     }
 
+    /// <summary>The view's center.</summary>
     public PointSnapshot Center
     {
         get => Realm.Call(global::Interoper.JsOp.Get(Handle, "center", byValue: true), PointSnapshot.Read)!;

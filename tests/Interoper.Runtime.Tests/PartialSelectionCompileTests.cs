@@ -126,9 +126,11 @@ public sealed class PartialSelectionCompileTests
     private static void Compile(GeneratorResult result)
     {
         var trees = result.Files.Where(f => f.Path.EndsWith(".cs", StringComparison.Ordinal))
-            .Select(f => CSharpSyntaxTree.ParseText(f.Text, new CSharpParseOptions(LanguageVersion.Preview), f.Path));
+            .Select(f => CSharpSyntaxTree.ParseText(f.Text, new CSharpParseOptions(LanguageVersion.Preview, DocumentationMode.Diagnose), f.Path));
+        // R29: the XML docs are checked (CS1570 and kin); undocumented members get none, so CS1591 is off, as in the golden slice.
         var compilation = CSharpCompilation.Create("Partial", trees, References.Value,
-            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary, nullableContextOptions: NullableContextOptions.Enable));
+            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary, nullableContextOptions: NullableContextOptions.Enable,
+                specificDiagnosticOptions: [new("CS1591", ReportDiagnostic.Suppress)]));
         Assert.Empty(compilation.GetDiagnostics(TestContext.Current.CancellationToken).Where(d => d.Severity >= DiagnosticSeverity.Warning).Select(d => d.ToString()));
     }
 

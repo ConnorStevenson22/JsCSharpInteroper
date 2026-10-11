@@ -39,6 +39,7 @@ export interface ClickEvent {
 }
 
 export interface MapViewEvents {
+  /** A click on the map, after the view has handled it. */
   click: ClickEvent;
 }
 
@@ -46,6 +47,7 @@ export type MapViewOptions = Partial<Pick<MapView, "center" | "zoom" | "rotation
 
 export class MapView extends Emitter {
   "$events": MapViewEvents;
+  /** A view with the given options; the rest keep their defaults. */
   constructor(options?: MapViewOptions);
   center: Point;
   /** Clamped to 0–20. */

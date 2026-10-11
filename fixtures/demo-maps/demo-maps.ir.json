@@ -258,6 +258,9 @@
             {
               "kind": "property",
               "name": "click",
+              "doc": {
+                "summary": "A click on the map, after the view has handled it."
+              },
               "type": {
                 "kind": "ref",
                 "name": "ClickEvent",
@@ -386,7 +389,10 @@
                   },
                   "optional": true
                 }
-              ]
+              ],
+              "doc": {
+                "summary": "A view with the given options; the rest keep their defaults."
+              }
             }
           ],
           "members": [
@@ -700,6 +706,9 @@
                 "kind": "ref",
                 "name": "ClickEvent",
                 "module": "@acme/demo-maps/MapView.js"
+              },
+              "doc": {
+                "summary": "A click on the map, after the view has handled it."
               }
             }
           ]
@@ -844,6 +853,9 @@
             {
               "kind": "property",
               "name": "position",
+              "doc": {
+                "summary": "Where the marker is; a pair is taken as `[x, y]`."
+              },
               "type": {
                 "kind": "ref",
                 "name": "Point",
@@ -904,6 +916,9 @@
               "kind": "property",
               "name": "labelFormatter",
               "optional": true,
+              "doc": {
+                "summary": "Overrides `label` when set."
+              },
               "type": {
                 "kind": "union",
                 "types": [
@@ -1636,6 +1651,9 @@
             {
               "kind": "property",
               "name": "center",
+              "doc": {
+                "summary": "The view's center."
+              },
               "type": {
                 "kind": "ref",
                 "name": "Point",

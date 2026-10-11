@@ -10,9 +10,11 @@ public partial class Marker : Observable
     public static Marker Create(global::Interoper.JsScope scope, MarkerSnapshot props) =>
         scope.Realm.Call(global::Interoper.JsOp.Create(DemoMaps.MarkerId, w => MarkerSnapshot.WriteMembers(w, props)), scope.Read<Marker>)!;
 
+    /// <summary>Where the marker is; a pair is taken as <c>[x, y]</c>.</summary>
     public PointSnapshot Position =>
         Realm.Call(global::Interoper.JsOp.Get(Handle, "position", byValue: true), PointSnapshot.Read)!;
 
+    /// <summary>Where the marker is; a pair is taken as <c>[x, y]</c>.</summary>
     public void SetPosition(MarkerPositionInput value) =>
         Realm.Send(global::Interoper.JsOp.Set(Handle, "position", w => global::Interoper.JsJson.WriteValue(w, value)));
 
@@ -28,6 +30,7 @@ public partial class Marker : Observable
         set => Realm.Send(global::Interoper.JsOp.Set(Handle, "style", w => global::Interoper.JsJson.WriteValue(w, value)));
     }
 
+    /// <summary>Overrides <c>label</c> when set.</summary>
     public void SetLabelFormatter(global::Interoper.JsScope scope, global::System.Func<Marker, string>? value) =>
         Realm.Send(global::Interoper.JsOp.Set(Handle, "labelFormatter", w => global::Interoper.JsJson.WriteCallback(w, value is null ? null : scope.Callback(value, scope.Read<Marker>, global::Interoper.JsJson.WriteString))));
 

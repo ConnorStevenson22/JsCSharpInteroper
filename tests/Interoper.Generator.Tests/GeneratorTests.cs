@@ -777,13 +777,13 @@ public sealed class GeneratorTests
             { "kind": "class", "name": "Tile", "extends": {{Ref("Figure")}}, "members": [
               { "kind": "property", "name": "kind", "readonly": true, "type": { "kind": "literal", "value": "tile" } },
               { "kind": "property", "name": "anchor", "type": {{Ref("Anchor")}}, "writeType": {{Ref("AnchorProps")}} },
-              { "kind": "property", "name": "size", "type": {{String}} }] }
+              { "kind": "property", "name": "size", "type": {{String}}, "doc": { "summary": "Its label." } }] }
             """, new Profile { Package = "@acme/maps", ValueClasses = ["Figure", "Tile"] });
 
         var tile = File(result, "TileSnapshot.cs");
         Assert.DoesNotContain("Anchor {", tile); // the base's
         Assert.DoesNotContain("JsAnchor", tile);
-        Assert.Contains("public new global::Interoper.Opt<string> Size { get; init; }", tile);
+        Assert.Contains("    /// <summary>Its label.</summary>\n    public new global::Interoper.Opt<string> Size { get; init; }", tile); // R29: its own docs
         Assert.Single(tile.Split('\n'), l => l.Contains("\"anchor\"u8", StringComparison.Ordinal));
         Assert.Contains("""2: { module: "@acme/maps/a.js", export: "Tile", name: "a.Tile", value: true, members: ["anchor", "size", "kind"] },""", File(result, "maps.meta.js"));
         Assert.Empty(result.Diagnostics);
