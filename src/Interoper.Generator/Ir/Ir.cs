@@ -33,6 +33,12 @@ public sealed record IrModule(string Specifier, IReadOnlyList<Declaration> Decla
     /// <summary>Its package, when that isn't the IR's (<see cref="IrDocument.Package"/>).</summary>
     public string? Package { get; init; }
 
+    /// <summary>
+    /// Its <c>.js</c> file's path in its package, when that isn't <see cref="Specifier"/>'s subpath (an export maps it):
+    /// an import map entry of its own (design §3.5).
+    /// </summary>
+    public string? File { get; init; }
+
     /// <summary>No export of its package reaches it, so it can't be imported by <see cref="Specifier"/>.</summary>
     public bool Internal { get; init; }
 }
@@ -102,8 +108,11 @@ public sealed record VariableDeclaration : Declaration
     public bool Readonly { get; init; }
 }
 
-/// <summary>A module that re-exports a declaration, and the name it exports it under when that isn't the declaration's.</summary>
-public sealed record ImportFrom(string Module, string? Export = null);
+/// <summary>
+/// A module that re-exports a declaration, the name it exports it under when that isn't the declaration's, and its
+/// file as <see cref="IrModule.File"/>'s.
+/// </summary>
+public sealed record ImportFrom(string Module, string? Export = null, string? File = null);
 
 /// <summary>A TS enum member; <see cref="Value"/> is a string or a number.</summary>
 public sealed record EnumMember(string Name, JsonElement Value, Doc? Doc = null);

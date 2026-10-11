@@ -84,7 +84,8 @@ export function extract(packageDirs, { eventMap } = {}) {
   let reexports;
   /**
    * Where a declaration of an internal module is imported from (ir.md `importFrom`): the first module, by specifier,
-   * that an export reaches and that re-exports it, with the name it's exported under there when that isn't its own.
+   * that an export reaches and that re-exports it, with the name it's exported under there when that isn't its own, and
+   * its `file` as a module's: such a module declares nothing, so it isn't listed.
    */
   function importFrom(sym, decl) {
     if (!infoOf(decl.getSourceFile())?.internal) return undefined;
@@ -96,13 +97,13 @@ export function extract(packageDirs, { eventMap } = {}) {
         for (const e of moduleSym ? checker.getExportsOfModule(moduleSym) : []) {
           const target = e.flags & F.Alias ? checker.getAliasedSymbol(e) : e;
           if (!reexports.has(target) && target.declarations?.length && target.declarations.every((d) => d.getSourceFile() !== sf)) {
-            reexports.set(target, { module: infoOf(sf).specifier, name: e.name });
+            reexports.set(target, { module: infoOf(sf).specifier, file: infoOf(sf).file, name: e.name });
           }
         }
       }
     }
     const found = reexports.get(sym);
-    return found && compact({ module: found.module, export: found.name !== nameOf(sym) ? found.name : undefined });
+    return found && compact({ module: found.module, export: found.name !== nameOf(sym) ? found.name : undefined, file: found.file });
   }
 
   // --- Declarations ---
@@ -426,8 +427,8 @@ export function extract(packageDirs, { eventMap } = {}) {
   const modules = [];
   for (const [sf, entries] of listed) {
     const declarations = entries.filter((e) => e.decl).sort((a, b) => a.d.pos - b.d.pos).map((e) => e.decl);
-    const { specifier, package: name, internal } = infoOf(sf);
-    if (declarations.length) modules.push(compact({ specifier, package: name !== pkg.name ? name : undefined, internal, declarations }));
+    const { specifier, package: name, file, internal } = infoOf(sf);
+    if (declarations.length) modules.push(compact({ specifier, package: name !== pkg.name ? name : undefined, file, internal, declarations }));
   }
   modules.sort((a, b) => (a.specifier < b.specifier ? -1 : 1));
   return compact({ version: 1, package: { name: pkg.name, version: pkg.version }, modules, elements });
@@ -510,7 +511,8 @@ function readPackage(dir) {
 /**
  * A declaration file's module (ir.md): the nearest package.json with a name is its package, and its specifier is how
  * that package's `exports` reach the file (`@acme/widgets/legend`). Without `exports` it's `<name>/<path of the .js
- * next to the .d.ts>`, and so it is when no export reaches the file, which is then internal.
+ * next to the .d.ts>`, and so it is when no export reaches the file, which is then internal. `file` is that `.js`'s path
+ * in the package when the specifier isn't the package's name plus it (an export that maps it elsewhere), for import maps.
  */
 function moduleInfo(file) {
   for (let d = path.dirname(file); d !== path.dirname(d); d = path.dirname(d)) {
@@ -519,7 +521,8 @@ function moduleInfo(file) {
     const dts = `./${path.relative(d, file).split(path.sep).join("/")}`;
     const js = dts.replace(/\.d\.([mc]?)ts$/, ".$1js");
     const subpath = pkg.exports === undefined ? js : exportOf(exportsMap(pkg.exports), [js, dts]);
-    return compact({ specifier: pkg.name + (subpath ?? js).slice(1), package: pkg.name, internal: subpath === undefined || undefined });
+    const specifier = pkg.name + (subpath ?? js).slice(1);
+    return compact({ specifier, package: pkg.name, file: specifier !== pkg.name + js.slice(1) ? js.slice(2) : undefined, internal: subpath === undefined || undefined });
   }
   return undefined;
 }

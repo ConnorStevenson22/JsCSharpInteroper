@@ -113,7 +113,7 @@ public static class Generator
             Add(new(ns, name), ComponentEmitter.Component(types, options, diagnostics, element, name));
         }
         var classes = MetadataEmitter.ClassIds(types, selection);
-        files.Add(new($"{types.Registry}.cs", MetadataEmitter.Registry(types, options, classes, modules.SelectMany(m => m), selection.Elements)));
+        files.Add(new($"{types.Registry}.cs", MetadataEmitter.Registry(ir, types, options, classes, modules.SelectMany(m => m), selection.Elements)));
         files.Add(new(MetadataEmitter.FileName(ir), MetadataEmitter.Module(ir, profile, types, classes, selection.Elements)));
         // The anonymous unions and inline records (R11, R27), unions first; emitting one can meet more of them.
         var (unions, records) = (0, 0);

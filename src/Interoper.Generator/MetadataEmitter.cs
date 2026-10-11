@@ -3,7 +3,7 @@ using Interoper.Generator.Ir;
 namespace Interoper.Generator;
 
 /// <summary>
-/// The registry <c>{Package}.cs</c> (class ids, <c>JsClassRegistry</c>, sync mode's preloads) and the metadata module
+/// The registry <c>{Package}.cs</c> (class ids, <c>JsClassRegistry</c>, sync mode's preloads, the import map) and the metadata module
 /// <c>{package}.meta.js</c> (design §2, §3.4), which is the same in both modes.
 /// </summary>
 internal static class MetadataEmitter
@@ -19,9 +19,10 @@ internal static class MetadataEmitter
     /// The class id constants and the registry of live types (R19 step 1), an abstract entity class's too; a closed one
     /// has none (it's read by value, R16), and nor has a generic one, whose readers make it (mapping §2). Sync mode preloads the modules of its classes and module functions
     /// and custom elements (design §3.5, R28): the modules they're imported from, which for an internal module's
-    /// declarations are the modules that re-export them; one that can't be imported has none.
+    /// declarations are the modules that re-export them; one that can't be imported has none. Then the import map's
+    /// entries, the same in both modes.
     /// </summary>
-    public static string Registry(TypeMap types, GeneratorOptions options, IReadOnlyList<Selected> classes, IEnumerable<Selected> functions,
+    public static string Registry(IrDocument ir, TypeMap types, GeneratorOptions options, IReadOnlyList<Selected> classes, IEnumerable<Selected> functions,
         IEnumerable<SelectedElement> elements)
     {
         var w = CodeWriter.CSharp(options.Namespace);
@@ -51,9 +52,36 @@ internal static class MetadataEmitter
                     w.Line(call == calls[^1] ? call + ";" : call);
                 }
             }
+            w.Line();
+            w.Line("/// <summary>The import map's entries for the packages' modules; <paramref name=\"root\"/> holds the packages' folders, as <c>node_modules</c> does, and ends in a slash (<c>\"/node_modules/\"</c>).</summary>");
+            using (w.Block("public static global::System.Collections.Generic.IReadOnlyDictionary<string, string> ImportMap(string root) => new global::System.Collections.Generic.Dictionary<string, string>", "};"))
+            {
+                foreach (var (specifier, path) in ImportMap(ir))
+                {
+                    w.Line($"[{Syntax.Literal(specifier)}] = root + {Syntax.Literal(path)},");
+                }
+            }
         }
         return w.ToString();
     }
+
+    /// <summary>
+    /// Design §3.5: a prefix entry per package, its folder (<c>"@acme/maps/"</c>), and an exact one per module whose
+    /// file an export maps elsewhere (<c>"@acme/maps" → "@acme/maps/dist/index.js"</c>), in ordinal order.
+    /// </summary>
+    private static IEnumerable<(string Specifier, string Path)> ImportMap(IrDocument ir)
+    {
+        var mapped = ir.Modules.Select(m => (m.Specifier, m.File))
+            .Concat(ir.Modules.SelectMany(m => m.Declarations).Select(d => d.ImportFrom).OfType<ImportFrom>().Select(i => (Specifier: i.Module, i.File)))
+            .ToList();
+        var packages = mapped.Select(m => PackageName(m.Specifier)).Append(ir.Package.Name).Select(p => (Specifier: p + "/", Path: p + "/"));
+        var files = mapped.Where(m => m.File is not null).Select(m => (m.Specifier, Path: $"{PackageName(m.Specifier)}/{m.File}"));
+        return packages.Concat(files).Distinct().OrderBy(e => e.Specifier, StringComparer.Ordinal);
+    }
+
+    /// <summary>A specifier's package, as npm names them: its first segment, or its first two when it's scoped.</summary>
+    private static string PackageName(string specifier) =>
+        string.Join('/', specifier.Split('/').Take(specifier.StartsWith('@') ? 2 : 1));
 
     /// <summary>
     /// Per class id: the module and export that construct it, its runtime class name (with the profile's prefix when

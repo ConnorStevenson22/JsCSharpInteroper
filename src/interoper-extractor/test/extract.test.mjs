@@ -365,8 +365,24 @@ test("a declaration of an internal module is imported from a module that re-expo
     "index.d.ts": 'export { A, make } from "./impl/a.js";\nexport { default as C } from "./impl/c.js";',
   }, (dir) => extract(dir).modules);
   assert.deepEqual(modules.map((m) => [m.specifier, m.internal, m.declarations.map((d) => [d.name, d.export, d.importFrom])]), [
-    ["@acme/extra/impl/a.js", true, [["A", undefined, { module: "@acme/extra" }], ["make", undefined, { module: "@acme/extra" }], ["Hidden", undefined, undefined]]],
-    ["@acme/extra/impl/c.js", true, [["C", "default", { module: "@acme/extra" }]]], // its own name there
+    ["@acme/extra/impl/a.js", true, [["A", undefined, { module: "@acme/extra", file: "index.js" }], ["make", undefined, { module: "@acme/extra", file: "index.js" }], ["Hidden", undefined, undefined]]],
+    ["@acme/extra/impl/c.js", true, [["C", "default", { module: "@acme/extra", file: "index.js" }]]], // its own name there
+  ]);
+});
+
+test("a module's file is listed when its specifier isn't the package's name plus the file's path", () => {
+  const files = withPackage({
+    "package.json": { name: "@acme/extra", version: "1.0.0", type: "module", exports: { ".": "./lib/index.js", "./parts/*": "./lib/parts/*/index.js", "./*.js": "./*.js" } },
+    "lib/index.d.ts": "export declare class Root {}",
+    "plain.d.ts": "export declare class Plain {}", // "./*.js" mirrors the files
+    "lib/parts/dial/index.d.ts": "export declare class Dial {}",
+    "lib/hidden.d.ts": "export declare class Hidden {}", // "./*.js" reaches lib/hidden.js by its path
+  }, (dir) => extract(dir).modules.map((m) => [m.specifier, m.file]));
+  assert.deepEqual(files, [
+    ["@acme/extra", "lib/index.js"],
+    ["@acme/extra/lib/hidden.js", undefined],
+    ["@acme/extra/parts/dial", "lib/parts/dial/index.js"],
+    ["@acme/extra/plain.js", undefined],
   ]);
 });
 
@@ -492,14 +508,17 @@ test("the CLI writes the golden IR for several packages, byte for byte", () => {
   const widgets = both.modules.filter((m) => m.package);
   // `exports` gives "./legend" for dist/legend.js (its `types` condition); no export reaches dist/support/, nor a
   // component's element.js ("./components/*" reaches its index.js).
-  assert.deepEqual(widgets.map((m) => [m.specifier, m.package, m.internal]), [
-    ["@acme/demo-widgets/dist/components/zoom-label/element.js", "@acme/demo-widgets", true],
-    ["@acme/demo-widgets/dist/support/entry.js", "@acme/demo-widgets", true],
-    ["@acme/demo-widgets/dist/support/swatch.js", "@acme/demo-widgets", true],
-    ["@acme/demo-widgets/legend", "@acme/demo-widgets", undefined],
+  // Only legend's file isn't its specifier's path, for import maps; demo-maps' `./*.js` mirrors its files.
+  assert.deepEqual(widgets.map((m) => [m.specifier, m.package, m.internal, m.file]), [
+    ["@acme/demo-widgets/dist/components/zoom-label/element.js", "@acme/demo-widgets", true, undefined],
+    ["@acme/demo-widgets/dist/support/entry.js", "@acme/demo-widgets", true, undefined],
+    ["@acme/demo-widgets/dist/support/swatch.js", "@acme/demo-widgets", true, undefined],
+    ["@acme/demo-widgets/legend", "@acme/demo-widgets", undefined, "dist/legend.js"],
   ]);
+  assert.ok(both.modules.filter((m) => !m.package).every((m) => m.file === undefined));
   // The root re-exports swatch.js's declarations, so they're imported from it; entry.js's aren't importable.
-  assert.deepEqual(widgets[2].declarations.map((d) => [d.name, d.importFrom]), [["Swatch", { module: "@acme/demo-widgets" }], ["swatchFor", { module: "@acme/demo-widgets" }]]);
+  const root = { module: "@acme/demo-widgets", file: "dist/index.js" };
+  assert.deepEqual(widgets[2].declarations.map((d) => [d.name, d.importFrom]), [["Swatch", root], ["swatchFor", root]]);
   assert.deepEqual(widgets[1].declarations.map((d) => [d.name, d.importFrom]), [["LegendEntry", undefined], ["describe", undefined]]);
   const legend = widgets[3].declarations.find((d) => d.name === "Legend");
   assert.equal(legend.importFrom, undefined); // its own module is reachable
@@ -514,6 +533,7 @@ test("the CLI writes the golden IR for several packages, byte for byte", () => {
   const declaring = "@acme/demo-widgets/dist/components/zoom-label/element.js";
   assert.deepEqual(zoomLabel.class, { kind: "ref", name: "ZoomLabelElement", module: declaring });
   assert.deepEqual(zoomLabel.events.map((e) => e.detail), [{ kind: "ref", name: "ZoomLabelCopyDetail", module: declaring }]);
+  const label = { module: "@acme/demo-widgets/components/zoom-label", file: "dist/components/zoom-label/index.js" };
   assert.deepEqual(widgets[0].declarations.map((d) => [d.name, d.importFrom]),
-    [["ZoomLabelCopyDetail", { module: "@acme/demo-widgets/components/zoom-label" }], ["ZoomLabelElement", { module: "@acme/demo-widgets/components/zoom-label" }]]);
+    [["ZoomLabelCopyDetail", label], ["ZoomLabelElement", label]]);
 });

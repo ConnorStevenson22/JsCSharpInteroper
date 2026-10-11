@@ -1146,6 +1146,49 @@ public sealed class GeneratorTests
         Assert.Empty(alone.Files.Select(f => f.Path).Except(result.Files.Select(f => f.Path)));
     }
 
+    [Theory] // design §3.5: a prefix entry per package, and an exact one per module whose file an export maps elsewhere
+    [InlineData(Api.Sync)]
+    [InlineData(Api.Async)]
+    public void TheRegistrysImportMapCoversThePackagesAndTheirExportMappedModules(Api api)
+    {
+        var registry = File(Generator.Generate(Fixture.WithWidgetsIr, Fixture.Profile, new(api, "Acme.Maps")), "DemoMaps.cs");
+
+        // demo-maps' `./*.js` mirrors its files; demo-widgets' root, `./legend` and `./components/*` map into dist/.
+        Assert.Contains("""
+                public static global::System.Collections.Generic.IReadOnlyDictionary<string, string> ImportMap(string root) => new global::System.Collections.Generic.Dictionary<string, string>
+                {
+                    ["@acme/demo-maps/"] = root + "@acme/demo-maps/",
+                    ["@acme/demo-widgets"] = root + "@acme/demo-widgets/dist/index.js",
+                    ["@acme/demo-widgets/"] = root + "@acme/demo-widgets/",
+                    ["@acme/demo-widgets/components/zoom-label"] = root + "@acme/demo-widgets/dist/components/zoom-label/index.js",
+                    ["@acme/demo-widgets/legend"] = root + "@acme/demo-widgets/dist/legend.js",
+                };
+            """, registry);
+        Assert.Contains("""
+                {
+                    ["@acme/demo-maps/"] = root + "@acme/demo-maps/",
+                };
+            """, File(Generator.Generate(Fixture.Ir, Fixture.Profile, new(api, "Acme.Maps")), "DemoMaps.cs"));
+    }
+
+    [Fact] // design §3.5: an unscoped package, and one the IR names only through `importFrom`
+    public void TheImportMapNamesPackagesBySpecifier()
+    {
+        var ir = IrDocument.Parse("""
+            { "version": 1, "package": { "name": "maps", "version": "1" }, "modules": [
+              { "specifier": "maps/lib/a.js", "internal": true, "declarations": [
+                { "kind": "class", "name": "A", "importFrom": { "module": "maps-extra/a", "file": "dist/a.mjs" } }] }] }
+            """);
+
+        Assert.Contains("""
+                {
+                    ["maps-extra/"] = root + "maps-extra/",
+                    ["maps-extra/a"] = root + "maps-extra/dist/a.mjs",
+                    ["maps/"] = root + "maps/",
+                };
+            """, File(Generator.Generate(ir, new Profile { Package = "maps" }, new(Api.Async, "Maps")), "Maps.cs"));
+    }
+
     [Theory] // R11, R15, R19, R27: an inline object type is a record named after its owner, without the optional members it can't map
     [InlineData(Api.Sync)]
     [InlineData(Api.Async)]

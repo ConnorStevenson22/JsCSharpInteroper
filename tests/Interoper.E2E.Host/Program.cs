@@ -12,7 +12,8 @@ builder.Services.AddInteroper(Fixture.Metadata, GoldenSlice.Async.DemoMaps.Class
 
 var app = builder.Build();
 var demoMaps = Path.GetFullPath(Path.Combine(app.Environment.ContentRootPath, "../../fixtures/demo-maps"));
-app.UseStaticFiles(new StaticFileOptions { FileProvider = new PhysicalFileProvider(demoMaps), RequestPath = "/demo-maps" });
+// Where npm would install it, so the generated import map (App.razor) resolves it.
+app.UseStaticFiles(new StaticFileOptions { FileProvider = new PhysicalFileProvider(demoMaps), RequestPath = "/node_modules/@acme/demo-maps" });
 app.MapStaticAssets();
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode()
