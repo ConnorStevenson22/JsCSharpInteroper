@@ -3,6 +3,12 @@
 The extractor's output and the generator's input ([design §4](design.md#4-generator-architecture)): one JSON document for one or more packages, language-neutral and versioned. It records what the typings and the Custom Elements Manifest say, resolved by the TypeScript checker ([mapping §7](mapping.md#7-what-the-extractor-must-resolve-with-the-checker)). It makes no C# decisions: classification, naming and the profile are the generator's.
 
 ```bash
+dotnet interoper generate @acme/maps @acme/map-widgets --api async --namespace Acme.Maps --out Generated/AcmeMaps   # writes Generated/AcmeMaps/.interoper/ir.json
+```
+
+`dotnet interoper generate` runs the extractor and caches its IR ([design §5](design.md#5-consumer-workflow-and-packages)). For development, run it directly:
+
+```bash
 node src/interoper-extractor/extract.mjs fixtures/demo-maps --profile fixtures/demo-maps/profile.json --out ir.json
 node src/interoper-extractor/extract.mjs node_modules/@acme/maps node_modules/@acme/map-widgets --out ir.json
 ```

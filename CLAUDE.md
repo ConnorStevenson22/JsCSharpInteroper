@@ -21,11 +21,11 @@ Read before changing anything:
 There is no CI. Run these before merging; all of them must pass.
 
 ```bash
+npm install --prefix src/interoper-extractor --no-audit --no-fund   # once: the extractor's pinned TypeScript (the JS tests and Interoper.Tool.Tests use it)
 dotnet build Interoper.slnx
-dotnet test Interoper.slnx                      # unit + golden tests
+dotnet test Interoper.slnx                      # unit, golden and CLI tests (the CLI tests run the extractor on Node)
 dotnet test tests/Interoper.E2E                 # browser tests (Playwright, Chromium); the slnx builds them but doesn't run them
 dotnet format Interoper.slnx --verify-no-changes
-npm install --prefix src/interoper-extractor --no-audit --no-fund   # once: the extractor's pinned TypeScript
 node --test "tests/interoper-js/*.test.mjs" "fixtures/demo-maps/test/*.test.mjs" "fixtures/demo-widgets/test/*.test.mjs" "src/interoper-extractor/test/*.test.mjs"   # JS tests (glob form; a bare folder fails on Node 22)
 ```
 

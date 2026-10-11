@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- The `dotnet interoper` CLI (design §5): the generator, plus the extractor as source, run with the consumer's Node and
+       TypeScript 6.x. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <PackAsTool>true</PackAsTool>
+    <ToolCommandName>dotnet-interoper</ToolCommandName>
+    <PackageId>Interoper.Tool</PackageId>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Interoper.Generator\Interoper.Generator.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Shipped in the tool's folder (tools/…/extractor), not as content for the consumer's project. -->
+    <Content Include="..\interoper-extractor\*.mjs" Link="extractor\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" Pack="false" />
+  </ItemGroup>
+
+</Project>

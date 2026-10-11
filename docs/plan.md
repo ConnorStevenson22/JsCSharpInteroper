@@ -45,7 +45,7 @@ Hand-written bindings for a slice of the fixture, running on every host.
 
 - [x] XML docs from JSDoc (R29).
 - [x] The import-map helper: the registry's `ImportMap(root)` (design §3.5).
-- [ ] The `dotnet interoper generate` command, the IR cache, and the report with `--warnings-as-errors`.
+- [x] The `dotnet interoper generate` command, the IR cache, and the report with `--warnings-as-errors`.
 - [ ] The three NuGet packages and a quickstart.
 - [ ] Latency-throttled Server tests, a trim/size budget, and the Hybrid manual check.
 

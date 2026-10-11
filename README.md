@@ -4,6 +4,7 @@
 
 ```bash
 npm install @acme/maps
+npm install -D typescript@6.0.3
 dotnet interoper generate @acme/maps --api async --namespace Acme.Maps --out Generated/AcmeMaps
 ```
 
@@ -13,7 +14,7 @@ view.Zoom = 7;                                    // --api sync: WebAssembly onl
 if (await feature.GetShapeAsync() is PointSnapshot p) { } // unions, undefined/null and the most-derived type, all typed
 ```
 
-**Status:** phases 1 (runtime core) and 2 (the generator) are done; phase 3 (the full surface) is under way ([plan](docs/plan.md)).
+**Status:** phases 1–3 (runtime core, generator, full surface) are done; phase 4 (shipping) is under way ([plan](docs/plan.md)).
 
 | Read | For |
 |---|---|

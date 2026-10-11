@@ -558,3 +558,26 @@ test("the CLI writes the golden IR for several packages, byte for byte", () => {
   assert.deepEqual(widgets[0].declarations.map((d) => [d.name, d.importFrom]),
     [["ZoomLabelCopyDetail", label], ["ZoomLabelElement", label]]);
 });
+
+// Design §4: TypeScript comes from INTEROPER_TYPESCRIPT (the CLI's), the working directory's node_modules, or the
+// extractor's own folder, and it must be 6.x.
+test("the CLI loads TypeScript from INTEROPER_TYPESCRIPT or the working directory, and only 6.x", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "extract-"));
+  const fake = path.join(dir, "node_modules", "typescript");
+  fs.mkdirSync(fake, { recursive: true });
+  fs.writeFileSync(path.join(fake, "package.json"), JSON.stringify({ name: "typescript", version: "5.9.3", main: "index.js" }));
+  fs.writeFileSync(path.join(fake, "index.js"), 'module.exports = { version: "5.9.3" };\n');
+  const cli = fileURLToPath(new URL("../extract.mjs", import.meta.url));
+  const run = (options) => {
+    try {
+      execFileSync(process.execPath, [cli, fixture], { encoding: "utf8", stdio: "pipe", ...options });
+      return "";
+    } catch (e) {
+      return e.stderr;
+    }
+  };
+  const message = "TypeScript 5.9.3 found; the extractor needs 6.x: run `npm install -D typescript@6.0.3`";
+  assert.match(run({ cwd: dir }), new RegExp(message.replace(/[.*+?^${}()|[\]\\`]/g, "\\$&")));
+  assert.match(run({ env: { ...process.env, INTEROPER_TYPESCRIPT: fake } }), /TypeScript 5\.9\.3 found/);
+  fs.rmSync(dir, { recursive: true });
+});

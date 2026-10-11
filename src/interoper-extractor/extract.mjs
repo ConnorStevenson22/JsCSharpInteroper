@@ -6,12 +6,39 @@
 // The first package is the IR's `package`; the others' modules, and those of unlisted packages whose declarations the
 // listed ones reference, say which package they're in.
 // The profile is read only for the event-map property (`events.mapProperty`, R24); everything else in it is the generator's.
+// `dotnet interoper generate` runs it (design §5); this form is for development.
 
 import fs from "node:fs";
+import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import ts from "typescript";
 import { createProgram, discriminant, listDts } from "./program.mjs";
+
+const ts = loadTypeScript();
+
+/**
+ * TypeScript 6.x (design §4): the package folder in `INTEROPER_TYPESCRIPT` (the CLI passes the one it resolved), else
+ * the working directory's (the consumer's node_modules), else the extractor's own (repo development).
+ */
+function loadTypeScript() {
+  const own = createRequire(import.meta.url);
+  const dir = process.env.INTEROPER_TYPESCRIPT;
+  let loaded;
+  if (dir) {
+    loaded = own(path.resolve(dir));
+  } else {
+    try {
+      loaded = createRequire(path.join(process.cwd(), "noop.js"))("typescript");
+    } catch (e) {
+      if (e.code !== "MODULE_NOT_FOUND") throw e;
+      loaded = own("typescript");
+    }
+  }
+  if (!/^6\./.test(loaded.version)) {
+    throw new Error(`TypeScript ${loaded.version} found; the extractor needs 6.x: run \`npm install -D typescript@6.0.3\``);
+  }
+  return loaded;
+}
 
 const F = ts.SymbolFlags;
 const T = ts.TypeFlags;
