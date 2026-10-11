@@ -16,11 +16,25 @@ public sealed partial class TileLayer : Layer
         set => Realm.Set(Handle, "url", value);
     }
 
+    public double TileSize => Realm.GetNumber(Handle, "tileSize");
+
+    public global::GoldenSlice.Sync.Marker[] GetHighlighted(global::Interoper.JsScope scope) =>
+        Realm.Call(global::Interoper.JsOp.Get(Handle, "highlighted"), (ref r) => global::Interoper.JsJson.ReadArray(ref r, scope.Read<global::GoldenSlice.Sync.Marker>))!;
+
+    public void Highlight(TileLayerHighlightMarkers markers) =>
+        Realm.Send(global::Interoper.JsOp.Call(Handle, "highlight", w => global::Interoper.JsJson.WriteValue(w, markers)));
+
     public new TileLayer Clone(global::Interoper.JsScope scope) =>
         Realm.Call(global::Interoper.JsOp.Call(Handle, "clone"), scope.Read<TileLayer>)!;
 
     public global::System.IDisposable WatchUrl(global::Interoper.JsScope scope, global::System.Action<string> handler) =>
         scope.Subscribe(Handle, "watch", "url", global::Interoper.JsJson.ReadString, handler, null, null);
+
+    public global::System.IDisposable WatchTileSize(global::Interoper.JsScope scope, global::System.Action<double> handler) =>
+        scope.Subscribe(Handle, "watch", "tileSize", global::Interoper.JsJson.ReadNumber, handler, null, null);
+
+    public global::System.IDisposable WatchHighlighted(global::Interoper.JsScope scope, global::System.Action<global::GoldenSlice.Sync.Marker[]> handler) =>
+        scope.Subscribe(Handle, "watch", "highlighted", (ref r) => global::Interoper.JsJson.ReadArray(ref r, scope.Read<global::GoldenSlice.Sync.Marker>), handler, null, null);
 
     public new TileLayerSnapshot Snapshot() =>
         Realm.Call(global::Interoper.JsOp.Snapshot(Handle), TileLayerSnapshot.Read)!;

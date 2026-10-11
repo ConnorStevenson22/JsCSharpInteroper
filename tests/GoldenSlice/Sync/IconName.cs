@@ -128,7 +128,7 @@ public readonly partial record struct IconName(string Value)
 
     public static void Write(global::System.Text.Json.Utf8JsonWriter writer, IconName value) => writer.WriteStringValue(value.Value);
 
-    public static IconName Read(ref global::System.Text.Json.Utf8JsonReader reader) => new(reader.GetString()!);
+    public static IconName Read(ref global::System.Text.Json.Utf8JsonReader reader) => new(global::Interoper.JsJson.ReadString(ref reader));
 
     public override string ToString() => Value;
 }

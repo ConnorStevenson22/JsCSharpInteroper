@@ -3,10 +3,10 @@ using Interoper.Generator.Ir;
 namespace Interoper.Generator;
 
 /// <summary>
-/// Mapping §2: a use of a generic union alias (<c>MarkerList&lt;Marker&gt;</c>, where
-/// <c>type MarkerList&lt;T&gt; = readonly T[] | Collection&lt;T&gt;</c>) is the union it stands for, with the type
-/// arguments in place of the type parameters, as if it were written there: an anonymous union named after its owner
-/// (R27). A C# union struct isn't generic, so the alias has no type of its own.
+/// Mapping §2: a use of a generic union alias (<c>OneOrMany&lt;Marker&gt;</c>, where
+/// <c>type OneOrMany&lt;T&gt; = T | T[]</c>), or of a generic alias of one, is the union it stands for, with the type
+/// arguments in place of the type parameters (a missing one is its default), as if it were written there: an anonymous
+/// union named after its owner (R27). A C# union struct isn't generic, so the alias has no type of its own.
 /// </summary>
 internal static class Instantiation
 {
@@ -16,96 +16,116 @@ internal static class Instantiation
     /// <summary>The IR with every use of a generic union alias replaced by its instantiated union.</summary>
     public static IrDocument Instantiate(IrDocument ir)
     {
-        var aliases = ir.Modules.SelectMany(m => m.Declarations.OfType<AliasDeclaration>().Where(a => a.TypeParameters.Count > 0 && a.Type is UnionType)
+        var generic = ir.Modules.SelectMany(m => m.Declarations.OfType<AliasDeclaration>().Where(a => a.TypeParameters.Count > 0)
             .Select(a => (Key: (m.Specifier, a.Name), Alias: a))).ToDictionary(x => x.Key, x => x.Alias);
+        // The union aliases, and the aliases of those (type Same<V> = OneOrMany<V>), transitively.
+        var aliases = generic.Where(x => x.Value.Type is UnionType).ToDictionary();
+        for (var added = true; added;)
+        {
+            added = false;
+            foreach (var (key, alias) in generic)
+            {
+                if (!aliases.ContainsKey(key) && alias.Type is RefType { Module: { } module } r && aliases.ContainsKey((module, r.Name)))
+                {
+                    aliases[key] = alias;
+                    added = true;
+                }
+            }
+        }
         if (aliases.Count == 0)
         {
             return ir;
         }
-        var rewriter = new Rewriter(aliases);
+
+        IrType? Expand(IrType type, int depth)
+        {
+            if (depth >= MaxDepth || type is not RefType { Module: { } module } r || !aliases.TryGetValue((module, r.Name), out var alias) ||
+                r.Args.Count > alias.TypeParameters.Count || alias.TypeParameters.Skip(r.Args.Count).Any(t => t.Default is null))
+            {
+                return null;
+            }
+            // Raw arguments, then defaults (which may name earlier parameters); the result is walked once, a level deeper.
+            var args = new Dictionary<string, IrType>();
+            foreach (var (parameter, i) in alias.TypeParameters.Select((t, i) => (t, i)))
+            {
+                args[parameter.Name] = i < r.Args.Count ? r.Args[i] : Map(parameter.Default!, t => Substitute(t, args));
+            }
+            return Walk(Map(alias.Type, t => Substitute(t, args)), depth + 1);
+        }
+        IrType Walk(IrType type, int depth) => Map(type, t => Expand(t, depth));
+
         return ir with
         {
-            Modules = [.. ir.Modules.Select(m => m with { Declarations = [.. m.Declarations.Select(rewriter.Declaration)] })],
-            Elements = [.. ir.Elements.Select(rewriter.Element)],
+            Modules = [.. ir.Modules.Select(m => m with { Declarations = [.. m.Declarations.Select(d => Declaration(d, t => Expand(t, 0)))] })],
+            Elements = [.. ir.Elements.Select(e => Element(e, t => Expand(t, 0)))],
         };
     }
 
-    private sealed class Rewriter(Dictionary<(string Module, string Name), AliasDeclaration> aliases)
+    private static IrType? Substitute(IrType type, Dictionary<string, IrType> args) =>
+        type is TypeParameterType p && args.TryGetValue(p.Name, out var arg) ? arg : null;
+
+    /// <summary>
+    /// A type with <paramref name="replace"/> applied, from the outside in: where it gives a type, that's the result;
+    /// otherwise the type's parts are mapped, object members and signatures included.
+    /// </summary>
+    private static IrType Map(IrType type, Func<IrType, IrType?> replace) => replace(type) ?? type switch
     {
-        public Declaration Declaration(Declaration d) => d switch
+        RefType r => r with { Args = [.. r.Args.Select(a => Map(a, replace))] },
+        ArrayType a => a with { Element = Map(a.Element, replace) },
+        TupleType t => t with { Elements = [.. t.Elements.Select(e => Map(e, replace))] },
+        UnionType u => u with { Types = [.. u.Types.Select(t => Map(t, replace))] },
+        IntersectionType i => i with { Types = [.. i.Types.Select(t => Map(t, replace))] },
+        ObjectType o => o with
         {
-            ClassDeclaration c => c with
-            {
-                Extends = c.Extends is { } e ? Type(e) : null,
-                Implements = [.. c.Implements.Select(t => Type(t))],
-                Constructors = [.. c.Constructors.Select(Signature)],
-                Members = [.. c.Members.Select(Member)],
-                Events = [.. c.Events.Select(e => e with { Type = Type(e.Type) })],
-            },
-            InterfaceDeclaration i => i with
-            {
-                Extends = [.. i.Extends.Select(t => Type(t))],
-                Members = [.. i.Members.Select(Member)],
-                IndexSignatures = [.. i.IndexSignatures.Select(x => x with { Type = Type(x.Type) })],
-                CallSignatures = [.. i.CallSignatures.Select(Signature)],
-                ConstructSignatures = [.. i.ConstructSignatures.Select(Signature)],
-            },
-            AliasDeclaration a => a with { Type = Type(a.Type) },
-            FunctionDeclaration f => f with { Signatures = [.. f.Signatures.Select(Signature)] },
-            VariableDeclaration v => v with { Type = Type(v.Type) },
-            _ => d,
-        };
+            Members = [.. o.Members.Select(m => Member(m, replace))],
+            IndexSignatures = [.. o.IndexSignatures.Select(x => x with { Type = Map(x.Type, replace) })],
+            CallSignatures = [.. o.CallSignatures.Select(s => Signature(s, replace))],
+            ConstructSignatures = [.. o.ConstructSignatures.Select(s => Signature(s, replace))],
+        },
+        FunctionType f => f with { Params = [.. f.Params.Select(p => p with { Type = Map(p.Type, replace) })], Returns = Map(f.Returns, replace) },
+        _ => type,
+    };
 
-        public Element Element(Element e) => e with
-        {
-            Attributes = [.. e.Attributes.Select(a => a with { Type = a.Type is { } t ? Type(t) : null })],
-            Events = [.. e.Events.Select(x => x with { Detail = x.Detail is { } d ? Type(d) : null, Type = x.Type is { } t ? Type(t) : null })],
-        };
+    private static Member Member(Member m, Func<IrType, IrType?> replace) => m switch
+    {
+        PropertyMember p => p with { Type = Map(p.Type, replace), WriteType = p.WriteType is { } w ? Map(w, replace) : null },
+        MethodMember method => method with { Signatures = [.. method.Signatures.Select(s => Signature(s, replace))] },
+        _ => m,
+    };
 
-        private Member Member(Member m) => m switch
-        {
-            PropertyMember p => p with { Type = Type(p.Type), WriteType = p.WriteType is { } w ? Type(w) : null },
-            MethodMember method => method with { Signatures = [.. method.Signatures.Select(Signature)] },
-            _ => m,
-        };
+    private static Signature Signature(Signature s, Func<IrType, IrType?> replace) => s with
+    {
+        Params = [.. s.Params.Select(p => p with { Type = Map(p.Type, replace) })],
+        Returns = s.Returns is { } r ? Map(r, replace) : null,
+    };
 
-        private Signature Signature(Signature s) => s with
+    private static Declaration Declaration(Declaration d, Func<IrType, IrType?> replace) => d switch
+    {
+        ClassDeclaration c => c with
         {
-            Params = [.. s.Params.Select(p => p with { Type = Type(p.Type) })],
-            Returns = s.Returns is { } r ? Type(r) : null,
-        };
+            Extends = c.Extends is { } e ? Map(e, replace) : null,
+            Implements = [.. c.Implements.Select(t => Map(t, replace))],
+            Constructors = [.. c.Constructors.Select(s => Signature(s, replace))],
+            Members = [.. c.Members.Select(m => Member(m, replace))],
+            Events = [.. c.Events.Select(e => e with { Type = Map(e.Type, replace) })],
+        },
+        InterfaceDeclaration i => i with
+        {
+            Extends = [.. i.Extends.Select(t => Map(t, replace))],
+            Members = [.. i.Members.Select(m => Member(m, replace))],
+            IndexSignatures = [.. i.IndexSignatures.Select(x => x with { Type = Map(x.Type, replace) })],
+            CallSignatures = [.. i.CallSignatures.Select(s => Signature(s, replace))],
+            ConstructSignatures = [.. i.ConstructSignatures.Select(s => Signature(s, replace))],
+        },
+        AliasDeclaration a => a with { Type = Map(a.Type, replace) },
+        FunctionDeclaration f => f with { Signatures = [.. f.Signatures.Select(s => Signature(s, replace))] },
+        VariableDeclaration v => v with { Type = Map(v.Type, replace) },
+        _ => d,
+    };
 
-        private IrType Type(IrType type, int depth = 0) => type switch
-        {
-            RefType { Module: { } module } r when depth < MaxDepth && aliases.TryGetValue((module, r.Name), out var alias) && r.Args.Count == alias.TypeParameters.Count =>
-                Type(Substitute(alias.Type, alias.TypeParameters.Select(t => t.Name).Zip(r.Args.Select(a => Type(a, depth))).ToDictionary()), depth + 1),
-            RefType r => r with { Args = [.. r.Args.Select(a => Type(a, depth))] },
-            ArrayType a => a with { Element = Type(a.Element, depth) },
-            TupleType t => t with { Elements = [.. t.Elements.Select(e => Type(e, depth))] },
-            UnionType u => u with { Types = [.. u.Types.Select(t => Type(t, depth))] },
-            IntersectionType i => i with { Types = [.. i.Types.Select(t => Type(t, depth))] },
-            ObjectType o => o with
-            {
-                Members = [.. o.Members.Select(Member)],
-                IndexSignatures = [.. o.IndexSignatures.Select(x => x with { Type = Type(x.Type, depth) })],
-                CallSignatures = [.. o.CallSignatures.Select(Signature)],
-                ConstructSignatures = [.. o.ConstructSignatures.Select(Signature)],
-            },
-            FunctionType f => f with { Params = [.. f.Params.Select(p => p with { Type = Type(p.Type, depth) })], Returns = Type(f.Returns, depth) },
-            _ => type,
-        };
-
-        /// <summary>The alias's type with its type parameters replaced by the arguments.</summary>
-        private static IrType Substitute(IrType type, Dictionary<string, IrType> args) => type switch
-        {
-            TypeParameterType t when args.TryGetValue(t.Name, out var arg) => arg,
-            RefType r => r with { Args = [.. r.Args.Select(a => Substitute(a, args))] },
-            ArrayType a => a with { Element = Substitute(a.Element, args) },
-            TupleType t => t with { Elements = [.. t.Elements.Select(e => Substitute(e, args))] },
-            UnionType u => u with { Types = [.. u.Types.Select(t => Substitute(t, args))] },
-            IntersectionType i => i with { Types = [.. i.Types.Select(t => Substitute(t, args))] },
-            FunctionType f => f with { Params = [.. f.Params.Select(p => p with { Type = Substitute(p.Type, args) })], Returns = Substitute(f.Returns, args) },
-            _ => type, // an object type's members keep the parameter: the use is skipped, as a generic object type is
-        };
-    }
+    private static Element Element(Element e, Func<IrType, IrType?> replace) => e with
+    {
+        Attributes = [.. e.Attributes.Select(a => a with { Type = a.Type is { } t ? Map(t, replace) : null })],
+        Events = [.. e.Events.Select(x => x with { Detail = x.Detail is { } d ? Map(d, replace) : null, Type = x.Type is { } t ? Map(t, replace) : null })],
+    };
 }

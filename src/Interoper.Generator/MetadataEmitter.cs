@@ -57,9 +57,9 @@ internal static class MetadataEmitter
 
     /// <summary>
     /// Per class id: the module and export that construct it, its runtime class name (with the profile's prefix when
-    /// it's the first package's), a
-    /// custom element's tag (R28), whether it's value-like (R16), and its snapshot members (R18), a value-like one's with
-    /// its constants. Then the components' custom events, each with its detail's default projection (R24, R28).
+    /// it's the first package's), a custom element's tag (R28), whether it's value-like (R16), and its snapshot members
+    /// (R18), a value-like one's with its constants. Then the components' custom events, each with its detail's default
+    /// projection (R24, R28).
     /// </summary>
     public static string Module(IrDocument ir, Profile profile, TypeMap types, IReadOnlyList<Selected> classes, IReadOnlyList<SelectedElement> elements)
     {

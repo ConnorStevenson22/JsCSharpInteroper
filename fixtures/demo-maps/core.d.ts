@@ -5,6 +5,9 @@ export interface Subscription {
 
 export type ChangeCallback<T> = (newValue: T, oldValue: T) => void;
 
+/** One value or several: a generic union alias, which each use instantiates (§2). */
+export type OneOrMany<T> = T | T[];
+
 export class Observable {
   /** The runtime class name: `"<module>.<Class>"`, or just `"<Class>"` when the module is named after it. */
   readonly className: string;

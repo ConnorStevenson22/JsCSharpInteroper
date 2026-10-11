@@ -436,7 +436,8 @@ export function extract(packageDirs, { eventMap } = {}) {
  * text the IR needs becomes a virtual module next to the package, for the checker: it imports the names the text's
  * `references` point at and exports the text as `__type`. `types` maps a manifest type to `{ file, text }`. A module
  * path of the package itself is imported through its own `exports` when one reaches it (`components/zoom-label` as
- * `<name>/components/zoom-label`, for `"./components/*"`), and otherwise as a file of the package (`./dist/index.js`);
+ * `<name>/components/zoom-label`, for `"./components/*"`), and otherwise as a file of the package by its full name
+ * (`dist/index.js`, or `dist/legend` as `./dist/legend.js` or `./dist/legend/index.js`, whichever has its .d.ts);
  * the checker then follows re-exports to the declaring module.
  */
 function readManifest(dir, pkg) {
@@ -456,8 +457,11 @@ function readManifest(dir, pkg) {
   const root = dir.split(path.sep).join("/");
   const map = pkg.exports === undefined ? undefined : exportsMap(pkg.exports);
   const own = (module) => {
-    const subpath = module.replace(/^\.?\//, "");
-    return map && typeof resolveExport(map, `./${subpath}`) === "string" ? `${pkg.name}/${subpath}` : `./${subpath}`;
+    const subpath = module.replace(/^\.?\//, "").replace(/\/$/, "");
+    if (map && typeof resolveExport(map, `./${subpath}`) === "string") return `${pkg.name}/${subpath}`;
+    // A file of the package, by its full name, as an ES module imports it: the path, its .js, or its folder's index.js.
+    const file = [subpath, `${subpath}.js`, `${subpath}/index.js`].find((f) => /\.[mc]?js$/.test(f) && fs.existsSync(path.join(dir, f.replace(/\.([mc]?)js$/, ".d.$1ts"))));
+    return `./${file ?? subpath}`;
   };
   const add = (type) => {
     if (!type?.text) return;

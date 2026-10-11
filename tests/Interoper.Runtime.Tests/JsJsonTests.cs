@@ -5,6 +5,21 @@ namespace Interoper.Runtime.Tests;
 
 public class JsJsonTests
 {
+    /// <summary>A handle, as JS sends an instance of a class outside the selection: a case a union dropped (R2).</summary>
+    private const string Handle = """{"$h":3,"$t":0}""";
+
+    [Fact] // R2: a reader given a handle where it expects a value throws JsonException, not InvalidOperationException
+    public void A_handle_where_a_value_is_expected_is_a_JsonException()
+    {
+        Assert.Throws<JsonException>(() => Json.Read(Handle, JsJson.ReadNumber));
+        Assert.Throws<JsonException>(() => Json.Read(Handle, JsJson.ReadString));
+        Assert.Throws<JsonException>(() => Json.Read(Handle, JsJson.ReadBoolean));
+        Assert.Throws<JsonException>(() => Json.Read(Handle, BasemapNames.Read)); // R9
+        Assert.Throws<JsonException>(() => Json.Read(Handle, Cursor.Read)); // R10
+        Assert.Throws<JsonException>(() => Json.Read(Handle, JsJson.ReadUnion<Style>)); // R19 step 2
+        Assert.Throws<JsonException>(() => Json.Read(Handle, JsJson.ReadUnion<FlyToTarget>)); // R19 step 3
+    }
+
     [Theory] // R2, R3, R20: undefined omitted, null kept, value written, discriminant always written
     [InlineData("""{"type":"stroke"}""")]
     [InlineData("""{"type":"stroke","color":null}""")]

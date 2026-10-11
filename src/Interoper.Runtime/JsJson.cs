@@ -80,12 +80,18 @@ public static class JsJson
         : ReadUndefined(ref reader) ? default
         : TUnion.ReadValue(ref reader);
 
-    // Readers and writers for required primitives and arrays.
-    public static double ReadNumber(ref Utf8JsonReader reader) => reader.GetDouble();
+    // Readers and writers for required primitives and arrays. A reader given another token (an object, such as the
+    // handle JS sends for a class outside the selection, mapping R2) throws JsonException.
+    public static double ReadNumber(ref Utf8JsonReader reader) =>
+        reader.TokenType == JsonTokenType.Number ? reader.GetDouble() : throw Unexpected(reader, "a number");
 
-    public static string ReadString(ref Utf8JsonReader reader) => reader.GetString()!;
+    public static string ReadString(ref Utf8JsonReader reader) =>
+        reader.TokenType is JsonTokenType.String or JsonTokenType.Null ? reader.GetString()! : throw Unexpected(reader, "a string");
 
-    public static bool ReadBoolean(ref Utf8JsonReader reader) => reader.GetBoolean();
+    public static bool ReadBoolean(ref Utf8JsonReader reader) =>
+        reader.TokenType is JsonTokenType.True or JsonTokenType.False ? reader.GetBoolean() : throw Unexpected(reader, "a boolean");
+
+    private static JsonException Unexpected(Utf8JsonReader reader, string expected) => new($"Expected {expected}, got {reader.TokenType}.");
 
     public static void WriteNumber(Utf8JsonWriter writer, double value) => writer.WriteNumberValue(value);
 

@@ -302,12 +302,16 @@ public sealed class SelectionTests
         static string Box(string name) => $$"""{ "kind": "interface", "name": "{{name}}", "members": [{ "kind": "property", "name": "w", "type": { "kind": "primitive", "name": "number" } }] }""";
         var ir = Ir($$"""
             { "kind": "alias", "name": "Target", "type": { "kind": "union", "types": [
-              {{Layer}}, { "kind": "primitive", "name": "string" }, { "kind": "array", "element": { "kind": "primitive", "name": "number" } }] } },
+              {{Layer}}, { "kind": "primitive", "name": "string" }, { "kind": "array", "element": { "kind": "primitive", "name": "number" } }, {{Ref("Box")}}] } },
             {{Box("Box")}}, {{Box("Disc")}},
+            { "kind": "interface", "name": "Fill", "members": [{ "kind": "property", "name": "type", "type": { "kind": "literal", "value": "fill" } }] },
+            { "kind": "interface", "name": "Stroke", "members": [{ "kind": "property", "name": "type", "type": { "kind": "literal", "value": "stroke" } }] },
+            { "kind": "alias", "name": "Paint", "type": { "kind": "union", "discriminant": "type", "types": [{{Layer}}, {{Ref("Fill")}}, {{Ref("Stroke")}}] } },
             { "kind": "alias", "name": "Spot", "type": { "kind": "union", "types": [{{Layer}}, {{Ref("Box")}}, {{Ref("Disc")}}] } },
             { "kind": "class", "name": "View", "members": [
               { "kind": "property", "name": "target", "type": {{Ref("Target")}} },
               { "kind": "property", "name": "spot", "readonly": true, "type": {{Ref("Spot")}} },
+              { "kind": "property", "name": "paint", "readonly": true, "type": {{Ref("Paint")}} },
               { "kind": "method", "name": "goTo", "signatures": [{ "params": [{ "name": "target", "type": {{Ref("Target")}} }, { "name": "spot", "type": {{Ref("Spot")}} }],
                 "returns": { "kind": "primitive", "name": "void" } }] }] }
             """, """{ "kind": "class", "name": "Layer" }""");
@@ -316,6 +320,7 @@ public sealed class SelectionTests
         [
             "IOP2003 View.spot: skipped: uses the ambiguous union `Spot`: Box has no required member the other cases lack (R19)",
             "IOP2007 Target: case `Layer` dropped: a class outside the selection (R2)",
+            "IOP2007 Paint: case `Layer` dropped: a class outside the selection (R2)",
             "IOP2007 Spot: case `Layer` dropped: a class outside the selection (R2)",
         ], result.Diagnostics.Select(d => d.ToString()));
         var view = result.Files.Single(f => f.Path == "View.cs").Text;
@@ -323,9 +328,12 @@ public sealed class SelectionTests
         Assert.Contains("public void GoTo(Target target, Spot spot) =>", view);
         // Target reads its other cases, and fails on a handle, which is how JS sends a Layer.
         var target = result.Files.Single(f => f.Path == "Target.cs").Text;
-        Assert.Contains("private readonly byte _tag; // 0 = undefined, 1 = null, 2 = string, 3 = double[]", target);
+        Assert.Contains("private readonly byte _tag; // 0 = undefined, 1 = null, 2 = string, 3 = double[], 4 = Box", target);
         Assert.Contains("""global::System.Text.Json.JsonTokenType.StartObject when global::Interoper.JsJson.HasProperty(reader, "$h"u8) => throw new global::System.Text.Json.JsonException("Target: a case outside the selection (R2)"),""", target);
         Assert.Contains("global::System.Text.Json.JsonTokenType.String => global::Interoper.JsJson.ReadString(ref reader),", target);
+        // Paint is read by its discriminant, which a handle doesn't have.
+        Assert.Contains("""null when global::Interoper.JsJson.HasProperty(reader, "$h"u8) => throw new global::System.Text.Json.JsonException("Paint: a case outside the selection (R2)"),""",
+            result.Files.Single(f => f.Path == "Paint.cs").Text);
         // Spot can't tell Box from Disc, so it's only written, as a parameter's.
         Assert.Contains("throw new global::System.Text.Json.JsonException(\"Spot is only written (R2)\")", result.Files.Single(f => f.Path == "Spot.cs").Text);
     }

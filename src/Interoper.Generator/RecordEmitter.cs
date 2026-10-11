@@ -134,12 +134,20 @@ internal static class RecordEmitter
         DiscriminantSwitch(w, $"public static {modifier}{name} Read(ref global::System.Text.Json.Utf8JsonReader reader)", name, discriminant, cases);
     }
 
-    /// <summary>R19 step 2: a switch on the discriminant's value.</summary>
-    public static void DiscriminantSwitch(CodeWriter w, string header, string type, string discriminant, IEnumerable<(string Value, string Type)> cases)
+    /// <summary>
+    /// R19 step 2: a switch on the discriminant's value. <paramref name="handle"/> is what a handle without one throws,
+    /// for a union that dropped a case outside the selection (R2).
+    /// </summary>
+    public static void DiscriminantSwitch(CodeWriter w, string header, string type, string discriminant, IEnumerable<(string Value, string Type)> cases,
+        string? handle = null)
     {
         var local = Syntax.Local(Naming.Pascal(discriminant), "reader");
         using (w.Block($"{header} => global::Interoper.JsJson.PeekString(reader, {Syntax.Utf8(discriminant)}) switch", "};"))
         {
+            if (handle is not null)
+            {
+                w.Line($"null when global::Interoper.JsJson.HasProperty(reader, \"$h\"u8) => {handle},");
+            }
             foreach (var (value, read) in cases)
             {
                 w.Line($"{Syntax.Literal(value)} => {read}.Read(ref reader),");

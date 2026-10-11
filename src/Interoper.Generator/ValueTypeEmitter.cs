@@ -43,7 +43,7 @@ internal static class ValueTypeEmitter
             w.Line();
             w.Line($"public static void Write(global::System.Text.Json.Utf8JsonWriter writer, {e.Name} value) => writer.WriteStringValue(ToJs(value));");
             w.Line();
-            w.Line($"public static {e.Name} Read(ref global::System.Text.Json.Utf8JsonReader reader) => FromJs(reader.GetString()!);");
+            w.Line($"public static {e.Name} Read(ref global::System.Text.Json.Utf8JsonReader reader) => FromJs(global::Interoper.JsJson.ReadString(ref reader));");
         }
         return w.ToString();
     }
@@ -80,7 +80,7 @@ internal static class ValueTypeEmitter
             w.Line();
             w.Line($"public static void Write(global::System.Text.Json.Utf8JsonWriter writer, {e.Name} value) => writer.WriteStringValue(value.Value);");
             w.Line();
-            w.Line($"public static {e.Name} Read(ref global::System.Text.Json.Utf8JsonReader reader) => new(reader.GetString()!);");
+            w.Line($"public static {e.Name} Read(ref global::System.Text.Json.Utf8JsonReader reader) => new(global::Interoper.JsJson.ReadString(ref reader));");
             w.Line();
             w.Line("public override string ToString() => Value;");
         }
@@ -168,18 +168,18 @@ internal static class ValueTypeEmitter
         if (u.Discriminant is { } discriminant)
         {
             var cases = u.Cases.Select(c => (types.Constant(c.Declaration!, discriminant), c.Type.Name));
-            RecordEmitter.DiscriminantSwitch(w, header, u.Name, discriminant, cases);
+            RecordEmitter.DiscriminantSwitch(w, header, u.Name, discriminant, cases, u.Dropped ? Outside(u) : null);
             return;
         }
         var objects = u.Cases.Where(c => c.Type.Json == JsonKind.Object).ToList();
         var others = u.Cases.Except(objects).ToList();
         using (w.Block($"{header} => reader.TokenType switch", "};"))
         {
-            if (u.Dropped)
+            if (u.Dropped && objects.Count > 0)
             {
-                // R2: JS sends an instance of a class outside the selection, a dropped case, as a handle.
-                w.Line($"global::System.Text.Json.JsonTokenType.StartObject when global::Interoper.JsJson.HasProperty(reader, \"$h\"u8) => " +
-                    $"throw new global::System.Text.Json.JsonException(\"{u.Name}: a case outside the selection (R2)\"),");
+                // R2: JS sends an instance of a class outside the selection, a dropped case, as a handle; without an
+                // object case, the last arm throws for it.
+                w.Line($"global::System.Text.Json.JsonTokenType.StartObject when global::Interoper.JsJson.HasProperty(reader, \"$h\"u8) => {Outside(u)},");
             }
             foreach (var c in others)
             {
@@ -193,6 +193,9 @@ internal static class ValueTypeEmitter
             w.Line($"var token => throw new global::System.Text.Json.JsonException($\"{u.Name}: unexpected {{token}}\"),");
         }
     }
+
+    /// <summary>R2: what a reader throws for a handle, a dropped case outside the selection.</summary>
+    private static string Outside(UnionStruct u) => $"throw new global::System.Text.Json.JsonException(\"{u.Name}: a case outside the selection (R2)\")";
 
     /// <summary>
     /// R19 step 3: the first required member of a case's wire form that no other object case has. Selection skips a

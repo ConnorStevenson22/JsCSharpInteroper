@@ -241,7 +241,7 @@ public sealed class Selection
                 (Problem(property.Type) ?? types.Problem(property with { WriteType = null })) is null &&
                 (Problem(writeType) ?? types.Problem(property)) is { } setter)
             {
-                Report(new(setter.Code, subject, $"setter dropped: uses {setter}"));
+                Report(new(Diagnostic.NotSupported, subject, $"setter dropped: uses {setter}"));
                 property = property with { WriteType = null, Readonly = true };
             }
             var parts = property.WriteType is { } kept ? [property.Type, kept] : new[] { property.Type };
@@ -635,7 +635,7 @@ public sealed class Selection
         var dropped = new List<(PropertyMember, Unmappable)>();
         foreach (var p in members.OfType<PropertyMember>().Where(p => p.Optional && !p.Static))
         {
-            if ((Problem(p.Type) ?? types.MemberProblem(p)) is { } problem)
+            if ((Problem(p.Type) ?? types.DroppedProblem(p)) is { } problem)
             {
                 dropped.Add((p, problem));
             }

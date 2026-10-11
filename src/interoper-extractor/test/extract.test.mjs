@@ -373,6 +373,24 @@ test("a manifest module path that is an export subpath resolves through the pack
   assert.deepEqual(element.events[0].detail, { kind: "ref", name: "DialTurn", module: "@acme/extra/lib/parts/x-dial/dial.js" });
 });
 
+test("a manifest module path without an extension, or a folder, that no export reaches is the package's file", () => {
+  // No "type" and no exports: the virtual ES modules import the files by their full names.
+  const { elements } = withPackage({
+    "package.json": { name: "@acme/extra", version: "1.0.0", customElements: "cem.json" },
+    "lib/knob.d.ts": "export declare class KnobElement extends HTMLElement {}",
+    "lib/slider/index.d.ts": 'export * from "./slider.js";',
+    "lib/slider/slider.d.ts": "export declare class SliderElement extends HTMLElement {}",
+    "cem.json": { modules: [
+      { path: "lib/knob", declarations: [{ kind: "class", name: "KnobElement", tagName: "x-knob" }] },
+      { path: "lib/slider/", declarations: [{ kind: "class", name: "SliderElement", tagName: "x-slider" }] },
+    ] },
+  }, extract);
+  assert.deepEqual(elements.map((e) => e.class), [
+    { kind: "ref", name: "KnobElement", module: "@acme/extra/lib/knob.js" },
+    { kind: "ref", name: "SliderElement", module: "@acme/extra/lib/slider/slider.js" },
+  ]);
+});
+
 /** A node_modules with both fixtures copied into it, as an install has them, so each resolves the other by name. */
 function installed() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "extract-"));

@@ -30,5 +30,5 @@ public static partial class ShapeTypeNames
 
     public static void Write(global::System.Text.Json.Utf8JsonWriter writer, ShapeType value) => writer.WriteStringValue(ToJs(value));
 
-    public static ShapeType Read(ref global::System.Text.Json.Utf8JsonReader reader) => FromJs(reader.GetString()!);
+    public static ShapeType Read(ref global::System.Text.Json.Utf8JsonReader reader) => FromJs(global::Interoper.JsJson.ReadString(ref reader));
 }

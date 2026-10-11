@@ -33,5 +33,5 @@ public static partial class BasemapNames
 
     public static void Write(global::System.Text.Json.Utf8JsonWriter writer, Basemap value) => writer.WriteStringValue(ToJs(value));
 
-    public static Basemap Read(ref global::System.Text.Json.Utf8JsonReader reader) => FromJs(reader.GetString()!);
+    public static Basemap Read(ref global::System.Text.Json.Utf8JsonReader reader) => FromJs(global::Interoper.JsJson.ReadString(ref reader));
 }

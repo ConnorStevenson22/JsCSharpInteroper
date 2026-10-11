@@ -982,6 +982,34 @@
           }
         },
         {
+          "kind": "alias",
+          "name": "OneOrMany",
+          "doc": {
+            "summary": "One value or several: a generic union alias, which each use instantiates (§2)."
+          },
+          "typeParameters": [
+            {
+              "name": "T"
+            }
+          ],
+          "type": {
+            "kind": "union",
+            "types": [
+              {
+                "kind": "typeParameter",
+                "name": "T"
+              },
+              {
+                "kind": "array",
+                "element": {
+                  "kind": "typeParameter",
+                  "name": "T"
+                }
+              }
+            ]
+          }
+        },
+        {
           "kind": "class",
           "name": "Observable",
           "constructors": [
@@ -2200,6 +2228,76 @@
                 "kind": "primitive",
                 "name": "string"
               }
+            },
+            {
+              "kind": "property",
+              "name": "tileSize",
+              "doc": {
+                "summary": "The tiles' edge in pixels. The setter also takes one per zoom level, a union with a value-type case (R2), which\nisn't mapped: the getter is kept, read-only (§5)."
+              },
+              "type": {
+                "kind": "primitive",
+                "name": "number"
+              },
+              "writeType": {
+                "kind": "ref",
+                "name": "OneOrMany",
+                "module": "@acme/demo-maps/core.js",
+                "args": [
+                  {
+                    "kind": "primitive",
+                    "name": "number"
+                  }
+                ]
+              }
+            },
+            {
+              "kind": "property",
+              "name": "highlighted",
+              "doc": {
+                "summary": "The markers drawn on top of the tiles."
+              },
+              "readonly": true,
+              "type": {
+                "kind": "array",
+                "element": {
+                  "kind": "ref",
+                  "name": "Marker",
+                  "module": "@acme/demo-maps/Marker.js"
+                }
+              }
+            },
+            {
+              "kind": "method",
+              "name": "highlight",
+              "signatures": [
+                {
+                  "params": [
+                    {
+                      "name": "markers",
+                      "type": {
+                        "kind": "ref",
+                        "name": "OneOrMany",
+                        "module": "@acme/demo-maps/core.js",
+                        "args": [
+                          {
+                            "kind": "ref",
+                            "name": "Marker",
+                            "module": "@acme/demo-maps/Marker.js"
+                          }
+                        ]
+                      }
+                    }
+                  ],
+                  "returns": {
+                    "kind": "primitive",
+                    "name": "void"
+                  },
+                  "doc": {
+                    "summary": "Highlights one marker or several: `OneOrMany<Marker>` is `Marker | Marker[]` (§2)."
+                  }
+                }
+              ]
             },
             {
               "kind": "method",

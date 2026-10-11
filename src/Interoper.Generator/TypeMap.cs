@@ -75,6 +75,8 @@ internal sealed class TypeMap
     private readonly HashSet<ClassDeclaration> watchable = new(ReferenceEqualityComparer.Instance);
     private readonly Dictionary<Declaration, bool> scoped = new(ReferenceEqualityComparer.Instance);
     private readonly HashSet<Declaration> scoping = new(ReferenceEqualityComparer.Instance);
+    private readonly Dictionary<PropertyMember, Unmappable?> dropped = new(ReferenceEqualityComparer.Instance);
+    private readonly HashSet<PropertyMember> dropping = new(ReferenceEqualityComparer.Instance);
     /// <summary>R27: the names of declarations a sibling module's type of the same name has taken (<c>BOptions</c>).</summary>
     private readonly Dictionary<(string Module, string Name), string> renamed = [];
     /// <summary>R25: each distinct enum member rename, the enum it was first met in, and how many others have it.</summary>
@@ -535,7 +537,7 @@ internal sealed class TypeMap
     private static TypeParameterType? TypeParameterIn(IrType type) =>
         type as TypeParameterType ?? Selection.Children(type).Select(TypeParameterIn).FirstOrDefault(t => t is not null);
 
-    /// <summary>A class outside the selection: a parameter's union drops it as a case (R2).</summary>
+    /// <summary>A class outside the selection: a union drops it as a case (R2).</summary>
     internal bool IsUnselected(IrType type) => type is RefType { Module: not null } r && Find(r) is ClassDeclaration c && !classes.Contains(c);
 
     /// <summary>Whether a type has JS null in it, which a missing callback is sent as; otherwise it's undefined (R21).</summary>
@@ -980,8 +982,36 @@ internal sealed class TypeMap
         : members.Where(p => !p.Optional).Select(MemberProblem).FirstOrDefault(p => p is not null);
 
     /// <summary>Why a data record's member can't be mapped: a constant can (R20), and so can a DOM element, which is written (R13).</summary>
-    public Unmappable? MemberProblem(PropertyMember p) =>
+    private Unmappable? MemberProblem(PropertyMember p) =>
         p.Static || p.Type is LiteralType || ElementOf(p.Type) ? null : Problem(p.Type, Position.Data);
+
+    /// <summary>
+    /// R15: why a data record drops an optional member, or null. Selection drops it (with what it can't reach, too), and
+    /// the checks here leave it out, so a record is scoped (R17) or told apart (R19) as it's emitted. A member met again
+    /// while it's being checked (a record that holds itself) isn't dropped for that.
+    /// </summary>
+    public Unmappable? DroppedProblem(PropertyMember p)
+    {
+        if (!p.Optional || p.Static)
+        {
+            return null;
+        }
+        if (dropped.TryGetValue(p, out var known))
+        {
+            return known;
+        }
+        if (!dropping.Add(p))
+        {
+            return null;
+        }
+        var problem = MemberProblem(p);
+        dropping.Remove(p);
+        if (problem is not null || dropping.Count == 0) // "fine" inside a recursion may only mean an outer member isn't known yet
+        {
+            dropped[p] = problem;
+        }
+        return problem;
+    }
 
     /// <summary>The string constants of a record, or a class's own (R20), in order.</summary>
     private List<string> StringConstants(Declaration declaration) =>
@@ -1007,10 +1037,11 @@ internal sealed class TypeMap
         return (required, [.. all.Select(p => p.Name)]);
     }
 
+    /// <summary>A record's members, without the optional ones it drops (R15); a class's data members.</summary>
     private IEnumerable<PropertyMember> RecordMembers(Declaration declaration) => (declaration switch
     {
-        InterfaceDeclaration i => Members(i),
-        AliasDeclaration { Type: ObjectType o } => o.Members.OfType<PropertyMember>(),
+        InterfaceDeclaration i => Members(i).Where(p => DroppedProblem(p) is null),
+        AliasDeclaration { Type: ObjectType o } => o.Members.OfType<PropertyMember>().Where(p => DroppedProblem(p) is null),
         ClassDeclaration c => c.Members.OfType<PropertyMember>(),
         _ => [],
     }).Where(p => !p.Static);

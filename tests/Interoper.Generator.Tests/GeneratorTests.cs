@@ -576,34 +576,66 @@ public sealed class GeneratorTests
     {
         const string T = """{ "kind": "typeParameter", "name": "T" }""";
         const string Marker = """{ "kind": "ref", "name": "Marker", "module": "@acme/maps/a.js" }""";
-        string List(string item) => $$"""{ "kind": "ref", "name": "List", "module": "@acme/maps/a.js", "args": [{{item}}] }""";
-        string Items(string item) => $$"""{ "kind": "ref", "name": "Items", "module": "@acme/maps/a.js", "args": [{{item}}] }""";
-        var result = Generate(new Profile { Package = "@acme/maps", Collections = ["List"] }, Api.Sync, ("a.js", $$"""
+        static string Alias(string name, params string[] args) => $$"""{ "kind": "ref", "name": "{{name}}", "module": "@acme/maps/a.js", "args": [{{string.Join(", ", args)}}] }""";
+        var oneOrMany = $$"""{ "kind": "union", "types": [{{T}}, { "kind": "array", "element": {{T}} }] }""";
+        var result = Generate(Api.Sync, ("a.js", $$"""
             { "kind": "class", "name": "Marker" },
-            { "kind": "class", "name": "List", "typeParameters": [{ "name": "T" }] },
-            { "kind": "alias", "name": "Items", "typeParameters": [{ "name": "T" }], "type": { "kind": "union", "types": [{ "kind": "array", "element": {{T}} }, {{List(T)}}] } },
+            { "kind": "alias", "name": "OneOrMany", "typeParameters": [{ "name": "T" }], "type": {{oneOrMany}} },
+            { "kind": "alias", "name": "Same", "typeParameters": [{ "name": "V" }], "type": {{Alias("OneOrMany", """{ "kind": "typeParameter", "name": "V" }""")}} },
+            { "kind": "alias", "name": "Many", "typeParameters": [{ "name": "T", "default": {{Marker}} }], "type": {{oneOrMany}} },
             { "kind": "class", "name": "View", "members": [
-              { "kind": "property", "name": "markers", "type": {{List(Marker)}}, "writeType": {{Items(Marker)}} },
-              { "kind": "property", "name": "numbers", "type": {{List(Marker)}}, "writeType": {{Items(Number)}} },
+              { "kind": "property", "name": "marker", "type": {{Marker}}, "writeType": {{Alias("OneOrMany", Marker)}} },
+              { "kind": "property", "name": "pin", "type": {{Marker}}, "writeType": {{Alias("Same", Marker)}} },
+              { "kind": "property", "name": "flag", "type": {{Marker}}, "writeType": {{Alias("Many")}} },
+              { "kind": "property", "name": "size", "type": {{Number}}, "writeType": {{Alias("OneOrMany", Number)}} },
               { "kind": "property", "name": "labels", "type": { "kind": "array", "element": {{String}} }, "writeType": { "kind": "unresolved", "text": "LabelList" } }] }
             """));
 
         var view = File(result, "View.cs");
-        // Items<Marker> is Marker[] | List<Marker>, an anonymous union only written (R2: it has entity cases).
-        Assert.Contains("public List<Marker> GetMarkers(global::Interoper.JsScope scope) =>", view);
-        Assert.Contains("public void SetMarkers(ViewMarkersInput value) =>", view);
-        Assert.Contains("public ViewMarkersInput(Marker[] value) : this(value, 2) { }", File(result, "ViewMarkersInput.cs"));
-        Assert.Contains("public ViewMarkersInput(List<Marker> value) : this(value, 3) { }", File(result, "ViewMarkersInput.cs"));
-        // Items<number> has List<number>, which isn't mapped (§2), and LabelList doesn't resolve: the getters stay.
-        Assert.Contains("public List<Marker> GetNumbers(global::Interoper.JsScope scope) =>", view);
-        Assert.DoesNotContain("SetNumbers", view);
+        // OneOrMany<Marker> is Marker | Marker[], an anonymous union only written (R2: it has entity cases); so are an
+        // alias of it and a use that takes the default.
+        Assert.Contains("public Marker GetMarker(global::Interoper.JsScope scope) =>", view);
+        Assert.Contains("public void SetMarker(ViewMarkerInput value) =>", view);
+        Assert.Contains("public ViewMarkerInput(Marker[] value) : this(value, 3) { }", File(result, "ViewMarkerInput.cs"));
+        Assert.Contains("public ViewPinInput(Marker[] value) : this(value, 3) { }", File(result, "ViewPinInput.cs"));
+        Assert.Contains("public ViewFlagInput(Marker[] value) : this(value, 3) { }", File(result, "ViewFlagInput.cs"));
+        // OneOrMany<number> has a value-type case (R2), and LabelList doesn't resolve: the getters stay.
+        Assert.Contains("public double Size\n", view.Replace(" =>", "\n"));
+        Assert.DoesNotContain("SetSize", view);
         Assert.Contains("public string[] Labels =>\n", view); // read-only
         Assert.DoesNotContain("SetLabels", view);
         Assert.Equal(
         [
-            "IOP2007 Items: skipped: uses generic `Items` (in `Items`)",
-            "IOP2007 View.numbers: setter dropped: uses `List` of a type that isn't an entity (§2)",
+            "IOP2007 OneOrMany: skipped: uses generic `OneOrMany` (in `OneOrMany`)",
+            "IOP2007 Same: skipped: uses generic `Same` (in `Same`)",
+            "IOP2007 Many: skipped: uses generic `Many` (in `Many`)",
+            "IOP2007 View.size: setter dropped: uses a union with the value-type case double (R2)",
             "IOP2007 View.labels: setter dropped: uses unresolved `LabelList`",
+        ], result.Diagnostics.Select(d => d.ToString()));
+    }
+
+    [Fact] // §2: a recursive generic union alias stops expanding, and what uses it is skipped
+    public void ARecursiveGenericUnionAliasStops()
+    {
+        const string T = """{ "kind": "typeParameter", "name": "T" }""";
+        const string Marker = """{ "kind": "ref", "name": "Marker", "module": "@acme/maps/a.js" }""";
+        static string Alias(string name, string arg) => $$"""{ "kind": "ref", "name": "{{name}}", "module": "@acme/maps/a.js", "args": [{{arg}}] }""";
+        var result = Generate(Api.Sync, ("a.js", $$"""
+            { "kind": "class", "name": "Marker" },
+            { "kind": "alias", "name": "Chain", "typeParameters": [{ "name": "T" }], "type": { "kind": "union", "types": [{{T}},
+              { "kind": "object", "members": [{ "kind": "property", "name": "next", "type": {{Alias("Chain", T)}} }] }] } },
+            { "kind": "alias", "name": "Tree", "typeParameters": [{ "name": "T" }], "type": { "kind": "union", "types": [{{T}}, { "kind": "array", "element": {{Alias("Tree", T)}} }] } },
+            { "kind": "class", "name": "View", "members": [
+              { "kind": "property", "name": "chain", "type": {{Alias("Chain", Marker)}} },
+              { "kind": "property", "name": "tree", "type": {{Alias("Tree", Marker)}} }] }
+            """));
+
+        Assert.Equal(
+        [
+            "IOP2007 Chain: skipped: uses generic `Chain` (in `Chain`)",
+            "IOP2007 Tree: skipped: uses generic `Tree` (in `Tree`)",
+            "IOP2007 View.chain: skipped: uses generic `Chain` (in `Chain`)",
+            "IOP2007 View.tree: skipped: uses generic `Tree` (in `Tree`)",
         ], result.Diagnostics.Select(d => d.ToString()));
     }
 
@@ -709,6 +741,24 @@ public sealed class GeneratorTests
             "IOP2007 TrackProps.legs: skipped: uses a tuple of different types",
             "IOP2007 LegProps: skipped: uses a tuple of different types (in `LegProps`)",
         ], result.Diagnostics.Select(d => d.ToString()));
+    }
+
+    [Fact] // R15, R17: a record that drops its only entity member isn't scoped, so a union reads it
+    public void ARecordThatDropsItsEntityMemberIsntScoped()
+    {
+        static string Ref(string name) => $$"""{ "kind": "ref", "name": "{{name}}", "module": "@acme/maps/a.js" }""";
+        var result = Generate($$"""
+            { "kind": "class", "name": "Marker" },
+            { "kind": "interface", "name": "Spec", "members": [
+              { "kind": "property", "name": "x", "type": {{Number}} },
+              { "kind": "property", "name": "owner", "optional": true, "type": { "kind": "tuple", "elements": [{{Ref("Marker")}}, {{String}}] } }] },
+            { "kind": "class", "name": "View", "members": [
+              { "kind": "property", "name": "spec", "type": { "kind": "union", "types": [{{Ref("Spec")}}, {{String}}] } }] }
+            """);
+
+        Assert.Contains("public static Spec Read(ref global::System.Text.Json.Utf8JsonReader reader)\n", File(result, "Spec.cs"));
+        Assert.Contains("public ViewSpec Spec\n", File(result, "View.cs"));
+        Assert.Equal("IOP2007 Spec.owner: skipped: uses a tuple of different types", Assert.Single(result.Diagnostics).ToString());
     }
 
     [Fact] // design §2: the profile is the first package's, so its runtime class prefix is too

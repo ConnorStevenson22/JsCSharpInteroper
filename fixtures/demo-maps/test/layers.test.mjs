@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { Layer } from "../layers/Layer.js";
 import TileLayer from "../layers/TileLayer.js";
 import { MapView } from "../MapView.js";
+import { Marker } from "../Marker.js";
 
 test("Layer is abstract; TileLayer is the module's default export", () => {
   assert.throws(() => new Layer(), TypeError);
@@ -29,4 +30,16 @@ test("a view's layers are a collection", () => {
   const tile = new TileLayer();
   view.layers.add(tile);
   assert.deepEqual(view.layers.toArray(), [tile]);
+});
+
+test("a tile size is one or one per zoom level, and highlight takes one marker or several", () => {
+  const tile = new TileLayer();
+  assert.equal(tile.tileSize, 256);
+  tile.tileSize = [512, 256];
+  assert.equal(tile.tileSize, 512);
+  const [a, b] = [new Marker(), new Marker()];
+  tile.highlight(a);
+  assert.deepEqual(tile.highlighted, [a]);
+  tile.highlight([a, b]);
+  assert.deepEqual(tile.highlighted, [a, b]);
 });

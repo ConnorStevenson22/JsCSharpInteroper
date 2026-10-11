@@ -14,6 +14,14 @@ public sealed partial class TileLayer : Layer
 
     public global::System.Threading.Tasks.Task SetUrlAsync(string value) => Realm.SetAsync(Handle, "url", value);
 
+    public global::System.Threading.Tasks.Task<double> GetTileSizeAsync() => Realm.GetNumberAsync(Handle, "tileSize");
+
+    public async global::System.Threading.Tasks.Task<global::GoldenSlice.Async.Marker[]> GetHighlightedAsync(global::Interoper.JsScope scope) =>
+        (await Realm.CallAsync(global::Interoper.JsOp.Get(Handle, "highlighted"), (ref r) => global::Interoper.JsJson.ReadArray(ref r, scope.Read<global::GoldenSlice.Async.Marker>)))!;
+
+    public global::System.Threading.Tasks.Task HighlightAsync(TileLayerHighlightMarkers markers) =>
+        Realm.SendAsync(global::Interoper.JsOp.Call(Handle, "highlight", w => global::Interoper.JsJson.WriteValue(w, markers)));
+
     public new async global::System.Threading.Tasks.Task<TileLayer> CloneAsync(global::Interoper.JsScope scope) =>
         (await Realm.CallAsync(global::Interoper.JsOp.Call(Handle, "clone"), scope.Read<TileLayer>))!;
 
@@ -22,6 +30,18 @@ public sealed partial class TileLayer : Layer
 
     public global::System.Collections.Generic.IAsyncEnumerable<string> WatchUrlStreamAsync(global::Interoper.JsScope scope, global::System.Threading.CancellationToken cancellationToken = default) =>
         scope.StreamAsync(Handle, "watch", "url", global::Interoper.JsJson.ReadString, null, null, cancellationToken);
+
+    public global::System.Threading.Tasks.Task<global::System.IAsyncDisposable> WatchTileSizeAsync(global::Interoper.JsScope scope, global::System.Action<double> handler) =>
+        scope.SubscribeAsync(Handle, "watch", "tileSize", global::Interoper.JsJson.ReadNumber, handler, null, null);
+
+    public global::System.Collections.Generic.IAsyncEnumerable<double> WatchTileSizeStreamAsync(global::Interoper.JsScope scope, global::System.Threading.CancellationToken cancellationToken = default) =>
+        scope.StreamAsync(Handle, "watch", "tileSize", global::Interoper.JsJson.ReadNumber, null, null, cancellationToken);
+
+    public global::System.Threading.Tasks.Task<global::System.IAsyncDisposable> WatchHighlightedAsync(global::Interoper.JsScope scope, global::System.Action<global::GoldenSlice.Async.Marker[]> handler) =>
+        scope.SubscribeAsync(Handle, "watch", "highlighted", (ref r) => global::Interoper.JsJson.ReadArray(ref r, scope.Read<global::GoldenSlice.Async.Marker>), handler, null, null);
+
+    public global::System.Collections.Generic.IAsyncEnumerable<global::GoldenSlice.Async.Marker[]> WatchHighlightedStreamAsync(global::Interoper.JsScope scope, global::System.Threading.CancellationToken cancellationToken = default) =>
+        scope.StreamAsync(Handle, "watch", "highlighted", (ref r) => global::Interoper.JsJson.ReadArray(ref r, scope.Read<global::GoldenSlice.Async.Marker>), null, null, cancellationToken);
 
     public new async global::System.Threading.Tasks.Task<TileLayerSnapshot> SnapshotAsync() =>
         (await Realm.CallAsync(global::Interoper.JsOp.Snapshot(Handle), TileLayerSnapshot.Read))!;
