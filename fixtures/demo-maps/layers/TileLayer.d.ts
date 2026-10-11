@@ -14,9 +14,9 @@ export default class TileLayer extends Layer {
   get tileSize(): number;
   set tileSize(value: OneOrMany<number>);
   /** The markers drawn on top of the tiles. */
-  readonly highlighted: Marker[];
+  readonly emphasized: Marker[];
   /** Highlights one marker or several: `OneOrMany<Marker>` is `Marker | Marker[]` (§2). */
-  highlight(markers: OneOrMany<Marker>): void;
+  emphasize(markers: OneOrMany<Marker>): void;
   /** Redeclared with the subclass's type. */
   clone(): TileLayer;
 }

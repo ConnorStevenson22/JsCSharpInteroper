@@ -107,7 +107,8 @@ test("classes: base, abstract, own members, generics, statics", () => {
   // Members a named base declares stay with it; `this` stays `this`.
   assert.deepEqual(decl("geometry", "Point").members.map((m) => m.name), ["type", "x", "y"]);
   assert.deepEqual(member("geometry", "Shape", "clone").signatures[0].returns, { kind: "this" });
-  assert.deepEqual(decl("core", "Collection").typeParameters, [{ name: "T", default: { kind: "primitive", name: "any" } }]);
+  assert.deepEqual(decl("core", "Collection").typeParameters, [{ name: "T" }]);
+  assert.deepEqual(decl("core", "Tagged").typeParameters, [{ name: "T", default: { kind: "primitive", name: "any" } }]); // §2: a default
   assert.deepEqual(member("MapView", "MapView", "markers").type, ref("core", "Collection", [ref("Marker", "Marker")]));
   // Members declared outside the package (HTMLElement's) are left out; the base is a platform reference.
   const element = decl("demo-map", "DemoMapElement");

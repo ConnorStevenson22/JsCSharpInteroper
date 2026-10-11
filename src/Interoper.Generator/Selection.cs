@@ -293,14 +293,13 @@ public sealed class Selection
     /// </summary>
     private void AddElement(Element element)
     {
-        if (element.Class is not RefType { Module: not null } declared || Find(declared) is not ClassDeclaration)
+        if (element.Class is not RefType { Module: not null } declared || Find(declared) is not ClassDeclaration c)
         {
             var name = element.Class switch { UnresolvedType u => u.Text, RefType x => x.Name, _ => "?" };
             Report(new(Diagnostic.NotSupported, $"<{element.Tag}>", $"skipped: its class `{name}` isn't a class the IR declares (R28)"));
             return;
         }
-        if (Find(declared) is not ClassDeclaration c || !selected.TryGetValue(c, out var s) ||
-            c.TypeParameters.Count > 0)
+        if (!selected.TryGetValue(c, out var s) || c.TypeParameters.Count > 0)
         {
             return;
         }
@@ -385,9 +384,16 @@ public sealed class Selection
     private IEnumerable<IrType> Cases(IrType type) => type switch
     {
         UnionType u => u.Types.SelectMany(Cases),
-        RefType { Module: not null } r when Find(r) is AliasDeclaration { TypeParameters.Count: 0, Type: UnionType inner } => Cases(inner),
+        _ when FlattenedAlias(type, Find) is { } inner => Cases(inner),
         _ => [type],
     };
+
+    /// <summary>
+    /// R6: the union a union alias stands for, which a union it's in flattens into itself (the type map's Flatten,
+    /// Cases, TrimInline and Collect alike); null for any other type. A generic one was instantiated (§2), or is skipped.
+    /// </summary>
+    internal static UnionType? FlattenedAlias(IrType type, Func<RefType, Declaration?> find) =>
+        type is RefType { Module: not null } r && find(r) is AliasDeclaration { TypeParameters.Count: 0, Type: UnionType inner } ? inner : null;
 
     /// <summary>
     /// The runtime-class property (never bound) and the event and watch methods (bound as events and watches): left out
@@ -494,7 +500,7 @@ public sealed class Selection
     };
 
     /// <summary>The first type parameter a type names, if any.</summary>
-    private static TypeParameterType? TypeParameterIn(IrType type) =>
+    internal static TypeParameterType? TypeParameterIn(IrType type) =>
         type as TypeParameterType ?? Children(type).Select(TypeParameterIn).FirstOrDefault(t => t is not null);
 
     private Unmappable? FirstProblem(IEnumerable<IrType> types) => types.Select(Problem).FirstOrDefault(p => p is not null);
@@ -570,7 +576,7 @@ public sealed class Selection
         {
             // R6: a union alias inside a union is flattened into it, so it's emitted only where it's used on its own.
             if (type is UnionType u && u.Types.Count(t => !IsNullish(t)) > 1 &&
-                child is RefType { Module: not null } nested && Find(nested) is AliasDeclaration { Type: UnionType inner })
+                FlattenedAlias(child, Find) is { } inner)
             {
                 Collect(inner);
                 continue;
@@ -729,8 +735,7 @@ public sealed class Selection
                 return members.SequenceEqual(o.Members, ReferenceEqualityComparer.Instance) ? o : o with { Members = members };
             case UnionType u when u.Types.Count(t => !IsNullish(t)) > 1:
                 // R6: a union alias in it is flattened into it (Collect), so its own inline cases are trimmed here, in its place.
-                var flattened = u.Types.Select(t => t is RefType { Module: not null } nested &&
-                    Find(nested) is AliasDeclaration { TypeParameters.Count: 0, Type: UnionType inner } && TrimInline(subject, inner) is var trimmedInner &&
+                var flattened = u.Types.Select(t => FlattenedAlias(t, Find) is { } inner && TrimInline(subject, inner) is var trimmedInner &&
                     !ReferenceEquals(trimmedInner, inner) ? trimmedInner : TrimInline(subject, t)).ToList();
                 return flattened.SequenceEqual(u.Types, ReferenceEqualityComparer.Instance) ? u : u with { Types = flattened };
             case UnionType u:

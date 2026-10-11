@@ -212,7 +212,7 @@ public sealed record FunctionType : IrType
     public Doc? Doc { get; init; }
 }
 
-/// <summary>A type the checker couldn't resolve, as it spells it (IOP2002).</summary>
+/// <summary>A type the checker couldn't resolve, as it spells it: what uses it is skipped (IOP2007, R12).</summary>
 public sealed record UnresolvedType(string Text) : IrType;
 
 // --- Custom elements ---

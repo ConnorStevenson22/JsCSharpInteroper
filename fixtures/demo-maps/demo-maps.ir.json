@@ -1211,7 +1211,7 @@
         },
         {
           "kind": "interface",
-          "name": "CollectionChangeEvent",
+          "name": "Tagged",
           "typeParameters": [
             {
               "name": "T",
@@ -1219,6 +1219,33 @@
                 "kind": "primitive",
                 "name": "any"
               }
+            }
+          ],
+          "members": [
+            {
+              "kind": "property",
+              "name": "tag",
+              "type": {
+                "kind": "primitive",
+                "name": "string"
+              }
+            },
+            {
+              "kind": "property",
+              "name": "value",
+              "type": {
+                "kind": "typeParameter",
+                "name": "T"
+              }
+            }
+          ]
+        },
+        {
+          "kind": "interface",
+          "name": "CollectionChangeEvent",
+          "typeParameters": [
+            {
+              "name": "T"
             }
           ],
           "members": [
@@ -1277,11 +1304,7 @@
           "name": "Collection",
           "typeParameters": [
             {
-              "name": "T",
-              "default": {
-                "kind": "primitive",
-                "name": "any"
-              }
+              "name": "T"
             }
           ],
           "extends": {
@@ -2253,7 +2276,7 @@
             },
             {
               "kind": "property",
-              "name": "highlighted",
+              "name": "emphasized",
               "doc": {
                 "summary": "The markers drawn on top of the tiles."
               },
@@ -2269,7 +2292,7 @@
             },
             {
               "kind": "method",
-              "name": "highlight",
+              "name": "emphasize",
               "signatures": [
                 {
                   "params": [

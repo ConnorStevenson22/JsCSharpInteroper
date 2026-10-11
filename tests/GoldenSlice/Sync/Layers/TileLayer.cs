@@ -18,11 +18,11 @@ public sealed partial class TileLayer : Layer
 
     public double TileSize => Realm.GetNumber(Handle, "tileSize");
 
-    public global::GoldenSlice.Sync.Marker[] GetHighlighted(global::Interoper.JsScope scope) =>
-        Realm.Call(global::Interoper.JsOp.Get(Handle, "highlighted"), (ref r) => global::Interoper.JsJson.ReadArray(ref r, scope.Read<global::GoldenSlice.Sync.Marker>))!;
+    public global::GoldenSlice.Sync.Marker[] GetEmphasized(global::Interoper.JsScope scope) =>
+        Realm.Call(global::Interoper.JsOp.Get(Handle, "emphasized"), (ref r) => global::Interoper.JsJson.ReadArray(ref r, scope.Read<global::GoldenSlice.Sync.Marker>))!;
 
-    public void Highlight(TileLayerHighlightMarkers markers) =>
-        Realm.Send(global::Interoper.JsOp.Call(Handle, "highlight", w => global::Interoper.JsJson.WriteValue(w, markers)));
+    public void Emphasize(TileLayerEmphasizeMarkers markers) =>
+        Realm.Send(global::Interoper.JsOp.Call(Handle, "emphasize", w => global::Interoper.JsJson.WriteValue(w, markers)));
 
     public new TileLayer Clone(global::Interoper.JsScope scope) =>
         Realm.Call(global::Interoper.JsOp.Call(Handle, "clone"), scope.Read<TileLayer>)!;
@@ -33,8 +33,8 @@ public sealed partial class TileLayer : Layer
     public global::System.IDisposable WatchTileSize(global::Interoper.JsScope scope, global::System.Action<double> handler) =>
         scope.Subscribe(Handle, "watch", "tileSize", global::Interoper.JsJson.ReadNumber, handler, null, null);
 
-    public global::System.IDisposable WatchHighlighted(global::Interoper.JsScope scope, global::System.Action<global::GoldenSlice.Sync.Marker[]> handler) =>
-        scope.Subscribe(Handle, "watch", "highlighted", (ref r) => global::Interoper.JsJson.ReadArray(ref r, scope.Read<global::GoldenSlice.Sync.Marker>), handler, null, null);
+    public global::System.IDisposable WatchEmphasized(global::Interoper.JsScope scope, global::System.Action<global::GoldenSlice.Sync.Marker[]> handler) =>
+        scope.Subscribe(Handle, "watch", "emphasized", (ref r) => global::Interoper.JsJson.ReadArray(ref r, scope.Read<global::GoldenSlice.Sync.Marker>), handler, null, null);
 
     public new TileLayerSnapshot Snapshot() =>
         Realm.Call(global::Interoper.JsOp.Snapshot(Handle), TileLayerSnapshot.Read)!;

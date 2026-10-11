@@ -4,6 +4,7 @@
 
 ```bash
 tsc --noEmit -p fixtures/demo-maps             # typings, plus test/typings.check.ts
+tsc --noEmit -p fixtures/demo-widgets          # the second package's typings
 node --test "fixtures/demo-maps/test/*.test.mjs"
 ```
 
@@ -49,7 +50,8 @@ node --test "fixtures/demo-maps/test/*.test.mjs"
 | Event map through a phantom property | R24 | `"$events"` + `on<K extends keyof this["$events"]>` (`core`); `MapViewEvents.click` |
 | Subscription with `remove()`, not `dispose()` | R24, [design §3.4](../../docs/design.md#34-protocol) | `Pin.on` (`pins`) |
 | Property watch | design §2 | `Observable.watch(name, callback)` returns a `Subscription` (`core`), e.g. `view.watch("zoom", …)` |
-| Collection type (generic) | §2 (generic `T`, a default), R17 | `Collection<T = any>` with a `change` event whose payload holds entities (`core`); `MapView.markers`, and `MapView.layers` of an abstract class |
+| Collection type (generic) | §2 (generic `T`), R17 | `Collection<T>` with a `change` event whose payload holds entities (`core`); `MapView.markers`, and `MapView.layers` of an abstract class |
+| Type parameter with a default | §2 | `Tagged<T = any>`, a generic record (`core`) |
 | Module functions | §5 | `distance`, `perimeter`, `describe` (`measure`); `toRgba` (`styles`); `execute` (`ops/a`, `ops/b`) |
 | Custom element: attributes, properties, events, slots | R28, design §2 | `<demo-map>` (`demo-map`, `custom-elements.json`): attributes `basemap`, `zoom`; properties `view`, `center`; events `demo-map-click`, `demo-map-zoom-change` (pairs with `zoom` for `@bind`), `demo-map-ready`; slots default and `toolbar` |
 

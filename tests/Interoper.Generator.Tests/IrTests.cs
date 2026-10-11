@@ -41,7 +41,7 @@ public sealed class IrTests
         Assert.Equal("default", Declaration<ClassDeclaration>("TileLayer").Export);
         Assert.Null(Declaration<ClassDeclaration>("Layer").Export);
         Assert.True(Assert.Single(Assert.Single(Declaration<FunctionDeclaration>("perimeter").Signatures).Params).Rest); // R22
-        Assert.Equal(new PrimitiveType("any"), Declaration<ClassDeclaration>("Collection").TypeParameters[0].Default); // §2
+        Assert.Equal(new PrimitiveType("any"), Declaration<InterfaceDeclaration>("Tagged").TypeParameters[0].Default); // §2
         var pin = Declaration<ClassDeclaration>("Pin"); // a mixin's base is the class it starts with
         Assert.Equal(new RefType("Marker", "@acme/demo-maps/Marker.js"), pin.Extends);
         Assert.Equal(["meta", "on", "dragBy"], pin.Members.Select(m => m.Name));

@@ -96,7 +96,7 @@ public sealed class NamingTests
     [Theory] // R27
     [InlineData("Acme.Maps", "Point", "Point.cs")]
     [InlineData("Acme.Maps.Layers", "TileLayer", "Layers/TileLayer.cs")]
-    [InlineData("Acme.Maps.Layers.Support", "TileInfo", "Layers/Support/TileInfo.cs")]
+    [InlineData("Acme.Maps.Layers.Parts", "Grid", "Layers/Parts/Grid.cs")]
     public void AFilePathMirrorsTheNamespace(string ns, string type, string path) =>
         Assert.Equal(path, Naming.FilePath("Acme.Maps", ns, type));
 }

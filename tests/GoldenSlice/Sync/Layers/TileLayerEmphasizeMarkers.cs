@@ -4,17 +4,17 @@
 namespace GoldenSlice.Sync.Layers;
 
 [global::System.Runtime.CompilerServices.Union]
-public readonly partial struct TileLayerHighlightMarkers : global::Interoper.IJsUnion<TileLayerHighlightMarkers>, global::System.IEquatable<TileLayerHighlightMarkers>
+public readonly partial struct TileLayerEmphasizeMarkers : global::Interoper.IJsUnion<TileLayerEmphasizeMarkers>, global::System.IEquatable<TileLayerEmphasizeMarkers>
 {
     private readonly object? _ref;
     private readonly byte _tag; // 0 = undefined, 1 = null, 2 = global::GoldenSlice.Sync.Marker, 3 = global::GoldenSlice.Sync.Marker[]
 
-    private TileLayerHighlightMarkers(object? value, byte tag) => (_ref, _tag) = (value, tag);
-    public TileLayerHighlightMarkers(global::GoldenSlice.Sync.Marker value) : this(value, 2) { }
-    public TileLayerHighlightMarkers(global::GoldenSlice.Sync.Marker[] value) : this(value, 3) { }
-    public TileLayerHighlightMarkers(global::Interoper.Undefined? value) : this(null, value is null ? (byte)1 : (byte)0) { }
+    private TileLayerEmphasizeMarkers(object? value, byte tag) => (_ref, _tag) = (value, tag);
+    public TileLayerEmphasizeMarkers(global::GoldenSlice.Sync.Marker value) : this(value, 2) { }
+    public TileLayerEmphasizeMarkers(global::GoldenSlice.Sync.Marker[] value) : this(value, 3) { }
+    public TileLayerEmphasizeMarkers(global::Interoper.Undefined? value) : this(null, value is null ? (byte)1 : (byte)0) { }
 
-    public static implicit operator TileLayerHighlightMarkers(global::Interoper.Undefined? value) => new(value);
+    public static implicit operator TileLayerEmphasizeMarkers(global::Interoper.Undefined? value) => new(value);
 
     public object? Value => _tag switch { 0 => global::Interoper.Undefined.Value, 1 => null, _ => _ref };
     public bool HasValue => _tag != 1;
@@ -39,7 +39,7 @@ public readonly partial struct TileLayerHighlightMarkers : global::Interoper.IJs
         return _tag == 3;
     }
 
-    public static void WriteValue(global::System.Text.Json.Utf8JsonWriter writer, TileLayerHighlightMarkers value)
+    public static void WriteValue(global::System.Text.Json.Utf8JsonWriter writer, TileLayerEmphasizeMarkers value)
     {
         switch (value._tag)
         {
@@ -48,10 +48,10 @@ public readonly partial struct TileLayerHighlightMarkers : global::Interoper.IJs
         }
     }
 
-    public static TileLayerHighlightMarkers ReadValue(ref global::System.Text.Json.Utf8JsonReader reader) => throw new global::System.Text.Json.JsonException("TileLayerHighlightMarkers is only written (R2)");
+    public static TileLayerEmphasizeMarkers ReadValue(ref global::System.Text.Json.Utf8JsonReader reader) => throw new global::System.Text.Json.JsonException("TileLayerEmphasizeMarkers is only written (R2)");
 
-    public bool Equals(TileLayerHighlightMarkers other) => _tag == other._tag && Equals(_ref, other._ref);
-    public override bool Equals(object? obj) => obj is TileLayerHighlightMarkers other && Equals(other);
+    public bool Equals(TileLayerEmphasizeMarkers other) => _tag == other._tag && Equals(_ref, other._ref);
+    public override bool Equals(object? obj) => obj is TileLayerEmphasizeMarkers other && Equals(other);
     public override int GetHashCode() => global::System.HashCode.Combine(_tag, _ref);
     public override string ToString() => _tag switch { 0 => "undefined", 1 => "null", _ => $"{_ref}" };
 }

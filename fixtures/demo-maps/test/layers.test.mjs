@@ -32,14 +32,14 @@ test("a view's layers are a collection", () => {
   assert.deepEqual(view.layers.toArray(), [tile]);
 });
 
-test("a tile size is one or one per zoom level, and highlight takes one marker or several", () => {
+test("a tile size is one or one per zoom level, and emphasize takes one marker or several", () => {
   const tile = new TileLayer();
   assert.equal(tile.tileSize, 256);
   tile.tileSize = [512, 256];
   assert.equal(tile.tileSize, 512);
   const [a, b] = [new Marker(), new Marker()];
-  tile.highlight(a);
-  assert.deepEqual(tile.highlighted, [a]);
-  tile.highlight([a, b]);
-  assert.deepEqual(tile.highlighted, [a, b]);
+  tile.emphasize(a);
+  assert.deepEqual(tile.emphasized, [a]);
+  tile.emphasize([a, b]);
+  assert.deepEqual(tile.emphasized, [a, b]);
 });

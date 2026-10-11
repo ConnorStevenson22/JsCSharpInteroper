@@ -80,7 +80,8 @@ public static class Generator
         {
             // R27: nothing refers to a module's static class, so it takes a free name instead.
             var ns = types.Namespace(module.Key);
-            var (wanted, name) = (LiveEmitter.ModuleClass(module.Key), LiveEmitter.ModuleClass(module.Key));
+            var wanted = LiveEmitter.ModuleClass(module.Key);
+            var name = wanted;
             for (var n = 2; paths.Contains(Naming.FilePath(root, ns, name)) || namespaces.Contains($"{ns}.{name}"); n++)
             {
                 name = $"{wanted}{n}";

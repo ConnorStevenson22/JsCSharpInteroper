@@ -14,7 +14,7 @@ public sealed class SelectionTests
         [
             "MapView.js: Basemap, Cursor, CenterAndZoom, Camera, FlyToTarget, FlyToOptions, ClickEvent, MapViewEvents, MapViewOptions, MapView", // R15: FlyToOptions without its signal
             "Marker.js: MarkerOptions, Marker", // R15: without its callback
-            "core.js: Observable, Emitter, CollectionChangeEvent, CollectionEvents, Collection",
+            "core.js: Observable, Emitter, Tagged, CollectionChangeEvent, CollectionEvents, Collection",
             "demo-map.js: DemoMapClickDetail, DemoMapElement", // R28: not the event map; an inline detail is an inline record (R11)
             "geometry.js: ShapeType, Bounds, Shape, Point, Line, Polygon",
             "layers/Layer.js: Layer",
@@ -313,7 +313,7 @@ public sealed class SelectionTests
               { "kind": "property", "name": "target", "type": {{Ref("Target")}} },
               { "kind": "property", "name": "spot", "readonly": true, "type": {{Ref("Spot")}} },
               { "kind": "property", "name": "paint", "readonly": true, "type": {{Ref("Paint")}} },
-              { "kind": "method", "name": "goTo", "signatures": [{ "params": [{ "name": "target", "type": {{Ref("Target")}} }, { "name": "spot", "type": {{Ref("Spot")}} }],
+              { "kind": "method", "name": "aim", "signatures": [{ "params": [{ "name": "target", "type": {{Ref("Target")}} }, { "name": "spot", "type": {{Ref("Spot")}} }],
                 "returns": { "kind": "primitive", "name": "void" } }] }] }
             """, """{ "kind": "class", "name": "Layer" }""");
         var result = Generator.Generate(ir, new Profile { Package = "@acme/maps", Include = ["@acme/maps/a.js"] }, new(Api.Sync, "Acme.Maps"));
@@ -326,7 +326,7 @@ public sealed class SelectionTests
         ], result.Diagnostics.Select(d => d.ToString()));
         var view = result.Files.Single(f => f.Path == "View.cs").Text;
         Assert.Contains("public Target Target", view); // read, and written
-        Assert.Contains("public void GoTo(Target target, Spot spot) =>", view);
+        Assert.Contains("public void Aim(Target target, Spot spot) =>", view);
         // Target reads its other cases, and fails on a handle, which is how JS sends a Layer.
         var target = result.Files.Single(f => f.Path == "Target.cs").Text;
         Assert.Contains("private readonly byte _tag; // 0 = undefined, 1 = null, 2 = string, 3 = double[], 4 = Box", target);
@@ -352,7 +352,7 @@ public sealed class SelectionTests
             { "kind": "alias", "name": "Owner", "type": { "kind": "union", "types": [{{A("Layer")}}, {{B("TileLayer")}}, {{B("Folder")}}] } },
             { "kind": "interface", "name": "Holder", "members": [{ "kind": "property", "name": "layer", "optional": true, "type": {{OrNull(A("Owner"))}} }] },
             { "kind": "alias", "name": "LayerProps", "type": { "kind": "object", "members": [
-              { "kind": "property", "name": "owner", "optional": true, "type": { "kind": "union", "types": [{{A("Sheet")}}, {{B("Basemap")}}, {{B("Folder")}}, { "kind": "primitive", "name": "null" }] } }] } },
+              { "kind": "property", "name": "owner", "optional": true, "type": { "kind": "union", "types": [{{A("Sheet")}}, {{B("Atlas")}}, {{B("Folder")}}, { "kind": "primitive", "name": "null" }] } }] } },
             { "kind": "class", "name": "View", "members": [
               { "kind": "property", "name": "glyph", "readonly": true, "type": {{A("Glyph")}} },
               { "kind": "property", "name": "owner", "type": {{OrNull(A("Owner"))}} },
@@ -360,7 +360,7 @@ public sealed class SelectionTests
               { "kind": "property", "name": "holder", "type": {{A("Holder")}} }] }
             """, $$"""
             { "kind": "class", "name": "Dot" }, { "kind": "class", "name": "Star" }, { "kind": "class", "name": "Ring" }, { "kind": "class", "name": "Cross" },
-            { "kind": "class", "name": "TileLayer" }, { "kind": "class", "name": "Folder" }, { "kind": "class", "name": "Basemap" },
+            { "kind": "class", "name": "TileLayer" }, { "kind": "class", "name": "Folder" }, { "kind": "class", "name": "Atlas" },
             { "kind": "alias", "name": "FlatGlyph", "type": { "kind": "union", "types": [{{B("Dot")}}, {{B("Star")}}] } },
             { "kind": "alias", "name": "DeepGlyph", "type": {{B("Cross")}} },
             { "kind": "alias", "name": "NamedGlyph", "type": { "kind": "union", "types": [{{B("Ring")}}, {{B("DeepGlyph")}}] } }
@@ -375,7 +375,7 @@ public sealed class SelectionTests
                 $"IOP2007 View.glyph: skipped: uses {None}",
                 "IOP2007 Owner: case `TileLayer` dropped: a class outside the selection (R2)",
                 "IOP2007 Owner: case `Folder` dropped: a class outside the selection (R2)",
-                "IOP2007 LayerPropsOwner: case `Basemap` dropped: a class outside the selection (R2)",
+                "IOP2007 LayerPropsOwner: case `Atlas` dropped: a class outside the selection (R2)",
                 "IOP2007 LayerPropsOwner: case `Folder` dropped: a class outside the selection (R2)",
             ], result.Diagnostics.Select(d => d.ToString()));
             // Owner is Layer, and LayerProps.owner is Sheet: entities, so the records that hold them are read with a scope (R17).

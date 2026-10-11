@@ -423,7 +423,7 @@ public sealed class GeneratorTests
             """), ("View.js", """
             { "kind": "class", "name": "View", "members": [
               { "kind": "property", "name": "frame", "type": { "kind": "ref", "name": "Frame", "module": "@acme/maps/figure/Figure.js" } },
-              { "kind": "method", "name": "goTo", "signatures": [{ "params": [{ "name": "target", "type": { "kind": "ref", "name": "Figure", "module": "@acme/maps/figure/Figure.js" } }],
+              { "kind": "method", "name": "aim", "signatures": [{ "params": [{ "name": "target", "type": { "kind": "ref", "name": "Figure", "module": "@acme/maps/figure/Figure.js" } }],
                 "returns": { "kind": "primitive", "name": "void" } }] }] }
             """));
 
@@ -1277,6 +1277,21 @@ public sealed class GeneratorTests
         Assert.Contains("public Owner Owner", File(result, "Feature.cs"));
         Assert.Contains("public required double X { get; init; }", File(result, "FeatureMark.cs"));
         Assert.Contains("public required double X { get; init; }", File(result, "Owner.cs"));
+    }
+
+    [Fact] // R28, R6: a property whose type has null through an alias (`Title | undefined`, `type Title = string | null`) sets JS null
+    public void AComponentPropertyNullThroughAnAliasIsSetAsNull()
+    {
+        var result = Elements(Api.Sync, [("chart.js", $$"""
+            { "kind": "alias", "name": "Title", "type": { "kind": "union", "types": [{{String}}, { "kind": "primitive", "name": "null" }] } },
+            { "kind": "class", "name": "ChartElement", "members": [{ "kind": "property", "name": "title", "optional": true, "type": { "kind": "union", "types": [
+              { "kind": "ref", "name": "Title", "module": "@acme/maps/chart.js" }, { "kind": "primitive", "name": "undefined" }] } }] }
+            """)], """
+            { "tag": "x-chart", "class": { "kind": "ref", "name": "ChartElement", "module": "@acme/maps/chart.js" }, "attributes": [], "events": [], "slots": [] }
+            """);
+
+        Assert.Contains("""global::Interoper.JsOp.Set(Element.Handle, "title", w => { if (value is { } v) global::Interoper.JsJson.WriteString(w, v); else w.WriteNullValue(); })""",
+            File(result, "XChart.cs"));
     }
 
     [Fact] // R28, R11, R27: a component doesn't take an inline record's name

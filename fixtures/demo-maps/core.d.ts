@@ -24,7 +24,12 @@ export class Emitter extends Observable {
 }
 
 // `T` has a default, as many libraries' generic types do (§2).
-export interface CollectionChangeEvent<T = any> {
+export interface Tagged<T = any> {
+  tag: string;
+  value: T;
+}
+
+export interface CollectionChangeEvent<T> {
   added: T[];
   removed: T[];
 }
@@ -33,7 +38,7 @@ export interface CollectionEvents<T> {
   change: CollectionChangeEvent<T>;
 }
 
-export class Collection<T = any> extends Emitter {
+export class Collection<T> extends Emitter {
   "$events": CollectionEvents<T>;
   constructor(items?: T[]);
   readonly length: number;

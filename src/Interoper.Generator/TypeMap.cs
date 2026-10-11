@@ -612,7 +612,7 @@ internal sealed class TypeMap
     private IEnumerable<IrType> Flatten(IrType type) => type switch
     {
         UnionType u => u.Types.SelectMany(Flatten),
-        RefType { Module: not null } r when Find(r) is AliasDeclaration { Type: UnionType } a => Flatten(a.Type),
+        _ when Selection.FlattenedAlias(type, Find) is { } inner => Flatten(inner),
         _ => [type],
     };
 
@@ -638,10 +638,6 @@ internal sealed class TypeMap
     /// </summary>
     private bool WrittenOnly(IrType type, List<IrType> all, List<IrType> flat) =>
         flat.Any(UsesEntity) || flat.Count < all.Count && UnionProblem(type, null, written: false) is not null;
-
-    /// <summary>The first type parameter a type names, if any.</summary>
-    private static TypeParameterType? TypeParameterIn(IrType type) =>
-        type as TypeParameterType ?? Selection.Children(type).Select(TypeParameterIn).FirstOrDefault(t => t is not null);
 
     /// <summary>A class outside the selection, or an alias of one: a union drops it as a case (R2).</summary>
     internal bool IsUnselected(IrType type) => type is RefType { Module: not null } r && Find(r) switch
@@ -1046,7 +1042,7 @@ internal sealed class TypeMap
             {
                 return new($"{label} with the value-type case {valueType} (R2)");
             }
-            if (TypeParameterIn(t) is { } parameter)
+            if (Selection.TypeParameterIn(t) is { } parameter)
             {
                 return new($"{label} with a case of the type parameter `{parameter.Name}` (§2)"); // a union struct isn't generic
             }

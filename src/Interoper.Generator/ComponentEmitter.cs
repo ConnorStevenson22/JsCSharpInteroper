@@ -190,7 +190,7 @@ internal sealed class ComponentEmitter
             {
                 (mapped, type) = (types.Slot(primitive, ownerName).Type, primitive);
             }
-            return new(Claim(Naming.Pascal(p.Name), $"{component}.{p.Name}"), mapped, nullable || p.Optional, HasNull(type), p.Name, mapped.Fast is null ? null : attribute?.Name);
+            return new(Claim(Naming.Pascal(p.Name), $"{component}.{p.Name}"), mapped, nullable || p.Optional, types.HasNull(type), p.Name, mapped.Fast is null ? null : attribute?.Name);
         }
         foreach (var a in s.Element.Attributes)
         {
@@ -203,7 +203,7 @@ internal sealed class ComponentEmitter
                 continue;
             }
             var (mapped, nullable) = types.Slot(a.Type!, new(ns, component + Naming.Pascal(a.Name)));
-            result.Add(new(Claim(Naming.Pascal(a.Name), $"{component}.{a.Name}"), mapped.In(ns), nullable, HasNull(a.Type!), a.Name, a.Name));
+            result.Add(new(Claim(Naming.Pascal(a.Name), $"{component}.{a.Name}"), mapped.In(ns), nullable, types.HasNull(a.Type!), a.Name, a.Name));
         }
         foreach (var (p, owner) in properties.Where(x => result.All(r => r.Js != x.Property.Name)))
         {
@@ -211,8 +211,6 @@ internal sealed class ComponentEmitter
         }
         return result;
     }
-
-    private static bool HasNull(IrType type) => type is PrimitiveType { Name: "null" } || type is UnionType u && u.Types.Any(HasNull);
 
     /// <summary>
     /// An event's callback, and the property it binds: an event named <c>…-zoom-change</c> or <c>…zoomChange</c>
