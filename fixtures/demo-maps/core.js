@@ -82,6 +82,10 @@ export class Collection extends Emitter {
     return this.#items.find(predicate);
   }
 
+  forEach(callback) {
+    this.#items.forEach((item, index) => callback(item, index, this));
+  }
+
   toArray() {
     return [...this.#items];
   }

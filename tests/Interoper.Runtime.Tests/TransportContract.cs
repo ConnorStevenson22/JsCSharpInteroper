@@ -83,10 +83,26 @@ public static class TransportContract
         ("$f callback whose handler throws (R21)", ThrowingCallback),
         ("module function call", ModuleCall),
         ("subscribe and release (R24)", Subscribe),
+        ("subscribe with options: JS calls the event's methods, then sends only the fields (R24)", SubscribeWithOptions),
         ("errors become JsException", Errors),
         ("batch op: failures listed by index, the rest applied", BatchOp),
         ("BeginBatch: N writes are one round trip, a read flushes first", BeginBatch),
+        ("wrap returns its value in wire form (R13, R28)", Wrap),
     ];
+
+    // A component gets its element's handle this way, from {"$e":id}; any value comes back as a result would.
+    private static async Task Wrap(Seam seam)
+    {
+        var baseline = await seam.Census();
+        var h = await Create(seam, MapView);
+        var wrapped = await Value(seam, $$$"""{"op":"wrap","value":{"$h":{{{h}}}}}""");
+        Equal($$"""{"$h":{{h}},"$t":5}""", wrapped); // the same handle
+        Equal("""{"a":[1,{"$u":1}],"b":null}""", await Value(seam, """{"op":"wrap","value":{"a":[1,{"$u":1}],"b":null}}"""));
+        var e = await Throws(() => Value(seam, """{"op":"wrap","value":{"$e":"none"}}"""));
+        Equal(("InteroperError", "No element has the capture attribute _bl_none; send an ElementReference after its first render"), (e.Name, e.Message));
+        await Release(seam, h);
+        Equal(baseline, await seam.Census());
+    }
 
     private static async Task CreateGetSet(Seam seam)
     {
@@ -235,6 +251,45 @@ public static class TransportContract
         Equal("false", await Value(seam, emit));
         await Release(seam, h);
         seam.Callbacks.Release(listener);
+        Equal(baseline, (await seam.Census(), seam.Callbacks.Count));
+    }
+
+    private static async Task SubscribeWithOptions(Seam seam)
+    {
+        var baseline = (await seam.Census(), seam.Callbacks.Count);
+        var h = await Create(seam, MapView);
+        var calls = new List<string>();
+        var (all, again) = (new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously), new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously));
+        int Register(string? name) => seam.Callbacks.Register(args =>
+        {
+            lock (calls)
+            {
+                calls.Add(name ?? args);
+                if (calls.Count == 3) all.TrySetResult();
+                if (calls.Count == 4) again.TrySetResult(calls[3]);
+            }
+            return null;
+        });
+        var (listener, preventDefault, stopPropagation) = (Register(null), Register("preventDefault"), Register("stopPropagation"));
+        const string Options = """{"preventDefault":true,"stopPropagation":true,"fields":["x","mapPoint","missing"]}""";
+        var subscription = await Value(seam, $$$"""{"op":"subscribe","h":{{{h}}},"method":"on","name":"click","callback":{"$f":{{{listener}}}},"options":{{{Options}}}}""");
+
+        // A library event with these methods works as a DOM event does; nothing outside the fields crosses the wire.
+        var click = $$$"""{"type":"click","x":1,"y":-2,"button":0,"mapPoint":{"$c":2,"type":"point","x":1,"y":2},"preventDefault":{"$f":{{{preventDefault}}}},"stopPropagation":{"$f":{{{stopPropagation}}}}}""";
+        Equal("true", await Value(seam, $$"""{"op":"call","h":{{h}},"name":"emit","args":["click",{{click}}]}"""));
+        await all.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        string[] expected = ["preventDefault", "stopPropagation", """[{"x":1,"mapPoint":{"$c":2,"type":"point","x":1,"y":2}}]"""];
+        // Across IJSRuntime each call is a message of its own, so only their set is certain.
+        Equal(string.Join("\n", seam.CallbacksReturn ? expected : expected.Order(StringComparer.Ordinal)),
+            string.Join("\n", seam.CallbacksReturn ? calls : calls.Order(StringComparer.Ordinal)));
+
+        // An event without the methods is fine too.
+        Equal("true", await Value(seam, $$"""{"op":"call","h":{{h}},"name":"emit","args":["click",{"x":2}]}"""));
+        Equal("""[{"x":2}]""", await again.Task.WaitAsync(TimeSpan.FromSeconds(10)));
+        await Release(seam, (int)subscription!, h);
+        seam.Callbacks.Release(listener);
+        seam.Callbacks.Release(preventDefault);
+        seam.Callbacks.Release(stopPropagation);
         Equal(baseline, (await seam.Census(), seam.Callbacks.Count));
     }
 

@@ -9,9 +9,27 @@ public sealed class NamingTests
     [InlineData("pin-120", "Pin120")]
     [InlineData("0", "_0")]
     [InlineData("", "Empty")]
-    [InlineData("--", "Empty")]
+    [InlineData("<", "LessThan")]
+    [InlineData("<=", "LessThanOrEqual")]
+    [InlineData(">", "GreaterThan")]
+    [InlineData(">=", "GreaterThanOrEqual")]
+    [InlineData("=", "Equal")]
+    [InlineData("==", "Equal")]
+    [InlineData("!=", "NotEqual")]
+    [InlineData("+", "Plus")]
+    [InlineData("-", "Minus")]
+    [InlineData("*", "Star")]
+    [InlineData("/", "Slash")]
+    [InlineData("%", "Percent")]
+    [InlineData("--", "MinusMinus")]
+    [InlineData("<>", "LessThanGreaterThan")]
+    [InlineData("&", "U0026")]
     public void LiteralsBecomeEnumMemberNames(string value, string name) =>
         Assert.Equal(name, Assert.Single(Naming.EnumMembers([value], "Basemap", [])));
+
+    [Fact] // R25
+    public void SymbolsAreSpelledAndOnlyTheEmptyStringIsEmpty() =>
+        Assert.Equal(["LessThan", "LessThanOrEqual", "Equal", "Equal2", "Empty"], Naming.EnumMembers(["<", "<=", "=", "==", ""], "Operator", []));
 
     [Fact] // R25
     public void DuplicateEnumMemberNamesGetANumericSuffix()
@@ -59,4 +77,26 @@ public sealed class NamingTests
         Assert.Equal("ClickEventButton", Naming.OwnedType("ClickEvent", "button"));
         Assert.Equal("MarkerPositionInput", Naming.OwnedType("Marker", "position", input: true));
     }
+
+    [Theory] // R27
+    [InlineData("@acme/maps/MapView.js", "Acme.Maps")]
+    [InlineData("@acme/maps/layers/TileLayer.js", "Acme.Maps.Layers")]
+    [InlineData("@acme/maps/layers/support/tile-info.js", "Acme.Maps.Layers.Support")]
+    [InlineData("@acme/maps/3d/scene/Scene.js", "Acme.Maps._3d.Scene")]
+    public void ANamespaceIsTheRootPlusTheModulesFolders(string specifier, string ns) =>
+        Assert.Equal(ns, Naming.Namespace("Acme.Maps", "@acme/maps", specifier));
+
+    [Theory] // R27: another package's modules have its name, without the scope, first
+    [InlineData("@acme/widgets", "Acme.Maps.Widgets")]
+    [InlineData("@acme/widgets/legend", "Acme.Maps.Widgets")]
+    [InlineData("@acme/widgets/dist/support/entry.js", "Acme.Maps.Widgets.Dist.Support")]
+    public void AModuleOfAnotherPackageHasItsNamespace(string specifier, string ns) =>
+        Assert.Equal(ns, Naming.Namespace("Acme.Maps", "@acme/widgets", specifier, otherPackage: true));
+
+    [Theory] // R27
+    [InlineData("Acme.Maps", "Point", "Point.cs")]
+    [InlineData("Acme.Maps.Layers", "TileLayer", "Layers/TileLayer.cs")]
+    [InlineData("Acme.Maps.Layers.Parts", "Grid", "Layers/Parts/Grid.cs")]
+    public void AFilePathMirrorsTheNamespace(string ns, string type, string path) =>
+        Assert.Equal(path, Naming.FilePath("Acme.Maps", ns, type));
 }

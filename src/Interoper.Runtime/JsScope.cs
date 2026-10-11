@@ -1,6 +1,9 @@
+using System.Buffers;
+using System.Runtime.CompilerServices;
 using System.Runtime.ExceptionServices;
 using System.Text;
 using System.Text.Json;
+using System.Threading.Channels;
 using Microsoft.JSInterop;
 
 namespace Interoper;
@@ -16,6 +19,7 @@ public sealed class JsScope(JsRealm realm) : IDisposable, IAsyncDisposable
     private readonly Lock gate = new(); // covers disposed, callbacks and this scope's ownership in the realm
     private readonly List<int> callbacks = [];
     private readonly List<JsBatch> batches = []; // open batches this scope began, flushed before its release
+    private readonly List<Action> streams = []; // completes each open stream (StreamAsync)
     private bool disposed;
 
     public JsRealm Realm { get; } = realm;
@@ -35,13 +39,19 @@ public sealed class JsScope(JsRealm realm) : IDisposable, IAsyncDisposable
     /// The live object for a <c>{"$h","$t"}</c> handle, owned by this scope too: the same C# object for the same JS
     /// object, of the most-derived type registered for the class id (R19), read through any base.
     /// </summary>
-    public T Wrap<T>(int handle, int classId) where T : JsObject
+    public T Wrap<T>(int handle, int classId) where T : JsObject => Wrap<T>(handle, classId, null);
+
+    private T Wrap<T>(int handle, int classId, Func<JsRealm, int, T>? create) where T : JsObject
     {
+        JsObject live;
         lock (gate)
         {
             ThrowIfDisposed(handle);
-            return (T)Realm.Wrap(this, handle, classId);
+            live = Realm.Wrap(this, handle, classId, create);
         }
+        // Still owned, so the scope releases it.
+        return live as T ?? throw new JsException("InteroperError",
+            $"Handle {handle} is a {live.GetType().Name}, not a {typeof(T).Name}.", null);
     }
 
     /// <summary>
@@ -49,6 +59,22 @@ public sealed class JsScope(JsRealm realm) : IDisposable, IAsyncDisposable
     /// generated code.
     /// </summary>
     public T Read<T>(ref Utf8JsonReader reader) where T : JsObject
+    {
+        var (handle, classId) = ReadHandle(ref reader);
+        return Wrap<T>(handle, classId);
+    }
+
+    /// <summary>
+    /// Reads a handle of a live type the registry can't make, a generic one such as <c>Collection&lt;Marker&gt;</c>
+    /// (mapping §2): the cached object for the handle, or the one <paramref name="create"/> makes, owned by this scope too.
+    /// </summary>
+    public T Read<T>(ref Utf8JsonReader reader, Func<JsRealm, int, T> create) where T : JsObject
+    {
+        var (handle, classId) = ReadHandle(ref reader);
+        return Wrap(handle, classId, create);
+    }
+
+    private static (int Handle, int ClassId) ReadHandle(ref Utf8JsonReader reader)
     {
         if (reader.TokenType != JsonTokenType.StartObject)
         {
@@ -67,7 +93,7 @@ public sealed class JsScope(JsRealm realm) : IDisposable, IAsyncDisposable
                 default: reader.Skip(); break;
             }
         }
-        return handle is { } h ? Wrap<T>(h, classId) : throw new JsonException("Expected a handle: the object has no \"$h\"");
+        return handle is { } h ? (h, classId) : throw new JsonException("Expected a handle: the object has no \"$h\"");
     }
 
     /// <summary>Owns a handle that has no live object, such as a subscription.</summary>
@@ -123,30 +149,177 @@ public sealed class JsScope(JsRealm realm) : IDisposable, IAsyncDisposable
         }
     }
 
+    // --- Callbacks (R21) ---
+    // A .NET delegate JS can call: registered with this scope, which releases it, and sent as {"$f":id}
+    // (JsJson.WriteCallback). Each argument is read with its reader, with this scope, which owns the handles in them;
+    // a missing one is undefined. A result is written with its writer; an Action's is undefined.
+
+    public int Callback(Action handler) => Register(_ =>
+    {
+        handler();
+        return null;
+    });
+
+    public int Callback<T1>(Action<T1> handler, JsonRead<T1> read1) => Register(args =>
+    {
+        var r = Arguments(args);
+        handler(Next(ref r, read1));
+        return null;
+    });
+
+    public int Callback<T1, T2>(Action<T1, T2> handler, JsonRead<T1> read1, JsonRead<T2> read2) => Register(args =>
+    {
+        var r = Arguments(args);
+        handler(Next(ref r, read1), Next(ref r, read2));
+        return null;
+    });
+
+    public int Callback<T1, T2, T3>(Action<T1, T2, T3> handler, JsonRead<T1> read1, JsonRead<T2> read2, JsonRead<T3> read3) => Register(args =>
+    {
+        var r = Arguments(args);
+        handler(Next(ref r, read1), Next(ref r, read2), Next(ref r, read3));
+        return null;
+    });
+
+    public int Callback<T1, T2, T3, T4>(Action<T1, T2, T3, T4> handler, JsonRead<T1> read1, JsonRead<T2> read2, JsonRead<T3> read3,
+        JsonRead<T4> read4) => Register(args =>
+    {
+        var r = Arguments(args);
+        handler(Next(ref r, read1), Next(ref r, read2), Next(ref r, read3), Next(ref r, read4));
+        return null;
+    });
+
+    public int Callback<TResult>(Func<TResult> handler, JsonWrite<TResult> write) => Register(_ => Result(write, handler()));
+
+    public int Callback<T1, TResult>(Func<T1, TResult> handler, JsonRead<T1> read1, JsonWrite<TResult> write) => Register(args =>
+    {
+        var r = Arguments(args);
+        return Result(write, handler(Next(ref r, read1)));
+    });
+
+    public int Callback<T1, T2, TResult>(Func<T1, T2, TResult> handler, JsonRead<T1> read1, JsonRead<T2> read2, JsonWrite<TResult> write) =>
+        Register(args =>
+        {
+            var r = Arguments(args);
+            return Result(write, handler(Next(ref r, read1), Next(ref r, read2)));
+        });
+
+    public int Callback<T1, T2, T3, TResult>(Func<T1, T2, T3, TResult> handler, JsonRead<T1> read1, JsonRead<T2> read2, JsonRead<T3> read3,
+        JsonWrite<TResult> write) => Register(args =>
+    {
+        var r = Arguments(args);
+        return Result(write, handler(Next(ref r, read1), Next(ref r, read2), Next(ref r, read3)));
+    });
+
+    public int Callback<T1, T2, T3, T4, TResult>(Func<T1, T2, T3, T4, TResult> handler, JsonRead<T1> read1, JsonRead<T2> read2,
+        JsonRead<T3> read3, JsonRead<T4> read4, JsonWrite<TResult> write) => Register(args =>
+    {
+        var r = Arguments(args);
+        return Result(write, handler(Next(ref r, read1), Next(ref r, read2), Next(ref r, read3), Next(ref r, read4)));
+    });
+
+    // The arguments arrive as a JSON array, by value (design §3.4); the reader starts on its `[`.
+    private static Utf8JsonReader Arguments(string args)
+    {
+        var reader = new Utf8JsonReader(Encoding.UTF8.GetBytes(args));
+        reader.Read();
+        return reader;
+    }
+
+    // The next argument; past the last one, undefined.
+    private static T Next<T>(ref Utf8JsonReader reader, JsonRead<T> read)
+    {
+        if (reader.Read() && reader.TokenType != JsonTokenType.EndArray)
+        {
+            return read(ref reader);
+        }
+        var undefined = new Utf8JsonReader("{\"$u\":1}"u8);
+        undefined.Read();
+        return read(ref undefined);
+    }
+
+    private static string Result<T>(JsonWrite<T> write, T value)
+    {
+        var buffer = new ArrayBufferWriter<byte>();
+        using (var writer = new Utf8JsonWriter(buffer))
+        {
+            write(writer, value);
+        }
+        return Encoding.UTF8.GetString(buffer.WrittenSpan);
+    }
+
     /// <summary>Registers a callback (R21) that this scope releases; send it as <c>{"$f":id}</c>.</summary>
     public int Register(Func<string, string?> handler)
     {
         lock (gate)
         {
             ObjectDisposedException.ThrowIf(disposed, this);
-            var id = Transport.Callbacks.Register(Dispatch is null ? handler : args => Dispatched(handler, args));
+            var run = Dispatch is null ? handler : args => Dispatched(handler, args);
+            var id = Transport.Callbacks.Register(args => OwnHandles(args) ? run(args) : null);
             callbacks.Add(id);
             return id;
+        }
+    }
+
+    // Every handle in a callback's arguments is owned by this scope as it arrives, before anything reads them, so the
+    // ones no reader consumes (arguments past the delegate's arity, members a record skips) are released with it too
+    // (design §3.4). A call that arrives after disposal is dropped, its handles released: JS gets undefined.
+    private bool OwnHandles(string args)
+    {
+        if (!args.Contains("\"$h\"", StringComparison.Ordinal))
+        {
+            return true;
+        }
+        var handles = new List<int>();
+        var reader = new Utf8JsonReader(Encoding.UTF8.GetBytes(args));
+        while (reader.Read())
+        {
+            if (reader.TokenType == JsonTokenType.PropertyName && reader.ValueTextEquals("$h"u8) && reader.Read()
+                && reader.TokenType == JsonTokenType.Number)
+            {
+                handles.Add(reader.GetInt32());
+            }
+        }
+        return OwnAll(handles);
+    }
+
+    /// <summary>
+    /// Owns every handle under one lock, or, once the scope is disposed, releases them all, so none leaks whichever comes
+    /// first. False when the scope is disposed.
+    /// </summary>
+    internal bool OwnAll(IEnumerable<int> handles)
+    {
+        lock (gate)
+        {
+            foreach (var handle in handles)
+            {
+                if (disposed)
+                {
+                    Realm.Abandon(handle);
+                }
+                else
+                {
+                    Realm.Own(this, handle);
+                }
+            }
+            return !disposed;
         }
     }
 
     /// <summary>
     /// Subscribes through the sync seam (sync mode): calls <c>target[method](name, listener)</c> (R24) with a listener
     /// that reads the first argument and calls <paramref name="handler"/>. The subscription and the listener belong to
-    /// this scope; disposing the result releases both sooner.
+    /// this scope; disposing the result releases both sooner. JS applies <paramref name="options"/> first; their
+    /// <see cref="EventOptions.Fields"/> replace <paramref name="fields"/>, the generated default projection.
     /// </summary>
-    public IDisposable Subscribe<T>(int handle, string method, string name, JsonRead<T> read, Action<T> handler)
+    public IDisposable Subscribe<T>(int handle, string method, string name, JsonRead<T> read, Action<T> handler, EventOptions? options,
+        IReadOnlyList<string>? fields)
     {
         var listener = Register(Listener(read, handler));
         int subscription;
         try
         {
-            subscription = (int)Realm.Call(JsOp.Subscribe(handle, method, name, listener), JsJson.ReadNumber);
+            subscription = (int)Realm.Call(JsOp.Subscribe(handle, method, name, listener, Projected(options, fields)), JsJson.ReadNumber);
         }
         catch
         {
@@ -155,16 +328,38 @@ public sealed class JsScope(JsRealm realm) : IDisposable, IAsyncDisposable
         }
         Own(subscription);
         return new Subscription(this, subscription, listener);
+    }
+
+    /// <summary>
+    /// Subscribes to an event without a payload (sync mode, R24): <paramref name="handler"/> takes nothing, and nothing of
+    /// the event crosses the wire unless the options name fields; see <see cref="Subscribe{T}"/>.
+    /// </summary>
+    public IDisposable Subscribe(int handle, string method, string name, Action handler, EventOptions? options) =>
+        Subscribe(handle, method, name, Ignore, _ => handler(), options, []);
+
+    /// <summary>Subscribes to an event without a payload through the async seam (async mode); see <see cref="Subscribe(int, string, string, Action, EventOptions?)"/>.</summary>
+    public Task<IAsyncDisposable> SubscribeAsync(int handle, string method, string name, Action handler, EventOptions? options) =>
+        SubscribeAsync(handle, method, name, Ignore, _ => handler(), options, []);
+
+    private static bool Ignore(ref Utf8JsonReader reader)
+    {
+        reader.Skip();
+        return true;
     }
 
     /// <summary>Subscribes through the async seam (async mode); see <see cref="Subscribe{T}"/>.</summary>
-    public async Task<IAsyncDisposable> SubscribeAsync<T>(int handle, string method, string name, JsonRead<T> read, Action<T> handler)
+    public Task<IAsyncDisposable> SubscribeAsync<T>(int handle, string method, string name, JsonRead<T> read, Action<T> handler,
+        EventOptions? options, IReadOnlyList<string>? fields) =>
+        SubscribeAsync(handle, method, name, Listener(read, handler), options, fields);
+
+    private async Task<IAsyncDisposable> SubscribeAsync(int handle, string method, string name, Func<string, string?> callback,
+        EventOptions? options, IReadOnlyList<string>? fields)
     {
-        var listener = Register(Listener(read, handler));
+        var listener = Register(callback);
         int subscription;
         try
         {
-            subscription = (int)await Realm.CallAsync(JsOp.Subscribe(handle, method, name, listener), JsJson.ReadNumber);
+            subscription = (int)await Realm.CallAsync(JsOp.Subscribe(handle, method, name, listener, Projected(options, fields)), JsJson.ReadNumber);
         }
         catch
         {
@@ -175,13 +370,71 @@ public sealed class JsScope(JsRealm realm) : IDisposable, IAsyncDisposable
         return new Subscription(this, subscription, listener);
     }
 
-    // Arguments arrive as a JSON array (R21); events and watches use the first.
+    /// <summary>
+    /// The events or changes of <see cref="SubscribeAsync{T}"/> as a stream (async mode, R24). It subscribes when the
+    /// enumeration starts, and unsubscribes when it ends: on <c>break</c>, cancellation or disposal. Disposing the scope
+    /// completes it, even while it subscribes, so <c>await foreach</c> ends normally; a payload that can't be read ends it
+    /// with that error. JS can't be paused, so values queue without bound until read.
+    /// </summary>
+    public async IAsyncEnumerable<T> StreamAsync<T>(int handle, string method, string name, JsonRead<T> read, EventOptions? options,
+        IReadOnlyList<string>? fields, [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        var channel = Channel.CreateUnbounded<T>(new() { SingleReader = true });
+        Action complete = () => channel.Writer.TryComplete();
+        lock (gate)
+        {
+            ObjectDisposedException.ThrowIf(disposed, this);
+            streams.Add(complete);
+        }
+        try
+        {
+            var deliver = Listener<T>(read, value => channel.Writer.TryWrite(value));
+            IAsyncDisposable subscription;
+            try
+            {
+                subscription = await SubscribeAsync(handle, method, name, args =>
+                {
+                    try
+                    {
+                        return deliver(args);
+                    }
+                    catch (Exception e)
+                    {
+                        channel.Writer.TryComplete(e);
+                        return null;
+                    }
+                }, options, fields);
+            }
+            catch (ObjectDisposedException) when (channel.Reader.Completion.IsCompleted)
+            {
+                yield break; // the scope was disposed while JS subscribed
+            }
+            await using (subscription)
+            {
+                await foreach (var value in channel.Reader.ReadAllAsync(cancellationToken))
+                {
+                    yield return value;
+                }
+            }
+        }
+        finally
+        {
+            lock (gate)
+            {
+                streams.Remove(complete);
+            }
+        }
+    }
+
+    // What JS applies before the listener (R24): the options, projecting to the default fields unless they name others.
+    private static EventOptions? Projected(EventOptions? options, IReadOnlyList<string>? fields) =>
+        options?.Fields is not null || fields is null ? options : (options ?? new()) with { Fields = fields };
+
+    // Events and watches use the first argument (R24).
     private static Func<string, string?> Listener<T>(JsonRead<T> read, Action<T> handler) => args =>
     {
-        var reader = new Utf8JsonReader(Encoding.UTF8.GetBytes(args));
-        reader.Read(); // [
-        reader.Read();
-        handler(read(ref reader));
+        var reader = Arguments(args);
+        handler(Next(ref reader, read));
         return null;
     };
 
@@ -258,11 +511,13 @@ public sealed class JsScope(JsRealm realm) : IDisposable, IAsyncDisposable
         }
     }
 
-    // Marks the scope disposed and returns the op that releases its handles (null if none), its callbacks and its
-    // open batches.
+    // Marks the scope disposed, completes its open streams, and returns the op that releases its handles (null if none),
+    // its callbacks and its open batches.
     // A scope that never reached JS (prerendering) has neither, and touches no transport.
     private (string? Release, int[] Callbacks, JsBatch[] Batches) Take()
     {
+        (string?, int[], JsBatch[]) taken;
+        Action[] open;
         lock (gate)
         {
             if (disposed)
@@ -273,8 +528,15 @@ public sealed class JsScope(JsRealm realm) : IDisposable, IAsyncDisposable
             var handles = Realm.Forget(this);
             int[] owned = [.. callbacks];
             callbacks.Clear();
-            return (handles.Count == 0 ? null : JsOp.Release(handles), owned, [.. batches]);
+            open = [.. streams];
+            streams.Clear();
+            taken = (handles.Count == 0 ? null : JsOp.Release(handles), owned, [.. batches]);
         }
+        foreach (var complete in open)
+        {
+            complete(); // what's queued is still read, then the enumeration ends
+        }
+        return taken;
     }
 
     private void ReleaseListener(int listener)

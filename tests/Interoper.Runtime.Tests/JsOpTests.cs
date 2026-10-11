@@ -18,6 +18,20 @@ public sealed class JsOpTests
         Assert.Equal("""{"op":"snapshot","h":1}""", JsOp.Snapshot(1));
         Assert.Equal("""{"op":"apply","h":1,"value":{"zoom":3}}""", JsOp.Apply(1, w => w.WriteNumber("zoom"u8, 3)));
         Assert.Equal("""{"op":"subscribe","h":1,"method":"on","name":"click","callback":{"$f":2}}""", JsOp.Subscribe(1, "on", "click", 2));
+        Assert.Equal("""{"op":"wrap","value":{"$e":"a1"}}""", JsOp.Wrap(w => JsElement.Write(w, new("a1")))); // R13, R28
+    }
+
+    [Fact] // R24
+    public void SubscribeSendsEventOptionsOnlyWhenTheySetSomething()
+    {
+        const string Plain = """{"op":"subscribe","h":1,"method":"on","name":"click","callback":{"$f":2}}""";
+        Assert.Equal(Plain, JsOp.Subscribe(1, "on", "click", 2, new EventOptions()));
+        Assert.Equal(
+            """{"op":"subscribe","h":1,"method":"on","name":"click","callback":{"$f":2},"options":{"preventDefault":true,"stopPropagation":true,"fields":["x","y"]}}""",
+            JsOp.Subscribe(1, "on", "click", 2, new EventOptions { PreventDefault = true, StopPropagation = true, Fields = ["x", "y"] }));
+        Assert.Equal(
+            """{"op":"subscribe","h":1,"method":"on","name":"click","callback":{"$f":2},"options":{"fields":[]}}""",
+            JsOp.Subscribe(1, "on", "click", 2, new EventOptions { Fields = [] }));
     }
 
     [Fact]

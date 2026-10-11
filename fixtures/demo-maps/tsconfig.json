@@ -8,5 +8,5 @@
     "noEmit": true,
     "types": []
   },
-  "include": ["*.d.ts", "test/*.ts"]
+  "include": ["*.d.ts", "layers/*.d.ts", "ops/*.d.ts", "test/*.ts"]
 }

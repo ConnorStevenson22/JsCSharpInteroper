@@ -6,18 +6,19 @@ namespace Interoper.Generator;
 /// <summary>Enums (R9, numeric), extensible enums (R10) and union structs (R2, R19, R20).</summary>
 internal static class ValueTypeEmitter
 {
-    public static string Emit(TypeMap types, string ns, DataType type) => type switch
+    /// <summary>The type, in its namespace (R27).</summary>
+    public static string Emit(TypeMap types, DataType type) => type switch
     {
-        EnumType { Extensible: true } e => Extensible(ns, e),
-        EnumType { IsNumber: true } e => NumberEnum(ns, e),
-        EnumType e => StringEnum(ns, e),
-        _ => Union(types, ns, (UnionStruct)type),
+        EnumType { Extensible: true } e => Extensible(e.Type.Namespace, e),
+        EnumType { IsNumber: true } e => NumberEnum(e.Type.Namespace, e),
+        EnumType e => StringEnum(e.Type.Namespace, e),
+        _ => Union(types, (UnionStruct)type),
     };
 
     /// <summary>R9: an enum, and a name map between its members and the JS strings.</summary>
     private static string StringEnum(string ns, EnumType e)
     {
-        var w = CodeWriter.CSharp(ns, "System", "System.Text.Json");
+        var w = CodeWriter.CSharp(ns);
         Enum(w, e, _ => "");
         w.Line();
         using (w.Block($"public static partial class {e.Name}Names"))
@@ -28,7 +29,7 @@ internal static class ValueTypeEmitter
                 {
                     w.Line($"{e.Name}.{name} => {Syntax.Literal(value.GetString()!)},");
                 }
-                w.Line("_ => throw new ArgumentOutOfRangeException(nameof(value)),");
+                w.Line("_ => throw new global::System.ArgumentOutOfRangeException(nameof(value)),");
             }
             w.Line();
             using (w.Block($"public static {e.Name} FromJs(string value) => value switch", "};"))
@@ -37,12 +38,12 @@ internal static class ValueTypeEmitter
                 {
                     w.Line($"{Syntax.Literal(value.GetString()!)} => {e.Name}.{name},");
                 }
-                w.Line($"_ => throw new JsonException($\"{e.Name}: unexpected \\\"{{value}}\\\"\"),");
+                w.Line($"_ => throw new global::System.Text.Json.JsonException($\"{e.Name}: unexpected \\\"{{value}}\\\"\"),");
             }
             w.Line();
-            w.Line($"public static void Write(Utf8JsonWriter writer, {e.Name} value) => writer.WriteStringValue(ToJs(value));");
+            w.Line($"public static void Write(global::System.Text.Json.Utf8JsonWriter writer, {e.Name} value) => writer.WriteStringValue(ToJs(value));");
             w.Line();
-            w.Line($"public static {e.Name} Read(ref Utf8JsonReader reader) => FromJs(reader.GetString()!);");
+            w.Line($"public static {e.Name} Read(ref global::System.Text.Json.Utf8JsonReader reader) => FromJs(global::Interoper.JsJson.ReadString(ref reader));");
         }
         return w.ToString();
     }
@@ -69,7 +70,7 @@ internal static class ValueTypeEmitter
     /// <summary>R10: a string wrapper with the known values, which also takes any other.</summary>
     private static string Extensible(string ns, EnumType e)
     {
-        var w = CodeWriter.CSharp(ns, "System.Text.Json");
+        var w = CodeWriter.CSharp(ns);
         using (w.Block($"public readonly partial record struct {e.Name}(string Value)"))
         {
             foreach (var (name, value) in e.Members)
@@ -77,9 +78,9 @@ internal static class ValueTypeEmitter
                 w.Line($"public static {e.Name} {name} {{ get; }} = new({Syntax.Literal(value.GetString()!)});");
             }
             w.Line();
-            w.Line($"public static void Write(Utf8JsonWriter writer, {e.Name} value) => writer.WriteStringValue(value.Value);");
+            w.Line($"public static void Write(global::System.Text.Json.Utf8JsonWriter writer, {e.Name} value) => writer.WriteStringValue(value.Value);");
             w.Line();
-            w.Line($"public static {e.Name} Read(ref Utf8JsonReader reader) => new(reader.GetString()!);");
+            w.Line($"public static {e.Name} Read(ref global::System.Text.Json.Utf8JsonReader reader) => new(global::Interoper.JsJson.ReadString(ref reader));");
             w.Line();
             w.Line("public override string ToString() => Value;");
         }
@@ -90,13 +91,14 @@ internal static class ValueTypeEmitter
     /// R2: a non-boxing struct with a tag per case (0 undefined, 1 null), written by its tag (R20) and read by R19:
     /// the discriminant's value, or the JSON token, and for several object cases a required member only one has.
     /// </summary>
-    private static string Union(TypeMap types, string ns, UnionStruct u)
+    private static string Union(TypeMap types, UnionStruct u)
     {
-        var name = u.Name;
+        var (ns, name) = u.Type;
+        u = u with { Cases = [.. u.Cases.Select(c => c with { Type = c.Type.In(ns) })] }; // R27
         var cases = u.Cases.Select((c, i) => (c.Type, Tag: i + 2, c.Declaration)).ToList();
-        var w = CodeWriter.CSharp(ns, "System", "System.Diagnostics.CodeAnalysis", "System.Runtime.CompilerServices", "System.Text.Json", "Interoper");
-        w.Line("[Union]");
-        using (w.Block($"public readonly partial struct {name} : IJsUnion<{name}>, IEquatable<{name}>"))
+        var w = CodeWriter.CSharp(ns);
+        w.Line("[global::System.Runtime.CompilerServices.Union]");
+        using (w.Block($"public readonly partial struct {name} : global::Interoper.IJsUnion<{name}>, global::System.IEquatable<{name}>"))
         {
             w.Line("private readonly object? _ref;");
             w.Line($"private readonly byte _tag; // 0 = undefined, 1 = null, {string.Join(", ", cases.Select(c => $"{c.Tag} = {c.Type.Name}"))}");
@@ -106,31 +108,31 @@ internal static class ValueTypeEmitter
             {
                 w.Line($"public {name}({type.Name} value) : this(value, {tag}) {{ }}");
             }
-            w.Line($"public {name}(Undefined? value) : this(null, value is null ? (byte)1 : (byte)0) {{ }}");
+            w.Line($"public {name}(global::Interoper.Undefined? value) : this(null, value is null ? (byte)1 : (byte)0) {{ }}");
             w.Line();
-            w.Line($"public static implicit operator {name}(Undefined? value) => new(value);");
+            w.Line($"public static implicit operator {name}(global::Interoper.Undefined? value) => new(value);");
             w.Line();
-            w.Line("public object? Value => _tag switch { 0 => Undefined.Value, 1 => null, _ => _ref };");
+            w.Line("public object? Value => _tag switch { 0 => global::Interoper.Undefined.Value, 1 => null, _ => _ref };");
             w.Line("public bool HasValue => _tag != 1;");
             w.Line("public bool IsUndefined => _tag == 0;");
             w.Line("public bool IsNull => _tag == 1;");
             w.Line();
-            using (w.Block("public bool TryGetValue(out Undefined value)"))
+            using (w.Block("public bool TryGetValue(out global::Interoper.Undefined value)"))
             {
-                w.Line("value = Undefined.Value;");
+                w.Line("value = global::Interoper.Undefined.Value;");
                 w.Line("return _tag == 0;");
             }
             foreach (var (type, tag, _) in cases)
             {
                 w.Line();
-                using (w.Block($"public bool TryGetValue([MaybeNullWhen(false)] out {type.Name} value)"))
+                using (w.Block($"public bool TryGetValue([global::System.Diagnostics.CodeAnalysis.MaybeNullWhen(false)] out {type.Name} value)"))
                 {
                     w.Line($"value = _tag == {tag} ? ({type.Name})_ref! : null;");
                     w.Line($"return _tag == {tag};");
                 }
             }
             w.Line();
-            using (w.Block($"public static void WriteValue(Utf8JsonWriter writer, {name} value)"))
+            using (w.Block($"public static void WriteValue(global::System.Text.Json.Utf8JsonWriter writer, {name} value)"))
             using (w.Block("switch (value._tag)"))
             {
                 foreach (var (type, tag, _) in cases)
@@ -143,38 +145,57 @@ internal static class ValueTypeEmitter
             w.Line();
             w.Line($"public bool Equals({name} other) => _tag == other._tag && Equals(_ref, other._ref);");
             w.Line($"public override bool Equals(object? obj) => obj is {name} other && Equals(other);");
-            w.Line("public override int GetHashCode() => HashCode.Combine(_tag, _ref);");
+            w.Line("public override int GetHashCode() => global::System.HashCode.Combine(_tag, _ref);");
             w.Line("public override string ToString() => _tag switch { 0 => \"undefined\", 1 => \"null\", _ => $\"{_ref}\" };");
         }
         return w.ToString();
     }
 
-    /// <summary>R19: by the discriminant (step 2), or by the JSON token (step 4), objects last, told apart by a required member (step 3).</summary>
+    /// <summary>
+    /// R19: by the discriminant (step 2), or by the JSON token (step 4), objects last, told apart by a required member
+    /// (step 3). A union that is only written can't be read, and one that dropped a case fails on it (R2).
+    /// </summary>
     private static void ReadValue(CodeWriter w, TypeMap types, UnionStruct u)
     {
-        var header = $"public static {u.Name} ReadValue(ref Utf8JsonReader reader)";
+        var header = $"public static {u.Name} ReadValue(ref global::System.Text.Json.Utf8JsonReader reader)";
+        if (u.WrittenOnly)
+        {
+            // R2: it has an entity case, or dropped a case outside the selection and can't tell the others apart, so
+            // it's only a parameter's.
+            w.Line($"{header} => throw new global::System.Text.Json.JsonException(\"{u.Name} is only written (R2)\");");
+            return;
+        }
         if (u.Discriminant is { } discriminant)
         {
             var cases = u.Cases.Select(c => (types.Constant(c.Declaration!, discriminant), c.Type.Name));
-            RecordEmitter.DiscriminantSwitch(w, header, u.Name, discriminant, cases);
+            RecordEmitter.DiscriminantSwitch(w, header, u.Name, discriminant, cases, u.Dropped ? Outside(u) : null);
             return;
         }
         var objects = u.Cases.Where(c => c.Type.Json == JsonKind.Object).ToList();
         var others = u.Cases.Except(objects).ToList();
         using (w.Block($"{header} => reader.TokenType switch", "};"))
         {
+            if (u.Dropped && objects.Count > 0)
+            {
+                // R2: JS sends an instance of a class outside the selection, a dropped case, as a handle; without an
+                // object case, the last arm throws for it.
+                w.Line($"global::System.Text.Json.JsonTokenType.StartObject when global::Interoper.JsJson.HasProperty(reader, \"$h\"u8) => {Outside(u)},");
+            }
             foreach (var c in others)
             {
-                w.Line($"JsonTokenType.{(c.Type.Json == JsonKind.String ? "String" : "StartArray")} => {c.Type.ReadCall("reader", 0)},");
+                w.Line($"global::System.Text.Json.JsonTokenType.{(c.Type.Json == JsonKind.String ? "String" : "StartArray")} => {c.Type.ReadCall("reader", 0)},");
             }
             foreach (var c in objects)
             {
-                var when = objects.Count == 1 ? "" : $" when JsJson.HasProperty(reader, {Syntax.Utf8(Distinct(types, u, c, objects))})";
-                w.Line($"JsonTokenType.StartObject{when} => {c.Type.ReadCall("reader", 0)},");
+                var when = objects.Count == 1 ? "" : $" when global::Interoper.JsJson.HasProperty(reader, {Syntax.Utf8(Distinct(types, u, c, objects))})";
+                w.Line($"global::System.Text.Json.JsonTokenType.StartObject{when} => {c.Type.ReadCall("reader", 0)},");
             }
-            w.Line($"var token => throw new JsonException($\"{u.Name}: unexpected {{token}}\"),");
+            w.Line($"var token => throw new global::System.Text.Json.JsonException($\"{u.Name}: unexpected {{token}}\"),");
         }
     }
+
+    /// <summary>R2: what a reader throws for a handle, a dropped case outside the selection.</summary>
+    private static string Outside(UnionStruct u) => $"throw new global::System.Text.Json.JsonException(\"{u.Name}: a case outside the selection (R2)\")";
 
     /// <summary>
     /// R19 step 3: the first required member of a case's wire form that no other object case has. Selection skips a

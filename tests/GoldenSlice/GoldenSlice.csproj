@@ -6,7 +6,8 @@
 
   <ItemGroup>
     <SupportedPlatform Include="browser" />
-    <ProjectReference Include="..\..\src\Interoper.Runtime\Interoper.Runtime.csproj" />
+    <!-- The components (R28) and DOM elements (R13) need Interoper.Blazor, which brings Interoper.Runtime. -->
+    <ProjectReference Include="..\..\src\Interoper.Blazor\Interoper.Blazor.csproj" />
   </ItemGroup>
 
 </Project>

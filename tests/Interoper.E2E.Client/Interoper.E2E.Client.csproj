@@ -4,6 +4,8 @@
     <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly" />
     <ProjectReference Include="..\..\src\Interoper.Blazor\Interoper.Blazor.csproj" />
     <ProjectReference Include="..\GoldenSlice\GoldenSlice.csproj" />
+    <!-- As a consumer would: every build loads the chatty-await analyzer (IOP3001) -->
+    <ProjectReference Include="..\..\src\Interoper.Analyzers\Interoper.Analyzers.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
     <Compile Include="..\Interoper.Runtime.Tests\TransportContract.cs" Link="TransportContract.cs" />
     <Compile Include="..\Interoper.Runtime.Tests\GoldenSyncSuite.cs" Link="GoldenSyncSuite.cs" />
     <Compile Include="..\Interoper.Runtime.Tests\GoldenAsyncSuite.cs" Link="GoldenAsyncSuite.cs" />

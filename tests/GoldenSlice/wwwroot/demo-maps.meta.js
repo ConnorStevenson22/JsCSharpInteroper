@@ -10,6 +10,15 @@ export default {
     6: { module: "@acme/demo-maps/Marker.js", export: "Marker", name: "Marker", members: ["position", "label", "style"] },
     7: { module: "@acme/demo-maps/core.js", export: "Observable", name: "core.Observable", members: [] },
     8: { module: "@acme/demo-maps/core.js", export: "Emitter", name: "core.Emitter", members: [] },
-    9: { module: "@acme/demo-maps/demo-map.js", export: "DemoMapElement", name: "demo-map.DemoMapElement", members: ["basemap", "zoom", "center"] },
+    9: { module: "@acme/demo-maps/core.js", export: "Collection", name: "core.Collection", members: [] },
+    10: { module: "@acme/demo-maps/demo-map.js", export: "DemoMapElement", name: "demo-map.DemoMapElement", tag: "demo-map", members: ["basemap", "zoom", "center"] },
+    11: { module: "@acme/demo-maps/layers/Layer.js", export: "Layer", name: "layers.Layer", members: ["title", "visible"] },
+    12: { module: "@acme/demo-maps/layers/TileLayer.js", export: "default", name: "layers.TileLayer", members: ["url", "title", "visible"] },
+    13: { module: "@acme/demo-maps/pins.js", export: "Pin", name: "pins.Pin", members: ["position", "label", "style"] },
   },
+  customEvents: [
+    { name: "demo-map-click", fields: ["x", "y", "mapX", "mapY"] },
+    { name: "demo-map-zoom-change", fields: ["zoom"] },
+    { name: "demo-map-ready" },
+  ],
 };

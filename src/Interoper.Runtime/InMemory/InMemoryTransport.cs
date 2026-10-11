@@ -18,10 +18,18 @@ public sealed class InMemoryTransport : IJsSyncTransport, IJsTransport
     private readonly Dictionary<int, InMemoryClass> classes = [];
     private readonly Dictionary<string, int> classIds = [];
     private readonly Dictionary<string, InMemoryObject> modules = [];
+    private readonly Dictionary<string, InMemoryObject> elements = [];
+    private readonly List<string> subscribeOptions = [];
     private int lastId;
     private bool syncOnly; // set while Invoke runs, as invokeSync sets it
 
     public JsCallbacks Callbacks { get; } = new();
+
+    /// <summary>
+    /// The <c>options</c> of each <c>subscribe</c> op that had them (R24), as JSON, in order: what a test checks that
+    /// <c>preventDefault</c> and <c>stopPropagation</c> were sent, since in-memory events rarely have those methods.
+    /// </summary>
+    public IReadOnlyList<string> SubscribeOptions => subscribeOptions;
 
     /// <summary>Registers a fake class, as the generated metadata table would list it.</summary>
     public InMemoryTransport Define(InMemoryClass entry)
@@ -35,6 +43,16 @@ public sealed class InMemoryTransport : IJsSyncTransport, IJsTransport
     public InMemoryTransport DefineModule(string specifier, InMemoryObject exports)
     {
         modules.Add(specifier, exports);
+        return this;
+    }
+
+    /// <summary>
+    /// Registers a fake rendered element: what an <c>ElementReference</c> with this id, <c>{"$e":id}</c>, stands for (R13),
+    /// as interoper.js finds the element with Blazor's capture attribute.
+    /// </summary>
+    public InMemoryTransport DefineElement(string id, InMemoryObject element)
+    {
+        elements.Add(id, element);
         return this;
     }
 
@@ -143,7 +161,7 @@ public sealed class InMemoryTransport : IJsSyncTransport, IJsTransport
                 }
                 return Undefined.Value;
             case "subscribe":
-                return Subscribe(Target(), (string)op["method"]!, Name(), op["callback"]);
+                return Subscribe(Target(), (string)op["method"]!, Name(), op["callback"], op.GetValueOrDefault("options") as Dictionary<string, object?>);
             case "release":
                 ReleaseAll((List<object?>)op["ids"]!);
                 return Undefined.Value;
@@ -151,6 +169,8 @@ public sealed class InMemoryTransport : IJsSyncTransport, IJsTransport
                 return Undefined.Value;
             case "batch":
                 return Batch((List<object?>)op["ops"]!, 0, []);
+            case "wrap":
+                return Wire(op.GetValueOrDefault("value", Undefined.Value));
             default:
                 throw InteroperError($"Unknown op: {op.GetValueOrDefault("op")}");
         }
@@ -206,11 +226,17 @@ public sealed class InMemoryTransport : IJsSyncTransport, IJsTransport
         return rest is Task<object?> next ? await next : rest;
     }
 
-    private JsonNode Subscribe(InMemoryObject target, string method, string name, object? callback)
+    private JsonNode Subscribe(InMemoryObject target, string method, string name, object? callback, Dictionary<string, object?>? options)
     {
-        if (target.Call(method, [name, callback]) is not IDisposable subscription)
+        if (options is not null)
         {
-            throw InteroperError($"{method} returned no dispose()");
+            subscribeOptions.Add(((JsonNode)Wire(options)!).ToJsonString());
+            callback = WithOptions((JsFunction)callback!, options);
+        }
+        var subscription = target.Call(method, [name, callback]);
+        if (subscription is null || DisposerOf(subscription) is null)
+        {
+            throw InteroperError($"{method} returned no dispose() or remove()");
         }
         if (ids.ContainsKey(subscription))
         {
@@ -221,7 +247,47 @@ public sealed class InMemoryTransport : IJsSyncTransport, IJsTransport
         return id;
     }
 
-    // Releases every id, even when a Dispose() throws; then reports what failed.
+    // R24, as interoper.js does: the event's preventDefault() and stopPropagation(), when it has them, then the listener
+    // with the payload projected to the fields.
+    private static JsFunction WithOptions(JsFunction callback, Dictionary<string, object?> options) => args =>
+    {
+        var e = args.FirstOrDefault(Undefined.Value);
+        foreach (var flag in new[] { "preventDefault", "stopPropagation" })
+        {
+            if (options.GetValueOrDefault(flag) is true && Member(e, flag) is JsFunction method)
+            {
+                method();
+            }
+        }
+        if (options.GetValueOrDefault("fields") is List<object?> fields)
+        {
+            args = [Pick(e, fields.Cast<string>()), .. args.Skip(1)];
+        }
+        return callback(args);
+    };
+
+    private static object? Member(object? value, string name) => value switch
+    {
+        Dictionary<string, object?> bag => bag.GetValueOrDefault(name, Undefined.Value),
+        InMemoryObject o => o.Get(name),
+        _ => Undefined.Value,
+    };
+
+    // The named top-level members of an object; any other value as it is.
+    private static object? Pick(object? value, IEnumerable<string> names) =>
+        value is Dictionary<string, object?> or InMemoryObject ? names.ToDictionary(name => name, name => Member(value, name)) : value;
+
+    // What ends a subscription, as interoper.js finds it: an IDisposable's Dispose(), or a plain object's dispose() or
+    // else remove(), as some libraries name it.
+    private static Action? DisposerOf(object subscription) => subscription switch
+    {
+        IDisposable disposable => disposable.Dispose,
+        Dictionary<string, object?> bag when (bag.GetValueOrDefault("dispose") as JsFunction ?? bag.GetValueOrDefault("remove") as JsFunction) is { } end =>
+            () => end(),
+        _ => null,
+    };
+
+    // Releases every id, even when a Dispose() (or remove()) throws; then reports what failed.
     private void ReleaseAll(List<object?> list)
     {
         var errors = new List<Exception>();
@@ -238,7 +304,7 @@ public sealed class InMemoryTransport : IJsSyncTransport, IJsTransport
             }
             try
             {
-                ((IDisposable)value).Dispose();
+                DisposerOf(value)!();
             }
             catch (Exception e)
             {
@@ -296,6 +362,10 @@ public sealed class InMemoryTransport : IJsSyncTransport, IJsTransport
                 return handles.TryGetValue(o["$h"]!.GetValue<int>(), out var value) ? value : throw InteroperError($"Unknown handle: {o["$h"]}");
             case JsonObject o when o.ContainsKey("$f"):
                 return Callback(o["$f"]!.GetValue<int>());
+            case JsonObject o when o.ContainsKey("$e"):
+                var id = o["$e"]!.GetValue<string>();
+                return elements.TryGetValue(id, out var element) ? element
+                    : throw InteroperError($"No element has the capture attribute _bl_{id}; send an ElementReference after its first render");
             case JsonObject o when o.ContainsKey("$c"):
                 var entry = ClassEntry(o["$c"]!.GetValue<int>());
                 if (!entry.Value)

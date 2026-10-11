@@ -13,7 +13,7 @@ view.Zoom = 7;                                    // --api sync: WebAssembly onl
 if (await feature.GetShapeAsync() is PointSnapshot p) { } // unions, undefined/null and the most-derived type, all typed
 ```
 
-**Status:** phase 1 (runtime core) is done; phase 2 (the generator) is next ([plan](docs/plan.md)).
+**Status:** phases 1 (runtime core) and 2 (the generator) are done; phase 3 (the full surface) is under way ([plan](docs/plan.md)).
 
 | Read | For |
 |---|---|

@@ -5,6 +5,9 @@ export interface Subscription {
 
 export type ChangeCallback<T> = (newValue: T, oldValue: T) => void;
 
+/** One value or several: a generic union alias, which each use instantiates (§2). */
+export type OneOrMany<T> = T | T[];
+
 export class Observable {
   /** The runtime class name: `"<module>.<Class>"`, or just `"<Class>"` when the module is named after it. */
   readonly className: string;
@@ -18,6 +21,12 @@ export class Emitter extends Observable {
   on<K extends keyof this["$events"] & string>(type: K, listener: (event: this["$events"][K]) => void): Subscription;
   /** Returns whether any listener ran. */
   emit<K extends keyof this["$events"] & string>(type: K, event: this["$events"][K]): boolean;
+}
+
+// `T` has a default, as many libraries' generic types do (§2).
+export interface Tagged<T = any> {
+  tag: string;
+  value: T;
 }
 
 export interface CollectionChangeEvent<T> {
@@ -38,5 +47,10 @@ export class Collection<T> extends Emitter {
   /** Returns whether the item was found. */
   remove(item: T): boolean;
   find(predicate: (item: T, index: number) => boolean): T | undefined;
+  /**
+   * Calls `callback` for each item, in order; its result is ignored. Like `Array.prototype.forEach`, it also passes
+   * the collection, which the type leaves out.
+   */
+  forEach(callback: (item: T, index: number) => void): void;
   toArray(): T[];
 }

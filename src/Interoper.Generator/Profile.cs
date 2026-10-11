@@ -13,6 +13,12 @@ public sealed record Profile
     /// <summary>The instance property holding the runtime class name (R19 step 1); never bound as a member.</summary>
     public string? RuntimeClassProperty { get; init; }
 
+    /// <summary>
+    /// Prepended to the runtime class names of the package's classes in the metadata module (design §2), for libraries
+    /// whose runtime names start with a namespace of their own; another package's classes keep theirs.
+    /// </summary>
+    public string RuntimeClassPrefix { get; init; } = "";
+
     /// <summary>Classes that also get an <c>XSnapshot</c> record used by value (R16).</summary>
     public IReadOnlyList<string> ValueClasses { get; init; } = [];
 
@@ -24,7 +30,10 @@ public sealed record Profile
     /// </summary>
     public string? Watch { get; init; }
 
-    /// <summary>Generic classes treated as collections of their type argument.</summary>
+    /// <summary>
+    /// Generic classes treated as live collections of their type argument, an entity: emitted generic, with no
+    /// <c>Create</c> and no registry entry, and read with a factory (mapping §2).
+    /// </summary>
     public IReadOnlyList<string> Collections { get; init; } = [];
 
     /// <summary>

@@ -5,6 +5,11 @@ export class Source {
     return { dispose() { throw new Error("dispose failed"); } };
   }
 
+  // Returns an object with neither dispose() nor remove().
+  onNothing() {
+    return {};
+  }
+
   // Returns itself: an object .NET already holds a handle to.
   onSelf() {
     return this;

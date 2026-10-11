@@ -1,0 +1,436 @@
+{
+  "version": 1,
+  "package": {
+    "name": "@acme/demo-maps",
+    "version": "0.0.0"
+  },
+  "modules": [
+    {
+      "specifier": "@acme/demo-widgets/dist/components/zoom-label/element.js",
+      "package": "@acme/demo-widgets",
+      "internal": true,
+      "declarations": [
+        {
+          "kind": "interface",
+          "name": "ZoomLabelCopyDetail",
+          "importFrom": {
+            "module": "@acme/demo-widgets/components/zoom-label"
+          },
+          "members": [
+            {
+              "kind": "property",
+              "name": "text",
+              "type": {
+                "kind": "primitive",
+                "name": "string"
+              }
+            }
+          ]
+        },
+        {
+          "kind": "class",
+          "name": "ZoomLabelElement",
+          "importFrom": {
+            "module": "@acme/demo-widgets/components/zoom-label"
+          },
+          "doc": {
+            "summary": "`<demo-zoom-label>`: a view's zoom as text. Attribute: `precision`. Event: `demo-zoom-label-copy`.\nNo export reaches this file: the package exports `./components/*` as each folder's `index.js`, which re-exports it,\nand the manifest names the element's module by that subpath, `components/zoom-label`."
+          },
+          "extends": {
+            "kind": "ref",
+            "name": "HTMLElement"
+          },
+          "constructors": [
+            {}
+          ],
+          "members": [
+            {
+              "kind": "property",
+              "name": "view",
+              "doc": {
+                "summary": "The view whose zoom it shows."
+              },
+              "type": {
+                "kind": "ref",
+                "name": "MapView",
+                "module": "@acme/demo-maps/MapView.js"
+              }
+            },
+            {
+              "kind": "property",
+              "name": "precision",
+              "doc": {
+                "summary": "Digits after the decimal point."
+              },
+              "type": {
+                "kind": "primitive",
+                "name": "number"
+              }
+            },
+            {
+              "kind": "property",
+              "name": "text",
+              "doc": {
+                "summary": "The zoom, as shown."
+              },
+              "readonly": true,
+              "type": {
+                "kind": "primitive",
+                "name": "string"
+              }
+            },
+            {
+              "kind": "method",
+              "name": "copy",
+              "signatures": [
+                {
+                  "returns": {
+                    "kind": "primitive",
+                    "name": "void"
+                  },
+                  "doc": {
+                    "summary": "Raises `demo-zoom-label-copy` with the text, as a click on the label would."
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "specifier": "@acme/demo-widgets/dist/support/entry.js",
+      "package": "@acme/demo-widgets",
+      "internal": true,
+      "declarations": [
+        {
+          "kind": "interface",
+          "name": "LegendEntry",
+          "members": [
+            {
+              "kind": "property",
+              "name": "title",
+              "type": {
+                "kind": "primitive",
+                "name": "string"
+              }
+            },
+            {
+              "kind": "property",
+              "name": "visible",
+              "type": {
+                "kind": "primitive",
+                "name": "boolean"
+              }
+            }
+          ]
+        },
+        {
+          "kind": "function",
+          "name": "describe",
+          "signatures": [
+            {
+              "params": [
+                {
+                  "name": "entry",
+                  "type": {
+                    "kind": "ref",
+                    "name": "LegendEntry",
+                    "module": "@acme/demo-widgets/dist/support/entry.js"
+                  }
+                }
+              ],
+              "returns": {
+                "kind": "primitive",
+                "name": "string"
+              },
+              "doc": {
+                "summary": "The entry's title, marked when it's hidden."
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "specifier": "@acme/demo-widgets/dist/support/swatch.js",
+      "package": "@acme/demo-widgets",
+      "internal": true,
+      "declarations": [
+        {
+          "kind": "class",
+          "name": "Swatch",
+          "importFrom": {
+            "module": "@acme/demo-widgets"
+          },
+          "doc": {
+            "summary": "A color chip for a legend entry. No export reaches this file; the package's root re-exports it."
+          },
+          "constructors": [
+            {
+              "params": [
+                {
+                  "name": "options",
+                  "type": {
+                    "kind": "object",
+                    "members": [
+                      {
+                        "kind": "property",
+                        "name": "color",
+                        "optional": true,
+                        "type": {
+                          "kind": "primitive",
+                          "name": "string"
+                        }
+                      }
+                    ]
+                  },
+                  "optional": true
+                }
+              ]
+            }
+          ],
+          "members": [
+            {
+              "kind": "property",
+              "name": "color",
+              "type": {
+                "kind": "primitive",
+                "name": "string"
+              }
+            }
+          ]
+        },
+        {
+          "kind": "function",
+          "name": "swatchFor",
+          "importFrom": {
+            "module": "@acme/demo-widgets"
+          },
+          "signatures": [
+            {
+              "params": [
+                {
+                  "name": "entry",
+                  "type": {
+                    "kind": "ref",
+                    "name": "LegendEntry",
+                    "module": "@acme/demo-widgets/dist/support/entry.js"
+                  }
+                }
+              ],
+              "returns": {
+                "kind": "ref",
+                "name": "Swatch",
+                "module": "@acme/demo-widgets/dist/support/swatch.js"
+              },
+              "doc": {
+                "summary": "The swatch of an entry: grey when it's hidden."
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "specifier": "@acme/demo-widgets/legend",
+      "package": "@acme/demo-widgets",
+      "declarations": [
+        {
+          "kind": "interface",
+          "name": "LegendSelectDetail",
+          "members": [
+            {
+              "kind": "property",
+              "name": "index",
+              "type": {
+                "kind": "primitive",
+                "name": "number"
+              }
+            },
+            {
+              "kind": "property",
+              "name": "title",
+              "type": {
+                "kind": "primitive",
+                "name": "string"
+              }
+            }
+          ]
+        },
+        {
+          "kind": "class",
+          "name": "Legend",
+          "doc": {
+            "summary": "`<demo-legend>`: a view's layers as a list. Attribute: `heading`. Event: `demo-legend-select`.\nIts class is declared here and reached through `export *` from the package's root, which the manifest names."
+          },
+          "extends": {
+            "kind": "ref",
+            "name": "HTMLElement"
+          },
+          "constructors": [
+            {}
+          ],
+          "members": [
+            {
+              "kind": "property",
+              "name": "view",
+              "doc": {
+                "summary": "The view whose layers it lists."
+              },
+              "type": {
+                "kind": "ref",
+                "name": "MapView",
+                "module": "@acme/demo-maps/MapView.js"
+              }
+            },
+            {
+              "kind": "property",
+              "name": "heading",
+              "type": {
+                "kind": "primitive",
+                "name": "string"
+              }
+            },
+            {
+              "kind": "property",
+              "name": "entries",
+              "doc": {
+                "summary": "One per layer of the view."
+              },
+              "readonly": true,
+              "type": {
+                "kind": "array",
+                "element": {
+                  "kind": "ref",
+                  "name": "LegendEntry",
+                  "module": "@acme/demo-widgets/dist/support/entry.js"
+                }
+              }
+            },
+            {
+              "kind": "method",
+              "name": "select",
+              "signatures": [
+                {
+                  "params": [
+                    {
+                      "name": "index",
+                      "type": {
+                        "kind": "primitive",
+                        "name": "number"
+                      }
+                    }
+                  ],
+                  "returns": {
+                    "kind": "primitive",
+                    "name": "void"
+                  },
+                  "doc": {
+                    "summary": "Selects an entry, as a click on it would."
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "kind": "function",
+          "name": "legendFor",
+          "signatures": [
+            {
+              "params": [
+                {
+                  "name": "view",
+                  "type": {
+                    "kind": "ref",
+                    "name": "MapView",
+                    "module": "@acme/demo-maps/MapView.js"
+                  }
+                }
+              ],
+              "returns": {
+                "kind": "ref",
+                "name": "Legend",
+                "module": "@acme/demo-widgets/legend"
+              },
+              "doc": {
+                "summary": "A legend for a view."
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "elements": [
+    {
+      "tag": "demo-legend",
+      "class": {
+        "kind": "ref",
+        "name": "Legend",
+        "module": "@acme/demo-widgets/legend"
+      },
+      "doc": {
+        "summary": "A view's layers as a list."
+      },
+      "attributes": [
+        {
+          "name": "heading",
+          "property": "heading",
+          "type": {
+            "kind": "primitive",
+            "name": "string"
+          },
+          "doc": {
+            "default": "\"Legend\""
+          }
+        }
+      ],
+      "events": [
+        {
+          "name": "demo-legend-select",
+          "detail": {
+            "kind": "ref",
+            "name": "LegendSelectDetail",
+            "module": "@acme/demo-widgets/legend"
+          }
+        }
+      ]
+    },
+    {
+      "tag": "demo-zoom-label",
+      "class": {
+        "kind": "ref",
+        "name": "ZoomLabelElement",
+        "module": "@acme/demo-widgets/dist/components/zoom-label/element.js"
+      },
+      "doc": {
+        "summary": "A view's zoom as text."
+      },
+      "attributes": [
+        {
+          "name": "precision",
+          "property": "precision",
+          "type": {
+            "kind": "primitive",
+            "name": "number"
+          },
+          "doc": {
+            "default": "0"
+          }
+        }
+      ],
+      "events": [
+        {
+          "name": "demo-zoom-label-copy",
+          "detail": {
+            "kind": "ref",
+            "name": "ZoomLabelCopyDetail",
+            "module": "@acme/demo-widgets/dist/components/zoom-label/element.js"
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text;
 
 namespace Interoper.Generator;
@@ -7,6 +8,13 @@ public static class Naming
 {
     private static readonly HashSet<string> ObjectMembers =
         ["Equals", "Finalize", "GetHashCode", "GetType", "MemberwiseClone", "ReferenceEquals", "ToString"];
+
+    /// <summary>R25: the spelled names of symbols, for a value with no letters or digits; the longest match wins.</summary>
+    private static readonly (string Symbol, string Name)[] Symbols =
+    [
+        ("<=", "LessThanOrEqual"), (">=", "GreaterThanOrEqual"), ("==", "Equal"), ("!=", "NotEqual"),
+        ("<", "LessThan"), (">", "GreaterThan"), ("=", "Equal"), ("+", "Plus"), ("-", "Minus"), ("*", "Star"), ("/", "Slash"), ("%", "Percent"),
+    ];
 
     /// <summary>
     /// Splits on non-alphanumerics and upper-cases the first letter of each part (<c>"simple-marker"</c> →
@@ -37,6 +45,29 @@ public static class Naming
     public static string Type(string name) => Pascal(name);
 
     /// <summary>
+    /// R27: a module's namespace is the root namespace plus the module's folders in its package, each segment
+    /// PascalCased: <c>@acme/maps/layers/TileLayer.js</c> is in <c>Acme.Maps.Layers</c>. A module of a package other
+    /// than the IR's (<paramref name="otherPackage"/>) has that package's name without its scope first:
+    /// <c>@acme/widgets/legend</c> is in <c>Acme.Maps.Widgets</c>.
+    /// </summary>
+    public static string Namespace(string root, string package, string specifier, bool otherPackage = false)
+    {
+        var folders = PathInPackage(package, specifier).Split('/')[..^1].Select(Pascal);
+        return string.Join(".", (otherPackage ? folders.Prepend(Pascal(package.Split('/')[^1])) : folders).Prepend(root));
+    }
+
+    /// <summary>A module's path in its package: <c>layers/TileLayer.js</c>, or empty for the package's root export.</summary>
+    public static string PathInPackage(string package, string specifier) =>
+        specifier == package ? "" : specifier.StartsWith(package + "/", StringComparison.Ordinal) ? specifier[(package.Length + 1)..] : specifier;
+
+    /// <summary>
+    /// R27: a generated file's path mirrors its namespace below the root namespace: <c>Layers/TileLayer.cs</c> for
+    /// <c>Acme.Maps.Layers.TileLayer</c>.
+    /// </summary>
+    public static string FilePath(string root, string ns, string type) =>
+        ns == root ? $"{type}.cs" : $"{ns[(root.Length + 1)..].Replace('.', '/')}/{type}.cs";
+
+    /// <summary>
     /// R27: an anonymous type is named after its owner (<c>Feature.shape</c> → <c>FeatureShape</c>), and the wider
     /// type of a setter after it, with <c>Input</c> (<c>FeatureShapeInput</c>).
     /// </summary>
@@ -44,15 +75,16 @@ public static class Naming
         ownerType + Pascal(member) + (input ? "Input" : "");
 
     /// <summary>
-    /// R25: enum member names for literal values, in order. The empty string is <c>Empty</c>; a name taken by an
-    /// earlier value gets a numeric suffix, reported as IOP2006.
+    /// R25: enum member names for literal values, in order. A value with no letters or digits spells its symbols
+    /// (<c>"&gt;="</c> → <c>GreaterThanOrEqual</c>, any other character as its code, <c>U0026</c>), and the empty string is
+    /// <c>Empty</c>; a name taken by an earlier value gets a numeric suffix, reported as IOP2006.
     /// </summary>
     public static string[] EnumMembers(IEnumerable<string> values, string subject, ICollection<Diagnostic> diagnostics)
     {
         var taken = new HashSet<string>();
         return [.. values.Select(value =>
         {
-            var name = Pascal(value) is { Length: > 0 } pascal ? pascal : "Empty";
+            var name = Pascal(value) is { Length: > 0 } pascal ? pascal : value.Length > 0 ? Spell(value) : "Empty";
             if (taken.Add(name))
             {
                 return name;
@@ -80,6 +112,25 @@ public static class Naming
         return renamed;
     }
 
+    /// <summary>R25: a value of symbols only, spelled: the longest known symbol at each position, or the character's code.</summary>
+    private static string Spell(string value)
+    {
+        var result = new StringBuilder();
+        for (var i = 0; i < value.Length;)
+        {
+            var match = Symbols.Where(s => string.CompareOrdinal(value, i, s.Symbol, 0, s.Symbol.Length) == 0).OrderByDescending(s => s.Symbol.Length).FirstOrDefault();
+            if (match.Symbol is null)
+            {
+                result.Append(CultureInfo.InvariantCulture, $"U{(int)value[i]:X4}");
+                i++;
+                continue;
+            }
+            result.Append(match.Name);
+            i += match.Symbol.Length;
+        }
+        return result.ToString();
+    }
+
     /// <summary><paramref name="name"/> if it's free, otherwise the first free <c>name2</c>, <c>name3</c>, …; claimed.</summary>
     private static string Unique(HashSet<string> taken, string name)
     {
@@ -90,4 +141,19 @@ public static class Naming
         }
         return unique;
     }
+}
+
+/// <summary>A generated type's namespace and name (R27).</summary>
+internal sealed record TypeName(string Namespace, string Name)
+{
+    /// <summary>Its name with its namespace, as any namespace names it: <c>global::Acme.Maps.Layers.TileLayer</c>.</summary>
+    public string FullName => $"global::{Namespace}.{Name}";
+
+    /// <summary>How code in namespace <paramref name="ns"/> names it: plainly in its own namespace, otherwise <see cref="FullName"/>.</summary>
+    public string In(string ns) => ns == Namespace ? Name : FullName;
+
+    /// <summary>R27: an anonymous type named after this one (<see cref="Naming.OwnedType"/>), in its namespace.</summary>
+    public TypeName Owned(string member) => this with { Name = Naming.OwnedType(Name, member) };
+
+    public override string ToString() => $"{Namespace}.{Name}";
 }

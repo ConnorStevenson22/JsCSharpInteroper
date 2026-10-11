@@ -1,5 +1,6 @@
 <Solution>
   <Folder Name="/src/">
+    <Project Path="src/Interoper.Analyzers/Interoper.Analyzers.csproj" />
     <Project Path="src/Interoper.Blazor/Interoper.Blazor.csproj" />
     <Project Path="src/Interoper.Generator/Interoper.Generator.csproj" />
     <Project Path="src/Interoper.Runtime/Interoper.Runtime.csproj" />

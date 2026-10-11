@@ -171,9 +171,10 @@ public sealed class JsRealm(Func<Task<IJsTransport>> start, JsClassRegistry clas
 
     /// <summary>
     /// The live object for a handle, now also owned by <paramref name="scope"/>: the cached one, or a new one of the
-    /// class's most-derived type.
+    /// class's most-derived type, or of the type <paramref name="create"/> makes (a generic one, which the registry
+    /// can't make).
     /// </summary>
-    internal JsObject Wrap(JsScope scope, int handle, int classId)
+    internal JsObject Wrap(JsScope scope, int handle, int classId, Func<JsRealm, int, JsObject>? create = null)
     {
         lock (objects)
         {
@@ -183,7 +184,7 @@ public sealed class JsRealm(Func<Task<IJsTransport>> start, JsClassRegistry clas
             {
                 return live;
             }
-            var created = classes.Create(this, handle, classId);
+            var created = create is null ? classes.Create(this, handle, classId) : create(this, handle);
             entry.Object = new(created);
             return created;
         }

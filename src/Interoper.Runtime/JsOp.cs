@@ -75,8 +75,9 @@ public static class JsOp
 
     /// <summary>
     /// <c>target[method](name, callback)</c>, which returns a subscription (R24); see <see cref="JsScope.Subscribe{T}"/>.
+    /// <paramref name="options"/> go as <c>options</c>, left out when they set nothing.
     /// </summary>
-    public static string Subscribe(int handle, string method, string name, int callback) => Write(w =>
+    public static string Subscribe(int handle, string method, string name, int callback, EventOptions? options = null) => Write(w =>
     {
         w.WriteString("op"u8, "subscribe"u8);
         w.WriteNumber("h"u8, handle);
@@ -85,6 +86,39 @@ public static class JsOp
         w.WriteStartObject("callback"u8);
         w.WriteNumber("$f"u8, callback);
         w.WriteEndObject();
+        if (options is { } o && (o.PreventDefault || o.StopPropagation || o.Fields is not null))
+        {
+            w.WriteStartObject("options"u8);
+            if (o.PreventDefault)
+            {
+                w.WriteBoolean("preventDefault"u8, true);
+            }
+            if (o.StopPropagation)
+            {
+                w.WriteBoolean("stopPropagation"u8, true);
+            }
+            if (o.Fields is { } fields)
+            {
+                w.WriteStartArray("fields"u8);
+                foreach (var field in fields)
+                {
+                    w.WriteStringValue(field);
+                }
+                w.WriteEndArray();
+            }
+            w.WriteEndObject();
+        }
+    });
+
+    /// <summary>
+    /// Returns <paramref name="value"/> in wire form, revived as any value is (design §3.4): how a component gets its
+    /// element's handle from an <c>ElementReference</c> (<c>{"$e":id}</c>, R13, R28).
+    /// </summary>
+    public static string Wrap(Action<Utf8JsonWriter> value) => Write(w =>
+    {
+        w.WriteString("op"u8, "wrap"u8);
+        w.WritePropertyName("value"u8);
+        value(w);
     });
 
     // The typed fast paths as plain ops (JsRuntimeTransport, InMemoryTransport, batches), and a scope's release.
@@ -95,7 +129,11 @@ public static class JsOp
 
     internal static string Set(int handle, string name, bool value) => Set(handle, name, w => w.WriteBooleanValue(value));
 
-    internal static string Load(IEnumerable<string> modules) => Write(w =>
+    /// <summary>
+    /// Imports modules (through the async seam only, design §3.5): how a component loads its element's module, so
+    /// the element is defined before it's wrapped (R28).
+    /// </summary>
+    public static string Load(IEnumerable<string> modules) => Write(w =>
     {
         w.WriteString("op"u8, "load"u8);
         w.WriteStartArray("modules"u8);

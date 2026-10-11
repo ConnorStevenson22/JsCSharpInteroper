@@ -9,6 +9,7 @@ const UNDEFINED = Object.freeze({ $u: 1 });
 let nextId = 1;
 let meta = { classes: {} };
 let classIdsByName = new Map();
+let classIdsByTag = new Map(); // a custom element's localName -> its class id
 let callbackSink = null;
 let fastPathError = null; // { error } until takeError reads it
 let syncOnly = false; // set while invokeSync runs: nothing may start async work
@@ -29,16 +30,43 @@ class BatchError extends Error {
 // --- Start ---
 
 // metadataSpecifier: a module whose default export is the generated metadata table:
-//   { classNameProperty: "className", classes: { [classId]: { module, export, name, value?, members } } }
+//   { classNameProperty: "className", classes: { [classId]: { module?, export?, name, tag?, value?, members } },
+//     customEvents?: [{ name, fields? }] }
 // sink(callbackId, argsJson) calls a .NET callback and returns its result as JSON text ("null" for null), null or
 // nothing for undefined, or a Promise of either.
-// Value-like classes are imported here so `$c` can be built synchronously, in sync mode too.
+// Value-like classes are imported here so `$c` can be built synchronously, in sync mode too. A custom element's module
+// is loaded by its component (R28), or by the sync-mode registry's preload list.
 export async function start(metadataSpecifier, sink) {
   meta = (await import(metadataSpecifier)).default;
-  classIdsByName = new Map(Object.entries(meta.classes).map(([id, c]) => [c.name, Number(id)]));
+  const classes = Object.entries(meta.classes);
+  classIdsByName = new Map(classes.map(([id, c]) => [c.name, Number(id)]));
+  classIdsByTag = new Map(classes.filter(([, c]) => c.tag).map(([id, c]) => [c.tag, Number(id)]));
   callbackSink = sink;
-  const valueClasses = Object.keys(meta.classes).filter((id) => meta.classes[id].value);
-  await Promise.all(valueClasses.map((id) => load(meta.classes[id].module)));
+  registerCustomEvents(meta.customEvents ?? []);
+  // A class that can't be imported has no module (design §3.5).
+  const preloaded = new Set(classes.filter(([, c]) => c.value && c.module).map(([, c]) => c.module));
+  await Promise.all([...preloaded].map(load));
+}
+
+// R28: the components' custom events, registered with Blazor so its event pipeline delivers them, with the detail as
+// wire JSON (projected to `fields`) in JsEventArgs.Json. Once per page, whichever transport starts first, since Blazor
+// refuses a second registration; skipped without Blazor (as under node --test). Blazor names an event in lower case,
+// and refuses a browser event name equal to its own, so that's given only when it differs.
+const registeredEvents = Symbol.for("interoper.customEvents");
+
+function registerCustomEvents(events) {
+  const blazor = globalThis.Blazor;
+  if (typeof blazor?.registerCustomEventType !== "function") return;
+  const registered = (globalThis[registeredEvents] ??= new Set());
+  for (const { name, fields } of events) {
+    const eventName = name.toLowerCase();
+    if (registered.has(eventName)) continue;
+    registered.add(eventName);
+    blazor.registerCustomEventType(eventName, {
+      ...(eventName === name ? {} : { browserEventName: name }),
+      createEventArgs: (event) => ({ json: JSON.stringify(wireItem(toWire(fields ? pick(event.detail, fields) : event.detail, true))) }),
+    });
+  }
 }
 
 // The Server/Hybrid form of start: callbacks go through one DotNetObjectReference.
@@ -148,8 +176,9 @@ const ops = {
   snapshot: (op) => toData(target(op.h)),
   apply: (op) => { const o = target(op.h); for (const [k, v] of Object.entries(op.value)) o[k] = v; },
   subscribe: (op) => {
-    const subscription = target(op.h)[op.method](op.name, op.callback);
-    if (typeof subscription?.dispose !== "function") throw new InteroperError(`${op.method} returned no dispose()`);
+    const listener = op.options ? withOptions(op.callback, op.options) : op.callback;
+    const subscription = target(op.h)[op.method](op.name, listener);
+    if (!disposerOf(subscription)) throw new InteroperError(`${op.method} returned no dispose() or remove()`);
     // An object .NET already holds is not a subscription; releasing it must not dispose it.
     if (ids.has(subscription)) throw new InteroperError(`${op.method} returned an object that already has a handle`);
     const id = handleOf(subscription);
@@ -162,12 +191,32 @@ const ops = {
     return Promise.all(op.modules.map(load)).then(() => undefined);
   },
   batch: (op) => runBatch(op.ops),
+  wrap: (op) => toWire(op.value),
 };
 
 function run(op) {
   const handler = Object.hasOwn(ops, op.op) && ops[op.op];
   if (!handler) throw new InteroperError(`Unknown op: ${op.op}`);
   return handler(op);
+}
+
+// R24: what JS does before an event reaches .NET, which can't do it in time on Server. Library events with these
+// methods work like DOM events.
+function withOptions(callback, o) {
+  return (event, ...rest) => {
+    if (o.preventDefault) event?.preventDefault?.();
+    if (o.stopPropagation) event?.stopPropagation?.();
+    return callback(o.fields ? pick(event, o.fields) : event, ...rest);
+  };
+}
+
+// The named top-level members of an object, so nothing else crosses the wire; any other value, an array included, as
+// it is (as InMemoryTransport does).
+function pick(value, names) {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return value;
+  const out = {};
+  for (const name of names) out[name] = value[name];
+  return out;
 }
 
 // Runs ops that return nothing (writes, void calls) in order. A Promise is awaited before the next op, or
@@ -199,7 +248,7 @@ function runBatch(list) {
   return next(0);
 }
 
-// Releases every id, even when a subscription's dispose() throws; then reports what failed.
+// Releases every id, even when a subscription's dispose() (or remove()) throws; then reports what failed.
 function releaseAll(list) {
   const errors = [];
   for (const id of list) {
@@ -209,13 +258,20 @@ function releaseAll(list) {
     ids.delete(object);
     if (!subscriptions.delete(id)) continue;
     try {
-      object.dispose();
+      disposerOf(object).call(object);
     } catch (e) {
       errors.push(e);
     }
   }
   if (errors.length === 1) throw errors[0];
   if (errors.length > 1) throw new AggregateError(errors, `${errors.length} dispose() calls failed`);
+}
+
+// What ends a subscription: its dispose(), or else its remove(), as some libraries name it; undefined if neither.
+function disposerOf(subscription) {
+  if (typeof subscription?.dispose === "function") return subscription.dispose;
+  if (typeof subscription?.remove === "function") return subscription.remove;
+  return undefined;
 }
 
 // --- Handles and classes ---
@@ -246,9 +302,18 @@ function classEntry(classId) {
   return entry;
 }
 
-// The most-derived class id, from the runtime class-name property; 0 if unknown.
+// The most-derived class id: an element's by its tag, since a runtime class-name property such as `className` means
+// something else on an element (its CSS classes, R28); otherwise from that property; 0 if unknown.
 function classIdOf(object) {
+  if (globalThis.Element && object instanceof globalThis.Element) return classIdsByTag.get(object.localName) ?? 0;
   return classIdsByName.get(object[meta.classNameProperty]) ?? 0;
+}
+
+// R13: the element Blazor rendered for an ElementReference, by the capture attribute it gives every @ref element.
+function element(id) {
+  const found = globalThis.document?.querySelector(`[_bl_${id}]`);
+  if (!found) throw new InteroperError(`No element has the capture attribute _bl_${id}; send an ElementReference after its first render`);
+  return found;
 }
 
 function load(specifier) {
@@ -277,6 +342,7 @@ function revive(_key, value) {
   if (Object.hasOwn(value, "$u")) return undefined;
   if (Object.hasOwn(value, "$h")) return target(value.$h);
   if (Object.hasOwn(value, "$f")) return callback(value.$f);
+  if (Object.hasOwn(value, "$e")) return element(value.$e);
   if (Object.hasOwn(value, "$c")) {
     const { $c, ...bag } = value;
     const entry = classEntry($c);

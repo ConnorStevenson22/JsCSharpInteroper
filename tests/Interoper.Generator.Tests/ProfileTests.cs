@@ -23,6 +23,8 @@ public sealed class ProfileTests
         var profile = Profile.Parse("""{ "package": "@acme/maps" }""");
         Assert.Null(profile.Include);
         Assert.Empty(profile.ValueClasses);
+        Assert.Equal("", profile.RuntimeClassPrefix);
+        Assert.Equal("acme.", Profile.Parse("""{ "package": "@acme/maps", "runtimeClassPrefix": "acme." }""").RuntimeClassPrefix);
         Assert.Throws<JsonException>(() => Profile.Parse("{}"));
     }
 

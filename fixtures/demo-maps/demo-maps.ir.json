@@ -517,6 +517,26 @@
               }
             },
             {
+              "kind": "property",
+              "name": "layers",
+              "doc": {
+                "summary": "Drawn in order, the first at the bottom."
+              },
+              "readonly": true,
+              "type": {
+                "kind": "ref",
+                "name": "Collection",
+                "module": "@acme/demo-maps/core.js",
+                "args": [
+                  {
+                    "kind": "ref",
+                    "name": "Layer",
+                    "module": "@acme/demo-maps/layers/Layer.js"
+                  }
+                ]
+              }
+            },
+            {
               "kind": "method",
               "name": "screenToMap",
               "signatures": [
@@ -962,6 +982,34 @@
           }
         },
         {
+          "kind": "alias",
+          "name": "OneOrMany",
+          "doc": {
+            "summary": "One value or several: a generic union alias, which each use instantiates (§2)."
+          },
+          "typeParameters": [
+            {
+              "name": "T"
+            }
+          ],
+          "type": {
+            "kind": "union",
+            "types": [
+              {
+                "kind": "typeParameter",
+                "name": "T"
+              },
+              {
+                "kind": "array",
+                "element": {
+                  "kind": "typeParameter",
+                  "name": "T"
+                }
+              }
+            ]
+          }
+        },
+        {
           "kind": "class",
           "name": "Observable",
           "constructors": [
@@ -1158,6 +1206,37 @@
                   }
                 }
               ]
+            }
+          ]
+        },
+        {
+          "kind": "interface",
+          "name": "Tagged",
+          "typeParameters": [
+            {
+              "name": "T",
+              "default": {
+                "kind": "primitive",
+                "name": "any"
+              }
+            }
+          ],
+          "members": [
+            {
+              "kind": "property",
+              "name": "tag",
+              "type": {
+                "kind": "primitive",
+                "name": "string"
+              }
+            },
+            {
+              "kind": "property",
+              "name": "value",
+              "type": {
+                "kind": "typeParameter",
+                "name": "T"
+              }
             }
           ]
         },
@@ -1380,6 +1459,49 @@
                         "name": "undefined"
                       }
                     ]
+                  }
+                }
+              ]
+            },
+            {
+              "kind": "method",
+              "name": "forEach",
+              "signatures": [
+                {
+                  "params": [
+                    {
+                      "name": "callback",
+                      "type": {
+                        "kind": "function",
+                        "params": [
+                          {
+                            "name": "item",
+                            "type": {
+                              "kind": "typeParameter",
+                              "name": "T"
+                            }
+                          },
+                          {
+                            "name": "index",
+                            "type": {
+                              "kind": "primitive",
+                              "name": "number"
+                            }
+                          }
+                        ],
+                        "returns": {
+                          "kind": "primitive",
+                          "name": "void"
+                        }
+                      }
+                    }
+                  ],
+                  "returns": {
+                    "kind": "primitive",
+                    "name": "void"
+                  },
+                  "doc": {
+                    "summary": "Calls `callback` for each item, in order; its result is ignored. Like `Array.prototype.forEach`, it also passes\nthe collection, which the type leaves out."
                   }
                 }
               ]
@@ -1986,6 +2108,241 @@
       ]
     },
     {
+      "specifier": "@acme/demo-maps/layers/Layer.js",
+      "declarations": [
+        {
+          "kind": "class",
+          "name": "Layer",
+          "doc": {
+            "summary": "Abstract: only its subclasses are constructed."
+          },
+          "abstract": true,
+          "extends": {
+            "kind": "ref",
+            "name": "Observable",
+            "module": "@acme/demo-maps/core.js"
+          },
+          "constructors": [
+            {}
+          ],
+          "members": [
+            {
+              "kind": "property",
+              "name": "title",
+              "type": {
+                "kind": "union",
+                "types": [
+                  {
+                    "kind": "primitive",
+                    "name": "string"
+                  },
+                  {
+                    "kind": "primitive",
+                    "name": "null"
+                  }
+                ]
+              }
+            },
+            {
+              "kind": "property",
+              "name": "visible",
+              "type": {
+                "kind": "primitive",
+                "name": "boolean"
+              }
+            },
+            {
+              "kind": "method",
+              "name": "clone",
+              "signatures": [
+                {
+                  "returns": {
+                    "kind": "ref",
+                    "name": "Layer",
+                    "module": "@acme/demo-maps/layers/Layer.js"
+                  },
+                  "doc": {
+                    "summary": "A copy, of the same class."
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "specifier": "@acme/demo-maps/layers/TileLayer.js",
+      "declarations": [
+        {
+          "kind": "class",
+          "name": "TileLayer",
+          "export": "default",
+          "doc": {
+            "summary": "The module's default export, as many libraries' one-class modules have."
+          },
+          "extends": {
+            "kind": "ref",
+            "name": "Layer",
+            "module": "@acme/demo-maps/layers/Layer.js"
+          },
+          "constructors": [
+            {
+              "params": [
+                {
+                  "name": "options",
+                  "type": {
+                    "kind": "object",
+                    "members": [
+                      {
+                        "kind": "property",
+                        "name": "title",
+                        "optional": true,
+                        "inherited": true,
+                        "type": {
+                          "kind": "union",
+                          "types": [
+                            {
+                              "kind": "primitive",
+                              "name": "string"
+                            },
+                            {
+                              "kind": "primitive",
+                              "name": "null"
+                            }
+                          ]
+                        }
+                      },
+                      {
+                        "kind": "property",
+                        "name": "url",
+                        "optional": true,
+                        "inherited": true,
+                        "type": {
+                          "kind": "primitive",
+                          "name": "string"
+                        }
+                      },
+                      {
+                        "kind": "property",
+                        "name": "visible",
+                        "optional": true,
+                        "inherited": true,
+                        "type": {
+                          "kind": "primitive",
+                          "name": "boolean"
+                        }
+                      }
+                    ]
+                  },
+                  "optional": true
+                }
+              ]
+            }
+          ],
+          "members": [
+            {
+              "kind": "property",
+              "name": "url",
+              "doc": {
+                "summary": "The URL template of the tiles."
+              },
+              "type": {
+                "kind": "primitive",
+                "name": "string"
+              }
+            },
+            {
+              "kind": "property",
+              "name": "tileSize",
+              "doc": {
+                "summary": "The tiles' edge in pixels. The setter also takes one per zoom level, a union with a value-type case (R2), which\nisn't mapped: the getter is kept, read-only (§5)."
+              },
+              "type": {
+                "kind": "primitive",
+                "name": "number"
+              },
+              "writeType": {
+                "kind": "ref",
+                "name": "OneOrMany",
+                "module": "@acme/demo-maps/core.js",
+                "args": [
+                  {
+                    "kind": "primitive",
+                    "name": "number"
+                  }
+                ]
+              }
+            },
+            {
+              "kind": "property",
+              "name": "emphasized",
+              "doc": {
+                "summary": "The markers drawn on top of the tiles."
+              },
+              "readonly": true,
+              "type": {
+                "kind": "array",
+                "element": {
+                  "kind": "ref",
+                  "name": "Marker",
+                  "module": "@acme/demo-maps/Marker.js"
+                }
+              }
+            },
+            {
+              "kind": "method",
+              "name": "emphasize",
+              "signatures": [
+                {
+                  "params": [
+                    {
+                      "name": "markers",
+                      "type": {
+                        "kind": "ref",
+                        "name": "OneOrMany",
+                        "module": "@acme/demo-maps/core.js",
+                        "args": [
+                          {
+                            "kind": "ref",
+                            "name": "Marker",
+                            "module": "@acme/demo-maps/Marker.js"
+                          }
+                        ]
+                      }
+                    }
+                  ],
+                  "returns": {
+                    "kind": "primitive",
+                    "name": "void"
+                  },
+                  "doc": {
+                    "summary": "Highlights one marker or several: `OneOrMany<Marker>` is `Marker | Marker[]` (§2)."
+                  }
+                }
+              ]
+            },
+            {
+              "kind": "method",
+              "name": "clone",
+              "signatures": [
+                {
+                  "returns": {
+                    "kind": "ref",
+                    "name": "TileLayer",
+                    "module": "@acme/demo-maps/layers/TileLayer.js"
+                  },
+                  "doc": {
+                    "summary": "Redeclared with the subclass's type."
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
       "specifier": "@acme/demo-maps/measure.js",
       "declarations": [
         {
@@ -2014,6 +2371,398 @@
               "returns": {
                 "kind": "primitive",
                 "name": "number"
+              }
+            }
+          ]
+        },
+        {
+          "kind": "function",
+          "name": "perimeter",
+          "signatures": [
+            {
+              "params": [
+                {
+                  "name": "points",
+                  "type": {
+                    "kind": "array",
+                    "element": {
+                      "kind": "ref",
+                      "name": "Point",
+                      "module": "@acme/demo-maps/geometry.js"
+                    }
+                  },
+                  "rest": true
+                }
+              ],
+              "returns": {
+                "kind": "primitive",
+                "name": "number"
+              },
+              "doc": {
+                "summary": "The length of the closed path through the points: the last joins the first."
+              }
+            }
+          ]
+        },
+        {
+          "kind": "alias",
+          "name": "Measurable",
+          "doc": {
+            "summary": "Value-like shapes and an entity: written, never read back (R2, R17)."
+          },
+          "type": {
+            "kind": "union",
+            "types": [
+              {
+                "kind": "ref",
+                "name": "Point",
+                "module": "@acme/demo-maps/geometry.js"
+              },
+              {
+                "kind": "ref",
+                "name": "Polygon",
+                "module": "@acme/demo-maps/geometry.js"
+              },
+              {
+                "kind": "ref",
+                "name": "Marker",
+                "module": "@acme/demo-maps/Marker.js"
+              }
+            ]
+          }
+        },
+        {
+          "kind": "function",
+          "name": "describe",
+          "signatures": [
+            {
+              "params": [
+                {
+                  "name": "target",
+                  "type": {
+                    "kind": "ref",
+                    "name": "Measurable",
+                    "module": "@acme/demo-maps/measure.js"
+                  }
+                }
+              ],
+              "returns": {
+                "kind": "primitive",
+                "name": "string"
+              },
+              "doc": {
+                "summary": "The shape's `type`, or \"marker\" and its label."
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "specifier": "@acme/demo-maps/ops/a.js",
+      "declarations": [
+        {
+          "kind": "interface",
+          "name": "Options",
+          "doc": {
+            "summary": "Sibling modules `ops/a` and `ops/b` each export an `Options` and an `execute` (R27)."
+          },
+          "members": [
+            {
+              "kind": "property",
+              "name": "scale",
+              "optional": true,
+              "type": {
+                "kind": "primitive",
+                "name": "number"
+              }
+            }
+          ]
+        },
+        {
+          "kind": "function",
+          "name": "execute",
+          "signatures": [
+            {
+              "params": [
+                {
+                  "name": "x",
+                  "type": {
+                    "kind": "primitive",
+                    "name": "number"
+                  }
+                },
+                {
+                  "name": "options",
+                  "type": {
+                    "kind": "ref",
+                    "name": "Options",
+                    "module": "@acme/demo-maps/ops/a.js"
+                  },
+                  "optional": true
+                }
+              ],
+              "returns": {
+                "kind": "primitive",
+                "name": "number"
+              },
+              "doc": {
+                "summary": "`x * options.scale` (1 by default)."
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "specifier": "@acme/demo-maps/ops/b.js",
+      "declarations": [
+        {
+          "kind": "interface",
+          "name": "Options",
+          "doc": {
+            "summary": "The same names as `ops/a`, with other members (R27)."
+          },
+          "members": [
+            {
+              "kind": "property",
+              "name": "offset",
+              "optional": true,
+              "type": {
+                "kind": "primitive",
+                "name": "number"
+              }
+            }
+          ]
+        },
+        {
+          "kind": "function",
+          "name": "execute",
+          "signatures": [
+            {
+              "params": [
+                {
+                  "name": "x",
+                  "type": {
+                    "kind": "primitive",
+                    "name": "number"
+                  }
+                },
+                {
+                  "name": "options",
+                  "type": {
+                    "kind": "ref",
+                    "name": "Options",
+                    "module": "@acme/demo-maps/ops/b.js"
+                  },
+                  "optional": true
+                }
+              ],
+              "returns": {
+                "kind": "primitive",
+                "name": "number"
+              },
+              "doc": {
+                "summary": "`x + options.offset` (0 by default)."
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "specifier": "@acme/demo-maps/pins.js",
+      "declarations": [
+        {
+          "kind": "interface",
+          "name": "PinDragEvent",
+          "members": [
+            {
+              "kind": "property",
+              "name": "dx",
+              "type": {
+                "kind": "primitive",
+                "name": "number"
+              }
+            },
+            {
+              "kind": "property",
+              "name": "dy",
+              "type": {
+                "kind": "primitive",
+                "name": "number"
+              }
+            }
+          ]
+        },
+        {
+          "kind": "interface",
+          "name": "PinEvents",
+          "members": [
+            {
+              "kind": "property",
+              "name": "drag",
+              "type": {
+                "kind": "ref",
+                "name": "PinDragEvent",
+                "module": "@acme/demo-maps/pins.js"
+              }
+            }
+          ]
+        },
+        {
+          "kind": "class",
+          "name": "Pin",
+          "doc": {
+            "summary": "A marker with the `Draggable` mixin: its base is still `Marker`."
+          },
+          "extends": {
+            "kind": "ref",
+            "name": "Marker",
+            "module": "@acme/demo-maps/Marker.js"
+          },
+          "constructors": [
+            {
+              "params": [
+                {
+                  "name": "options",
+                  "type": {
+                    "kind": "ref",
+                    "name": "MarkerOptions",
+                    "module": "@acme/demo-maps/Marker.js"
+                  },
+                  "optional": true
+                }
+              ]
+            }
+          ],
+          "members": [
+            {
+              "kind": "property",
+              "name": "meta",
+              "doc": {
+                "summary": "Anything the app keeps with the pin."
+              },
+              "type": {
+                "kind": "primitive",
+                "name": "any"
+              }
+            },
+            {
+              "kind": "method",
+              "name": "on",
+              "inherited": true,
+              "signatures": [
+                {
+                  "typeParameters": [
+                    {
+                      "name": "K",
+                      "constraint": {
+                        "kind": "intersection",
+                        "types": [
+                          {
+                            "kind": "unresolved",
+                            "text": "keyof this[\"$events\"]"
+                          },
+                          {
+                            "kind": "primitive",
+                            "name": "string"
+                          }
+                        ]
+                      }
+                    }
+                  ],
+                  "params": [
+                    {
+                      "name": "type",
+                      "type": {
+                        "kind": "typeParameter",
+                        "name": "K"
+                      }
+                    },
+                    {
+                      "name": "listener",
+                      "type": {
+                        "kind": "function",
+                        "params": [
+                          {
+                            "name": "event",
+                            "type": {
+                              "kind": "unresolved",
+                              "text": "PinEvents[K]"
+                            }
+                          }
+                        ],
+                        "returns": {
+                          "kind": "primitive",
+                          "name": "void"
+                        }
+                      }
+                    }
+                  ],
+                  "returns": {
+                    "kind": "object",
+                    "members": [
+                      {
+                        "kind": "method",
+                        "name": "remove",
+                        "signatures": [
+                          {
+                            "returns": {
+                              "kind": "primitive",
+                              "name": "void"
+                            }
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  "doc": {
+                    "summary": "Its subscriptions have `remove()`, not `dispose()`."
+                  }
+                }
+              ]
+            },
+            {
+              "kind": "method",
+              "name": "dragBy",
+              "inherited": true,
+              "signatures": [
+                {
+                  "params": [
+                    {
+                      "name": "dx",
+                      "type": {
+                        "kind": "primitive",
+                        "name": "number"
+                      }
+                    },
+                    {
+                      "name": "dy",
+                      "type": {
+                        "kind": "primitive",
+                        "name": "number"
+                      }
+                    }
+                  ],
+                  "returns": {
+                    "kind": "primitive",
+                    "name": "void"
+                  },
+                  "doc": {
+                    "summary": "Moves the position and emits `drag`."
+                  }
+                }
+              ]
+            }
+          ],
+          "events": [
+            {
+              "name": "drag",
+              "type": {
+                "kind": "ref",
+                "name": "PinDragEvent",
+                "module": "@acme/demo-maps/pins.js"
               }
             }
           ]
@@ -2801,6 +3550,11 @@
         {
           "name": "basemap",
           "property": "basemap",
+          "type": {
+            "kind": "ref",
+            "name": "Basemap",
+            "module": "@acme/demo-maps/MapView.js"
+          },
           "doc": {
             "default": "\"plain\""
           }
@@ -2808,6 +3562,10 @@
         {
           "name": "zoom",
           "property": "zoom",
+          "type": {
+            "kind": "primitive",
+            "name": "number"
+          },
           "doc": {
             "default": "1"
           }

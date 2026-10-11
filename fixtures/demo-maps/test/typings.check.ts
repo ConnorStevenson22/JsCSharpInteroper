@@ -2,6 +2,11 @@
 import { MapView, type FlyToTarget } from "../MapView.js";
 import { Marker } from "../Marker.js";
 import { Point, type Shape } from "../geometry.js";
+import TileLayer from "../layers/TileLayer.js";
+import { describe as describeTarget, perimeter } from "../measure.js";
+import { Pin } from "../pins.js";
+import * as a from "../ops/a.js";
+import * as b from "../ops/b.js";
 import type { Style } from "../styles.js";
 
 const view = new MapView({ zoom: 3, basemap: "3d-relief", cursor: "grab" });
@@ -10,6 +15,7 @@ view.on("click", (event) => event.mapPoint.x satisfies number);
 view.on("dblclick", () => {});
 view.watch("zoom", (zoom, old) => zoom - old);
 view.markers.on("change", ({ added }) => added.map((m) => m.displayLabel));
+view.markers.forEach((m, index) => void (m.position.x + index));
 
 const marker = new Marker({ position: [1, 2], labelFormatter: (m) => `${m.position.x}` });
 marker.position = [3, 4];
@@ -31,6 +37,27 @@ function describe(shape: Shape): string {
 function width(style: Style): number | undefined {
   return style.type === "stroke" ? style.width : undefined;
 }
+
+const tile: TileLayer = new TileLayer({ url: "u" }).clone(); // the redeclared clone returns the subclass
+view.layers.add(tile);
+perimeter(position, ...targets.filter((t): t is Point => t instanceof Point)) satisfies number;
+
+// A mixin keeps its named base: a Pin is a Marker, with the mixin's members.
+const pin = new Pin({ position: [0, 0] });
+view.selected = pin;
+pin.on("drag", ({ dx, dy }) => dx + dy).remove();
+// @ts-expect-error: not in PinEvents
+pin.on("click", () => {});
+pin.dragBy(1, 2);
+pin.meta = { anything: true };
+describeTarget(pin) satisfies string;
+describeTarget(position) satisfies string;
+
+// Sibling modules' Options are different types.
+a.execute(1, { scale: 2 });
+b.execute(1, { offset: 2 });
+// @ts-expect-error: ops/b's Options has no scale
+b.execute(1, { scale: 2 });
 
 void pair;
 void describe;

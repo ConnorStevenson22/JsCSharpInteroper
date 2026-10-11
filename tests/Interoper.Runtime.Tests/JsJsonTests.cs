@@ -5,6 +5,21 @@ namespace Interoper.Runtime.Tests;
 
 public class JsJsonTests
 {
+    /// <summary>A handle, as JS sends an instance of a class outside the selection: a case a union dropped (R2).</summary>
+    private const string Handle = """{"$h":3,"$t":0}""";
+
+    [Fact] // R2: a reader given a handle where it expects a value throws JsonException, not InvalidOperationException
+    public void A_handle_where_a_value_is_expected_is_a_JsonException()
+    {
+        Assert.Throws<JsonException>(() => Json.Read(Handle, JsJson.ReadNumber));
+        Assert.Throws<JsonException>(() => Json.Read(Handle, JsJson.ReadString));
+        Assert.Throws<JsonException>(() => Json.Read(Handle, JsJson.ReadBoolean));
+        Assert.Throws<JsonException>(() => Json.Read(Handle, BasemapNames.Read)); // R9
+        Assert.Throws<JsonException>(() => Json.Read(Handle, Cursor.Read)); // R10
+        Assert.Throws<JsonException>(() => Json.Read(Handle, JsJson.ReadUnion<Style>)); // R19 step 2
+        Assert.Throws<JsonException>(() => Json.Read(Handle, JsJson.ReadUnion<FlyToTarget>)); // R19 step 3
+    }
+
     [Theory] // R2, R3, R20: undefined omitted, null kept, value written, discriminant always written
     [InlineData("""{"type":"stroke"}""")]
     [InlineData("""{"type":"stroke","color":null}""")]
@@ -31,6 +46,42 @@ public class JsJsonTests
         Assert.True(nulled.Color.IsNull);
         Assert.True(rgba.Color.TryGetValue(out Rgba? value));
         Assert.Equal(new Rgba { R = 1, G = 2, B = 3 }, value);
+    }
+
+    [Fact] // §2: any is its JSON, read with a typed reader; the scope that reads it owns its handles
+    public async Task Any_is_its_json_and_its_handles_are_the_scopes()
+    {
+        Assert.Equal("""{"a":[1,"b"]}""", Json.Write(JsAny.Parse("""{"a":[1,"b"]}"""), JsAny.Write));
+        Assert.Equal(3, JsAny.From(3.0, JsJson.WriteNumber).Read(JsJson.ReadNumber));
+        Assert.Equal(JsAny.Parse("""{"a":1,"b":[2]}"""), JsAny.Parse("""{ "b": [2], "a": 1 }""")); // by its JSON
+        Assert.NotEqual(JsAny.Parse("[1]"), JsAny.Parse("[2]"));
+
+        var transport = InMemoryDemoMaps.Create();
+        var realm = new JsRealm(() => Task.FromResult<IJsTransport>(transport), DemoMaps.Classes);
+        await realm.StartAsync();
+        var marker = Create(); // {"$h":1,"$t":6}
+        var scope = new JsScope(realm);
+        var any = Json.Read($$"""{"items":[{{marker}}]}""", (ref r) => JsAny.Read(ref r, scope));
+        Assert.Equal(marker, any.Json.GetProperty("items")[0].GetRawText());
+        Assert.Equal(1, transport.Census());
+        await scope.DisposeAsync();
+        Assert.Equal(0, transport.Census()); // released with the scope
+
+        // Read after its scope is disposed, as when the call was in flight: every handle in it is released.
+        var (first, second) = (Create(), Create());
+        Assert.Equal(2, transport.Census());
+        Assert.Throws<ObjectDisposedException>(() => Json.Read($$"""[{{first}},{"m":{{second}}}]""", (ref r) => JsAny.Read(ref r, scope)));
+        Assert.Equal(0, transport.Census());
+
+        string Create() => transport.Invoke($$"""{"op":"create","t":{{DemoMaps.MarkerId}},"args":[]}""")[5..^1];
+    }
+
+    [Fact] // R21: a missing callback is JS null, or undefined when its type has no null
+    public void A_callback_is_its_id_and_a_missing_one_null_or_undefined()
+    {
+        Assert.Equal("""{"$f":3}""", Json.Write<int?>(3, (w, id) => JsJson.WriteCallback(w, id)));
+        Assert.Equal("null", Json.Write<int?>(null, (w, id) => JsJson.WriteCallback(w, id)));
+        Assert.Equal("""{"$u":1}""", Json.Write<int?>(null, (w, id) => JsJson.WriteCallback(w, id, undefined: true)));
     }
 
     [Fact] // R1: where a value can't be omitted (array elements, arguments), undefined is {"$u":1}

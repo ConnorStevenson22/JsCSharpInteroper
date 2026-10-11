@@ -72,8 +72,8 @@ public sealed class RealmTests
         var scope = new JsScope(realm);
         var view = await MapView.CreateAsync(scope, new());
         var baseline = (transport.Census(), transport.Callbacks.Count);
-        var watch = scope.Subscribe(view.Handle, "watch", "zoom", JsJson.ReadNumber, _ => { }); // sync mode
-        var click = await scope.SubscribeAsync(view.Handle, "on", "click", ClickEvent.Read, _ => { }); // async mode
+        var watch = scope.Subscribe(view.Handle, "watch", "zoom", JsJson.ReadNumber, _ => { }, null, null); // sync mode
+        var click = await scope.SubscribeAsync(view.Handle, "on", "click", ClickEvent.Read, _ => { }, null, null); // async mode
 
         transport.Ops.Clear();
         watch.Dispose();
@@ -89,14 +89,84 @@ public sealed class RealmTests
     }
 
     [Fact]
+    public async Task AStreamSubscribesWhenFirstReadAndUnsubscribesWhenCancelled() // R24
+    {
+        var memory = InMemoryDemoMaps.Create();
+        var realm = new JsRealm(() => Task.FromResult<IJsTransport>(memory), Classes);
+        await realm.StartAsync();
+        var scope = new JsScope(realm);
+        var view = await MapView.CreateAsync(scope, new());
+        var baseline = (memory.Census(), memory.Callbacks.Count);
+        using var cancel = new CancellationTokenSource();
+        var clicks = view.OnClickStreamAsync(scope, new EventOptions { PreventDefault = true }, cancel.Token).GetAsyncEnumerator(TestContext.Current.CancellationToken);
+        Assert.Equal(baseline, (memory.Census(), memory.Callbacks.Count)); // nothing until it's read
+
+        var next = clicks.MoveNextAsync();
+        Assert.Equal((baseline.Item1 + 1, baseline.Item2 + 1), (memory.Census(), memory.Callbacks.Count));
+        // The options went with the subscribe op, projecting to the record's members by default.
+        Assert.Equal("""{"preventDefault":true,"fields":["type","x","y","button","mapPoint"]}""", Assert.Single(memory.SubscribeOptions));
+
+        cancel.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(async () => await next);
+        await clicks.DisposeAsync();
+        Assert.Equal(baseline, (memory.Census(), memory.Callbacks.Count));
+        await scope.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task AStreamWhoseScopeIsDisposedWhileItSubscribesEndsNormally() // R24
+    {
+        var realm = await StartedRealm();
+        var baseline = (transport.Census(), transport.Callbacks.Count);
+        var scope = new JsScope(realm);
+        var view = await MapView.CreateAsync(scope, new());
+        var zooms = view.WatchZoomStreamAsync(scope, TestContext.Current.CancellationToken).GetAsyncEnumerator(TestContext.Current.CancellationToken);
+
+        var held = new TaskCompletionSource();
+        transport.Hold = held.Task;
+        var next = zooms.MoveNextAsync().AsTask(); // the subscribe op is in flight
+        var disposing = scope.DisposeAsync().AsTask();
+        transport.Hold = null;
+        held.SetResult();
+        await disposing;
+
+        Assert.False(await next);
+        await zooms.DisposeAsync();
+        Assert.Equal(baseline, (transport.Census(), transport.Callbacks.Count)); // the late subscription is released too
+    }
+
+    [Fact]
+    public async Task AStreamEndsWithTheErrorOfAPayloadItCantRead() // R24
+    {
+        var realm = await StartedRealm();
+        var scope = new JsScope(realm);
+        var view = await MapView.CreateAsync(scope, new());
+        var baseline = (transport.Census(), transport.Callbacks.Count);
+        var clicks = view.OnClickStreamAsync(scope, cancellationToken: TestContext.Current.CancellationToken).GetAsyncEnumerator(TestContext.Current.CancellationToken);
+        var next = clicks.MoveNextAsync();
+        await realm.CallAsync(JsOp.Call(view.Handle, "emit", w =>
+        {
+            w.WriteStringValue("click");
+            w.WriteStartObject();
+            w.WriteString("x"u8, "not a number");
+            w.WriteEndObject();
+        }), JsJson.ReadBoolean);
+
+        await Assert.ThrowsAnyAsync<Exception>(async () => await next);
+        await clicks.DisposeAsync();
+        Assert.Equal(baseline, (transport.Census(), transport.Callbacks.Count));
+        await scope.DisposeAsync();
+    }
+
+    [Fact]
     public async Task AFailedSubscribeReleasesItsListener() // R24
     {
         var realm = await StartedRealm();
         var scope = new JsScope(realm);
         var view = await MapView.CreateAsync(scope, new());
         var baseline = (transport.Census(), transport.Callbacks.Count);
-        Assert.ThrowsAny<Exception>(() => scope.Subscribe(view.Handle, "noSuchMethod", "zoom", JsJson.ReadNumber, _ => { }));
-        await Assert.ThrowsAnyAsync<Exception>(() => scope.SubscribeAsync(view.Handle, "noSuchMethod", "click", ClickEvent.Read, _ => { }));
+        Assert.ThrowsAny<Exception>(() => scope.Subscribe(view.Handle, "noSuchMethod", "zoom", JsJson.ReadNumber, _ => { }, null, null));
+        await Assert.ThrowsAnyAsync<Exception>(() => scope.SubscribeAsync(view.Handle, "noSuchMethod", "click", ClickEvent.Read, _ => { }, null, null));
         Assert.Equal(baseline, (transport.Census(), transport.Callbacks.Count));
     }
 
@@ -209,6 +279,30 @@ public sealed class RealmTests
         Assert.Equal(0, transport.Census());
     }
 
+    [Fact] // R24: an event without a payload calls a parameterless handler, and nothing of the event is sent
+    public async Task AnEventWithoutAPayloadCallsAParameterlessHandler()
+    {
+        var scope = new JsScope(await StartedRealm());
+        var emitter = (int)(await Send(scope, $$"""{"op":"create","t":{{DemoMaps.EmitterId}},"args":[]}"""))!["$h"]!;
+        var fired = 0;
+        using var sync = scope.Subscribe(emitter, "on", "tick", () => fired++, null);
+        await using var async = await scope.SubscribeAsync(emitter, "on", "tick", () => fired++, null);
+        Assert.Equal(2, transport.Ops.Count(op => op.Contains("\"name\":\"tick\"", StringComparison.Ordinal) && op.EndsWith("\"options\":{\"fields\":[]}}", StringComparison.Ordinal)));
+
+        await scope.Realm.CallAsync(JsOp.Call(emitter, "emit", w => { w.WriteStringValue("tick"); w.WriteStartObject(); w.WriteNumber("x", 1); w.WriteEndObject(); }), JsJson.ReadBoolean);
+        Assert.Equal(2, fired);
+        await scope.DisposeAsync();
+    }
+
+    [Fact] // design §3.2, R19 step 1: JS can hand back an abstract class's own instance (an element's class by its tag, say)
+    public async Task AnAbstractClassIdIsRegisteredAsItsOwnLiveType()
+    {
+        var scope = new JsScope(await StartedRealm());
+        var handle = (int)(await Send(scope, """{"op":"create","t":5,"args":[]}"""))!["$h"]!;
+        Assert.Equal(typeof(GoldenSlice.Async.Layers.Layer), scope.Wrap<JsObject>(handle, DemoMaps.LayerId).GetType());
+        await scope.DisposeAsync();
+    }
+
     [Fact]
     public async Task DisposalSwallowsADroppedCircuit()
     {
@@ -255,6 +349,40 @@ public sealed class RealmTests
 
         await realm.DisposeAsync();
         Assert.True(js.Disposed); // the realm releases its transport's module
+    }
+
+    [Fact]
+    public async Task ACallbackReadsItsArgumentsWithItsScopeAndWritesItsResult() // R21
+    {
+        var realm = await StartedRealm();
+        var baseline = transport.Callbacks.Count;
+        var scope = new JsScope(realm);
+        var view = await MapView.CreateAsync(scope, new());
+        var calls = new List<(MapView, double, Opt<string>)>();
+        var id = scope.Callback((MapView v, double n, Opt<string> s) => { calls.Add((v, n, s)); return $"{n}{(s.TryGetValue(out string? t) ? t : "")}"; },
+            scope.Read<MapView>, JsJson.ReadNumber, static (ref r) => JsJson.ReadOpt(ref r, JsJson.ReadString), JsJson.WriteString);
+        var arguments = $$"""[{"$t":{{DemoMaps.MapViewId}},"$h":{{view.Handle}}},2""";
+
+        Assert.Equal("\"2!\"", transport.Callbacks.InvokeCallback(id, arguments + ",\"!\"]"));
+        Assert.Equal("\"3\"", transport.Callbacks.InvokeCallback(id, arguments.Replace(",2", ",3") + "]")); // a missing argument is undefined
+        Assert.Equal([(view, 2.0, new Opt<string>("!")), (view, 3.0, default)], calls);
+        Assert.Null(transport.Callbacks.InvokeCallback(scope.Callback(() => { }), "[]")); // an Action's result is undefined
+
+        await scope.DisposeAsync();
+        Assert.Equal(baseline, transport.Callbacks.Count); // released with their scope
+    }
+
+    [Fact] // §2: a generic class has no registry entry; its reader is given a factory
+    public async Task ReadWithAFactoryKeepsIdentity()
+    {
+        var scope = new JsScope(await StartedRealm());
+        var view = await MapView.CreateAsync(scope, new());
+        var json = $$"""{"$t":0,"$h":{{view.Handle}}}""";
+        Assert.Same(view, Json.Read(json, (ref r) => scope.Read<MapView>(ref r, static (_, _) => throw new InvalidOperationException())));
+        // Another type is an error, not a cast exception.
+        var error = Assert.Throws<JsException>(() => Json.Read(json, (ref r) => scope.Read<Marker>(ref r, static (_, _) => throw new InvalidOperationException())));
+        Assert.Equal("InteroperError", error.Name);
+        Assert.Throws<JsException>(() => scope.Wrap<Marker>(view.Handle, DemoMaps.MapViewId));
     }
 
     [Fact]

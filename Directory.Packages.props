@@ -9,6 +9,8 @@
     <PackageVersion Include="Microsoft.AspNetCore.Components.WebAssembly" Version="$(AspNetCoreVersion)" />
     <PackageVersion Include="Microsoft.AspNetCore.Components.WebAssembly.Server" Version="$(AspNetCoreVersion)" />
     <PackageVersion Include="Microsoft.JSInterop" Version="$(AspNetCoreVersion)" />
+    <!-- No newer than the pinned SDK's compiler (5.11), which loads the analyzers -->
+    <PackageVersion Include="Microsoft.CodeAnalysis.CSharp" Version="5.9.0" />
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.0.0" />
     <!-- 1.56 drives Chromium revision 1194, the one preinstalled in cloud sessions -->
     <PackageVersion Include="Microsoft.Playwright" Version="1.56.0" />

@@ -1,5 +1,6 @@
 import { Collection, Emitter } from "./core.js";
 import { Bounds, Point, Shape } from "./geometry.js";
+import { Layer } from "./layers/Layer.js";
 import { Marker } from "./Marker.js";
 
 /** "3d-relief" starts with a digit on purpose (R25). */
@@ -59,6 +60,8 @@ export class MapView extends Emitter {
   container: HTMLElement | null;
   selected: Marker | null;
   readonly markers: Collection<Marker>;
+  /** Drawn in order, the first at the bottom. */
+  readonly layers: Collection<Layer>;
   /**
    * Screen offset (pixels from the center) to map coordinates.
    * @since 0.2

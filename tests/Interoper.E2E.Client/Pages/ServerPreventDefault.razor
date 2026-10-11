@@ -1,0 +1,48 @@
+@page "/server-prevent-default"
+@rendermode @(new InteractiveServerRenderMode(prerender: false))
+@using System.Text.Json.Nodes
+@inherits JsComponentBase
+
+<pre id="result" data-done="@done">@result</pre>
+
+@code {
+    // R24 on Server: a listener in .NET runs after JS has moved on, too late to call preventDefault(), so JS calls it
+    // when the subscribe op's options say so. A DOM listener after it, on a plain EventTarget (wwwroot/event-target.js),
+    // sees the default prevented.
+    const string Module = "/event-target.js";
+    string result = "";
+    bool done;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        try
+        {
+            var baseline = await Scope.Transport.CensusAsync();
+            var target = await Scope.Realm.CallAsync(JsOp.Call(Module, "target"), static (ref r) => (int)JsonNode.Parse(ref r)!["$h"]!);
+            Scope.Own(target);
+            var prevented = await DispatchAsync(target, new EventOptions { PreventDefault = true, Fields = ["type"] });
+            var plain = await DispatchAsync(target, new EventOptions { Fields = ["type"] });
+            // Only the target is held: the subscriptions are released, and the events never got a handle.
+            result = $"prevented {prevented}, plain {plain}, census +{await Scope.Transport.CensusAsync() - baseline}";
+        }
+        catch (Exception e)
+        {
+            result = $"FAIL {e.GetType().Name}: {e.Message}";
+        }
+        done = true;
+        StateHasChanged();
+    }
+
+    // Dispatches a click to a subscription with these options: whether a later DOM listener saw the default
+    // prevented, and the payload .NET got.
+    async Task<string> DispatchAsync(int target, EventOptions options)
+    {
+        var payload = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+        await using (await Scope.SubscribeAsync(target, "on", "click", static (ref r) => JsonNode.Parse(ref r)!.ToJsonString(), e => payload.TrySetResult(e), options, null))
+        {
+            var prevented = await Scope.Realm.CallAsync(JsOp.Call(target, "dispatch", w => w.WriteStringValue("click")), JsJson.ReadBoolean);
+            return $"{prevented} {await payload.Task.WaitAsync(TimeSpan.FromSeconds(10))}";
+        }
+    }
+}

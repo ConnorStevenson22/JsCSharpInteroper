@@ -1,0 +1,5 @@
+@page "/components-static"
+@using GoldenSlice.Async
+
+@* R28 in static SSR: the supplied attributes and the slots render; Center, events and Element wait for interactivity. *@
+<DemoMap Basemap="Basemap.Relief" Zoom="2.5" Center="new PointSnapshot { X = 1, Y = 1 }" id="map"><Toolbar><b>tools</b></Toolbar><ChildContent><i>overlay</i></ChildContent></DemoMap>

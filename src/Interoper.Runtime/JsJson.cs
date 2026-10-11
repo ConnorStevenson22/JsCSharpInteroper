@@ -80,12 +80,18 @@ public static class JsJson
         : ReadUndefined(ref reader) ? default
         : TUnion.ReadValue(ref reader);
 
-    // Readers and writers for required primitives and arrays.
-    public static double ReadNumber(ref Utf8JsonReader reader) => reader.GetDouble();
+    // Readers and writers for required primitives and arrays. A reader given another token (an object, such as the
+    // handle JS sends for a class outside the selection, mapping R2) throws JsonException.
+    public static double ReadNumber(ref Utf8JsonReader reader) =>
+        reader.TokenType == JsonTokenType.Number ? reader.GetDouble() : throw Unexpected(reader, "a number");
 
-    public static string ReadString(ref Utf8JsonReader reader) => reader.GetString()!;
+    public static string ReadString(ref Utf8JsonReader reader) =>
+        reader.TokenType is JsonTokenType.String or JsonTokenType.Null ? reader.GetString()! : throw Unexpected(reader, "a string");
 
-    public static bool ReadBoolean(ref Utf8JsonReader reader) => reader.GetBoolean();
+    public static bool ReadBoolean(ref Utf8JsonReader reader) =>
+        reader.TokenType is JsonTokenType.True or JsonTokenType.False ? reader.GetBoolean() : throw Unexpected(reader, "a boolean");
+
+    private static JsonException Unexpected(Utf8JsonReader reader, string expected) => new($"Expected {expected}, got {reader.TokenType}.");
 
     public static void WriteNumber(Utf8JsonWriter writer, double value) => writer.WriteNumberValue(value);
 
@@ -111,6 +117,29 @@ public static class JsJson
             write(writer, value);
         }
         writer.WriteEndArray();
+    }
+
+    /// <summary>
+    /// A callback (R21) as <c>{"$f":id}</c>, with the id <see cref="JsScope.Callback(Action)"/> returns. No id is JS null,
+    /// or undefined when <paramref name="undefined"/> (an optional callback whose type has no null).
+    /// </summary>
+    public static void WriteCallback(Utf8JsonWriter writer, int? id, bool undefined = false)
+    {
+        if (id is not { } callback)
+        {
+            if (undefined)
+            {
+                WriteUndefined(writer);
+            }
+            else
+            {
+                writer.WriteNullValue();
+            }
+            return;
+        }
+        writer.WriteStartObject();
+        writer.WriteNumber("$f"u8, callback);
+        writer.WriteEndObject();
     }
 
     // For generated union readers (R19), which classify an object before reading it. The reader is a copy, so the
@@ -159,7 +188,8 @@ public static class JsJson
         return true;
     }
 
-    private static void WriteUndefined(Utf8JsonWriter writer)
+    /// <summary>Writes undefined as a value, where it can't be omitted: <c>{"$u":1}</c>.</summary>
+    public static void WriteUndefined(Utf8JsonWriter writer)
     {
         writer.WriteStartObject();
         writer.WriteNumber(UndefinedMarker, 1);
