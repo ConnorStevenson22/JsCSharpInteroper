@@ -1194,6 +1194,37 @@ public sealed class GeneratorTests
         Assert.DoesNotContain("Bag.cs", result.Files.Select(f => f.Path));
     }
 
+    [Fact] // R6, R11, R15, R21: a union alias flattened into another has its inline cases trimmed there too, so what only a dropped member reaches isn't emitted
+    public void AFlattenedUnionAliasesInlineCasesDropTheOptionalMembersTheyCantMap()
+    {
+        // interface Rack extends Pick<Base, "release">, where Base.release<T>(key?: Mark<T>): void, is a generic callback
+        // of a generic alias; Spot is declared before Pin, so Spot's flattened cases are met first.
+        var result = Generate($$"""
+            { "kind": "alias", "name": "Mark", "typeParameters": [{ "name": "T" }], "type": { "kind": "unresolved", "text": "Mark<T>" } },
+            { "kind": "interface", "name": "Rack", "members": [{ "kind": "property", "name": "release", "inherited": true, "type": { "kind": "function", "typeParameters": [{ "name": "T" }],
+              "params": [{ "name": "key", "optional": true, "type": { "kind": "ref", "name": "Mark", "module": "@acme/maps/a.js", "args": [{ "kind": "typeParameter", "name": "T" }] } }], "returns": {{Void}} } }] },
+            { "kind": "alias", "name": "Spot", "type": { "kind": "union", "types": [{ "kind": "ref", "name": "Pin", "module": "@acme/maps/a.js" },
+              { "kind": "object", "members": [{ "kind": "property", "name": "kind", "type": { "kind": "literal", "value": "c" } }, {{X}}] }] } },
+            { "kind": "alias", "name": "Pin", "type": { "kind": "union", "types": [
+              { "kind": "object", "members": [{ "kind": "property", "name": "kind", "type": { "kind": "literal", "value": "a" } }, { "kind": "property", "name": "n", "type": {{Number}} },
+                { "kind": "property", "name": "rack", "optional": true, "type": { "kind": "ref", "name": "Rack", "module": "@acme/maps/a.js" } }] },
+              { "kind": "object", "members": [{ "kind": "property", "name": "kind", "type": { "kind": "literal", "value": "b" } }, { "kind": "property", "name": "s", "type": {{String}} }] }] } },
+            { "kind": "class", "name": "Feature", "members": [{ "kind": "property", "name": "spot", "type": { "kind": "ref", "name": "Spot", "module": "@acme/maps/a.js" } }] }
+            """);
+
+        Assert.Equal([
+            "IOP2007 Mark: skipped: uses generic `Mark` (in `Mark`)",
+            "IOP2007 Rack: skipped: uses generic `Mark` (in `Mark`) (in `Rack`)",
+            "IOP2007 Spot.rack: skipped: uses generic `Mark` (in `Mark`) (in `Rack`)",
+            "IOP2007 Pin.rack: skipped: uses generic `Mark` (in `Mark`) (in `Rack`)",
+        ], result.Diagnostics.Select(d => d.ToString()));
+        Assert.DoesNotContain(result.Files, f => f.Path.StartsWith("Rack", StringComparison.Ordinal));
+        Assert.Contains("public required double N { get; init; }", File(result, "SpotA.cs"));
+        Assert.DoesNotContain("Rack", File(result, "SpotA.cs"));
+        Assert.DoesNotContain("Rack", File(result, "PinA.cs"));
+        Assert.Contains("public Spot Spot", File(result, "Feature.cs"));
+    }
+
     [Fact] // R11, §2: an inline record isn't generic, so one with a type parameter can't be mapped; an optional member is dropped
     public void AnInlineRecordWithATypeParameterCantBeMapped()
     {

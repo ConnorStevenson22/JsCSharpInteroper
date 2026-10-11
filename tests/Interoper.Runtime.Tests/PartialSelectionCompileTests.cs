@@ -39,7 +39,8 @@ public sealed class PartialSelectionCompileTests
     /// The shapes the fixture doesn't have compile too, with one module selected and with everything: inline records in a
     /// union, named by tag or position, a callback's and a payload's, one whose name a declared type has, and one with a
     /// type parameter (R11, R27); a union narrowed to its one selected case, an inline one too (R2); an event without a payload (R24); an
-    /// interface with an iterator method, and one with an inherited callback; and an abstract element class named like
+    /// interface with an iterator method, one with an inherited callback, and one with an inherited generic callback that only a
+    /// union alias flattened into another reaches (R6); and an abstract element class named like
     /// its tag, with a property whose inline record has its component's name, a primitive attribute over a union property and an event whose detail is a union of inline records (R28).
     /// </summary>
     [Theory]
@@ -66,6 +67,15 @@ public sealed class PartialSelectionCompileTests
                 { "kind": "interface", "name": "Box", "typeParameters": [{ "name": "T" }], "members": [{{X}}, { "kind": "property", "name": "meta", "optional": true, "type": {{meta}} }] },
                 { "kind": "interface", "name": "Crate", "typeParameters": [{ "name": "T" }], "members": [{ "kind": "property", "name": "meta", "type": {{meta}} }] },
                 { "kind": "interface", "name": "FeatureSize", "members": [{{X}}] },
+                { "kind": "alias", "name": "Mark", "typeParameters": [{ "name": "T" }], "type": { "kind": "unresolved", "text": "Mark<T>" } },
+                { "kind": "interface", "name": "Rack", "members": [{ "kind": "property", "name": "release", "inherited": true, "type": { "kind": "function", "typeParameters": [{ "name": "T" }],
+                  "params": [{ "name": "key", "optional": true, "type": { "kind": "ref", "name": "Mark", "module": "@acme/maps/a.js", "args": [{ "kind": "typeParameter", "name": "T" }] } }], "returns": {{Void}} } }] },
+                { "kind": "alias", "name": "Spot", "type": { "kind": "union", "types": [{ "kind": "ref", "name": "Pin", "module": "@acme/maps/a.js" },
+                  { "kind": "object", "members": [{ "kind": "property", "name": "kind", "type": { "kind": "literal", "value": "c" } }, {{X}}] }] } },
+                { "kind": "alias", "name": "Pin", "type": { "kind": "union", "types": [
+                  { "kind": "object", "members": [{ "kind": "property", "name": "kind", "type": { "kind": "literal", "value": "a" } }, { "kind": "property", "name": "n", "type": {{Number}} },
+                    { "kind": "property", "name": "rack", "optional": true, "type": { "kind": "ref", "name": "Rack", "module": "@acme/maps/a.js" } }] },
+                  { "kind": "object", "members": [{ "kind": "property", "name": "kind", "type": { "kind": "literal", "value": "b" } }, { "kind": "property", "name": "s", "type": {{String}} }] }] } },
                 { "kind": "class", "name": "Feature", "members": [
                   { "kind": "method", "name": "each", "signatures": [{ "params": [{ "name": "cb", "type": { "kind": "function", "params": [{ "name": "e", "type": { "kind": "object", "members": [{{X}}, {{legs}},
                     { "kind": "property", "name": "bag", "optional": true, "type": { "kind": "ref", "name": "Bag", "module": "@acme/maps/a.js" } }] } }], "returns": {{Void}} } }], "returns": {{Void}} }] },
@@ -76,6 +86,7 @@ public sealed class PartialSelectionCompileTests
                     { "name": "mark", "type": { "kind": "union", "types": [{ "kind": "ref", "name": "Folder", "module": "@acme/maps/b.js" },
                       { "kind": "object", "members": [{{X}}] }, { "kind": "object", "members": [{ "kind": "property", "name": "y", "type": {{String}} }] }] } }], "returns": {{Void}} }] },
                   { "kind": "property", "name": "owner", "type": { "kind": "ref", "name": "Owner", "module": "@acme/maps/a.js" } },
+                  { "kind": "property", "name": "spot", "type": { "kind": "ref", "name": "Spot", "module": "@acme/maps/a.js" } },
                   { "kind": "property", "name": "mark", "type": { "kind": "union", "types": [{ "kind": "ref", "name": "Folder", "module": "@acme/maps/b.js" }, { "kind": "object", "members": [{{X}}] }] } },
                   { "kind": "property", "name": "size", "type": { "kind": "object", "members": [{ "kind": "property", "name": "w", "type": {{Number}} }] } },
                   { "kind": "property", "name": "shape", "type": { "kind": "union", "discriminant": "type", "types": [
@@ -108,6 +119,7 @@ public sealed class PartialSelectionCompileTests
         Assert.Contains(result.Files, f => f.Path == "FeatureSize2.cs");
         Assert.Contains("IOP2007 <x-chart> on:pick.legs: skipped: uses a tuple of different types", result.Diagnostics.Select(d => d.ToString()));
         Assert.Contains("IOP2007 Feature.each(cb)(e).bag: skipped: uses `IterableIterator` (in `Bag`)", result.Diagnostics.Select(d => d.ToString()));
+        Assert.Contains("IOP2007 Spot.rack: skipped: uses generic `Mark` (in `Mark`) (in `Rack`)", result.Diagnostics.Select(d => d.ToString()));
         Compile(result);
     }
 

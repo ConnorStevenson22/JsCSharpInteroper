@@ -727,6 +727,12 @@ public sealed class Selection
                     members.Add(m is PropertyMember property ? TrimInline($"{subject}.{property.Name}", property) : m);
                 }
                 return members.SequenceEqual(o.Members, ReferenceEqualityComparer.Instance) ? o : o with { Members = members };
+            case UnionType u when u.Types.Count(t => !IsNullish(t)) > 1:
+                // R6: a union alias in it is flattened into it (Collect), so its own inline cases are trimmed here, in its place.
+                var flattened = u.Types.Select(t => t is RefType { Module: not null } nested &&
+                    Find(nested) is AliasDeclaration { TypeParameters.Count: 0, Type: UnionType inner } && TrimInline(subject, inner) is var trimmedInner &&
+                    !ReferenceEquals(trimmedInner, inner) ? trimmedInner : TrimInline(subject, t)).ToList();
+                return flattened.SequenceEqual(u.Types, ReferenceEqualityComparer.Instance) ? u : u with { Types = flattened };
             case UnionType u:
                 return Same(u.Types, out var cases) ? u : u with { Types = cases };
             case ArrayType a:
