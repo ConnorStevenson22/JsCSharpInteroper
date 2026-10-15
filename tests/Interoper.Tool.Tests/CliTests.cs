@@ -55,6 +55,10 @@ public sealed class CliTests(SeededConsumer seeded) : IClassFixture<SeededConsum
         Assert.True(File.Exists(Path.Combine(seeded.Seed, "MapView.cs")));
         Assert.True(File.Exists(Path.Combine(seeded.Seed, "Layers", "TileLayer.cs")));
         Assert.True(File.Exists(Path.Combine(seeded.Seed, "demo-maps.meta.js")));
+        var manifest = File.ReadAllLines(Path.Combine(seeded.Seed, ".interoper", "files.txt"));
+        Assert.Contains("Layers/TileLayer.cs", manifest);
+        Assert.Contains("demo-maps.meta.js", manifest);
+        Assert.Equal(manifest.Order(StringComparer.Ordinal), manifest);
     }
 
     [Fact]
@@ -119,8 +123,12 @@ public sealed class CliTests(SeededConsumer seeded) : IClassFixture<SeededConsum
             .. diagnostics.GroupBy(d => d.Code).Select(g => $"{g.Key}: {g.Count()}"),
             $"total: {diagnostics.Count}",
         ]) + "\n";
-        Assert.Equal(expected, File.ReadAllText(Path.Combine(outDir, "interoper-report.txt")));
-        Assert.EndsWith(expected, error, StringComparison.Ordinal);
+        var reportPath = Path.Combine(outDir, "interoper-report.txt");
+        Assert.Equal(expected, File.ReadAllText(reportPath));
+        // stderr has the counts and the report's path, not every diagnostic.
+        var counts = string.Join('\n', diagnostics.GroupBy(d => d.Code).Select(g => $"{g.Key}: {g.Count()}")) + $"\ntotal: {diagnostics.Count}\n";
+        Assert.EndsWith(counts + $"Report: {reportPath}\n", error.ReplaceLineEndings("\n"), StringComparison.Ordinal);
+        Assert.DoesNotContain("Pin.meta", error, StringComparison.Ordinal);
         Assert.Contains("IOP2001 Pin.meta: `any` is JsAny (§2)\nIOP2005 Collection.find:", expected, StringComparison.Ordinal);
         Assert.Contains("\nIOP2005: 2\n", expected, StringComparison.Ordinal);
     }
@@ -137,27 +145,62 @@ public sealed class CliTests(SeededConsumer seeded) : IClassFixture<SeededConsum
     }
 
     [Fact]
-    public void StaleGeneratedFilesAreDeletedAndOthersKept()
+    public void StaleFilesFromTheLastRunAreDeletedAndOthersKept()
     {
         var outDir = seeded.OutWithCache("Stale");
         Directory.CreateDirectory(Path.Combine(outDir, "Gone"));
         File.WriteAllText(Path.Combine(outDir, "Old.cs"), $"{Bindings.Header}\n#nullable enable\n");
         File.WriteAllText(Path.Combine(outDir, "Gone", "Older.cs"), $"{Bindings.Header}\n");
         File.WriteAllText(Path.Combine(outDir, "old.meta.js"), $"{Bindings.Header}\nexport default {{}};\n");
+        // Listed last time, but no longer carrying the header: someone took it over.
+        File.WriteAllText(Path.Combine(outDir, "Adopted.cs"), "namespace Acme.Maps;\n");
+        // Never listed: another generator's file with the same header, and a hand-written partial.
+        File.WriteAllText(Path.Combine(outDir, "GlobalUsings.g.cs"), $"{Bindings.Header}\nglobal using System;\n");
         File.WriteAllText(Path.Combine(outDir, "MapView.Extensions.cs"), "namespace Acme.Maps;\n");
-        File.WriteAllText(Path.Combine(outDir, "notes.txt"), $"{Bindings.Header}\n");
+        File.WriteAllLines(Path.Combine(outDir, ".interoper", "files.txt"), ["Adopted.cs", "Gone/Older.cs", "MapView.cs", "Old.cs", "old.meta.js"]);
 
         var (exitCode, error) = Consumer.Run(Consumer.Generate("Stale"), NoNode);
         Assert.True(exitCode == 0, error);
         Assert.False(File.Exists(Path.Combine(outDir, "Old.cs")));
         Assert.False(File.Exists(Path.Combine(outDir, "old.meta.js")));
         Assert.False(Directory.Exists(Path.Combine(outDir, "Gone")));
+        Assert.True(File.Exists(Path.Combine(outDir, "Adopted.cs")));
+        Assert.True(File.Exists(Path.Combine(outDir, "GlobalUsings.g.cs")));
         Assert.True(File.Exists(Path.Combine(outDir, "MapView.Extensions.cs")));
-        Assert.True(File.Exists(Path.Combine(outDir, "notes.txt")));
-        Assert.True(File.Exists(Path.Combine(outDir, ".interoper", "ir.json")));
-        Assert.Contains("3 deleted.", error, StringComparison.Ordinal);
+        Assert.True(File.Exists(Path.Combine(outDir, "MapView.cs")));
+        Assert.Contains(": 68 written, 3 deleted.", error, StringComparison.Ordinal);
+        Assert.DoesNotContain("Old.cs", File.ReadAllText(Path.Combine(outDir, ".interoper", "files.txt")), StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void ANestedOutputIsLeftAlone()
+    {
+        var outer = seeded.OutWithCache("Outer");
+        seeded.OutWithCache(Path.Combine("Outer", "Inner"));
+        Assert.Equal(0, Consumer.Run(Consumer.Generate("Outer/Inner"), NoNode).ExitCode);
+        Assert.Equal(0, Consumer.Run(Consumer.Generate("Outer"), NoNode).ExitCode);
+        Assert.Equal(0, Consumer.Run(Consumer.Generate("Outer"), NoNode).ExitCode);
+        Assert.True(File.Exists(Path.Combine(outer, "Inner", "MapView.cs")));
+        Assert.True(File.Exists(Path.Combine(outer, "Inner", "Layers", "TileLayer.cs")));
+    }
+
+    [Fact]
+    public void AFolderLinkedFromOutsideIsLeftAlone()
+    {
+        var outDir = seeded.OutWithCache("Linked");
+        var outside = Directory.CreateDirectory(Path.Combine(Consumer.Directory, "Outside")).FullName;
+        File.WriteAllText(Path.Combine(outside, "Shared.cs"), $"{Bindings.Header}\n");
+        try
+        {
+            Directory.CreateSymbolicLink(Path.Combine(outDir, "Shared"), outside);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            Assert.Skip("This account can't create symbolic links.");
+        }
+        Assert.Equal(0, Consumer.Run(Consumer.Generate("Linked"), NoNode).ExitCode);
+        Assert.True(File.Exists(Path.Combine(outside, "Shared.cs")));
+    }
     [Theory]
     [InlineData]
     [InlineData("build")]
@@ -170,6 +213,7 @@ public sealed class CliTests(SeededConsumer seeded) : IClassFixture<SeededConsum
     [InlineData("generate", "@acme/demo-maps", "--api", "async", "--namespace", "Acme.Maps", "--out")]
     [InlineData("generate", "@acme/demo-maps", "--api", "async", "--api", "sync", "--namespace", "Acme.Maps", "--out", "Out")]
     [InlineData("generate", "@acme/demo-maps", "--api", "async", "--namespace", "Acme.Maps", "--out", "Out", "--verbose")]
+    [InlineData("generate", "@acme/demo-maps", "@acme/demo-maps", "--api", "async", "--namespace", "Acme.Maps", "--out", "Out")]
     public void BadUsageExitsWith2(params string[] args)
     {
         var (exitCode, error) = Consumer.Run(args, NoNode);
@@ -178,8 +222,11 @@ public sealed class CliTests(SeededConsumer seeded) : IClassFixture<SeededConsum
         Assert.False(Directory.Exists(Path.Combine(Consumer.Directory, "Out")));
     }
 
-    [Fact]
-    public void HelpExitsWith0() => Assert.Equal((0, Cli.Usage + Environment.NewLine), Consumer.Run(["--help"]));
+    [Theory]
+    [InlineData("--help")]
+    [InlineData("generate", "--help")]
+    [InlineData("generate", "@acme/demo-maps", "-h")]
+    public void HelpExitsWith0(params string[] args) => Assert.Equal((0, Cli.Usage + Environment.NewLine), Consumer.Run(args));
 
     [Fact]
     public void AMissingPackageExitsWith2()
@@ -191,15 +238,15 @@ public sealed class CliTests(SeededConsumer seeded) : IClassFixture<SeededConsum
     }
 
     [Fact]
-    public void AProfileForAnotherPackageExitsWith2()
+    public void AProfileForAnotherPackageExitsWith2BeforeExtracting()
     {
-        seeded.OutWithCache("OtherProfile");
         var profile = Path.Combine(Consumer.Directory, "other.json");
-        File.WriteAllText(profile, """{ "package": "@acme/other", "events": { "mapProperty": "$events" } }""");
+        File.WriteAllText(profile, """{ "package": "@acme/other" }""");
         string[] args = ["generate", "@acme/demo-maps", "--api", "sync", "--namespace", "Acme", "--out", "OtherProfile", "--profile", "other.json"];
         var (exitCode, error) = Consumer.Run(args, NoNode);
         Assert.Equal(2, exitCode);
-        Assert.Contains("The profile is for @acme/other, the IR for @acme/demo-maps.", error, StringComparison.Ordinal);
+        Assert.Contains("error: The profile is for @acme/other, but the first package is @acme/demo-maps.", error, StringComparison.Ordinal);
+        Assert.DoesNotContain("IR:", error, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -207,14 +254,57 @@ public sealed class CliTests(SeededConsumer seeded) : IClassFixture<SeededConsum
     {
         using var consumer = new Consumer();
         var typeScript = Path.Combine(consumer.Directory, "node_modules", "typescript");
-        Directory.Delete(typeScript);
         Directory.CreateDirectory(typeScript);
         File.WriteAllText(Path.Combine(typeScript, "package.json"), """{ "name": "typescript", "version": "5.9.3" }""");
+        consumer.TypeScript = null; // the working directory's
         var (exitCode, error) = consumer.Run(Consumer.Generate("Out"), NoNode);
         Assert.Equal(2, exitCode);
         Assert.Contains("error: TypeScript 5.9.3 is installed", error, StringComparison.Ordinal);
         Assert.Contains($"Run `npm install -D typescript@{Cli.TypeScriptPin}`.", error, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public void MissingTypeScriptExitsWith2()
+    {
+        using var consumer = new Consumer { TypeScript = null };
+        var (exitCode, error) = consumer.Run(Consumer.Generate("Out"), NoNode);
+        Assert.Equal(2, exitCode);
+        Assert.Contains($"error: TypeScript isn't installed: the extractor needs TypeScript 6.x in your node_modules. Run `npm install -D typescript@{Cli.TypeScriptPin}`.", error, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ANewDependencyVersionReExtracts()
+    {
+        using var consumer = new Consumer();
+        string[] args = ["generate", "@acme/demo-widgets", "--api", "sync", "--namespace", "Acme.Widgets", "--out", "Out"];
+        var (exitCode, error) = consumer.Run(args);
+        Assert.True(exitCode == 0, error);
+        var key = Path.Combine(consumer.Directory, "Out", ".interoper", "ir.key");
+        Assert.EndsWith("\npackage @acme/demo-widgets@0.0.0\nevents.mapProperty\ndependency @acme/demo-maps@0.0.0\n", File.ReadAllText(key), StringComparison.Ordinal);
+        Assert.Equal(0, consumer.Run(args, NoNode).ExitCode);
+
+        var json = Path.Combine(consumer.Package, "package.json");
+        File.WriteAllText(json, File.ReadAllText(json).Replace("\"version\": \"0.0.0\"", "\"version\": \"0.0.2\"", StringComparison.Ordinal));
+        (exitCode, error) = consumer.Run(args, NoNode);
+        Assert.Equal(2, exitCode);
+        Assert.Contains("IR: extracting @acme/demo-widgets@0.0.0", error, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void AFileSystemErrorExitsWith2()
+    {
+        var outDir = seeded.OutWithCache("Unreadable");
+        var key = Path.Combine(outDir, ".interoper", "ir.key");
+        File.Delete(key);
+        Directory.CreateDirectory(key); // a folder where the key goes: deleting it as a file fails
+        var (exitCode, error) = Consumer.Run(Consumer.Generate("Unreadable"), NoNode);
+        Assert.Equal(2, exitCode);
+        Assert.Contains("\nerror: ", error.ReplaceLineEndings("\n"), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void TheExtractorsTypeScriptMessageNamesThePin() =>
+        Assert.Contains($"npm install -D typescript@{Cli.TypeScriptPin}", File.ReadAllText(Consumer.Repo("src", "interoper-extractor", "extract.mjs")), StringComparison.Ordinal);
 
     [Fact]
     public void TheTypeScriptPinIsTheExtractors()

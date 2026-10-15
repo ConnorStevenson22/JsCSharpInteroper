@@ -46,15 +46,18 @@ public sealed class GoldenSliceTests
             var result = Generator.Generate(Fixture.Ir, Fixture.Profile, new(api, $"GoldenSlice.{api}"));
             diagnostics[api] = [.. result.Diagnostics.Select(d => d.ToString())];
 
-            // The CLI's writer (design §5), so one code path writes bindings; the golden slice has no IR cache or report.
+            // The CLI's writer (design §5), so one code path writes bindings. The golden slice has no IR cache, manifest
+            // or report: every file in its folders is generated, so the folder's listing is what was produced last time.
             // The metadata module is the same in both modes (design §2), and served from wwwroot.
             var isMetadata = (GeneratedFile f) => f.Path.EndsWith(".js", StringComparison.Ordinal);
             metadata.AddRange(result.Files.Where(isMetadata).Select(f => f.Text));
             foreach (var (path, files) in new[] { (api.ToString(), result.Files.Where(f => !isMetadata(f))), ("wwwroot", result.Files.Where(isMetadata)) })
             {
-                var changes = Bindings.Write(Path.Combine(root, path), files);
-                changed.AddRange(changes.Written.Select(f => Path.Combine(path, f)));
-                changed.AddRange(changes.Deleted.Select(f => $"{Path.Combine(path, f)} (deleted)"));
+                var folder = Path.Combine(root, path);
+                var previous = Directory.GetFiles(folder, "*", SearchOption.AllDirectories).Select(f => Path.GetRelativePath(folder, f).Replace('\\', '/'));
+                var changes = Bindings.Write(folder, [.. files], previous);
+                changed.AddRange(changes.Written.Select(f => $"{path}/{f}"));
+                changed.AddRange(changes.Deleted.Select(f => $"{path}/{f} (deleted)"));
             }
         }
         Assert.Equal(2, metadata.Count);

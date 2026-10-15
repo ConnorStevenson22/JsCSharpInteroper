@@ -3,9 +3,10 @@ using System.Runtime.CompilerServices;
 namespace Interoper.Tool.Tests;
 
 /// <summary>
-/// A consumer's folder, as <c>npm install</c> leaves it: <c>node_modules/@acme/demo-maps</c> (a copy of the fixture) and
-/// <c>node_modules/typescript</c> (a link to the extractor's pinned one, so <c>npm install --prefix
-/// src/interoper-extractor</c> must have run, as CLAUDE.md says).
+/// A consumer's folder, as <c>npm install</c> leaves it: <c>node_modules/@acme/demo-maps</c> and
+/// <c>node_modules/@acme/demo-widgets</c> (copies of the fixtures). Its TypeScript is the extractor's pinned one, given
+/// as <see cref="CliEnvironment.TypeScript"/> rather than linked, so the tests need no symlink rights; <c>npm install
+/// --prefix src/interoper-extractor</c> must have run, as CLAUDE.md says.
 /// </summary>
 public sealed class Consumer : IDisposable
 {
@@ -14,10 +15,12 @@ public sealed class Consumer : IDisposable
         Directory = System.IO.Directory.CreateTempSubdirectory("interoper-tool-").FullName;
         var modules = Path.Combine(Directory, "node_modules");
         CopyDirectory(Repo("fixtures", "demo-maps"), Path.Combine(modules, "@acme", "demo-maps"));
-        var typeScript = Repo("src", "interoper-extractor", "node_modules", "typescript");
-        Assert.True(System.IO.Directory.Exists(typeScript), "Run `npm install --prefix src/interoper-extractor` first (CLAUDE.md).");
-        System.IO.Directory.CreateSymbolicLink(Path.Combine(modules, "typescript"), typeScript);
+        CopyDirectory(Repo("fixtures", "demo-widgets"), Path.Combine(modules, "@acme", "demo-widgets"));
+        Assert.True(System.IO.Directory.Exists(TypeScript), "Run `npm install --prefix src/interoper-extractor` first (CLAUDE.md).");
     }
+
+    /// <summary>The extractor's pinned TypeScript; a test can point it elsewhere, or at nothing (the working directory's).</summary>
+    public string? TypeScript { get; set; } = Repo("src", "interoper-extractor", "node_modules", "typescript");
 
     public string Directory { get; }
 
@@ -29,7 +32,7 @@ public sealed class Consumer : IDisposable
     public (int ExitCode, string Error) Run(string[] args, string? node = null)
     {
         var error = new StringWriter();
-        var env = new CliEnvironment(Directory, error);
+        var env = new CliEnvironment(Directory, error) { TypeScript = TypeScript };
         if (node is not null)
         {
             env = env with { Node = node };

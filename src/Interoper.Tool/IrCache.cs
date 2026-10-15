@@ -10,8 +10,8 @@ internal sealed class CliException(string message) : Exception(message);
 /// <summary>
 /// The IR cache (design §5): <c>&lt;out&gt;/.interoper/ir.json</c>, reused while <c>ir.key</c> matches. The key is plain
 /// text, one input per line: the tool's version, TypeScript's, each listed package's name and version, the profile's
-/// event-map property (the only profile field the extractor reads, ir.md), and the version of each unlisted package the
-/// IR has declarations from.
+/// event-map property (the only profile field the extractor reads, ir.md), and the version of each package the listed
+/// ones depend on (<c>dependencies</c> and <c>peerDependencies</c>).
 /// </summary>
 internal sealed class IrCache(string outDirectory)
 {
@@ -21,17 +21,19 @@ internal sealed class IrCache(string outDirectory)
 
     public string KeyPath => Path.Combine(Folder, "ir.key");
 
-    /// <summary>The cached IR, when its key matches; null when it doesn't, or the cache is missing or unreadable.</summary>
+    /// <summary>
+    /// The cached IR, when its key matches; null when it doesn't, or the cache is missing or not a valid IR. The key is
+    /// compared before the IR is read.
+    /// </summary>
     public IrDocument? TryLoad(ExtractionInputs inputs)
     {
-        if (!File.Exists(KeyPath) || !File.Exists(IrPath))
+        if (!File.Exists(KeyPath) || !File.Exists(IrPath) || File.ReadAllText(KeyPath) != inputs.Key)
         {
             return null;
         }
         try
         {
-            var ir = IrDocument.Load(IrPath);
-            return File.ReadAllText(KeyPath) == inputs.Key(ir) ? ir : null;
+            return IrDocument.Load(IrPath);
         }
         catch (Exception e) when (e is InvalidDataException or System.Text.Json.JsonException)
         {
@@ -97,7 +99,7 @@ internal sealed class IrCache(string outDirectory)
         {
             throw new CliException($"The extractor's IR ({IrPath}) can't be read: {e.Message}");
         }
-        File.WriteAllText(KeyPath, inputs.Key(ir));
+        File.WriteAllText(KeyPath, inputs.Key);
         return ir;
     }
 }
@@ -106,24 +108,26 @@ internal sealed class IrCache(string outDirectory)
 internal sealed record ExtractionInputs(string ToolVersion, InstalledPackage TypeScript, IReadOnlyList<InstalledPackage> Packages, string? EventMapProperty)
 {
     /// <summary>
-    /// The key for an IR extracted from these inputs. The unlisted packages <paramref name="ir"/> has declarations from
-    /// are found as Node finds them from the listed packages' folders.
+    /// The key: one input per line. The packages the listed ones depend on are found as Node finds them from each
+    /// listed package's folder; one that isn't installed is <c>?</c>.
     /// </summary>
-    public string Key(IrDocument ir)
+    public string Key { get; } = KeyOf(ToolVersion, TypeScript, Packages, EventMapProperty);
+
+    private static string KeyOf(string toolVersion, InstalledPackage typeScript, IReadOnlyList<InstalledPackage> packages, string? eventMapProperty)
     {
         var lines = new List<string>
         {
-            $"interoper {ToolVersion}",
-            $"typescript {TypeScript.Version}",
+            $"interoper {toolVersion}",
+            $"typescript {typeScript.Version}",
         };
-        lines.AddRange(Packages.Select(p => $"package {p}"));
-        lines.Add($"events.mapProperty {EventMapProperty}".TrimEnd());
-        var listed = Packages.Select(p => p.Name).ToHashSet(StringComparer.Ordinal);
-        foreach (var name in ir.Modules.Select(m => m.Package).OfType<string>().Where(n => !listed.Contains(n)).Distinct().Order(StringComparer.Ordinal))
-        {
-            var found = Packages.Select(p => NodeModules.Find(RealPath(p.Directory), name)).FirstOrDefault(d => d is not null);
-            lines.Add($"dependency {name}@{found?.Version ?? "?"}");
-        }
+        lines.AddRange(packages.Select(p => $"package {p}"));
+        lines.Add($"events.mapProperty {eventMapProperty}".TrimEnd());
+        var listed = packages.Select(p => p.Name).ToHashSet(StringComparer.Ordinal);
+        var dependencies = packages
+            .SelectMany(p => p.Dependencies.Where(d => !listed.Contains(d)).Select(d => $"dependency {d}@{NodeModules.Find(RealPath(p.Directory), d)?.Version ?? "?"}"))
+            .Distinct()
+            .Order(StringComparer.Ordinal);
+        lines.AddRange(dependencies);
         return string.Join('\n', lines) + "\n";
     }
 

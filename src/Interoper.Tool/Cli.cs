@@ -14,6 +14,9 @@ public sealed record CliEnvironment(string WorkingDirectory, TextWriter Error)
 
     /// <summary>The extractor's source, shipped next to the tool (design §4).</summary>
     public string ExtractorDirectory { get; init; } = Path.Combine(AppContext.BaseDirectory, "extractor");
+
+    /// <summary>The <c>typescript</c> package's folder, instead of the one in the working directory's node_modules.</summary>
+    public string? TypeScript { get; init; }
 }
 
 /// <summary>
@@ -35,7 +38,7 @@ public static partial class Cli
 
     public static int Run(IReadOnlyList<string> args, CliEnvironment env)
     {
-        if (args is [] or ["-h" or "--help" or "help"])
+        if (args is [] or ["-h" or "--help" or "help"] || (args[0] == "generate" && args.Skip(1).Any(a => a is "-h" or "--help")))
         {
             env.Error.WriteLine(Usage);
             return args is [] ? 2 : 0;
@@ -52,7 +55,7 @@ public static partial class Cli
             env.Error.WriteLine(Usage);
             return 2;
         }
-        catch (CliException e)
+        catch (Exception e) when (e is CliException or IOException or UnauthorizedAccessException)
         {
             env.Error.WriteLine($"error: {e.Message}");
             return 2;
@@ -66,7 +69,7 @@ public static partial class Cli
             .Select(name => NodeModules.Find(cwd, name)
                 ?? throw new CliException($"`{name}` isn't installed: there's no node_modules/{name} in {cwd} or above it. Run `npm install {name}`."))
             .ToList();
-        var typeScript = NodeModules.Find(cwd, "typescript") ?? NodeModules.Find(env.ExtractorDirectory, "typescript")
+        var typeScript = (env.TypeScript is { } folder ? NodeModules.Read(folder, "typescript") : NodeModules.Find(cwd, "typescript"))
             ?? throw new CliException($"TypeScript isn't installed: the extractor needs TypeScript 6.x in your node_modules. Run `npm install -D typescript@{TypeScriptPin}`.");
         if (!typeScript.Version.StartsWith("6.", StringComparison.Ordinal))
         {
@@ -82,6 +85,10 @@ public static partial class Cli
         catch (Exception e) when (e is IOException or JsonException or InvalidDataException or UnauthorizedAccessException)
         {
             throw new CliException($"The profile {profilePath} can't be read: {e.Message}");
+        }
+        if (profile.Package != packages[0].Name)
+        {
+            throw new CliException($"The profile is for {profile.Package}, but the first package is {packages[0].Name}.");
         }
 
         var outDir = Path.GetFullPath(Path.Combine(cwd, args.Out));
@@ -99,20 +106,25 @@ public static partial class Cli
         }
 
         GeneratorResult result;
+        BindingChanges changes;
         try
         {
             result = Generator.Generator.Generate(ir, profile, new(args.Api, args.Namespace));
+            changes = Bindings.WriteTracked(outDir, result.Files);
         }
         catch (InvalidDataException e)
         {
             throw new CliException(e.Message);
         }
-        var changes = Bindings.Write(outDir, result.Files);
-        var report = Report.Text(Version, args.Api, args.Namespace, packages, result.Diagnostics);
-        File.WriteAllText(Path.Combine(outDir, Report.FileName), report);
+        var reportPath = Path.Combine(outDir, Report.FileName);
+        File.WriteAllText(reportPath, Report.Text(Version, args.Api, args.Namespace, packages, result.Diagnostics));
 
         env.Error.WriteLine($"Generated {result.Files.Count} files in {outDir}: {changes.Written.Count} written, {changes.Deleted.Count} deleted.");
-        env.Error.Write(report);
+        foreach (var line in Report.Counts(result.Diagnostics))
+        {
+            env.Error.WriteLine(line);
+        }
+        env.Error.WriteLine($"Report: {reportPath}");
         if (args.WarningsAsErrors && result.Diagnostics.Count > 0)
         {
             env.Error.WriteLine($"error: {result.Diagnostics.Count} diagnostics, and --warnings-as-errors is set.");
@@ -150,6 +162,8 @@ public static partial class Cli
                         break;
                     case var _ when arg.StartsWith('-'):
                         throw new UsageException($"unknown option `{arg}`");
+                    case var _ when packages.Contains(arg):
+                        throw new UsageException($"`{arg}` is given twice");
                     default:
                         packages.Add(arg);
                         break;

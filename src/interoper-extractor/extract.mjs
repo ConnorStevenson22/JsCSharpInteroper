@@ -17,23 +17,13 @@ import { createProgram, discriminant, listDts } from "./program.mjs";
 const ts = loadTypeScript();
 
 /**
- * TypeScript 6.x (design §4): the package folder in `INTEROPER_TYPESCRIPT` (the CLI passes the one it resolved), else
- * the working directory's (the consumer's node_modules), else the extractor's own (repo development).
+ * TypeScript 6.x (design §4): the package folder in `INTEROPER_TYPESCRIPT` (the CLI passes the consumer's), else the
+ * extractor's own (repo development).
  */
 function loadTypeScript() {
-  const own = createRequire(import.meta.url);
+  const require = createRequire(import.meta.url);
   const dir = process.env.INTEROPER_TYPESCRIPT;
-  let loaded;
-  if (dir) {
-    loaded = own(path.resolve(dir));
-  } else {
-    try {
-      loaded = createRequire(path.join(process.cwd(), "noop.js"))("typescript");
-    } catch (e) {
-      if (e.code !== "MODULE_NOT_FOUND") throw e;
-      loaded = own("typescript");
-    }
-  }
+  const loaded = require(dir ? path.resolve(dir) : "typescript");
   if (!/^6\./.test(loaded.version)) {
     throw new Error(`TypeScript ${loaded.version} found; the extractor needs 6.x: run \`npm install -D typescript@6.0.3\``);
   }

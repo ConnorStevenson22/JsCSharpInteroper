@@ -33,9 +33,14 @@ internal static class Report
         {
             lines.AddRange(sorted.Select(d => d.ToString()));
             lines.Add("");
-            lines.AddRange(sorted.GroupBy(d => d.Code).Select(g => $"{g.Key}: {g.Count()}"));
-            lines.Add($"total: {sorted.Count}");
+            lines.AddRange(Counts(sorted));
         }
         return string.Join('\n', lines) + "\n";
     }
+
+    /// <summary>The count per code and the total, or <c>No diagnostics.</c>: what the CLI prints.</summary>
+    public static IEnumerable<string> Counts(IReadOnlyList<Diagnostic> diagnostics) =>
+        diagnostics.Count == 0
+            ? ["No diagnostics."]
+            : [.. diagnostics.GroupBy(d => d.Code).OrderBy(g => g.Key, StringComparer.Ordinal).Select(g => $"{g.Key}: {g.Count()}"), $"total: {diagnostics.Count}"];
 }
