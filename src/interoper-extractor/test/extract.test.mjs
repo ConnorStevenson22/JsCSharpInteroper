@@ -394,6 +394,8 @@ test("a module's file is the JS its export loads in a browser, not the .js next 
       "./tile": { types: "./types/tile.d.ts", browser: "./browser/tile.js", import: "./node/tile.js" },
       "./only": { types: "./types/only.d.ts" }, // no JS target: the .js next to the typings
       "./bare": { types: "./types/bare.d.ts" }, // no JS target and no .js: nothing loads it, so it's internal
+      "./multi-types": { types: "./types/multi.d.ts" }, // several exports reach it: the one with a JS target wins
+      "./multi": { types: "./types/multi.d.ts", import: "./esm/multi.js" },
     } },
     "types/geo.d.ts": "export declare class Geo {}",
     "a.d.ts": "export declare class A {}",
@@ -401,29 +403,48 @@ test("a module's file is the JS its export loads in a browser, not the .js next 
     "types/only.d.ts": "export declare class Only {}",
     "types/only.js": "export class Only {}",
     "types/bare.d.ts": "export declare class Bare {}",
+    "types/multi.d.ts": "export declare class Multi {}",
   }, (dir) => extract(dir).modules.map((m) => [m.specifier, m.file, m.internal]));
   assert.deepEqual(files, [
     ["@acme/extra/a.js", "esm/a.js", undefined],
+    ["@acme/extra/bare", undefined, true], // its subpath kept, so namespaces and profile keys don't move
     ["@acme/extra/geo", "esm/geo.js", undefined],
+    ["@acme/extra/multi", "esm/multi.js", undefined],
     ["@acme/extra/only", "types/only.js", undefined],
     ["@acme/extra/tile", "browser/tile.js", undefined],
-    ["@acme/extra/types/bare.js", undefined, true],
   ]);
 });
 
-test("design §3.5: a base class exported for its typings only, and re-exported with `export type`, can't be imported", () => {
+test("design §3.5: a base class exported for its typings only, and re-exported as a type, can't be imported", () => {
   const modules = withPackage({
     "package.json": { name: "@acme/extra", version: "1.0.0", type: "module", exports: {
       ".": { types: "./index.d.ts", import: "./index.js" },
       "./base": { types: "./base.d.ts" },
+      "./star": { types: "./star.d.ts" },
+      "./imp": { types: "./imp.d.ts" },
+      "./plain": { types: "./plain.d.ts" },
     } },
     "base.d.ts": "export declare class Base { text: string }",
-    "index.d.ts": 'import { Base } from "./base.js";\nexport type { Base } from "./base.js";\nexport declare class Label extends Base {}',
+    "star.d.ts": "export declare class StarBase {}",
+    "imp.d.ts": "export declare class ImpBase {}",
+    "plain.d.ts": "export declare class PlainBase {}",
+    "index.d.ts": [
+      'import { Base } from "./base.js";',
+      'export type { Base } from "./base.js";', // export type { X } from
+      'export type * from "./star.js";', // export type * from
+      'import type { ImpBase } from "./imp.js";',
+      "export { ImpBase };", // import type, then export
+      'export * from "./plain.js";', // a value re-export: index.js has it
+      "export declare class Label extends Base {}",
+    ].join("\n"),
     "index.js": "export class Label {}",
   }, (dir) => extract(dir).modules);
   assert.deepEqual(modules.map((m) => [m.specifier, m.internal, m.declarations.map((d) => [d.name, d.importFrom])]), [
     ["@acme/extra", undefined, [["Label", undefined]]],
-    ["@acme/extra/base.js", true, [["Base", undefined]]], // no importFrom: index.js doesn't export it
+    ["@acme/extra/base", true, [["Base", undefined]]], // no importFrom: index.js doesn't export it
+    ["@acme/extra/imp", true, [["ImpBase", undefined]]],
+    ["@acme/extra/plain", true, [["PlainBase", { module: "@acme/extra", file: "index.js" }]]],
+    ["@acme/extra/star", true, [["StarBase", undefined]]],
   ]);
 });
 

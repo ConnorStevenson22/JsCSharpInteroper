@@ -112,8 +112,7 @@ export function extract(packageDirs, { eventMap } = {}) {
       for (const sf of reachable) {
         const moduleSym = checker.getSymbolAtLocation(sf);
         for (const e of moduleSym ? checker.getExportsOfModule(moduleSym) : []) {
-          // `export type { X } from` (or `export { type X }`) exports nothing at run time.
-          if (e.declarations?.some((d) => ts.isTypeOnlyImportOrExportDeclaration(d))) continue;
+          if (typeOnly(e, sf)) continue;
           const target = e.flags & F.Alias ? checker.getAliasedSymbol(e) : e;
           if (!reexports.has(target) && target.declarations?.length && target.declarations.every((d) => d.getSourceFile() !== sf)) {
             reexports.set(target, { module: infoOf(sf).specifier, file: infoOf(sf).file, name: e.name });
@@ -123,6 +122,36 @@ export function extract(packageDirs, { eventMap } = {}) {
     }
     const found = reexports.get(sym);
     return found && compact({ module: found.module, export: found.name !== nameOf(sym) ? found.name : undefined, file: found.file });
+  }
+
+  /**
+   * Whether `e`, an export of `sf`, exports nothing at run time: an alias with a type-only link in its chain (`export
+   * type { X } from`, `export { type X }`, `import type { X }` then `export { X }`), or a symbol that came through
+   * `export *` when no value `export *` reaches it (only `export type * from`).
+   */
+  function typeOnly(e, sf) {
+    return e.flags & F.Alias ? aliasTypeOnly(e) : !starReaches(e, sf, new Set());
+  }
+  function aliasTypeOnly(alias) {
+    for (let s = alias; s && s.flags & F.Alias; s = checker.getImmediateAliasedSymbol(s)) {
+      if (s.declarations?.some((d) => ts.isTypeOnlyImportOrExportDeclaration(d))) return true;
+    }
+    return false;
+  }
+  /** Whether a value `export * from` of `sf` reaches `sym`: from the file that declares it, or as a value from there. */
+  function starReaches(sym, sf, seen) {
+    if (seen.has(sf)) return false;
+    seen.add(sf);
+    for (const st of sf.statements) {
+      if (!ts.isExportDeclaration(st) || st.exportClause || !st.moduleSpecifier || st.isTypeOnly) continue;
+      const m = checker.getSymbolAtLocation(st.moduleSpecifier);
+      const from = m?.declarations?.find(ts.isSourceFile);
+      if (!from) continue;
+      if (sym.declarations?.some((d) => d.getSourceFile() === from)) return true;
+      const inner = checker.getExportsOfModule(m).find((x) => x === sym || (x.flags & F.Alias && checker.getAliasedSymbol(x) === sym));
+      if (inner && (inner === sym ? starReaches(sym, from, seen) : !aliasTypeOnly(inner))) return true;
+    }
+    return false;
   }
 
   // --- Declarations ---
@@ -530,10 +559,10 @@ function readPackage(dir) {
 /**
  * A declaration file's module (ir.md): the nearest package.json with a name is its package, and its specifier is how
  * that package's `exports` reach the file (`@acme/widgets/legend`). Without `exports` it's `<name>/<path of the .js
- * next to the .d.ts>`, and so it is when no export reaches the file, which is then internal, as it is when the only
- * export that reaches it is for its typings and there's no .js next to them. `file` is, for import
- * maps, the JS file a browser loads for the subpath (its JS conditions' target, else that `.js`), when that isn't the
- * subpath itself.
+ * next to the .d.ts>`, and so it is when no export reaches the file, which is then internal. It's internal too, under
+ * its export's subpath, when the exports that reach it are for its typings only and there's no .js next to them.
+ * `file` is, for import maps, the JS file a browser loads for the subpath (its JS conditions' target, else that `.js`),
+ * when that isn't the subpath itself.
  */
 function moduleInfo(file) {
   for (let d = path.dirname(file); d !== path.dirname(d); d = path.dirname(d)) {
@@ -542,14 +571,16 @@ function moduleInfo(file) {
     const dts = `./${path.relative(d, file).split(path.sep).join("/")}`;
     const js = dts.replace(/\.d\.([mc]?)ts$/, ".$1js");
     const map = pkg.exports === undefined ? undefined : exportsMap(pkg.exports);
-    let subpath = map ? exportOf(map, [js, dts]) : js;
-    const loaded = map && subpath !== undefined ? resolveExport(map, subpath, JS_CONDITIONS) : undefined;
-    // An export of the typings only (`{ "types": … }`), with no .js next to them, loads no JS: nothing can import the
-    // module, so it's internal, as when no export reaches it.
-    if (map && subpath !== undefined && typeof loaded !== "string" && !fs.existsSync(path.join(d, js))) subpath = undefined;
-    const real = typeof loaded === "string" ? loaded : js;
-    return compact({ specifier: pkg.name + (subpath ?? js).slice(1), package: pkg.name, file: subpath !== undefined && real !== subpath ? real.slice(2) : undefined,
-      internal: subpath === undefined || undefined });
+    // Of the exports that reach it, one that loads JS in a browser, else the first. With neither a JS target nor a .js
+    // next to the typings, that export is for the typings only: the module keeps its subpath, but nothing can import
+    // it, so it's internal.
+    const subpaths = map ? subpathsOf(map, [js, dts]) : [js];
+    const withJs = map ? subpaths.find((s) => typeof resolveExport(map, s, JS_CONDITIONS) === "string") : undefined;
+    const subpath = withJs ?? subpaths[0];
+    const typingsOnly = map !== undefined && subpath !== undefined && withJs === undefined && !fs.existsSync(path.join(d, js));
+    const real = withJs !== undefined ? resolveExport(map, withJs, JS_CONDITIONS) : js;
+    return compact({ specifier: pkg.name + (subpath ?? js).slice(1), package: pkg.name,
+      file: subpath !== undefined && !typingsOnly && real !== subpath ? real.slice(2) : undefined, internal: subpath === undefined || typingsOnly || undefined });
   }
   return undefined;
 }
@@ -558,11 +589,11 @@ function moduleInfo(file) {
 const exportsMap = (exports) => (exports && typeof exports === "object" && !Array.isArray(exports) && Object.keys(exports).some((k) => k.startsWith(".")) ? exports : { ".": exports });
 
 /**
- * The subpath of an `exports` map that reaches a file (its `.js` or its `.d.ts`, `files`), or undefined. The keys whose
- * target is the file are tried, the exact ones first, then the `*` patterns, each in the map's order, and a subpath
- * counts only when resolving it forward gives the file: a pattern with a longer prefix, or a null target, can shadow it.
+ * The subpaths of an `exports` map that reach a file (its `.js` or its `.d.ts`, `files`), in order: the exact keys
+ * whose target is the file, then the `*` patterns, each in the map's order. A subpath counts only when resolving it
+ * forward gives the file: a pattern with a longer prefix, or a null target, can shadow it.
  */
-function exportOf(map, files) {
+function subpathsOf(map, files) {
   const entries = Object.entries(map).map(([key, value]) => [key, target(value)]).filter(([, t]) => typeof t === "string");
   const candidates = [
     ...entries.filter(([key, t]) => !key.includes("*") && files.includes(t)).map(([key]) => key),
@@ -572,7 +603,7 @@ function exportOf(map, files) {
       return file ? [key.replace("*", file.slice(prefix.length, file.length - suffix.length))] : [];
     }),
   ];
-  return candidates.find((subpath) => files.includes(resolveExport(map, subpath)));
+  return candidates.filter((subpath) => files.includes(resolveExport(map, subpath)));
 }
 
 /**

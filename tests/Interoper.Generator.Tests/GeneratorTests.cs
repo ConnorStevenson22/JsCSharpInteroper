@@ -200,6 +200,37 @@ public sealed class GeneratorTests
         Assert.Equal("IOP2006 Acme.Widgets: the registry is Widgets2: a namespace has its name (R27)", Assert.Single(result.Diagnostics).ToString());
     }
 
+    [Fact] // R27: a type and a namespace that differ only in case don't clash: one is a file, the other a folder
+    public void ATypeAndANamespaceThatDifferOnlyInCaseDontClash()
+    {
+        var result = Generate(Api.Sync, ("WebGL.js", """{ "kind": "class", "name": "WebGL" }"""), ("webgl/Thing.js", """{ "kind": "class", "name": "Thing" }"""));
+
+        Assert.Equal(["WebGL.cs", "WebGLSnapshot.cs", "Webgl/Thing.cs", "Webgl/ThingSnapshot.cs", "Maps.cs", "maps.meta.js"], result.Files.Select(f => f.Path));
+        Assert.Empty(result.Diagnostics);
+    }
+
+    [Fact] // R27: nor do the registry and a folder's namespace that differ only in case
+    public void TheRegistryKeepsItsNameNextToAFolderThatDiffersOnlyInCase()
+    {
+        var ir = IrDocument.Parse("""
+            { "version": 1, "package": { "name": "@acme/webgl", "version": "1" }, "modules": [
+              { "specifier": "@acme/webgl/WebGL/Thing.js", "declarations": [{ "kind": "class", "name": "Thing" }] }] }
+            """);
+        var result = Generator.Generate(ir, new Profile { Package = "@acme/webgl" }, new(Api.Sync, "Acme"));
+
+        Assert.Equal(["WebGL/Thing.cs", "WebGL/ThingSnapshot.cs", "Webgl.cs", "webgl.meta.js"], result.Files.Select(f => f.Path));
+        Assert.Empty(result.Diagnostics);
+    }
+
+    [Fact] // R27: sibling modules' types whose names differ only in case would be one file, so the later one is prefixed too
+    public void SiblingModulesTypesThatDifferOnlyInCaseArePrefixed()
+    {
+        var result = Generate(Api.Sync, ("a.js", """{ "kind": "class", "name": "WebGLOptions" }"""), ("b.js", """{ "kind": "class", "name": "WebglOptions" }"""));
+
+        Assert.Equal(["WebGLOptions.cs", "WebGLOptionsSnapshot.cs", "BWebglOptions.cs", "BWebglOptionsSnapshot.cs", "Maps.cs", "maps.meta.js"], result.Files.Select(f => f.Path));
+        Assert.Equal("IOP2006 @acme/maps/b.js: its WebglOptions is BWebglOptions: @acme/maps/a.js has one too (R27)", Assert.Single(result.Diagnostics).ToString());
+    }
+
     [Fact] // R27: sibling modules' types of one name both compile; the later one is prefixed with its module's name
     public void SameNamedTypesOfSiblingModulesAreBothEmitted()
     {

@@ -129,15 +129,16 @@ internal sealed class TypeMap
         (package, root) = (ir.Package.Name, ns);
         var emitted = selected.Select(s => (s.Module, s.Declaration.Name)).ToHashSet();
         // R27: sibling modules' types of one name. The first in IR order keeps it; a later one is prefixed with its
-        // module's class name (ops/b.js's Options is BOptions), so both compile, and so do their users.
-        var owners = new Dictionary<(string Namespace, string Name), string>();
+        // module's class name (ops/b.js's Options is BOptions), so both compile, and so do their users. Names that
+        // differ only in case count as one, since their files would be one where the file system ignores case.
+        var owners = new Dictionary<TypeName, string>(TypeName.IgnoreCase);
         foreach (var (module, d) in ir.Modules.SelectMany(m => m.Declarations.Select(d => (m.Specifier, d))))
         {
             if (!MakesType(d))
             {
                 continue;
             }
-            var key = (Namespace: Namespace(module), Name: Naming.Type(d.Name));
+            var key = new TypeName(Namespace(module), Naming.Type(d.Name));
             if (owners.TryAdd(key, module) || owners[key] == module)
             {
                 continue;
@@ -146,12 +147,12 @@ internal sealed class TypeMap
             renamed[(module, d.Name)] = name;
             if (emitted.Contains((module, d.Name)))
             {
-                diagnostics.Add(new(Diagnostic.Renamed, module, $"its {key.Item2} is {name}: {owners[key]} has one too (R27)"));
+                diagnostics.Add(new(Diagnostic.Renamed, module, $"its {key.Name} is {name}: {owners[key]} has one too (R27)"));
             }
         }
         // R27: the namespaces of the emitted types, below the root and with the namespaces they're in. The registry
         // takes the next free name when one of them has its name (Widgets2 next to a widgets/ folder).
-        Namespaces = selected.Select(s => Namespace(s.Module)).SelectMany(Parents).ToHashSet(StringComparer.OrdinalIgnoreCase); // folders, like paths
+        Namespaces = selected.Select(s => Namespace(s.Module)).SelectMany(Parents).ToHashSet();
         var registry = Naming.Type(ir.Package.Name.Split('/')[^1]);
         Registry = registry;
         for (var n = 2; Namespaces.Contains($"{root}.{Registry}"); n++)
