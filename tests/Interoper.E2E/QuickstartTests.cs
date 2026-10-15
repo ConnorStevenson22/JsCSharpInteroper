@@ -59,12 +59,7 @@ public sealed class QuickstartTests(BrowserHost host)
         }
         finally
         {
-            if (server is not null)
-            {
-                server.Kill(entireProcessTree: true);
-                server.WaitForExit();
-                server.Dispose();
-            }
+            await BrowserHost.StopAsync(server);
             try
             {
                 Directory.Delete(app, recursive: true);

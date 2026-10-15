@@ -42,7 +42,15 @@ public sealed partial class BrowserHost : IAsyncLifetime
         };
         foreach (var argument in arguments) start.ArgumentList.Add(argument);
         var process = Process.Start(start)!;
-        return (process, await ListeningUrlAsync(process, "The test host"));
+        try
+        {
+            return (process, await ListeningUrlAsync(process, "The test host"));
+        }
+        catch
+        {
+            await StopAsync(process);
+            throw;
+        }
     }
 
     // Opens the page in a fresh context, waits for it to finish, and returns what it printed. The first browser

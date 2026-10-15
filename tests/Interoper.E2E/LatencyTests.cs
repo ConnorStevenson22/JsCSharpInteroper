@@ -42,8 +42,8 @@ public sealed partial class LatencyTests(BrowserHost browser, LatencyHost host) 
         var (read, batch) = (Milliseconds(match, "read"), Milliseconds(match, "batch"));
         Assert.Equal("1", match.Groups["trips"].Value);
         Assert.Equal("19", match.Groups["zoom"].Value); // the last write
-        Assert.InRange(read, LatencyHost.Latency.TotalMilliseconds, double.MaxValue); // the delay is on
-        Assert.InRange(batch, LatencyHost.Latency.TotalMilliseconds, 3 * LatencyHost.Latency.TotalMilliseconds);
+        Assert.InRange(read, LatencyHost.Latency.TotalMilliseconds - 1, double.MaxValue); // the delay is on (less 1 for rounding)
+        Assert.InRange(batch, LatencyHost.Latency.TotalMilliseconds - 1, 3 * LatencyHost.Latency.TotalMilliseconds);
         TestContext.Current.TestOutputHelper?.WriteLine(output);
     }
 

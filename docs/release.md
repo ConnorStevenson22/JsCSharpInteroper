@@ -32,5 +32,5 @@ Hybrid hosts don't run on Linux, so no test drives one ([design §6](design.md#6
    - **zoom:** `MapView.CreateAsync` with `Zoom = 3`, `SetZoomAsync(4)`, then `GetZoomAsync()` is 4;
    - **one event:** `WatchZoomAsync`, then `SetZoomAsync(5)`, and the handler gets 5;
    - **one batch:** five writes in `await using (scope.BeginBatch())` raise `Realm.RoundTrips` by exactly 1;
-   - **census:** `Realm.Transport.CensusAsync()` before creating the scope, and again after disposing it (the subscription with it), is the same number.
+   - **census:** `Realm.Transport.CensusAsync()` after `await Realm.StartAsync()` and before the first `CreateAsync`, and again after the scope is disposed (the subscription with it), is the same number.
 5. Show the four results on the page and note them, with the Windows and WebView2 versions, in the release's notes. Any failure blocks the release and gets a test in this repo where one can reproduce it.

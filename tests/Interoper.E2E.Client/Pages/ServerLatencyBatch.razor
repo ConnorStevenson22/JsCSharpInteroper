@@ -18,7 +18,12 @@
         try
         {
             var view = await MapView.CreateAsync(Scope, new MapViewSnapshot());
-            await view.GetZoomAsync(); // warm: the first call of each kind pays for JIT
+            // Warm: the first call of each kind pays for JIT.
+            await view.GetZoomAsync();
+            await using (Scope.BeginBatch())
+            {
+                await view.SetZoomAsync(1);
+            }
 
             var clock = Stopwatch.StartNew();
             await view.GetZoomAsync();

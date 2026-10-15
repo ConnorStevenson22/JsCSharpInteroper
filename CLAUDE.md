@@ -4,7 +4,7 @@ Interoper generates C# bindings for JavaScript libraries from their TypeScript t
 
 Read before changing anything:
 - [docs/design.md](docs/design.md): decisions and architecture.
-- [docs/mapping.md](docs/mapping.md): TypeScript → C# rules (R1–R27) and diagnostic codes.
+- [docs/mapping.md](docs/mapping.md): TypeScript → C# rules (R1–R29) and diagnostic codes.
 - [docs/plan.md](docs/plan.md): the build order; the current phase has a tracking issue.
 - [docs/ir.md](docs/ir.md): the extractor's output, the generator's input.
 

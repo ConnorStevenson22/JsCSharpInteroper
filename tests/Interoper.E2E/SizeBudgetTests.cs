@@ -20,7 +20,8 @@ public sealed partial class SizeBudgetTests
 
     private static readonly string[] Assemblies = ["Interoper.Runtime", "Interoper.Blazor", "GoldenSlice"];
 
-    // Blazor's SDK hides trim analysis warnings by default, and these framework assemblies (RC 1) have some.
+    // Blazor's SDK hides trim analysis warnings by default, and these framework assemblies (RC 1) have some. The test
+    // requires them too, as proof that the trimmer ran with its warnings on.
     private static readonly string[] FrameworkWarnings =
     [
         "IL2104: Assembly 'Microsoft.AspNetCore.Components' produced trim warnings.",
@@ -40,12 +41,16 @@ public sealed partial class SizeBudgetTests
         try
         {
             // Trim warnings on but not errors, so the test lists them instead of failing at the first; compiler
-            // warnings are errors (TreatWarningsAsErrors).
+            // warnings are errors (TreatWarningsAsErrors). The trimmer links into a fresh folder, so it runs, and
+            // warns, every time, not only when its inputs changed.
+            var linked = Path.Combine(output, "linked") + Path.DirectorySeparatorChar;
             var log = await RunAsync(
-                $"dotnet publish tests/Interoper.E2E.Client -c Release -o \"{output}\" -p:SuppressTrimAnalysisWarnings=false -p:ILLinkTreatWarningsAsErrors=false",
+                $"dotnet publish tests/Interoper.E2E.Client -c Release -o \"{output}\" -p:IntermediateLinkDir=\"{linked}\" -p:SuppressTrimAnalysisWarnings=false -p:ILLinkTreatWarningsAsErrors=false",
                 Repo());
-            var warnings = log.Split('\n').Select(l => Warning().Match(l)).Where(m => m.Success).Select(m => m.Groups[1].Value.Trim()).Distinct();
+            var warnings = log.Split('\n').Select(l => Warning().Match(l)).Where(m => m.Success).Select(m => m.Groups[1].Value.Trim()).Distinct().ToList();
             Assert.DoesNotContain(warnings, w => !FrameworkWarnings.Any(f => w.StartsWith(f, StringComparison.Ordinal)));
+            // The framework's warnings showing up is what proves trim analysis ran. When an upgrade fixes one, remove it.
+            Assert.All(FrameworkWarnings, f => Assert.Contains(warnings, w => w.StartsWith(f, StringComparison.Ordinal)));
 
             var framework = Path.Combine(output, "wwwroot", "_framework");
             var sizes = Assemblies.ToDictionary(name => name, name =>
