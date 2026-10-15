@@ -2,12 +2,19 @@
 
   <PropertyGroup>
     <IsAotCompatible>true</IsAotCompatible>
+    <IsPackable>true</IsPackable>
+    <!-- The XML docs ship in the package, and malformed ones fail the build (CS1570, CS0419 and kin). CS1591 (a public
+         member without docs) is off until every member has them. -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+    <Description>Interoper for Blazor: AddInteroper(), the base class of generated components, and custom-event plumbing. Works on Server, WebAssembly and Hybrid.</Description>
   </PropertyGroup>
 
   <ItemGroup>
     <SupportedPlatform Include="browser" />
     <PackageReference Include="Microsoft.AspNetCore.Components.Web" />
-    <ProjectReference Include="..\Interoper.Runtime\Interoper.Runtime.csproj" />
+    <!-- PrivateAssets none: the runtime's analyzer (IOP3001) reaches the projects that reference only this package. -->
+    <ProjectReference Include="..\Interoper.Runtime\Interoper.Runtime.csproj" PrivateAssets="none" />
   </ItemGroup>
 
 </Project>

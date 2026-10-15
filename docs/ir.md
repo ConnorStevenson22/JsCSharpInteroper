@@ -3,6 +3,12 @@
 The extractor's output and the generator's input ([design §4](design.md#4-generator-architecture)): one JSON document for one or more packages, language-neutral and versioned. It records what the typings and the Custom Elements Manifest say, resolved by the TypeScript checker ([mapping §7](mapping.md#7-what-the-extractor-must-resolve-with-the-checker)). It makes no C# decisions: classification, naming and the profile are the generator's.
 
 ```bash
+dotnet interoper generate @acme/maps @acme/map-widgets --api async --namespace Acme.Maps --out Generated/AcmeMaps   # writes Generated/AcmeMaps/.interoper/ir.json
+```
+
+`dotnet interoper generate` runs the extractor and caches its IR ([design §5](design.md#5-consumer-workflow-and-packages)). For development, run it directly:
+
+```bash
 node src/interoper-extractor/extract.mjs fixtures/demo-maps --profile fixtures/demo-maps/profile.json --out ir.json
 node src/interoper-extractor/extract.mjs node_modules/@acme/maps node_modules/@acme/map-widgets --out ir.json
 ```
@@ -19,13 +25,13 @@ It takes the folders of the packages to list; the first is the IR's `package`. F
 ```jsonc
 { "version": 1, "package": { "name": "@acme/demo-maps", "version": "0.0.0" },
   "modules": [{ "specifier": "@acme/demo-maps/geometry.js", "declarations": [ … ] },
-              { "specifier": "@acme/demo-widgets/legend", "package": "@acme/demo-widgets", "declarations": [ … ] },
+              { "specifier": "@acme/demo-widgets/legend", "package": "@acme/demo-widgets", "file": "dist/legend.js", "declarations": [ … ] },
               { "specifier": "@acme/demo-widgets/dist/support/entry.js", "package": "@acme/demo-widgets", "internal": true, "declarations": [ … ] }],
   "elements": [{ "tag": "demo-map", "class": { "kind": "ref", "name": "DemoMapElement", "module": "@acme/demo-maps/demo-map.js" }, … }] }
 ```
 
 - **Packages.** `package` is the first package listed. A module of any other package says its `package`: a listed one, or a package that isn't listed but declares something a listed one references.
-- **Specifiers.** A module's package is the nearest `package.json` with a name, and its specifier is how that package's `exports` reach the file: `"./legend": { "types": "./dist/legend.d.ts", "import": "./dist/legend.js" }` gives `@acme/demo-widgets/legend`. A target is resolved as TypeScript resolves an import, with the conditions `types`, `import` and `default`: a string; a condition object's first of those conditions that resolves, nested ones too, falling through one that doesn't; an array's first entry that does; `null` excludes. It matches the `.d.ts` itself or the `.js` next to it. The keys whose target matches are tried, the exact ones first, then the `*` patterns, each in the order they're written, and a key counts only when resolving it forward, as Node does (its exact key, or else the pattern with the longest prefix), gives the file back: a longer pattern or a `null` can shadow it. A string `exports`, an array, or a map of conditions is the `"."` export, the package's name alone. Without `exports` a specifier is the package's name plus the path of the `.js` (`@acme/demo-maps/layers/Layer.js`), and so is one that no export reaches, which also has `"internal": true`: it can't be imported by its specifier ([design §3.5](design.md#35-module-loading)).
+- **Specifiers.** A module's package is the nearest `package.json` with a name, and its specifier is how that package's `exports` reach the file: `"./legend": { "types": "./dist/legend.d.ts", "import": "./dist/legend.js" }` gives `@acme/demo-widgets/legend`. A target is resolved as TypeScript resolves an import, with the conditions `types`, `import` and `default`: a string; a condition object's first of those conditions that resolves, nested ones too, falling through one that doesn't; an array's first entry that does; `null` excludes. It matches the `.d.ts` itself or the `.js` next to it. The keys whose target matches are tried, the exact ones first, then the `*` patterns, each in the order they're written, and a key counts only when resolving it forward, as Node does (its exact key, or else the pattern with the longest prefix), gives the file back: a longer pattern or a `null` can shadow it. A string `exports`, an array, or a map of conditions is the `"."` export, the package's name alone. Without `exports` a specifier is the package's name plus the path of the `.js` (`@acme/demo-maps/layers/Layer.js`), and so is one that no export reaches, which also has `"internal": true`: it can't be imported by its specifier ([design §3.5](design.md#35-module-loading)). When several exports reach a file, the specifier is the first with a JS target (`browser`, `import` or `default`), else the first. A module whose exports are for its typings only (`"./base": { "types": "./base.d.ts" }`, no JS condition) and that has no `.js` next to them keeps its export's subpath as its specifier (`@acme/extra/base`), so namespaces and profile keys don't change, but it's `internal` too: no JS loads it. A module of an export has `file`, for import maps ([design §3.5](design.md#35-module-loading)), when the JS a browser loads for its subpath isn't at that subpath: the path in the package of its export's target with the conditions `browser`, `import` and `default` (in the condition object's own order, as Node takes them), or of the `.js` next to the `.d.ts` when no JS target applies. `dist/legend.js` for `@acme/demo-widgets/legend`; `esm/a.js` for `"./a.js": { "types": "./a.d.ts", "import": "./esm/a.js" }`. A mirror such as demo-maps' `"./*.js": "./*.js"` has none, and nor has a module without `exports` or an internal one, whose specifier is its file's path.
 - **What's listed.** Every exported declaration of a listed package's files, under the module that declares it. A declaration of an unlisted package is listed when the IR references it, transitively, so a dependency brings only the declarations its dependents reach. The platform's own types (the DOM's, `Promise`) are never listed, and references to them have no `module`.
 
 ## Declarations
@@ -34,7 +40,7 @@ Every declaration has `kind`, `name` and an optional `doc` (a function's are on 
 
 - `name` is the declaration's own name, also for a default export, and references (`ref`) use it.
 - `export` is the name the module exports it under, when that differs: `"default"` for `export default class TileLayer`. An export of a declaration elsewhere in the file (`export default Pin;`, `export { Pin as Marker }`) is that declaration, listed once: with no `export` when the module also exports it under its own name. A re-export of another file's declarations (`export * from`, `export { X } from`) isn't listed again: they're the declaring module's, and so are references through it, the manifest's included. A namespace (`declare namespace`, `export * as ns`) isn't in IR v1.
-- `importFrom` is where a declaration of an internal module is imported from, when a module an export reaches re-exports it (the common `"exports": { ".": "./index.js" }` with `export * from "./impl.js"`): `{ module, export? }`, the first such module by specifier, and the name it's exported under there when that isn't `name`. A declaration of an internal module without it can't be imported.
+- `importFrom` is where a declaration of an internal module is imported from, when a module an export reaches re-exports it as a value (the common `"exports": { ".": "./index.js" }` with `export * from "./impl.js"`). An alias with a type-only link in its chain (`export type { Base } from`, `export { type Base }`, `import type { Base }` then `export { Base }`) exports nothing at run time, so it doesn't count, nor does a declaration that only `export type * from` reaches. It's `{ module, export?, file? }`: the first such module by specifier, the name it's exported under there when that isn't `name`, and its `file` as a module's, since it declares nothing and so isn't listed (`dist/index.js` for `@acme/demo-widgets`). A declaration of an internal module without it can't be imported.
 
 | `kind` | Fields |
 |---|---|
@@ -53,7 +59,7 @@ Every declaration has `kind`, `name` and an optional `doc` (a function's are on 
 - **Signatures** are `{ typeParameters?, params, returns, doc? }`, one per overload (R23), each with its own JSDoc. Constructors have no `returns`. A parameter is `{ name, type, optional?, rest? }`; a rest parameter's type is its array.
 - **Type parameters** are `{ name, constraint?, default? }`.
 - **Index signatures** are `{ key, type, readonly? }`.
-- **Docs** are `{ summary?, default?, deprecated?, since?, see? }`, from the declaration's own JSDoc (an override doesn't copy its base's): `see` is a list, and `deprecated` is `""` when the tag has no message.
+- **Docs** are `{ summary?, default?, deprecated?, since?, see? }`, from the declaration's own JSDoc (an override doesn't copy its base's): `see` is a list, and `deprecated` is `""` when the tag has no message. Line breaks stay, and a link (`{@link}`, `{@linkcode}`, `{@linkplain}`) is spelled `{@link Name}` or `{@link Name text}`.
 - An `optional` member or parameter's `type` doesn't include the `undefined` that `?` adds.
 
 ## Elements

@@ -3,6 +3,7 @@
 
 namespace GoldenSlice.Sync;
 
+/// <summary>Mixed: a live object, a tuple, and the nested Camera union.</summary>
 [global::System.Runtime.CompilerServices.Union]
 public readonly partial struct FlyToTarget : global::Interoper.IJsUnion<FlyToTarget>, global::System.IEquatable<FlyToTarget>
 {

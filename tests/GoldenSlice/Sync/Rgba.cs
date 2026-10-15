@@ -8,6 +8,8 @@ public sealed partial record Rgba
     public required double R { get; init; }
     public required double G { get; init; }
     public required double B { get; init; }
+    /// <summary>0–1.</summary>
+    /// <remarks>Default: 1</remarks>
     public global::Interoper.Opt<double> A { get; init; }
 
     public static void Write(global::System.Text.Json.Utf8JsonWriter writer, Rgba value)

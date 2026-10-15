@@ -16,8 +16,8 @@
 </html>
 
 @code {
-    // The app's assets plus the fixture under its package name, the way a consumer maps node_modules (design §3.5).
+    // The app's assets plus the generated map of the fixture, served from /node_modules/ as a consumer would (design §3.5).
     ImportMapDefinition importMap => ImportMapDefinition.Combine(
         ImportMapDefinition.FromResourceCollection(Assets),
-        new ImportMapDefinition(new Dictionary<string, string> { ["@acme/demo-maps/"] = "/demo-maps/" }, null, null));
+        new ImportMapDefinition(GoldenSlice.Async.DemoMaps.ImportMap("/node_modules"), null, null));
 }

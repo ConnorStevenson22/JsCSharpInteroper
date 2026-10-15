@@ -19,7 +19,7 @@
               "fieldName": "basemap",
               "default": "\"plain\""
             },
-            { "name": "zoom", "type": { "text": "number" }, "fieldName": "zoom", "default": "1" }
+            { "name": "zoom", "type": { "text": "number" }, "fieldName": "zoom", "default": "1", "description": "Clamped to 0–20, like the view's." }
           ],
           "members": [
             {

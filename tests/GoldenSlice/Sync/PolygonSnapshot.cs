@@ -5,6 +5,7 @@ namespace GoldenSlice.Sync;
 
 public sealed partial record PolygonSnapshot : ShapeSnapshot
 {
+    /// <summary>The closing edge from the last vertex back to the first is implied.</summary>
     public global::Interoper.Opt<double[][]> Vertices { get; init; }
 
     public static void Write(global::System.Text.Json.Utf8JsonWriter writer, PolygonSnapshot value)

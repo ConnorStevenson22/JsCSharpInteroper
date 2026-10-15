@@ -104,6 +104,7 @@ internal sealed class LiveEmitter
         }
         // Mapping §2: a generic class's type parameters are entities.
         var constraints = string.Concat(c.TypeParameters.Select(t => $" where {t.Name} : global::Interoper.JsObject"));
+        XmlDoc.Write(w, c.Doc);
         using (w.Block($"public {modifier}partial class {self.Name} : {types.LiveBaseName(c, ns)}{constraints}"))
         {
             Separate();
@@ -112,7 +113,7 @@ internal sealed class LiveEmitter
             {
                 var (type, body) = Run("scope.Realm", $"global::Interoper.JsOp.Create({types.ClassId(c, ns)}, w => {snapshot}.WriteMembers(w, props))", new(self, false), async);
                 var create = Claim(Mode("Create"), c.Name);
-                Expression($"public static {Declare(create, ["global::Interoper.JsScope", snapshotKey])}{type} {create}(global::Interoper.JsScope scope, {snapshot} props)", body);
+                Expression($"public static {Declare(create, ["global::Interoper.JsScope", snapshotKey])}{type} {create}(global::Interoper.JsScope scope, {snapshot} props)", body, c.Constructors.FirstOrDefault()?.Doc);
             }
             foreach (var p in c.Members.OfType<PropertyMember>().Where(p => p.Type is not LiteralType)) // R20: a constant is no property
             {
@@ -124,7 +125,7 @@ internal sealed class LiveEmitter
             }
             foreach (var e in c.Events)
             {
-                Subscription(name, "On" + Naming.Pascal(e.Name), profile.Events!.Subscribe!, e.Name, e.Type, $"{name}.on:{e.Name}", optional: false, isEvent: true);
+                Subscription(name, "On" + Naming.Pascal(e.Name), profile.Events!.Subscribe!, e.Name, e.Type, $"{name}.on:{e.Name}", optional: false, isEvent: true, e.Doc);
             }
             // §5; a callback or a DOM element can't be read back (R21, R13).
             foreach (var p in types.HasWatches(c) ? c.Members.OfType<PropertyMember>().Where(p => p.Type is not LiteralType && !types.IsCallback(p) && !types.IsElement(p)) : [])
@@ -150,7 +151,7 @@ internal sealed class LiveEmitter
         var (js, x, subject) = (Syntax.Literal(p.Name), Naming.Pascal(p.Name), $"{owner}.{p.Name}");
         if (types.IsCallback(p))
         {
-            CallbackProperty(subject, js, x, set!);
+            CallbackProperty(subject, js, x, set!, p.Doc);
             return;
         }
         if (types.IsElement(p))
@@ -158,7 +159,7 @@ internal sealed class LiveEmitter
             // R13: setter-only, SetX(value), since JS can't hand an element back.
             var setName = Claim(Mode("Set" + x), subject);
             var (elementType, elementSetter) = Set(set!, js);
-            Expression($"public {Declare(setName, [set!.Key])}{elementType} {setName}({set.Name} value)", elementSetter);
+            Expression($"public {Declare(setName, [set!.Key])}{elementType} {setName}({set.Name} value)", elementSetter, p.Doc);
             return;
         }
         var (getType, getter) = Get(get, js, ByValue(p.Type));
@@ -166,26 +167,27 @@ internal sealed class LiveEmitter
         if (async || get.Type.Scoped)
         {
             var (getName, scope) = (Claim(Mode("Get" + x), subject), get.Type.Scoped ? "global::Interoper.JsScope scope" : "");
-            Expression($"public {Declare(getName, get.Type.Scoped ? ["global::Interoper.JsScope"] : [])}{getType} {getName}({scope})", getter);
+            Expression($"public {Declare(getName, get.Type.Scoped ? ["global::Interoper.JsScope"] : [])}{getType} {getName}({scope})", getter, p.Doc);
             if (set is not null)
             {
                 var setName = Claim(Mode("Set" + x), subject);
-                Expression($"public {Declare(setName, [set.Key])}{setType} {setName}({set.Name} value)", setter);
+                Expression($"public {Declare(setName, [set.Key])}{setType} {setName}({set.Name} value)", setter, p.Doc);
             }
         }
         else if (set is null || set.Name != get.Name)
         {
             var getName = Claim(x, subject);
-            Expression($"public {Declare(getName)}{getType} {getName}", getter);
+            Expression($"public {Declare(getName)}{getType} {getName}", getter, p.Doc);
             if (set is not null)
             {
                 var setName = Claim("Set" + x, subject);
-                Expression($"public {Declare(setName, [set.Key])}void {setName}({set.Name} value)", setter);
+                Expression($"public {Declare(setName, [set.Key])}void {setName}({set.Name} value)", setter, p.Doc);
             }
         }
         else
         {
             Separate();
+            XmlDoc.Write(w, p.Doc);
             var getName = Claim(x, subject);
             using (w.Block($"public {Declare(getName)}{getType} {getName}"))
             {
@@ -199,7 +201,7 @@ internal sealed class LiveEmitter
     /// R21: a callback property is setter-only, <c>SetX(scope, value)</c>, since JS can't hand a function back. One
     /// whose result JS uses is skipped in async mode (IOP2005).
     /// </summary>
-    private void CallbackProperty(string subject, string js, string x, Value set)
+    private void CallbackProperty(string subject, string js, string x, Value set, Doc? doc)
     {
         if (async && set.Type.Returns)
         {
@@ -208,7 +210,7 @@ internal sealed class LiveEmitter
         }
         var setName = Claim(Mode("Set" + x), subject);
         var (setType, setter) = Run("Realm", $"global::Interoper.JsOp.Set(Handle, {js}, w => {set.Write("value")})", null, async);
-        Expression($"public {Declare(setName, ["global::Interoper.JsScope", set.Key])}{setType} {setName}(global::Interoper.JsScope scope, {set.Name} value)", setter);
+        Expression($"public {Declare(setName, ["global::Interoper.JsScope", set.Key])}{setType} {setName}(global::Interoper.JsScope scope, {set.Name} value)", setter, doc);
     }
 
     /// <summary>R21: a member with a callback whose result JS uses, which async mode can't give it, is skipped there.</summary>
@@ -269,7 +271,7 @@ internal sealed class LiveEmitter
             var (type, body) = Run(self is not null ? "Realm" : scoped ? "scope.Realm" : "realm", op, result, async || promise);
             var (first, firstType) = scoped ? ("global::Interoper.JsScope scope", "global::Interoper.JsScope") : self is null ? ("global::Interoper.JsRealm realm", "global::Interoper.JsRealm") : (null, null);
             var hides = Declare(name, firstType is null ? keys : keys.Prepend(firstType));
-            Expression($"public {(self is null ? "static " : "")}{hides}{type} {name}({Join(first, parameters)})", body);
+            Expression($"public {(self is null ? "static " : "")}{hides}{type} {name}({Join(first, parameters)})", body, signature.Doc);
         }
     }
 
@@ -278,7 +280,7 @@ internal sealed class LiveEmitter
     /// payload is a data record sends only the record's members unless the options name others, and one without a payload
     /// (<c>void</c>) has a parameterless handler and sends nothing. Async mode adds a stream of each that has a payload.
     /// </summary>
-    private void Subscription(string owner, string name, string method, string js, IrType payload, string subject, bool optional, bool isEvent)
+    private void Subscription(string owner, string name, string method, string js, IrType payload, string subject, bool optional, bool isEvent, Doc? doc = null)
     {
         var (type, subscribe) = async ? ("global::System.Threading.Tasks.Task<global::System.IAsyncDisposable>", "SubscribeAsync") : ("global::System.IDisposable", "Subscribe");
         if (isEvent && TypeMap.IsVoid(payload))
@@ -286,7 +288,7 @@ internal sealed class LiveEmitter
             // No payload: a parameterless handler, and no stream, since it would have nothing to yield.
             var handler = Claim(Mode(name), subject);
             Expression($"public {Declare(handler, ["global::Interoper.JsScope", "global::System.Action", "global::Interoper.EventOptions"])}{type} {handler}(global::Interoper.JsScope scope, global::System.Action handler, global::Interoper.EventOptions? options = null)",
-                $"scope.{subscribe}(Handle, {Syntax.Literal(method)}, {Syntax.Literal(js)}, handler, options)");
+                $"scope.{subscribe}(Handle, {Syntax.Literal(method)}, {Syntax.Literal(js)}, handler, options)", doc);
             return;
         }
         var value = Slot(payload, Naming.OwnedType(owner, js), owner, optional);
@@ -295,12 +297,12 @@ internal sealed class LiveEmitter
         var target = $"Handle, {Syntax.Literal(method)}, {Syntax.Literal(js)}, {value.Reader}";
         var subscription = Claim(Mode(name), subject);
         Expression($"public {Declare(subscription, ["global::Interoper.JsScope", $"global::System.Action<{value.Key}>", .. optionsKey])}{type} {subscription}(global::Interoper.JsScope scope, global::System.Action<{value.Name}> handler{options})",
-            $"scope.{subscribe}({target}, handler, {sent}, {fields})");
+            $"scope.{subscribe}({target}, handler, {sent}, {fields})", doc);
         if (async)
         {
             var stream = Claim(name + "StreamAsync", subject);
             Expression($"public {Declare(stream, ["global::Interoper.JsScope", .. optionsKey, "global::System.Threading.CancellationToken"])}global::System.Collections.Generic.IAsyncEnumerable<{value.Name}> {stream}(global::Interoper.JsScope scope{options}, global::System.Threading.CancellationToken cancellationToken = default)",
-                $"scope.StreamAsync({target}, {sent}, {fields}, cancellationToken)");
+                $"scope.StreamAsync({target}, {sent}, {fields}, cancellationToken)", doc);
         }
     }
 
@@ -411,10 +413,11 @@ internal sealed class LiveEmitter
             : ($"global::System.Threading.Tasks.Task<{result.Name}>", $"{realm}.CallAsync({op}, {result.Reader})");
     }
 
-    /// <summary>An expression-bodied member: on one line if it fits, otherwise its body on the next.</summary>
-    private void Expression(string header, string body)
+    /// <summary>An expression-bodied member, after its docs (R29): on one line if it fits, otherwise its body on the next.</summary>
+    private void Expression(string header, string body, Doc? doc = null)
     {
         Separate();
+        XmlDoc.Write(w, doc);
         if (!body.Contains('\n') && 4 + header.Length + 4 + body.Length + 1 <= LineLength)
         {
             w.Line($"{header} => {body};");

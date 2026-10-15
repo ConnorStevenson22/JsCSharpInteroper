@@ -15,9 +15,14 @@ public sealed partial class Collection<T> : Emitter where T : global::Interoper.
     public global::System.Threading.Tasks.Task AddAsync(T item) =>
         Realm.SendAsync(global::Interoper.JsOp.Call(Handle, "add", w => global::Interoper.JsObject.Write(w, item)));
 
+    /// <summary>Returns whether the item was found.</summary>
     public global::System.Threading.Tasks.Task<bool> RemoveAsync(T item) =>
         Realm.CallAsync(global::Interoper.JsOp.Call(Handle, "remove", w => global::Interoper.JsObject.Write(w, item)), global::Interoper.JsJson.ReadBoolean);
 
+    /// <summary>
+    /// Calls <c>callback</c> for each item, in order; its result is ignored. Like <c>Array.prototype.forEach</c>, it also passes
+    /// the collection, which the type leaves out.
+    /// </summary>
     public global::System.Threading.Tasks.Task ForEachAsync(global::Interoper.JsScope scope, global::System.Action<T, double> callback) =>
         Realm.SendAsync(global::Interoper.JsOp.Call(Handle, "forEach", w => global::Interoper.JsJson.WriteCallback(w, scope.Callback(callback, scope.Read<T>, global::Interoper.JsJson.ReadNumber))));
 

@@ -43,9 +43,10 @@ internal sealed class ComponentEmitter
     /// <summary>
     /// A parameter for an attribute or a writable property. An <paramref name="Attribute"/> one renders as the HTML
     /// attribute of that name; any other is set on the live element (<paramref name="Js"/>). A null one is JS null
-    /// when the type has null (<paramref name="JsNull"/>), and undefined when it's only optional.
+    /// when the type has null (<paramref name="JsNull"/>), and undefined when it's only optional. Its <paramref name="Doc"/>
+    /// is the manifest's for the attribute, or else the property's (R29).
     /// </summary>
-    private sealed record Parameter(string Name, CsType Type, bool Nullable, bool JsNull, string Js, string? Attribute)
+    private sealed record Parameter(string Name, CsType Type, bool Nullable, bool JsNull, string Js, string? Attribute, Doc? Doc)
     {
         /// <summary>No <c>Opt</c>: a parameter the parent doesn't supply is neither rendered nor set.</summary>
         public string TypeName => Nullable && !Type.IsUnion ? Type.Name + "?" : Type.Name;
@@ -103,8 +104,9 @@ internal sealed class ComponentEmitter
         parameters = [.. parameters.Select(p => p with { Type = p.Type.Unhidden(hidden) })];
         var callbacks = Callbacks(s, name, parameters, hidden);
         var bound = callbacks.Where(c => c.Bind is not null).Select(c => c.Bind!.Value.Property.Name).ToHashSet();
-        var slots = s.Element.Slots.Where(slot => slot.Name.Length > 0).Select(slot => (slot.Name, Parameter: Claim(Naming.Pascal(slot.Name), $"{name}.{slot.Name}"))).ToList();
+        var slots = s.Element.Slots.Where(slot => slot.Name.Length > 0).Select(slot => (slot.Name, Parameter: Claim(Naming.Pascal(slot.Name), $"{name}.{slot.Name}"), slot.Doc)).ToList();
 
+        XmlDoc.Write(w, s.Element.Doc);
         using (w.Block($"public sealed partial class {name} : global::Interoper.JsComponentBase"))
         {
             w.Line($"private readonly global::System.Collections.Generic.HashSet<string> supplied = new(global::System.StringComparer.OrdinalIgnoreCase);");
@@ -120,21 +122,25 @@ internal sealed class ComponentEmitter
             w.Line();
             foreach (var p in parameters)
             {
+                XmlDoc.Write(w, p.Doc);
                 var initial = p.Nullable || p.Type.IsValueType ? "" : " = default!;";
                 w.Line($"[{Components}.Parameter] public {p.TypeName} {p.Name} {{ get; set; }}{initial}");
             }
             foreach (var callback in callbacks)
             {
                 var type = callback.Detail is null ? $"{Components}.EventCallback" : $"{Components}.EventCallback<{callback.Detail}>";
+                XmlDoc.Write(w, callback.Event.Doc);
                 w.Line($"[{Components}.Parameter] public {type} {callback.Name} {{ get; set; }}");
                 if (callback.Bind is var (property, changed, _))
                 {
                     w.Line($"[{Components}.Parameter] public {Components}.EventCallback<{property.TypeName}> {changed} {{ get; set; }}");
                 }
             }
+            XmlDoc.Write(w, s.Element.Slots.FirstOrDefault(slot => slot.Name.Length == 0)?.Doc);
             w.Line($"[{Components}.Parameter] public {Components}.RenderFragment? ChildContent {{ get; set; }}");
-            foreach (var (_, parameter) in slots)
+            foreach (var (_, parameter, doc) in slots)
             {
+                XmlDoc.Write(w, doc);
                 w.Line($"[{Components}.Parameter] public {Components}.RenderFragment? {parameter} {{ get; set; }}");
             }
             w.Line($"[{Components}.Parameter(CaptureUnmatchedValues = true)] public global::System.Collections.Generic.IReadOnlyDictionary<string, object>? AdditionalAttributes {{ get; set; }}");
@@ -190,7 +196,8 @@ internal sealed class ComponentEmitter
             {
                 (mapped, type) = (types.Slot(primitive, ownerName).Type, primitive);
             }
-            return new(Claim(Naming.Pascal(p.Name), $"{component}.{p.Name}"), mapped, nullable || p.Optional, types.HasNull(type), p.Name, mapped.Fast is null ? null : attribute?.Name);
+            return new(Claim(Naming.Pascal(p.Name), $"{component}.{p.Name}"), mapped, nullable || p.Optional, types.HasNull(type), p.Name, mapped.Fast is null ? null : attribute?.Name,
+                attribute?.Doc ?? p.Doc);
         }
         foreach (var a in s.Element.Attributes)
         {
@@ -203,7 +210,7 @@ internal sealed class ComponentEmitter
                 continue;
             }
             var (mapped, nullable) = types.Slot(a.Type!, new(ns, component + Naming.Pascal(a.Name)));
-            result.Add(new(Claim(Naming.Pascal(a.Name), $"{component}.{a.Name}"), mapped.In(ns), nullable, types.HasNull(a.Type!), a.Name, a.Name));
+            result.Add(new(Claim(Naming.Pascal(a.Name), $"{component}.{a.Name}"), mapped.In(ns), nullable, types.HasNull(a.Type!), a.Name, a.Name, a.Doc));
         }
         foreach (var (p, owner) in properties.Where(x => result.All(r => r.Js != x.Property.Name)))
         {
@@ -269,7 +276,7 @@ internal sealed class ComponentEmitter
     /// element reference; each named slot's content in a <c>div</c> with that slot (<c>display:contents</c>), and the
     /// default slot's.
     /// </summary>
-    private void Render(string tag, List<Parameter> parameters, List<Callback> callbacks, List<(string Name, string Parameter)> slots, HashSet<string> bound)
+    private void Render(string tag, List<Parameter> parameters, List<Callback> callbacks, List<(string Name, string Parameter, Doc? Doc)> slots, HashSet<string> bound)
     {
         using (w.Block($"protected override void BuildRenderTree({Components}.Rendering.RenderTreeBuilder builder)"))
         {
@@ -296,7 +303,7 @@ internal sealed class ComponentEmitter
                     $"{Components}.EventCallback.Factory.Create<global::Interoper.JsEventArgs>(this, {callback.Handler}));");
             }
             w.Line($"builder.AddElementReferenceCapture({sequence++}, value => element = value);");
-            foreach (var (slot, parameter) in slots)
+            foreach (var (slot, parameter, _) in slots)
             {
                 using (w.Block($"if ({parameter} is not null)"))
                 {

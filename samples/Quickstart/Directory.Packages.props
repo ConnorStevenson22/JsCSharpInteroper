@@ -1,0 +1,3 @@
+<Project>
+  <!-- Empty: the app's package versions are in its project files, as a consumer's are (see Directory.Build.props). -->
+</Project>

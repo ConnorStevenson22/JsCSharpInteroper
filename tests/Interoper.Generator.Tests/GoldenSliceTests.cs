@@ -4,9 +4,9 @@ namespace Interoper.Generator.Tests;
 
 /// <summary>
 /// The golden slice (tests/GoldenSlice) is the fixture's generated bindings: the generator's output for the fixture's
-/// IR and profile, in both modes, with a subfolder per namespace (R27). On a difference the test rewrites the files,
-/// deletes the ones it no longer generates (and folders left empty), and fails, listing them: review the diff, and a
-/// rerun passes.
+/// IR and profile, in both modes, with a subfolder per namespace (R27). On a difference the test rewrites the files and
+/// deletes the ones it no longer generates (and folders left empty), with the CLI's writer, then fails, listing them:
+/// review the diff, and a rerun passes.
 /// </summary>
 public sealed class GoldenSliceTests
 {
@@ -42,34 +42,21 @@ public sealed class GoldenSliceTests
         var diagnostics = new Dictionary<Api, string[]>();
         foreach (var api in new[] { Api.Sync, Api.Async })
         {
-            var folder = Path.Combine(root, api.ToString());
             var result = Generator.Generate(Fixture.Ir, Fixture.Profile, new(api, $"GoldenSlice.{api}"));
             diagnostics[api] = [.. result.Diagnostics.Select(d => d.ToString())];
 
-            foreach (var file in result.Files)
+            // The CLI's writer (design §5), so one code path writes bindings. The golden slice has no IR cache, manifest
+            // or report: every file in its folders is generated, so the folder's listing is what was produced last time.
+            // The metadata module is the same in both modes (design §2), and served from wwwroot.
+            var isMetadata = (GeneratedFile f) => f.Path.EndsWith(".js", StringComparison.Ordinal);
+            metadata.AddRange(result.Files.Where(isMetadata).Select(f => f.Text));
+            foreach (var (path, files) in new[] { (api.ToString(), result.Files.Where(f => !isMetadata(f))), ("wwwroot", result.Files.Where(isMetadata)) })
             {
-                // The metadata module is the same in both modes (design §2), and served from wwwroot.
-                var path = file.Path.EndsWith(".js", StringComparison.Ordinal) ? Path.Combine(root, "wwwroot", file.Path) : Path.Combine(folder, file.Path);
-                if (file.Path.EndsWith(".js", StringComparison.Ordinal))
-                {
-                    metadata.Add(file.Text);
-                }
-                if (!File.Exists(path) || File.ReadAllText(path) != file.Text)
-                {
-                    Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-                    File.WriteAllText(path, file.Text);
-                    changed.Add(Path.GetRelativePath(root, path));
-                }
-            }
-            var generated = result.Files.Select(f => Path.GetFullPath(Path.Combine(folder, f.Path))).ToHashSet();
-            foreach (var stale in Directory.GetFiles(folder, "*.cs", SearchOption.AllDirectories).Where(f => !generated.Contains(Path.GetFullPath(f))))
-            {
-                File.Delete(stale);
-                changed.Add($"{Path.GetRelativePath(root, stale)} (deleted)");
-            }
-            foreach (var empty in Directory.GetDirectories(folder, "*", SearchOption.AllDirectories).OrderDescending().Where(d => !Directory.EnumerateFileSystemEntries(d).Any()))
-            {
-                Directory.Delete(empty);
+                var folder = Path.Combine(root, path);
+                var previous = Directory.GetFiles(folder, "*", SearchOption.AllDirectories).Select(f => Path.GetRelativePath(folder, f).Replace('\\', '/'));
+                var changes = Bindings.Write(folder, [.. files], previous);
+                changed.AddRange(changes.Written.Select(f => $"{path}/{f}"));
+                changed.AddRange(changes.Deleted.Select(f => $"{path}/{f} (deleted)"));
             }
         }
         Assert.Equal(2, metadata.Count);

@@ -3,6 +3,7 @@
 
 namespace GoldenSlice.Async;
 
+/// <summary>Discriminated by <c>type</c>.</summary>
 [global::System.Runtime.CompilerServices.Union]
 public readonly partial struct Style : global::Interoper.IJsUnion<Style>, global::System.IEquatable<Style>
 {

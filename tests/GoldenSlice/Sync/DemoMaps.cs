@@ -32,4 +32,14 @@ public static partial class DemoMaps
         .Add(TileLayerId, static (realm, handle) => new global::GoldenSlice.Sync.Layers.TileLayer(realm, handle))
         .Add(PinId, static (realm, handle) => new Pin(realm, handle))
         .Preload("@acme/demo-maps/geometry.js", "@acme/demo-maps/MapView.js", "@acme/demo-maps/Marker.js", "@acme/demo-maps/core.js", "@acme/demo-maps/demo-map.js", "@acme/demo-maps/layers/Layer.js", "@acme/demo-maps/layers/TileLayer.js", "@acme/demo-maps/pins.js", "@acme/demo-maps/measure.js", "@acme/demo-maps/ops/a.js", "@acme/demo-maps/ops/b.js", "@acme/demo-maps/styles.js");
+
+    /// <summary>The import map's entries for the packages' modules; <paramref name="root"/> holds the packages' folders, as <c>node_modules</c> does (<c>"/node_modules/"</c>).</summary>
+    public static global::System.Collections.Generic.IReadOnlyDictionary<string, string> ImportMap(string root)
+    {
+        root = root.EndsWith('/') ? root : root + "/";
+        return new global::System.Collections.Generic.Dictionary<string, string>
+        {
+            ["@acme/demo-maps/"] = root + "@acme/demo-maps/",
+        };
+    }
 }

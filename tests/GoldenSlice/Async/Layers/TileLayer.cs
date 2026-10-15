@@ -3,6 +3,7 @@
 
 namespace GoldenSlice.Async.Layers;
 
+/// <summary>The module's default export, as many libraries' one-class modules have.</summary>
 public sealed partial class TileLayer : Layer
 {
     internal TileLayer(global::Interoper.JsRealm realm, int handle) : base(realm, handle) { }
@@ -10,18 +11,27 @@ public sealed partial class TileLayer : Layer
     public static async global::System.Threading.Tasks.Task<TileLayer> CreateAsync(global::Interoper.JsScope scope, TileLayerSnapshot props) =>
         (await scope.Realm.CallAsync(global::Interoper.JsOp.Create(global::GoldenSlice.Async.DemoMaps.TileLayerId, w => TileLayerSnapshot.WriteMembers(w, props)), scope.Read<TileLayer>))!;
 
+    /// <summary>The URL template of the tiles.</summary>
     public global::System.Threading.Tasks.Task<string> GetUrlAsync() => Realm.GetStringAsync(Handle, "url");
 
+    /// <summary>The URL template of the tiles.</summary>
     public global::System.Threading.Tasks.Task SetUrlAsync(string value) => Realm.SetAsync(Handle, "url", value);
 
+    /// <summary>
+    /// The tiles' edge in pixels. The setter also takes one per zoom level, a union with a value-type case (R2), which
+    /// isn't mapped: the getter is kept, read-only (§5).
+    /// </summary>
     public global::System.Threading.Tasks.Task<double> GetTileSizeAsync() => Realm.GetNumberAsync(Handle, "tileSize");
 
+    /// <summary>The markers drawn on top of the tiles.</summary>
     public async global::System.Threading.Tasks.Task<global::GoldenSlice.Async.Marker[]> GetEmphasizedAsync(global::Interoper.JsScope scope) =>
         (await Realm.CallAsync(global::Interoper.JsOp.Get(Handle, "emphasized"), (ref r) => global::Interoper.JsJson.ReadArray(ref r, scope.Read<global::GoldenSlice.Async.Marker>)))!;
 
+    /// <summary>Highlights one marker or several: <c>OneOrMany&lt;Marker&gt;</c> is <c>Marker | Marker[]</c> (§2).</summary>
     public global::System.Threading.Tasks.Task EmphasizeAsync(TileLayerEmphasizeMarkers markers) =>
         Realm.SendAsync(global::Interoper.JsOp.Call(Handle, "emphasize", w => global::Interoper.JsJson.WriteValue(w, markers)));
 
+    /// <summary>Redeclared with the subclass's type.</summary>
     public new async global::System.Threading.Tasks.Task<TileLayer> CloneAsync(global::Interoper.JsScope scope) =>
         (await Realm.CallAsync(global::Interoper.JsOp.Call(Handle, "clone"), scope.Read<TileLayer>))!;
 

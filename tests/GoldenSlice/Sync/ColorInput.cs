@@ -3,6 +3,7 @@
 
 namespace GoldenSlice.Sync;
 
+/// <summary>"#rrggbb" or a color name, [r, g, b, a?], or an Rgba object.</summary>
 [global::System.Runtime.CompilerServices.Union]
 public readonly partial struct ColorInput : global::Interoper.IJsUnion<ColorInput>, global::System.IEquatable<ColorInput>
 {

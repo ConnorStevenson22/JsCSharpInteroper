@@ -1,0 +1,35 @@
+@page "/zoom-server"
+@rendermode @(new InteractiveServerRenderMode(prerender: false))
+@using Quickstart.Maps
+@implements IAsyncDisposable
+@inject JsRealm Realm
+
+<h1>Interactive Server: --api async</h1>
+<p id="zoom">@(view is null ? "starting" : $"zoom {zoom}")</p>
+<button id="zoom-in" disabled="@(view is null)" @onclick="ZoomInAsync">Zoom in</button>
+
+@code {
+    // Every call is a round trip to the browser, so every member is a Task.
+    JsScope? scope;
+    MapView? view;
+    double zoom;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Realm.StartAsync(); // not prerendered, so the browser is there already
+        scope = new JsScope(Realm);
+        view = await MapView.CreateAsync(scope, new MapViewSnapshot { Zoom = 3 });
+        zoom = await view.GetZoomAsync();
+    }
+
+    async Task ZoomInAsync()
+    {
+        await view!.SetZoomAsync(zoom + 1);
+        zoom = await view.GetZoomAsync(); // what the map made of it: it clamps to 0–20
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (scope is not null) await scope.DisposeAsync(); // releases the view's handle in the browser
+    }
+}

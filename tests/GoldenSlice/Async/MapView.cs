@@ -7,6 +7,7 @@ public sealed partial class MapView : Emitter
 {
     internal MapView(global::Interoper.JsRealm realm, int handle) : base(realm, handle) { }
 
+    /// <summary>A view with the given options; the rest keep their defaults.</summary>
     public static async global::System.Threading.Tasks.Task<MapView> CreateAsync(global::Interoper.JsScope scope, MapViewSnapshot props) =>
         (await scope.Realm.CallAsync(global::Interoper.JsOp.Create(DemoMaps.MapViewId, w => MapViewSnapshot.WriteMembers(w, props)), scope.Read<MapView>))!;
 
@@ -16,24 +17,32 @@ public sealed partial class MapView : Emitter
     public global::System.Threading.Tasks.Task SetCenterAsync(PointSnapshot value) =>
         Realm.SendAsync(global::Interoper.JsOp.Set(Handle, "center", w => PointSnapshot.Write(w, value)));
 
+    /// <summary>Clamped to 0–20.</summary>
     public global::System.Threading.Tasks.Task<double> GetZoomAsync() => Realm.GetNumberAsync(Handle, "zoom");
 
+    /// <summary>Clamped to 0–20.</summary>
     public global::System.Threading.Tasks.Task SetZoomAsync(double value) => Realm.SetAsync(Handle, "zoom", value);
 
+    /// <summary>Degrees, normalized to 0–360.</summary>
     public global::System.Threading.Tasks.Task<double> GetRotationAsync() => Realm.GetNumberAsync(Handle, "rotation");
 
+    /// <summary>Degrees, normalized to 0–360.</summary>
     public global::System.Threading.Tasks.Task SetRotationAsync(double value) =>
         Realm.SetAsync(Handle, "rotation", value);
 
+    /// <remarks>Default: "plain"</remarks>
     public async global::System.Threading.Tasks.Task<Basemap> GetBasemapAsync() =>
         BasemapNames.FromJs(await Realm.GetStringAsync(Handle, "basemap"));
 
+    /// <remarks>Default: "plain"</remarks>
     public global::System.Threading.Tasks.Task SetBasemapAsync(Basemap value) =>
         Realm.SetAsync(Handle, "basemap", BasemapNames.ToJs(value));
 
+    /// <summary>Undefined: the container's own CSS cursor.</summary>
     public global::System.Threading.Tasks.Task<global::Interoper.Opt<Cursor>> GetCursorAsync() =>
         Realm.CallAsync(global::Interoper.JsOp.Get(Handle, "cursor"), static (ref r) => global::Interoper.JsJson.ReadOpt(ref r, Cursor.Read));
 
+    /// <summary>Undefined: the container's own CSS cursor.</summary>
     public global::System.Threading.Tasks.Task SetCursorAsync(global::Interoper.Opt<Cursor> value) =>
         Realm.SendAsync(global::Interoper.JsOp.Set(Handle, "cursor", w => global::Interoper.JsJson.WriteValue(w, value, Cursor.Write)));
 
@@ -43,21 +52,27 @@ public sealed partial class MapView : Emitter
     public global::System.Threading.Tasks.Task SetTitleAsync(global::Interoper.Opt<string> value) =>
         Realm.SendAsync(global::Interoper.JsOp.Set(Handle, "title", w => global::Interoper.JsJson.WriteValue(w, value, global::Interoper.JsJson.WriteString)));
 
+    /// <summary>The element the map draws into.</summary>
     public global::System.Threading.Tasks.Task SetContainerAsync(global::Interoper.Opt<global::Microsoft.AspNetCore.Components.ElementReference> value) =>
         Realm.SendAsync(global::Interoper.JsOp.Set(Handle, "container", w => global::Interoper.JsJson.WriteValue(w, value, global::Interoper.JsElement.Write)));
 
+    /// <summary>The <c>Marker</c> the user picked last, or <c>null</c> when none is.</summary>
     public global::System.Threading.Tasks.Task<global::Interoper.Opt<Marker>> GetSelectedAsync(global::Interoper.JsScope scope) =>
         Realm.CallAsync(global::Interoper.JsOp.Get(Handle, "selected"), (ref r) => global::Interoper.JsJson.ReadOpt(ref r, scope.Read<Marker>));
 
+    /// <summary>The <c>Marker</c> the user picked last, or <c>null</c> when none is.</summary>
     public global::System.Threading.Tasks.Task SetSelectedAsync(global::Interoper.Opt<Marker> value) =>
         Realm.SendAsync(global::Interoper.JsOp.Set(Handle, "selected", w => global::Interoper.JsJson.WriteValue(w, value, Marker.Write)));
 
     public async global::System.Threading.Tasks.Task<Collection<Marker>> GetMarkersAsync(global::Interoper.JsScope scope) =>
         (await Realm.CallAsync(global::Interoper.JsOp.Get(Handle, "markers"), (ref r) => scope.Read(ref r, static (realm, handle) => new Collection<Marker>(realm, handle))))!;
 
+    /// <summary>Drawn in order, the first at the bottom.</summary>
     public async global::System.Threading.Tasks.Task<Collection<global::GoldenSlice.Async.Layers.Layer>> GetLayersAsync(global::Interoper.JsScope scope) =>
         (await Realm.CallAsync(global::Interoper.JsOp.Get(Handle, "layers"), (ref r) => scope.Read(ref r, static (realm, handle) => new Collection<global::GoldenSlice.Async.Layers.Layer>(realm, handle))))!;
 
+    /// <summary>Screen offset (pixels from the center) to map coordinates.</summary>
+    /// <remarks>Since: 0.2</remarks>
     public async global::System.Threading.Tasks.Task<PointSnapshot> ScreenToMapAsync(double x, double y) =>
         (await Realm.CallAsync(global::Interoper.JsOp.Call(Handle, "screenToMap", w =>
         {
@@ -65,9 +80,19 @@ public sealed partial class MapView : Emitter
             global::Interoper.JsJson.WriteNumber(w, y);
         }, byValue: true), PointSnapshot.Read))!;
 
+    /// <summary>The offset as an <c>[x, y]</c> pair.</summary>
+    /// <remarks>
+    /// Deprecated: Pass <c>x</c> and <c>y</c>.
+    /// See: MapView.flyTo
+    /// </remarks>
     public async global::System.Threading.Tasks.Task<PointSnapshot> ScreenToMapAsync(double[] offset) =>
         (await Realm.CallAsync(global::Interoper.JsOp.Call(Handle, "screenToMap", w => global::Interoper.JsJson.WriteArray(w, offset, global::Interoper.JsJson.WriteNumber), byValue: true), PointSnapshot.Read))!;
 
+    /// <summary>
+    /// Animates to a shape, a point or a camera.
+    /// Resolves when the view has arrived &amp; settled.
+    /// </summary>
+    /// <remarks>Since: 0.3</remarks>
     public global::System.Threading.Tasks.Task FlyToAsync(FlyToTarget target, global::Interoper.Opt<FlyToOptions> options = default) =>
         Realm.SendAsync(global::Interoper.JsOp.Call(Handle, "flyTo", w =>
         {
@@ -82,9 +107,11 @@ public sealed partial class MapView : Emitter
             global::Interoper.JsJson.WriteNumber(w, y);
         }), (ref r) => global::Interoper.JsJson.ReadOpt(ref r, scope.Read<Marker>));
 
+    /// <summary>A click on the map, after the view has handled it.</summary>
     public global::System.Threading.Tasks.Task<global::System.IAsyncDisposable> OnClickAsync(global::Interoper.JsScope scope, global::System.Action<ClickEvent> handler, global::Interoper.EventOptions? options = null) =>
         scope.SubscribeAsync(Handle, "on", "click", ClickEvent.Read, handler, options, ["type", "x", "y", "button", "mapPoint"]);
 
+    /// <summary>A click on the map, after the view has handled it.</summary>
     public global::System.Collections.Generic.IAsyncEnumerable<ClickEvent> OnClickStreamAsync(global::Interoper.JsScope scope, global::Interoper.EventOptions? options = null, global::System.Threading.CancellationToken cancellationToken = default) =>
         scope.StreamAsync(Handle, "on", "click", ClickEvent.Read, options, ["type", "x", "y", "button", "mapPoint"], cancellationToken);
 

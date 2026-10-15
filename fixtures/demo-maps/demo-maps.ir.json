@@ -258,6 +258,9 @@
             {
               "kind": "property",
               "name": "click",
+              "doc": {
+                "summary": "A click on the map, after the view has handled it."
+              },
               "type": {
                 "kind": "ref",
                 "name": "ClickEvent",
@@ -386,7 +389,10 @@
                   },
                   "optional": true
                 }
-              ]
+              ],
+              "doc": {
+                "summary": "A view with the given options; the rest keep their defaults."
+              }
             }
           ],
           "members": [
@@ -424,6 +430,9 @@
             {
               "kind": "property",
               "name": "basemap",
+              "doc": {
+                "default": "\"plain\""
+              },
               "type": {
                 "kind": "ref",
                 "name": "Basemap",
@@ -484,6 +493,9 @@
             {
               "kind": "property",
               "name": "selected",
+              "doc": {
+                "summary": "The {@link Marker} the user picked last, or `null` when none is."
+              },
               "type": {
                 "kind": "union",
                 "types": [
@@ -634,6 +646,10 @@
                         "name": "void"
                       }
                     ]
+                  },
+                  "doc": {
+                    "summary": "Animates to {@link FlyToTarget a shape, a point or a camera}.\nResolves when the view has arrived & settled.",
+                    "since": "0.3"
                   }
                 }
               ]
@@ -690,6 +706,9 @@
                 "kind": "ref",
                 "name": "ClickEvent",
                 "module": "@acme/demo-maps/MapView.js"
+              },
+              "doc": {
+                "summary": "A click on the map, after the view has handled it."
               }
             }
           ]
@@ -834,6 +853,9 @@
             {
               "kind": "property",
               "name": "position",
+              "doc": {
+                "summary": "Where the marker is; a pair is taken as `[x, y]`."
+              },
               "type": {
                 "kind": "ref",
                 "name": "Point",
@@ -894,6 +916,9 @@
               "kind": "property",
               "name": "labelFormatter",
               "optional": true,
+              "doc": {
+                "summary": "Overrides `label` when set."
+              },
               "type": {
                 "kind": "union",
                 "types": [
@@ -1626,6 +1651,9 @@
             {
               "kind": "property",
               "name": "center",
+              "doc": {
+                "summary": "The view's center."
+              },
               "type": {
                 "kind": "ref",
                 "name": "Point",
@@ -3567,6 +3595,7 @@
             "name": "number"
           },
           "doc": {
+            "summary": "Clamped to 0–20, like the view's.",
             "default": "1"
           }
         }

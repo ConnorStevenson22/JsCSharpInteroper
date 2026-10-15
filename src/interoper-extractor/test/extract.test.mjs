@@ -7,6 +7,13 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { extract } from "../extract.mjs";
 
+/** A temporary folder, removed after the test `t`. */
+function tempDir(t) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "extract-"));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  return dir;
+}
+
 const fixture = fileURLToPath(new URL("../../../fixtures/demo-maps", import.meta.url));
 const ir = extract(fixture, { eventMap: "$events" });
 
@@ -45,7 +52,7 @@ test("§5: an accessor pair keeps the getter's and the setter's type", () => {
 });
 
 test("R24: events come from the event map, resolved per class", () => {
-  assert.deepEqual(decl("MapView", "MapView").events, [{ name: "click", type: ref("MapView", "ClickEvent") }]);
+  assert.deepEqual(decl("MapView", "MapView").events, [{ name: "click", type: ref("MapView", "ClickEvent"), doc: { summary: "A click on the map, after the view has handled it." } }]);
   assert.deepEqual(decl("core", "Collection").events, [{ name: "change", type: ref("core", "CollectionChangeEvent", [{ kind: "typeParameter", name: "T" }]) }]);
   assert.equal(decl("core", "Emitter").events, undefined); // `$events: object` declares none
   assert.equal(member("MapView", "MapView", "$events"), undefined); // the phantom property isn't a member
@@ -96,6 +103,15 @@ test("R23: overloads are separate signatures, each with its own JSDoc", () => {
 test("JSDoc: summary and @default", () => {
   assert.deepEqual(member("MapView", "FlyToOptions", "duration").doc, { summary: "Milliseconds.", default: "0" });
   assert.deepEqual(member("styles", "Rgba", "a").doc, { summary: "0–1.", default: "1" });
+  assert.deepEqual(member("MapView", "MapView", "basemap").doc, { default: '"plain"' });
+});
+
+test("JSDoc: {@link} is spelled {@link Name} or {@link Name text}, and line breaks stay (R29)", () => {
+  assert.deepEqual(member("MapView", "MapView", "selected").doc, { summary: "The {@link Marker} the user picked last, or `null` when none is." });
+  assert.deepEqual(member("MapView", "MapView", "flyTo").signatures[0].doc, {
+    summary: "Animates to {@link FlyToTarget a shape, a point or a camera}.\nResolves when the view has arrived & settled.",
+    since: "0.3",
+  });
 });
 
 test("classes: base, abstract, own members, generics, statics", () => {
@@ -126,8 +142,8 @@ test("a mixin's base: the class it starts with, and the mixin's members as inher
   assert.deepEqual(ir.modules.find((m) => m.specifier.endsWith("/pins.js")).declarations.map((d) => d.name), ["PinDragEvent", "PinEvents", "Pin"]);
 });
 
-test("a mixin's base in any order: the first named, exported class", () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "extract-"));
+test("a mixin's base in any order: the first named, exported class", (t) => {
+  const dir = tempDir(t);
   fs.writeFileSync(path.join(dir, "package.json"), JSON.stringify({ name: "@acme/extra", version: "1.0.0" }));
   fs.writeFileSync(path.join(dir, "index.d.ts"), `
     export {};
@@ -138,7 +154,6 @@ test("a mixin's base in any order: the first named, exported class", () => {
     declare const Anonymous: { new (...args: any[]): { spin(): void } } & typeof Shape;
     export class Top extends Anonymous { speed: number }`);
   const [{ declarations }] = extract(dir).modules;
-  fs.rmSync(dir, { recursive: true });
   const shape = { kind: "ref", name: "Shape", module: "@acme/extra/index.js" };
   const [lamp, top] = ["Lamp", "Top"].map((name) => declarations.find((d) => d.name === name));
   assert.deepEqual(lamp.extends, shape);
@@ -170,8 +185,8 @@ test("R22: a rest parameter's type is its array", () => {
   assert.deepEqual(decl("measure", "perimeter").signatures[0].params, [{ name: "points", type: { kind: "array", element: ref("geometry", "Point") }, rest: true }]);
 });
 
-test("TS enums, and R11: an intersection of object types is resolved", () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "extract-"));
+test("TS enums, and R11: an intersection of object types is resolved", (t) => {
+  const dir = tempDir(t);
   fs.writeFileSync(path.join(dir, "package.json"), JSON.stringify({ name: "@acme/extra", version: "1.0.0" }));
   fs.writeFileSync(path.join(dir, "index.d.ts"), `
     export enum Mode {
@@ -182,7 +197,6 @@ test("TS enums, and R11: an intersection of object types is resolved", () => {
     export interface Named { name: string; mode: Mode }
     export type Tagged = Named & { type: "tagged" };`);
   const [{ specifier, declarations: [mode, , tagged] }] = extract(dir).modules;
-  fs.rmSync(dir, { recursive: true });
   assert.equal(specifier, "@acme/extra/index.js");
   assert.deepEqual(mode, { kind: "enum", name: "Mode", members: [{ name: "Fast", value: 1 }, { name: "Slow", value: "slow", doc: { summary: "Careful." } }] });
   assert.deepEqual(tagged.type.members.map((m) => [m.name, m.type]), [
@@ -200,7 +214,7 @@ test("design §2: custom elements come from the manifest, linked to the typings"
   // can be narrower than the property's (R28: a primitive one renders as an HTML attribute).
   assert.deepEqual(element.attributes, [
     { name: "basemap", property: "basemap", type: ref("MapView", "Basemap"), doc: { default: '"plain"' } },
-    { name: "zoom", property: "zoom", type: num, doc: { default: "1" } },
+    { name: "zoom", property: "zoom", type: num, doc: { summary: "Clamped to 0–20, like the view's.", default: "1" } },
   ]);
   assert.deepEqual(member("demo-map", "DemoMapElement", "basemap").type, ref("MapView", "Basemap"));
   // Event types are resolved by the checker; a CustomEvent<T> gives its detail type.
@@ -212,8 +226,8 @@ test("design §2: custom elements come from the manifest, linked to the typings"
   assert.deepEqual(element.slots.map((s) => s.name), ["", "toolbar"]);
 });
 
-test("design §2: manifest types the typings don't give, ones that don't resolve, and detail-typed events", () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "extract-"));
+test("design §2: manifest types the typings don't give, ones that don't resolve, and detail-typed events", (t) => {
+  const dir = tempDir(t);
   const write = (name, value) => fs.writeFileSync(path.join(dir, name), typeof value === "string" ? value : JSON.stringify(value));
   write("package.json", { name: "@acme/extra", version: "1.0.0", type: "module", customElements: "cem.json" });
   write("kinds.d.ts", 'export type Kind = "a" | "b";');
@@ -232,7 +246,6 @@ test("design §2: manifest types the typings don't give, ones that don't resolve
     { path: "define.js", exports: [{ kind: "custom-element-definition", name: "x-pin", declaration: { name: "PinElement", module: "x-pin.js" } }] },
   ] });
   const { elements } = extract(dir);
-  fs.rmSync(dir, { recursive: true });
   assert.deepEqual(elements, [{
     tag: "x-pin",
     class: { kind: "ref", name: "PinElement", module: "@acme/extra/x-pin.js" },
@@ -249,47 +262,43 @@ test("design §2: manifest types the typings don't give, ones that don't resolve
   }]);
 });
 
-test("a member keyed by a symbol is left out, own or picked", () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "extract-"));
+test("a member keyed by a symbol is left out, own or picked", (t) => {
+  const dir = tempDir(t);
   fs.writeFileSync(path.join(dir, "package.json"), JSON.stringify({ name: "@acme/extra", version: "1.0.0" }));
   fs.writeFileSync(path.join(dir, "index.d.ts"), `
     export declare class Bag { size: number; [Symbol.iterator](): IterableIterator<number>; }
     export interface Entries { [Symbol.iterator](): Iterator<string>; count: number }
     export interface View extends Pick<Bag, "size" | typeof Symbol.iterator> {}`);
   const [{ declarations }] = extract(dir).modules;
-  fs.rmSync(dir, { recursive: true });
   assert.deepEqual(declarations.map((d) => [d.name, d.members.map((m) => m.name)]), [["Bag", ["size"]], ["Entries", ["count"]], ["View", ["size"]]]);
 });
 
-test("a default-exported function keeps its own name", () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "extract-"));
+test("a default-exported function keeps its own name", (t) => {
+  const dir = tempDir(t);
   fs.writeFileSync(path.join(dir, "package.json"), JSON.stringify({ name: "@acme/extra", version: "1.0.0" }));
   fs.writeFileSync(path.join(dir, "area.d.ts"), "export default function area(): number;");
   const [{ declarations }] = extract(dir).modules;
-  fs.rmSync(dir, { recursive: true });
   assert.deepEqual(declarations, [{ kind: "function", name: "area", export: "default", signatures: [{ returns: { kind: "primitive", name: "number" } }] }]);
 });
 
-test("an export of a declaration elsewhere in the file keeps the declaration, once", () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "extract-"));
+test("an export of a declaration elsewhere in the file keeps the declaration, once", (t) => {
+  const dir = tempDir(t);
   fs.writeFileSync(path.join(dir, "package.json"), JSON.stringify({ name: "@acme/extra", version: "1.0.0" }));
   fs.writeFileSync(path.join(dir, "pin.d.ts"), "declare class Pin { x: number; }\nexport default Pin;");
   fs.writeFileSync(path.join(dir, "both.d.ts"), "export declare class Tag { y: number; }\nexport default Tag;");
   fs.writeFileSync(path.join(dir, "again.d.ts"), 'export { Tag } from "./both";');
   const modules = extract(dir).modules;
-  fs.rmSync(dir, { recursive: true });
   const property = (name) => ({ kind: "property", name, type: { kind: "primitive", name: "number" } });
   assert.deepEqual(modules.map((m) => m.specifier), ["@acme/extra/both.js", "@acme/extra/pin.js"]); // a re-export is the declaring module's
   assert.deepEqual(modules[1].declarations, [{ kind: "class", name: "Pin", export: "default", constructors: [{}], members: [property("x")] }]);
   assert.deepEqual(modules[0].declarations, [{ kind: "class", name: "Tag", constructors: [{}], members: [property("y")] }]); // exported under its own name too
 });
 
-test("a package without a manifest has no elements", () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "extract-"));
+test("a package without a manifest has no elements", (t) => {
+  const dir = tempDir(t);
   fs.writeFileSync(path.join(dir, "package.json"), JSON.stringify({ name: "@acme/plain", version: "1.0.0" }));
   fs.writeFileSync(path.join(dir, "index.d.ts"), "export const x: number;");
   const out = extract(dir);
-  fs.rmSync(dir, { recursive: true });
   assert.equal(out.elements, undefined);
 });
 
@@ -356,8 +365,86 @@ test("a declaration of an internal module is imported from a module that re-expo
     "index.d.ts": 'export { A, make } from "./impl/a.js";\nexport { default as C } from "./impl/c.js";',
   }, (dir) => extract(dir).modules);
   assert.deepEqual(modules.map((m) => [m.specifier, m.internal, m.declarations.map((d) => [d.name, d.export, d.importFrom])]), [
-    ["@acme/extra/impl/a.js", true, [["A", undefined, { module: "@acme/extra" }], ["make", undefined, { module: "@acme/extra" }], ["Hidden", undefined, undefined]]],
-    ["@acme/extra/impl/c.js", true, [["C", "default", { module: "@acme/extra" }]]], // its own name there
+    ["@acme/extra/impl/a.js", true, [["A", undefined, { module: "@acme/extra", file: "index.js" }], ["make", undefined, { module: "@acme/extra", file: "index.js" }], ["Hidden", undefined, undefined]]],
+    ["@acme/extra/impl/c.js", true, [["C", "default", { module: "@acme/extra", file: "index.js" }]]], // its own name there
+  ]);
+});
+
+test("a module's file is listed when its specifier isn't the package's name plus the file's path", () => {
+  const files = withPackage({
+    "package.json": { name: "@acme/extra", version: "1.0.0", type: "module", exports: { ".": "./lib/index.js", "./parts/*": "./lib/parts/*/index.js", "./*.js": "./*.js" } },
+    "lib/index.d.ts": "export declare class Root {}",
+    "plain.d.ts": "export declare class Plain {}", // "./*.js" mirrors the files
+    "lib/parts/dial/index.d.ts": "export declare class Dial {}",
+    "lib/hidden.d.ts": "export declare class Hidden {}", // "./*.js" reaches lib/hidden.js by its path
+  }, (dir) => extract(dir).modules.map((m) => [m.specifier, m.file]));
+  assert.deepEqual(files, [
+    ["@acme/extra", "lib/index.js"],
+    ["@acme/extra/lib/hidden.js", undefined],
+    ["@acme/extra/parts/dial", "lib/parts/dial/index.js"],
+    ["@acme/extra/plain.js", undefined],
+  ]);
+});
+
+test("a module's file is the JS its export loads in a browser, not the .js next to its typings", () => {
+  const files = withPackage({
+    "package.json": { name: "@acme/extra", version: "1.0.0", type: "module", exports: {
+      "./geo": { types: "./types/geo.d.ts", import: "./esm/geo.js" }, // typings and JS in separate folders
+      "./a.js": { types: "./a.d.ts", import: "./esm/a.js" }, // a mirror for the typings only
+      "./tile": { types: "./types/tile.d.ts", browser: "./browser/tile.js", import: "./node/tile.js" },
+      "./only": { types: "./types/only.d.ts" }, // no JS target: the .js next to the typings
+      "./bare": { types: "./types/bare.d.ts" }, // no JS target and no .js: nothing loads it, so it's internal
+      "./multi-types": { types: "./types/multi.d.ts" }, // several exports reach it: the one with a JS target wins
+      "./multi": { types: "./types/multi.d.ts", import: "./esm/multi.js" },
+    } },
+    "types/geo.d.ts": "export declare class Geo {}",
+    "a.d.ts": "export declare class A {}",
+    "types/tile.d.ts": "export declare class Tile {}",
+    "types/only.d.ts": "export declare class Only {}",
+    "types/only.js": "export class Only {}",
+    "types/bare.d.ts": "export declare class Bare {}",
+    "types/multi.d.ts": "export declare class Multi {}",
+  }, (dir) => extract(dir).modules.map((m) => [m.specifier, m.file, m.internal]));
+  assert.deepEqual(files, [
+    ["@acme/extra/a.js", "esm/a.js", undefined],
+    ["@acme/extra/bare", undefined, true], // its subpath kept, so namespaces and profile keys don't move
+    ["@acme/extra/geo", "esm/geo.js", undefined],
+    ["@acme/extra/multi", "esm/multi.js", undefined],
+    ["@acme/extra/only", "types/only.js", undefined],
+    ["@acme/extra/tile", "browser/tile.js", undefined],
+  ]);
+});
+
+test("design §3.5: a base class exported for its typings only, and re-exported as a type, can't be imported", () => {
+  const modules = withPackage({
+    "package.json": { name: "@acme/extra", version: "1.0.0", type: "module", exports: {
+      ".": { types: "./index.d.ts", import: "./index.js" },
+      "./base": { types: "./base.d.ts" },
+      "./star": { types: "./star.d.ts" },
+      "./imp": { types: "./imp.d.ts" },
+      "./plain": { types: "./plain.d.ts" },
+    } },
+    "base.d.ts": "export declare class Base { text: string }",
+    "star.d.ts": "export declare class StarBase {}",
+    "imp.d.ts": "export declare class ImpBase {}",
+    "plain.d.ts": "export declare class PlainBase {}",
+    "index.d.ts": [
+      'import { Base } from "./base.js";',
+      'export type { Base } from "./base.js";', // export type { X } from
+      'export type * from "./star.js";', // export type * from
+      'import type { ImpBase } from "./imp.js";',
+      "export { ImpBase };", // import type, then export
+      'export * from "./plain.js";', // a value re-export: index.js has it
+      "export declare class Label extends Base {}",
+    ].join("\n"),
+    "index.js": "export class Label {}",
+  }, (dir) => extract(dir).modules);
+  assert.deepEqual(modules.map((m) => [m.specifier, m.internal, m.declarations.map((d) => [d.name, d.importFrom])]), [
+    ["@acme/extra", undefined, [["Label", undefined]]],
+    ["@acme/extra/base", true, [["Base", undefined]]], // no importFrom: index.js doesn't export it
+    ["@acme/extra/imp", true, [["ImpBase", undefined]]],
+    ["@acme/extra/plain", true, [["PlainBase", { module: "@acme/extra", file: "index.js" }]]],
+    ["@acme/extra/star", true, [["StarBase", undefined]]],
   ]);
 });
 
@@ -406,17 +493,16 @@ test("a manifest module path without an extension, or a folder, that no export r
 });
 
 /** A node_modules with both fixtures copied into it, as an install has them, so each resolves the other by name. */
-function installed() {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "extract-"));
+function installed(t) {
+  const root = tempDir(t);
   const at = (name) => path.join(root, "node_modules", "@acme", name);
   for (const name of ["demo-maps", "demo-widgets"]) fs.cpSync(fileURLToPath(new URL(`../../../fixtures/${name}`, import.meta.url)), at(name), { recursive: true });
-  return { maps: at("demo-maps"), widgets: at("demo-widgets"), remove: () => fs.rmSync(root, { recursive: true }) };
+  return { maps: at("demo-maps"), widgets: at("demo-widgets") };
 }
 
-test("a listed package's dependency contributes only the declarations it reaches, under their own modules", () => {
-  const packages = installed();
+test("a listed package's dependency contributes only the declarations it reaches, under their own modules", (t) => {
+  const packages = installed(t);
   const widgets = extract(packages.widgets, { eventMap: "$events" });
-  packages.remove();
   assert.deepEqual(widgets.package, { name: "@acme/demo-widgets", version: "0.0.0" });
   const names = Object.fromEntries(widgets.modules.map((m) => [m.specifier, m.declarations.map((d) => d.name)]));
   // Legend.view is a MapView, which reaches its own types, its bases, its members' types and theirs.
@@ -430,11 +516,10 @@ test("a listed package's dependency contributes only the declarations it reaches
   assert.deepEqual(widgets.elements.map((e) => e.tag), ["demo-legend", "demo-zoom-label"]);
 });
 
-test("a listed package that a dependency has its own copy of is listed once", () => {
+test("a listed package that a dependency has its own copy of is listed once", (t) => {
   // demo-widgets' import of @acme/demo-maps reaches the copy next to it, not the fixture listed by its real path.
-  const packages = installed();
+  const packages = installed(t);
   const both = extract([fixture, packages.widgets]);
-  packages.remove();
   const specifiers = both.modules.map((m) => m.specifier);
   assert.deepEqual(specifiers, [...new Set(specifiers)]);
   assert.deepEqual(both.modules.filter((m) => !m.package).map((m) => m.specifier), ir.modules.map((m) => m.specifier));
@@ -463,10 +548,9 @@ const combined = (maps, delta) => ({
   elements: [...maps.elements, ...delta.elements].sort((a, b) => (a.tag < b.tag ? -1 : 1)),
 });
 
-test("the CLI writes the golden IR for several packages, byte for byte", () => {
-  const packages = installed();
+test("the CLI writes the golden IR for several packages, byte for byte", (t) => {
+  const packages = installed(t);
   const json = execFileSync(process.execPath, [fileURLToPath(new URL("../extract.mjs", import.meta.url)), packages.maps, packages.widgets, "--profile", `${fixture}/profile.json`], { encoding: "utf8" });
-  packages.remove();
   const both = JSON.parse(json);
   const tags = new Set(ir.elements.map((e) => e.tag));
   if (process.env.UPDATE_GOLDEN) {
@@ -483,14 +567,17 @@ test("the CLI writes the golden IR for several packages, byte for byte", () => {
   const widgets = both.modules.filter((m) => m.package);
   // `exports` gives "./legend" for dist/legend.js (its `types` condition); no export reaches dist/support/, nor a
   // component's element.js ("./components/*" reaches its index.js).
-  assert.deepEqual(widgets.map((m) => [m.specifier, m.package, m.internal]), [
-    ["@acme/demo-widgets/dist/components/zoom-label/element.js", "@acme/demo-widgets", true],
-    ["@acme/demo-widgets/dist/support/entry.js", "@acme/demo-widgets", true],
-    ["@acme/demo-widgets/dist/support/swatch.js", "@acme/demo-widgets", true],
-    ["@acme/demo-widgets/legend", "@acme/demo-widgets", undefined],
+  // Only legend's file isn't its specifier's path, for import maps; demo-maps' `./*.js` mirrors its files.
+  assert.deepEqual(widgets.map((m) => [m.specifier, m.package, m.internal, m.file]), [
+    ["@acme/demo-widgets/dist/components/zoom-label/element.js", "@acme/demo-widgets", true, undefined],
+    ["@acme/demo-widgets/dist/support/entry.js", "@acme/demo-widgets", true, undefined],
+    ["@acme/demo-widgets/dist/support/swatch.js", "@acme/demo-widgets", true, undefined],
+    ["@acme/demo-widgets/legend", "@acme/demo-widgets", undefined, "dist/legend.js"],
   ]);
+  assert.ok(both.modules.filter((m) => !m.package).every((m) => m.file === undefined));
   // The root re-exports swatch.js's declarations, so they're imported from it; entry.js's aren't importable.
-  assert.deepEqual(widgets[2].declarations.map((d) => [d.name, d.importFrom]), [["Swatch", { module: "@acme/demo-widgets" }], ["swatchFor", { module: "@acme/demo-widgets" }]]);
+  const root = { module: "@acme/demo-widgets", file: "dist/index.js" };
+  assert.deepEqual(widgets[2].declarations.map((d) => [d.name, d.importFrom]), [["Swatch", root], ["swatchFor", root]]);
   assert.deepEqual(widgets[1].declarations.map((d) => [d.name, d.importFrom]), [["LegendEntry", undefined], ["describe", undefined]]);
   const legend = widgets[3].declarations.find((d) => d.name === "Legend");
   assert.equal(legend.importFrom, undefined); // its own module is reachable
@@ -505,6 +592,19 @@ test("the CLI writes the golden IR for several packages, byte for byte", () => {
   const declaring = "@acme/demo-widgets/dist/components/zoom-label/element.js";
   assert.deepEqual(zoomLabel.class, { kind: "ref", name: "ZoomLabelElement", module: declaring });
   assert.deepEqual(zoomLabel.events.map((e) => e.detail), [{ kind: "ref", name: "ZoomLabelCopyDetail", module: declaring }]);
+  const label = { module: "@acme/demo-widgets/components/zoom-label", file: "dist/components/zoom-label/index.js" };
   assert.deepEqual(widgets[0].declarations.map((d) => [d.name, d.importFrom]),
-    [["ZoomLabelCopyDetail", { module: "@acme/demo-widgets/components/zoom-label" }], ["ZoomLabelElement", { module: "@acme/demo-widgets/components/zoom-label" }]]);
+    [["ZoomLabelCopyDetail", label], ["ZoomLabelElement", label]]);
+});
+
+// Design §4: TypeScript comes from INTEROPER_TYPESCRIPT (the CLI's), else the extractor's own folder, and it must be 6.x.
+test("the CLI loads TypeScript from INTEROPER_TYPESCRIPT, and only 6.x", (t) => {
+  const fake = path.join(tempDir(t), "typescript");
+  fs.mkdirSync(fake);
+  fs.writeFileSync(path.join(fake, "package.json"), JSON.stringify({ name: "typescript", version: "5.9.3", main: "index.js" }));
+  fs.writeFileSync(path.join(fake, "index.js"), 'module.exports = { version: "5.9.3" };\n');
+  const cli = fileURLToPath(new URL("../extract.mjs", import.meta.url));
+  const env = { ...process.env, INTEROPER_TYPESCRIPT: fake };
+  assert.throws(() => execFileSync(process.execPath, [cli, fixture], { encoding: "utf8", stdio: "pipe", env }),
+    (e) => e.stderr.includes("TypeScript 5.9.3 found; the extractor needs 6.x: run `npm install -D typescript@6.0.3`"));
 });

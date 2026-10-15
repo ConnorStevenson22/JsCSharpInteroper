@@ -17,7 +17,7 @@ public sealed class IrTests
         var mapView = Declaration<ClassDeclaration>("MapView");
         Assert.Equal(new RefType("Emitter", "@acme/demo-maps/core.js"), mapView.Extends);
         Assert.True(Assert.Single(Assert.Single(mapView.Constructors).Params).Optional);
-        Assert.Equal(new Event("click", new RefType("ClickEvent", "@acme/demo-maps/MapView.js")), Assert.Single(mapView.Events));
+        Assert.Equal(new Event("click", new RefType("ClickEvent", "@acme/demo-maps/MapView.js"), new Doc("A click on the map, after the view has handled it.")), Assert.Single(mapView.Events));
         var flyTo = Assert.IsType<MethodMember>(mapView.Members.Single(m => m.Name == "flyTo"));
         var signature = Assert.Single(flyTo.Signatures);
         Assert.Equal(["target", "options"], signature.Params.Select(p => p.Name));

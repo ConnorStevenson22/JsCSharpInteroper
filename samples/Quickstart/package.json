@@ -1,0 +1,11 @@
+{
+  "name": "quickstart",
+  "private": true,
+  "description": "The library to bind, and the TypeScript the extractor runs on. Here the library is the repo's made-up fixture, packed into packages/.",
+  "dependencies": {
+    "@acme/demo-maps": "file:packages/acme-demo-maps-0.0.0.tgz"
+  },
+  "devDependencies": {
+    "typescript": "6.0.3"
+  }
+}

@@ -10,6 +10,7 @@ public sealed partial class Polygon : Shape
     public static Polygon Create(global::Interoper.JsScope scope, PolygonSnapshot props) =>
         scope.Realm.Call(global::Interoper.JsOp.Create(DemoMaps.PolygonId, w => PolygonSnapshot.WriteMembers(w, props)), scope.Read<Polygon>)!;
 
+    /// <summary>The closing edge from the last vertex back to the first is implied.</summary>
     public double[][] Vertices
     {
         get => Realm.Call(global::Interoper.JsOp.Get(Handle, "vertices"), static (ref r) => global::Interoper.JsJson.ReadArray(ref r, static (ref r1) => global::Interoper.JsJson.ReadArray(ref r1, global::Interoper.JsJson.ReadNumber)))!;

@@ -3,6 +3,7 @@
 
 namespace GoldenSlice.Async;
 
+/// <summary>"3d-relief" starts with a digit on purpose (R25).</summary>
 public enum Basemap
 {
     Plain,

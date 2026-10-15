@@ -7,6 +7,7 @@ public closed partial class Shape : Observable
 {
     internal Shape(global::Interoper.JsRealm realm, int handle) : base(realm, handle) { }
 
+    /// <summary>All zeros when the shape has no coordinates.</summary>
     public Bounds Bounds => Realm.Call(global::Interoper.JsOp.Get(Handle, "bounds"), Bounds.Read)!;
 
     public Shape Clone(global::Interoper.JsScope scope) =>

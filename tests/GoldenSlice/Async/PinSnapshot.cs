@@ -5,6 +5,7 @@ namespace GoldenSlice.Async;
 
 public sealed partial record PinSnapshot
 {
+    /// <summary>Where the marker is; a pair is taken as <c>[x, y]</c>.</summary>
     public global::Interoper.Opt<PointSnapshot> Position { get; init; }
     public global::Interoper.Opt<string> Label { get; init; }
     public Style Style { get; init; }

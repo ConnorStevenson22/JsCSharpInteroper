@@ -36,7 +36,8 @@ public static class Generator
         // R27: the registry keeps its path (the type map has given it a name no namespace has); a later type whose path is
         // taken, or whose name is a namespace's, is skipped, reported as IOP2006. What uses it isn't, so its code won't
         // compile until a profile rename (mapping R27). The type map has renamed a sibling module's type of the same name.
-        var paths = new HashSet<string> { $"{types.Registry}.cs" };
+        // Paths are compared ignoring case: on Windows and macOS, files whose paths differ only in case are one file.
+        var paths = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { $"{types.Registry}.cs" };
         var namespaces = types.Namespaces;
         var declared = new Dictionary<ClassDeclaration, IReadOnlySet<string>>(ReferenceEqualityComparer.Instance); // R26, per class
         void Add(TypeName type, string text)
@@ -64,10 +65,10 @@ public static class Generator
                     Add(types.Name(selected.Declaration), RecordEmitter.Data(types, selected.Declaration));
                     break;
                 case AliasDeclaration a when types.Union(types.Name(a), a.Type) is { } type:
-                    Add(type.Type, ValueTypeEmitter.Emit(types, type));
+                    Add(type.Type, ValueTypeEmitter.Emit(types, type, a));
                     break;
                 case EnumDeclaration e:
-                    Add(types.Name(e), ValueTypeEmitter.Emit(types, types.Enum(e)));
+                    Add(types.Name(e), ValueTypeEmitter.Emit(types, types.Enum(e), e));
                     break;
                 case ClassDeclaration c:
                     Add(types.Name(c), LiveEmitter.Class(types, profile, options, diagnostics, declared, c));
@@ -95,7 +96,8 @@ public static class Generator
         foreach (var element in selection.Elements)
         {
             // R28: nothing refers to a component either, so it takes a free name too: with Component (the element's own
-            // class is often named like its tag, so that's the convention, not reported), then a number (IOP2006).
+            // class is often named like its tag, so that's the convention, not reported), then a number (IOP2006). A name
+            // taken in another case counts (class AcmeSVGLabel, tag acme-svg-label), since their files would clash.
             var ns = types.Namespace(element.Class);
             var wanted = Naming.Type(element.Element.Tag);
             // An inline record or anonymous union named already takes its name too, and the component's is reserved.
@@ -113,7 +115,7 @@ public static class Generator
             Add(new(ns, name), ComponentEmitter.Component(types, options, diagnostics, element, name));
         }
         var classes = MetadataEmitter.ClassIds(types, selection);
-        files.Add(new($"{types.Registry}.cs", MetadataEmitter.Registry(types, options, classes, modules.SelectMany(m => m), selection.Elements)));
+        files.Add(new($"{types.Registry}.cs", MetadataEmitter.Registry(ir, types, options, classes, modules.SelectMany(m => m), selection.Elements)));
         files.Add(new(MetadataEmitter.FileName(ir), MetadataEmitter.Module(ir, profile, types, classes, selection.Elements)));
         // The anonymous unions and inline records (R11, R27), unions first; emitting one can meet more of them.
         var (unions, records) = (0, 0);

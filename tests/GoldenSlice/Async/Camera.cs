@@ -3,6 +3,7 @@
 
 namespace GoldenSlice.Async;
 
+/// <summary>Untagged: told apart by required members only.</summary>
 [global::System.Runtime.CompilerServices.Union]
 public readonly partial struct Camera : global::Interoper.IJsUnion<Camera>, global::System.IEquatable<Camera>
 {

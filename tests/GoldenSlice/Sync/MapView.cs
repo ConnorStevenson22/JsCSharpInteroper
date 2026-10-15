@@ -7,6 +7,7 @@ public sealed partial class MapView : Emitter
 {
     internal MapView(global::Interoper.JsRealm realm, int handle) : base(realm, handle) { }
 
+    /// <summary>A view with the given options; the rest keep their defaults.</summary>
     public static MapView Create(global::Interoper.JsScope scope, MapViewSnapshot props) =>
         scope.Realm.Call(global::Interoper.JsOp.Create(DemoMaps.MapViewId, w => MapViewSnapshot.WriteMembers(w, props)), scope.Read<MapView>)!;
 
@@ -16,24 +17,28 @@ public sealed partial class MapView : Emitter
         set => Realm.Send(global::Interoper.JsOp.Set(Handle, "center", w => PointSnapshot.Write(w, value)));
     }
 
+    /// <summary>Clamped to 0–20.</summary>
     public double Zoom
     {
         get => Realm.GetNumber(Handle, "zoom");
         set => Realm.Set(Handle, "zoom", value);
     }
 
+    /// <summary>Degrees, normalized to 0–360.</summary>
     public double Rotation
     {
         get => Realm.GetNumber(Handle, "rotation");
         set => Realm.Set(Handle, "rotation", value);
     }
 
+    /// <remarks>Default: "plain"</remarks>
     public Basemap Basemap
     {
         get => BasemapNames.FromJs(Realm.GetString(Handle, "basemap"));
         set => Realm.Set(Handle, "basemap", BasemapNames.ToJs(value));
     }
 
+    /// <summary>Undefined: the container's own CSS cursor.</summary>
     public global::Interoper.Opt<Cursor> Cursor
     {
         get => Realm.Call(global::Interoper.JsOp.Get(Handle, "cursor"), static (ref r) => global::Interoper.JsJson.ReadOpt(ref r, global::GoldenSlice.Sync.Cursor.Read));
@@ -46,21 +51,27 @@ public sealed partial class MapView : Emitter
         set => Realm.Send(global::Interoper.JsOp.Set(Handle, "title", w => global::Interoper.JsJson.WriteValue(w, value, global::Interoper.JsJson.WriteString)));
     }
 
+    /// <summary>The element the map draws into.</summary>
     public void SetContainer(global::Interoper.Opt<global::Microsoft.AspNetCore.Components.ElementReference> value) =>
         Realm.Send(global::Interoper.JsOp.Set(Handle, "container", w => global::Interoper.JsJson.WriteValue(w, value, global::Interoper.JsElement.Write)));
 
+    /// <summary>The <c>Marker</c> the user picked last, or <c>null</c> when none is.</summary>
     public global::Interoper.Opt<Marker> GetSelected(global::Interoper.JsScope scope) =>
         Realm.Call(global::Interoper.JsOp.Get(Handle, "selected"), (ref r) => global::Interoper.JsJson.ReadOpt(ref r, scope.Read<Marker>));
 
+    /// <summary>The <c>Marker</c> the user picked last, or <c>null</c> when none is.</summary>
     public void SetSelected(global::Interoper.Opt<Marker> value) =>
         Realm.Send(global::Interoper.JsOp.Set(Handle, "selected", w => global::Interoper.JsJson.WriteValue(w, value, Marker.Write)));
 
     public Collection<Marker> GetMarkers(global::Interoper.JsScope scope) =>
         Realm.Call(global::Interoper.JsOp.Get(Handle, "markers"), (ref r) => scope.Read(ref r, static (realm, handle) => new Collection<Marker>(realm, handle)))!;
 
+    /// <summary>Drawn in order, the first at the bottom.</summary>
     public Collection<global::GoldenSlice.Sync.Layers.Layer> GetLayers(global::Interoper.JsScope scope) =>
         Realm.Call(global::Interoper.JsOp.Get(Handle, "layers"), (ref r) => scope.Read(ref r, static (realm, handle) => new Collection<global::GoldenSlice.Sync.Layers.Layer>(realm, handle)))!;
 
+    /// <summary>Screen offset (pixels from the center) to map coordinates.</summary>
+    /// <remarks>Since: 0.2</remarks>
     public PointSnapshot ScreenToMap(double x, double y) =>
         Realm.Call(global::Interoper.JsOp.Call(Handle, "screenToMap", w =>
         {
@@ -68,9 +79,19 @@ public sealed partial class MapView : Emitter
             global::Interoper.JsJson.WriteNumber(w, y);
         }, byValue: true), PointSnapshot.Read)!;
 
+    /// <summary>The offset as an <c>[x, y]</c> pair.</summary>
+    /// <remarks>
+    /// Deprecated: Pass <c>x</c> and <c>y</c>.
+    /// See: MapView.flyTo
+    /// </remarks>
     public PointSnapshot ScreenToMap(double[] offset) =>
         Realm.Call(global::Interoper.JsOp.Call(Handle, "screenToMap", w => global::Interoper.JsJson.WriteArray(w, offset, global::Interoper.JsJson.WriteNumber), byValue: true), PointSnapshot.Read)!;
 
+    /// <summary>
+    /// Animates to a shape, a point or a camera.
+    /// Resolves when the view has arrived &amp; settled.
+    /// </summary>
+    /// <remarks>Since: 0.3</remarks>
     public global::System.Threading.Tasks.Task FlyToAsync(FlyToTarget target, global::Interoper.Opt<FlyToOptions> options = default) =>
         Realm.SendAsync(global::Interoper.JsOp.Call(Handle, "flyTo", w =>
         {
@@ -85,6 +106,7 @@ public sealed partial class MapView : Emitter
             global::Interoper.JsJson.WriteNumber(w, y);
         }), (ref r) => global::Interoper.JsJson.ReadOpt(ref r, scope.Read<Marker>));
 
+    /// <summary>A click on the map, after the view has handled it.</summary>
     public global::System.IDisposable OnClick(global::Interoper.JsScope scope, global::System.Action<ClickEvent> handler, global::Interoper.EventOptions? options = null) =>
         scope.Subscribe(Handle, "on", "click", ClickEvent.Read, handler, options, ["type", "x", "y", "button", "mapPoint"]);
 

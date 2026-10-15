@@ -4,7 +4,7 @@ Interoper generates C# bindings for JavaScript libraries from their TypeScript t
 
 Read before changing anything:
 - [docs/design.md](docs/design.md): decisions and architecture.
-- [docs/mapping.md](docs/mapping.md): TypeScript → C# rules (R1–R27) and diagnostic codes.
+- [docs/mapping.md](docs/mapping.md): TypeScript → C# rules (R1–R29) and diagnostic codes.
 - [docs/plan.md](docs/plan.md): the build order; the current phase has a tracking issue.
 - [docs/ir.md](docs/ir.md): the extractor's output, the generator's input.
 
@@ -21,15 +21,16 @@ Read before changing anything:
 There is no CI. Run these before merging; all of them must pass.
 
 ```bash
+npm install --prefix src/interoper-extractor --no-audit --no-fund   # once: the extractor's pinned TypeScript (the JS tests and Interoper.Tool.Tests use it)
 dotnet build Interoper.slnx
-dotnet test Interoper.slnx                      # unit + golden tests
+dotnet test Interoper.slnx                      # unit, golden and CLI tests (the CLI tests run the extractor on Node)
 dotnet test tests/Interoper.E2E                 # browser tests (Playwright, Chromium); the slnx builds them but doesn't run them
 dotnet format Interoper.slnx --verify-no-changes
-npm install --prefix src/interoper-extractor --no-audit --no-fund   # once: the extractor's pinned TypeScript
 node --test "tests/interoper-js/*.test.mjs" "fixtures/demo-maps/test/*.test.mjs" "fixtures/demo-widgets/test/*.test.mjs" "src/interoper-extractor/test/*.test.mjs"   # JS tests (glob form; a bare folder fails on Node 22)
 ```
 
 ## Environment
 
 - Cloud sessions run `.claude/hooks/session-start.sh`, which installs the pinned SDK into `~/.dotnet` and restores packages.
+- `samples/Quickstart` stays out of `Interoper.slnx`: it builds against the packed packages. `QuickstartTests` (in the E2E run) runs [docs/quickstart.md](docs/quickstart.md)'s commands as written, so change them there; it needs npm's registry and nuget.org.
 - Chromium for browser tests is preinstalled under `/opt/pw-browsers` (`PLAYWRIGHT_BROWSERS_PATH`). Don't run `playwright install` there; if the Playwright package expects a different browser revision, pass an explicit `ExecutablePath`.

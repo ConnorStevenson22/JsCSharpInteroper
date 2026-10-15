@@ -3,6 +3,7 @@
 
 namespace GoldenSlice.Async;
 
+/// <summary>Open-ended: the known values, or any CSS cursor.</summary>
 public readonly partial record struct Cursor(string Value)
 {
     public static Cursor Default { get; } = new("default");

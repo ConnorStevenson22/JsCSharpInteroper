@@ -5,6 +5,7 @@ namespace GoldenSlice.Sync;
 
 public sealed partial record MapViewEvents
 {
+    /// <summary>A click on the map, after the view has handled it.</summary>
     public required ClickEvent Click { get; init; }
 
     public static void Write(global::System.Text.Json.Utf8JsonWriter writer, MapViewEvents value)

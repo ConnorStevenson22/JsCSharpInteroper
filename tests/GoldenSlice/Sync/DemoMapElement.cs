@@ -3,6 +3,10 @@
 
 namespace GoldenSlice.Sync;
 
+/// <summary>
+/// <c>&lt;demo-map&gt;</c>. Attributes: <c>basemap</c>, <c>zoom</c>. Slots: default, <c>toolbar</c>.
+/// Events: <c>demo-map-click</c>, <c>demo-map-zoom-change</c>, <c>demo-map-ready</c>.
+/// </summary>
 public sealed partial class DemoMapElement : global::Interoper.JsObject
 {
     internal DemoMapElement(global::Interoper.JsRealm realm, int handle) : base(realm, handle) { }
@@ -25,12 +29,14 @@ public sealed partial class DemoMapElement : global::Interoper.JsObject
         set => Realm.Set(Handle, "zoom", value);
     }
 
+    /// <summary>The view's center.</summary>
     public PointSnapshot Center
     {
         get => Realm.Call(global::Interoper.JsOp.Get(Handle, "center", byValue: true), PointSnapshot.Read)!;
         set => Realm.Send(global::Interoper.JsOp.Set(Handle, "center", w => PointSnapshot.Write(w, value)));
     }
 
+    /// <summary>Clicks the map at an offset from its center, in pixels.</summary>
     public void ClickAt(double x, double y, global::Interoper.Opt<DemoMapElementClickAtButton> button = default) =>
         Realm.Send(global::Interoper.JsOp.Call(Handle, "clickAt", w =>
         {

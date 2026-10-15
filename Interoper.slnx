@@ -4,6 +4,7 @@
     <Project Path="src/Interoper.Blazor/Interoper.Blazor.csproj" />
     <Project Path="src/Interoper.Generator/Interoper.Generator.csproj" />
     <Project Path="src/Interoper.Runtime/Interoper.Runtime.csproj" />
+    <Project Path="src/Interoper.Tool/Interoper.Tool.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/GoldenSlice/GoldenSlice.csproj" />
@@ -12,5 +13,6 @@
     <Project Path="tests/Interoper.E2E.Host/Interoper.E2E.Host.csproj" />
     <Project Path="tests/Interoper.Generator.Tests/Interoper.Generator.Tests.csproj" />
     <Project Path="tests/Interoper.Runtime.Tests/Interoper.Runtime.Tests.csproj" />
+    <Project Path="tests/Interoper.Tool.Tests/Interoper.Tool.Tests.csproj" />
   </Folder>
 </Solution>

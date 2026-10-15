@@ -14,12 +14,14 @@ public static partial class Measure
             PointSnapshot.Write(w, b);
         }), global::Interoper.JsJson.ReadNumber);
 
+    /// <summary>The length of the closed path through the points: the last joins the first.</summary>
     public static double Perimeter(global::Interoper.JsRealm realm, params PointSnapshot[] points) =>
         realm.Call(global::Interoper.JsOp.Call(Module, "perimeter", w =>
         {
             foreach (var item in points) PointSnapshot.Write(w, item);
         }), global::Interoper.JsJson.ReadNumber);
 
+    /// <summary>The shape's <c>type</c>, or "marker" and its label.</summary>
     public static string Describe(global::Interoper.JsRealm realm, Measurable target) =>
         realm.Call(global::Interoper.JsOp.Call(Module, "describe", w => global::Interoper.JsJson.WriteValue(w, target)), global::Interoper.JsJson.ReadString)!;
 }

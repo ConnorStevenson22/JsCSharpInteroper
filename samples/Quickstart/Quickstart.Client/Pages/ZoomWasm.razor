@@ -1,0 +1,26 @@
+@page "/zoom-wasm"
+@rendermode @(new InteractiveWebAssemblyRenderMode(prerender: false))
+@using Quickstart.Client.Maps
+@implements IDisposable
+@inject JsRealm Realm
+
+<h1>WebAssembly: --api sync</h1>
+<p id="zoom">@(view is null ? "starting" : $"zoom {view.Zoom}")</p>
+<button id="zoom-in" disabled="@(view is null)" @onclick="ZoomIn">Zoom in</button>
+
+@code {
+    // .NET runs in the browser, so members are plain properties: rendering reads view.Zoom straight from JS.
+    JsScope? scope;
+    MapView? view;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Realm.StartAsync();
+        scope = new JsScope(Realm);
+        view = MapView.Create(scope, new MapViewSnapshot { Zoom = 3 });
+    }
+
+    void ZoomIn() => view!.Zoom += 1;
+
+    public void Dispose() => scope?.Dispose();
+}

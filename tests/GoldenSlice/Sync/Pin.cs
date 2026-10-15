@@ -3,6 +3,7 @@
 
 namespace GoldenSlice.Sync;
 
+/// <summary>A marker with the <c>Draggable</c> mixin: its base is still <c>Marker</c>.</summary>
 public sealed partial class Pin : Marker
 {
     internal Pin(global::Interoper.JsRealm realm, int handle) : base(realm, handle) { }
@@ -10,12 +11,15 @@ public sealed partial class Pin : Marker
     public static Pin Create(global::Interoper.JsScope scope, PinSnapshot props) =>
         scope.Realm.Call(global::Interoper.JsOp.Create(DemoMaps.PinId, w => PinSnapshot.WriteMembers(w, props)), scope.Read<Pin>)!;
 
+    /// <summary>Anything the app keeps with the pin.</summary>
     public global::Interoper.Opt<global::Interoper.JsAny> GetMeta(global::Interoper.JsScope scope) =>
         Realm.Call(global::Interoper.JsOp.Get(Handle, "meta"), (ref r) => global::Interoper.JsJson.ReadOpt(ref r, (ref r1) => global::Interoper.JsAny.Read(ref r1, scope)));
 
+    /// <summary>Anything the app keeps with the pin.</summary>
     public void SetMeta(global::Interoper.Opt<global::Interoper.JsAny> value) =>
         Realm.Send(global::Interoper.JsOp.Set(Handle, "meta", w => global::Interoper.JsJson.WriteValue(w, value, global::Interoper.JsAny.Write)));
 
+    /// <summary>Moves the position and emits <c>drag</c>.</summary>
     public void DragBy(double dx, double dy) =>
         Realm.Send(global::Interoper.JsOp.Call(Handle, "dragBy", w =>
         {

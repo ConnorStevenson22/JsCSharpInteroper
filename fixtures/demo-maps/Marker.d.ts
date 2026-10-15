@@ -11,10 +11,12 @@ export interface MarkerOptions extends Partial<Pick<Marker, "label" | "style" | 
 
 export class Marker extends Observable {
   constructor(options?: MarkerOptions);
+  /** Where the marker is; a pair is taken as `[x, y]`. */
   get position(): Point;
   set position(value: Point | [number, number]);
   label?: string | null;
   style: Style;
+  /** Overrides `label` when set. */
   labelFormatter?: LabelFormatter | null;
   /** `labelFormatter(this)` if set, otherwise `label`, otherwise "". */
   readonly displayLabel: string;

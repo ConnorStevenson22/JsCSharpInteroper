@@ -10,4 +10,21 @@
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
   </PropertyGroup>
 
+  <!-- The three packages (design §5): Interoper.Runtime, Interoper.Blazor and Interoper.Tool turn IsPackable on and
+       add their Description. No license expression (none chosen). -->
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+    <Version>0.1.0-preview.1</Version>
+    <Authors>Connor Stevenson</Authors>
+    <PackageProjectUrl>https://github.com/ConnorStevenson22/JsCSharpInteroper</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/ConnorStevenson22/JsCSharpInteroper</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageTags>blazor;javascript;typescript;interop;codegen</PackageTags>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+  </PropertyGroup>
+
+  <ItemGroup Condition="'$(IsPackable)' == 'true'">
+    <None Include="$(MSBuildThisFileDirectory)README.md" Pack="true" PackagePath="/" Visible="false" />
+  </ItemGroup>
+
 </Project>

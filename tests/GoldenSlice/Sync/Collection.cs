@@ -15,12 +15,17 @@ public sealed partial class Collection<T> : Emitter where T : global::Interoper.
     public void Add(T item) =>
         Realm.Send(global::Interoper.JsOp.Call(Handle, "add", w => global::Interoper.JsObject.Write(w, item)));
 
+    /// <summary>Returns whether the item was found.</summary>
     public bool Remove(T item) =>
         Realm.Call(global::Interoper.JsOp.Call(Handle, "remove", w => global::Interoper.JsObject.Write(w, item)), global::Interoper.JsJson.ReadBoolean);
 
     public global::Interoper.Opt<T> Find(global::Interoper.JsScope scope, global::System.Func<T, double, bool> predicate) =>
         Realm.Call(global::Interoper.JsOp.Call(Handle, "find", w => global::Interoper.JsJson.WriteCallback(w, scope.Callback(predicate, scope.Read<T>, global::Interoper.JsJson.ReadNumber, global::Interoper.JsJson.WriteBoolean))), (ref r) => global::Interoper.JsJson.ReadOpt(ref r, scope.Read<T>));
 
+    /// <summary>
+    /// Calls <c>callback</c> for each item, in order; its result is ignored. Like <c>Array.prototype.forEach</c>, it also passes
+    /// the collection, which the type leaves out.
+    /// </summary>
     public void ForEach(global::Interoper.JsScope scope, global::System.Action<T, double> callback) =>
         Realm.Send(global::Interoper.JsOp.Call(Handle, "forEach", w => global::Interoper.JsJson.WriteCallback(w, scope.Callback(callback, scope.Read<T>, global::Interoper.JsJson.ReadNumber))));
 

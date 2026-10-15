@@ -3,11 +3,30 @@
   <PropertyGroup>
     <IsAotCompatible>true</IsAotCompatible>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks> <!-- [JSImport] -->
+    <IsPackable>true</IsPackable>
+    <!-- The XML docs ship in the package, and malformed ones fail the build (CS1570, CS0419 and kin). CS1591 (a public
+         member without docs) is off until every member has them. -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+    <Description>Interoper's runtime: the value model, realms, scopes and handles, both seams and their transports, and interoper.js (a static web asset) for the C# bindings `dotnet interoper generate` writes. Brings the chatty-await analyzer (IOP3001).</Description>
+    <TargetsForTfmSpecificContentInPackage>$(TargetsForTfmSpecificContentInPackage);PackAnalyzer</TargetsForTfmSpecificContentInPackage>
   </PropertyGroup>
 
   <ItemGroup>
     <SupportedPlatform Include="browser" />
     <PackageReference Include="Microsoft.JSInterop" />
+    <!-- Not a reference of the runtime: built first, then packed under analyzers/ (below), so a project that references
+         the package, directly or through Interoper.Blazor, gets IOP3001. -->
+    <ProjectReference Include="..\Interoper.Analyzers\Interoper.Analyzers.csproj" ReferenceOutputAssembly="false" PrivateAssets="all" />
   </ItemGroup>
+
+  <Target Name="PackAnalyzer">
+    <MSBuild Projects="..\Interoper.Analyzers\Interoper.Analyzers.csproj" Targets="GetTargetPath" RemoveProperties="TargetFramework;RuntimeIdentifier">
+      <Output TaskParameter="TargetOutputs" ItemName="InteroperAnalyzer" />
+    </MSBuild>
+    <ItemGroup>
+      <TfmSpecificPackageFile Include="@(InteroperAnalyzer)" PackagePath="analyzers/dotnet/cs" />
+    </ItemGroup>
+  </Target>
 
 </Project>

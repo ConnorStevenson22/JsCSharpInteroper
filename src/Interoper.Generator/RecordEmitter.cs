@@ -21,6 +21,7 @@ internal static class RecordEmitter
         }
         var fields = Unhidden(types.Fields(declaration), ns);
         var w = CodeWriter.CSharp(ns);
+        XmlDoc.Write(w, declaration.Doc);
         using (w.Block($"public sealed partial record {name}{string.Concat(parameters.Select(t => $" where {t} : global::Interoper.JsObject"))}"))
         {
             Properties(w, fields, required: true);
@@ -172,6 +173,7 @@ internal static class RecordEmitter
         var own = fields.Where(f => f.Constant is null && !f.Inherited).ToList();
         foreach (var f in own)
         {
+            XmlDoc.Write(w, f.Doc);
             w.Line($"public {(f.Hides ? "new " : "")}{(required && f.Required ? "required " : "")}{f.TypeName} {f.Name} {{ get; init; }}");
         }
         if (own.Count > 0)

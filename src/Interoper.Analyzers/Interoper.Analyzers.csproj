@@ -1,11 +1,11 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
-  <!-- The compiler loads analyzers, so they target netstandard2.0. Packaging comes in plan phase 4. -->
+  <!-- The compiler loads analyzers, so they target netstandard2.0. Shipped inside the Interoper.Runtime package
+       (analyzers/dotnet/cs), not as a package of its own. Release tracking (RS2008): AnalyzerReleases.*.md, which
+       Microsoft.CodeAnalysis.Analyzers picks up; a rule is listed under Unshipped until a release ships it. -->
   <PropertyGroup>
     <TargetFramework>netstandard2.0</TargetFramework>
     <EnforceExtendedAnalyzerRules>true</EnforceExtendedAnalyzerRules>
-    <!-- Release tracking (AnalyzerReleases.*.md) comes with the package -->
-    <NoWarn>$(NoWarn);RS2008</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>

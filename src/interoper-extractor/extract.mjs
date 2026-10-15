@@ -6,12 +6,29 @@
 // The first package is the IR's `package`; the others' modules, and those of unlisted packages whose declarations the
 // listed ones reference, say which package they're in.
 // The profile is read only for the event-map property (`events.mapProperty`, R24); everything else in it is the generator's.
+// `dotnet interoper generate` runs it (design §5); this form is for development.
 
 import fs from "node:fs";
+import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import ts from "typescript";
 import { createProgram, discriminant, listDts } from "./program.mjs";
+
+const ts = loadTypeScript();
+
+/**
+ * TypeScript 6.x (design §4): the package folder in `INTEROPER_TYPESCRIPT` (the CLI passes the consumer's), else the
+ * extractor's own (repo development).
+ */
+function loadTypeScript() {
+  const require = createRequire(import.meta.url);
+  const dir = process.env.INTEROPER_TYPESCRIPT;
+  const loaded = require(dir ? path.resolve(dir) : "typescript");
+  if (!/^6\./.test(loaded.version)) {
+    throw new Error(`TypeScript ${loaded.version} found; the extractor needs 6.x: run \`npm install -D typescript@6.0.3\``);
+  }
+  return loaded;
+}
 
 const F = ts.SymbolFlags;
 const T = ts.TypeFlags;
@@ -84,7 +101,8 @@ export function extract(packageDirs, { eventMap } = {}) {
   let reexports;
   /**
    * Where a declaration of an internal module is imported from (ir.md `importFrom`): the first module, by specifier,
-   * that an export reaches and that re-exports it, with the name it's exported under there when that isn't its own.
+   * that an export reaches and that re-exports it as a value (not `export type`), with the name it's exported under
+   * there when that isn't its own, and its `file` as a module's: such a module declares nothing, so it isn't listed.
    */
   function importFrom(sym, decl) {
     if (!infoOf(decl.getSourceFile())?.internal) return undefined;
@@ -94,15 +112,46 @@ export function extract(packageDirs, { eventMap } = {}) {
       for (const sf of reachable) {
         const moduleSym = checker.getSymbolAtLocation(sf);
         for (const e of moduleSym ? checker.getExportsOfModule(moduleSym) : []) {
+          if (typeOnly(e, sf)) continue;
           const target = e.flags & F.Alias ? checker.getAliasedSymbol(e) : e;
           if (!reexports.has(target) && target.declarations?.length && target.declarations.every((d) => d.getSourceFile() !== sf)) {
-            reexports.set(target, { module: infoOf(sf).specifier, name: e.name });
+            reexports.set(target, { module: infoOf(sf).specifier, file: infoOf(sf).file, name: e.name });
           }
         }
       }
     }
     const found = reexports.get(sym);
-    return found && compact({ module: found.module, export: found.name !== nameOf(sym) ? found.name : undefined });
+    return found && compact({ module: found.module, export: found.name !== nameOf(sym) ? found.name : undefined, file: found.file });
+  }
+
+  /**
+   * Whether `e`, an export of `sf`, exports nothing at run time: an alias with a type-only link in its chain (`export
+   * type { X } from`, `export { type X }`, `import type { X }` then `export { X }`), or a symbol that came through
+   * `export *` when no value `export *` reaches it (only `export type * from`).
+   */
+  function typeOnly(e, sf) {
+    return e.flags & F.Alias ? aliasTypeOnly(e) : !starReaches(e, sf, new Set());
+  }
+  function aliasTypeOnly(alias) {
+    for (let s = alias; s && s.flags & F.Alias; s = checker.getImmediateAliasedSymbol(s)) {
+      if (s.declarations?.some((d) => ts.isTypeOnlyImportOrExportDeclaration(d))) return true;
+    }
+    return false;
+  }
+  /** Whether a value `export * from` of `sf` reaches `sym`: from the file that declares it, or as a value from there. */
+  function starReaches(sym, sf, seen) {
+    if (seen.has(sf)) return false;
+    seen.add(sf);
+    for (const st of sf.statements) {
+      if (!ts.isExportDeclaration(st) || st.exportClause || !st.moduleSpecifier || st.isTypeOnly) continue;
+      const m = checker.getSymbolAtLocation(st.moduleSpecifier);
+      const from = m?.declarations?.find(ts.isSourceFile);
+      if (!from) continue;
+      if (sym.declarations?.some((d) => d.getSourceFile() === from)) return true;
+      const inner = checker.getExportsOfModule(m).find((x) => x === sym || (x.flags & F.Alias && checker.getAliasedSymbol(x) === sym));
+      if (inner && (inner === sym ? starReaches(sym, from, seen) : !aliasTypeOnly(inner))) return true;
+    }
+    return false;
   }
 
   // --- Declarations ---
@@ -359,7 +408,7 @@ export function extract(packageDirs, { eventMap } = {}) {
 
   /** Its own JSDoc only: without the checker, TypeScript doesn't copy an overridden member's docs from its base. */
   function doc(symOrSig) {
-    const text = (parts) => ts.displayPartsToString(parts).trim();
+    const text = (parts = []) => parts.map(linkPart).join("").trim();
     const tags = symOrSig.getJsDocTags();
     const tag = (...names) => tags.filter((t) => names.includes(t.name)).map((t) => text(t.text));
     const d = compact({
@@ -426,8 +475,8 @@ export function extract(packageDirs, { eventMap } = {}) {
   const modules = [];
   for (const [sf, entries] of listed) {
     const declarations = entries.filter((e) => e.decl).sort((a, b) => a.d.pos - b.d.pos).map((e) => e.decl);
-    const { specifier, package: name, internal } = infoOf(sf);
-    if (declarations.length) modules.push(compact({ specifier, package: name !== pkg.name ? name : undefined, internal, declarations }));
+    const { specifier, package: name, file, internal } = infoOf(sf);
+    if (declarations.length) modules.push(compact({ specifier, package: name !== pkg.name ? name : undefined, file, internal, declarations }));
   }
   modules.sort((a, b) => (a.specifier < b.specifier ? -1 : 1));
   return compact({ version: 1, package: { name: pkg.name, version: pkg.version }, modules, elements });
@@ -480,6 +529,19 @@ function readManifest(dir, pkg) {
   return { elements, types };
 }
 
+/**
+ * A JSDoc display part, with each `{@link}` (or `@linkcode`, `@linkplain`) spelled `{@link Name}` or `{@link Name text}`:
+ * TypeScript's own `displayPartsToString` runs a link's name into its text (`{@link Xtext}`).
+ */
+function linkPart(part, i, parts) {
+  switch (part.kind) {
+    case "link": return part.text.startsWith("{") ? "{@link " : part.text;
+    case "linkName": return part.text.trim();
+    case "linkText": return (parts[i - 1].kind === "linkName" ? " " : "") + part.text.trim();
+    default: return part.text;
+  }
+}
+
 /** A manifest entry's docs: its description (or summary), default and deprecation. */
 function manifestDoc(entry) {
   const d = compact({ summary: entry.description || entry.summary || undefined, default: entry.default, deprecated: entry.deprecated === true ? "" : entry.deprecated || undefined });
@@ -497,7 +559,10 @@ function readPackage(dir) {
 /**
  * A declaration file's module (ir.md): the nearest package.json with a name is its package, and its specifier is how
  * that package's `exports` reach the file (`@acme/widgets/legend`). Without `exports` it's `<name>/<path of the .js
- * next to the .d.ts>`, and so it is when no export reaches the file, which is then internal.
+ * next to the .d.ts>`, and so it is when no export reaches the file, which is then internal. It's internal too, under
+ * its export's subpath, when the exports that reach it are for its typings only and there's no .js next to them.
+ * `file` is, for import maps, the JS file a browser loads for the subpath (its JS conditions' target, else that `.js`),
+ * when that isn't the subpath itself.
  */
 function moduleInfo(file) {
   for (let d = path.dirname(file); d !== path.dirname(d); d = path.dirname(d)) {
@@ -505,8 +570,17 @@ function moduleInfo(file) {
     if (!pkg?.name) continue;
     const dts = `./${path.relative(d, file).split(path.sep).join("/")}`;
     const js = dts.replace(/\.d\.([mc]?)ts$/, ".$1js");
-    const subpath = pkg.exports === undefined ? js : exportOf(exportsMap(pkg.exports), [js, dts]);
-    return compact({ specifier: pkg.name + (subpath ?? js).slice(1), package: pkg.name, internal: subpath === undefined || undefined });
+    const map = pkg.exports === undefined ? undefined : exportsMap(pkg.exports);
+    // Of the exports that reach it, one that loads JS in a browser, else the first. With neither a JS target nor a .js
+    // next to the typings, that export is for the typings only: the module keeps its subpath, but nothing can import
+    // it, so it's internal.
+    const subpaths = map ? subpathsOf(map, [js, dts]) : [js];
+    const withJs = map ? subpaths.find((s) => typeof resolveExport(map, s, JS_CONDITIONS) === "string") : undefined;
+    const subpath = withJs ?? subpaths[0];
+    const typingsOnly = map !== undefined && subpath !== undefined && withJs === undefined && !fs.existsSync(path.join(d, js));
+    const real = withJs !== undefined ? resolveExport(map, withJs, JS_CONDITIONS) : js;
+    return compact({ specifier: pkg.name + (subpath ?? js).slice(1), package: pkg.name,
+      file: subpath !== undefined && !typingsOnly && real !== subpath ? real.slice(2) : undefined, internal: subpath === undefined || typingsOnly || undefined });
   }
   return undefined;
 }
@@ -515,11 +589,11 @@ function moduleInfo(file) {
 const exportsMap = (exports) => (exports && typeof exports === "object" && !Array.isArray(exports) && Object.keys(exports).some((k) => k.startsWith(".")) ? exports : { ".": exports });
 
 /**
- * The subpath of an `exports` map that reaches a file (its `.js` or its `.d.ts`, `files`), or undefined. The keys whose
- * target is the file are tried, the exact ones first, then the `*` patterns, each in the map's order, and a subpath
- * counts only when resolving it forward gives the file: a pattern with a longer prefix, or a null target, can shadow it.
+ * The subpaths of an `exports` map that reach a file (its `.js` or its `.d.ts`, `files`), in order: the exact keys
+ * whose target is the file, then the `*` patterns, each in the map's order. A subpath counts only when resolving it
+ * forward gives the file: a pattern with a longer prefix, or a null target, can shadow it.
  */
-function exportOf(map, files) {
+function subpathsOf(map, files) {
   const entries = Object.entries(map).map(([key, value]) => [key, target(value)]).filter(([, t]) => typeof t === "string");
   const candidates = [
     ...entries.filter(([key, t]) => !key.includes("*") && files.includes(t)).map(([key]) => key),
@@ -529,15 +603,15 @@ function exportOf(map, files) {
       return file ? [key.replace("*", file.slice(prefix.length, file.length - suffix.length))] : [];
     }),
   ];
-  return candidates.find((subpath) => files.includes(resolveExport(map, subpath)));
+  return candidates.filter((subpath) => files.includes(resolveExport(map, subpath)));
 }
 
 /**
  * What a subpath resolves to through an `exports` map, as Node resolves it: its exact key, or else the pattern whose
  * prefix is the longest (then the longest key), with `*` replaced; null or undefined when nothing is exported there.
  */
-function resolveExport(map, subpath) {
-  if (!subpath.includes("*") && Object.hasOwn(map, subpath)) return target(map[subpath]);
+function resolveExport(map, subpath, conditions = CONDITIONS) {
+  if (!subpath.includes("*") && Object.hasOwn(map, subpath)) return target(map[subpath], conditions);
   let best;
   for (const key of Object.keys(map)) {
     const star = key.indexOf("*");
@@ -546,23 +620,25 @@ function resolveExport(map, subpath) {
     if (subpath.length < key.length || !subpath.startsWith(prefix) || !subpath.endsWith(suffix)) continue;
     if (!best || prefix.length > best.prefix.length || (prefix.length === best.prefix.length && key.length > best.key.length)) best = { key, prefix, suffix };
   }
-  const t = best && target(map[best.key]);
+  const t = best && target(map[best.key], conditions);
   return typeof t === "string" ? t.replaceAll("*", subpath.slice(best.prefix.length, subpath.length - best.suffix.length)) : t;
 }
 
+/** The conditions TypeScript resolves an `import`'s typings with, and those a browser loads its JS with (import maps). */
 const CONDITIONS = new Set(["types", "import", "default"]);
+const JS_CONDITIONS = new Set(["browser", "import", "default"]);
 
 /**
- * What an export's value resolves to, as TypeScript resolves an `import` (conditions `types`, `import`, `default`):
- * a string; a condition object's first of those conditions that resolves, nested ones too; an array's first entry that
- * resolves to a string. Null excludes it, and undefined means none applies.
+ * What an export's value resolves to with the given conditions (by default as TypeScript resolves an `import`): a
+ * string; a condition object's first condition, in its own order, that is one of them and resolves, nested ones too;
+ * an array's first entry that resolves to a string. Null excludes it, and undefined means none applies.
  */
-function target(value) {
+function target(value, conditions = CONDITIONS) {
   if (typeof value === "string" || value === null) return value;
-  if (Array.isArray(value)) return value.map(target).find((t) => typeof t === "string");
+  if (Array.isArray(value)) return value.map((v) => target(v, conditions)).find((t) => typeof t === "string");
   if (typeof value !== "object") return undefined;
   for (const [condition, nested] of Object.entries(value)) {
-    const t = CONDITIONS.has(condition) ? target(nested) : undefined;
+    const t = conditions.has(condition) ? target(nested, conditions) : undefined;
     if (t !== undefined) return t;
   }
   return undefined;

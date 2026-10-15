@@ -3,6 +3,7 @@
 
 namespace GoldenSlice.Sync.Layers;
 
+/// <summary>Abstract: only its subclasses are constructed.</summary>
 public partial class Layer : global::GoldenSlice.Sync.Observable
 {
     internal Layer(global::Interoper.JsRealm realm, int handle) : base(realm, handle) { }
@@ -19,6 +20,7 @@ public partial class Layer : global::GoldenSlice.Sync.Observable
         set => Realm.Set(Handle, "visible", value);
     }
 
+    /// <summary>A copy, of the same class.</summary>
     public Layer Clone(global::Interoper.JsScope scope) =>
         Realm.Call(global::Interoper.JsOp.Call(Handle, "clone"), scope.Read<Layer>)!;
 

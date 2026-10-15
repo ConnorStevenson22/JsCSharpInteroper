@@ -3,6 +3,7 @@
 
 namespace GoldenSlice.Sync;
 
+/// <summary>A data record: plain JSON, no class behind it.</summary>
 public sealed partial record Bounds
 {
     public required double MinX { get; init; }

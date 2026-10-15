@@ -9,8 +9,9 @@ namespace Interoper.Generator;
 /// <param name="Opt">The property is <c>Opt&lt;T&gt;</c> (R3); a union never is (R2).</param>
 /// <param name="Inherited">Declared by the base snapshot record (R16).</param>
 /// <param name="Hides">Redeclares a base snapshot record's member with another type, so it's <c>new</c> (R18, R26).</param>
+/// <param name="Doc">The property's docs (R29).</param>
 internal sealed record Field(string JsName, string Name, CsType? Type, bool Required, bool Opt = false, JsonElement? Constant = null, bool Inherited = false,
-    bool Hides = false)
+    bool Hides = false, Doc? Doc = null)
 {
     public string TypeName => Opt ? $"global::Interoper.Opt<{Type!.Name}>" : Type!.Name;
 }
@@ -76,8 +77,10 @@ internal sealed class TypeMap
     private readonly Dictionary<ObjectType, AliasDeclaration> bags = new(ReferenceEqualityComparer.Instance);
     private readonly Dictionary<Declaration, TypeName> inline = new(ReferenceEqualityComparer.Instance);
     private readonly List<Declaration> records = [];
-    /// <summary>R27: the names an inline record can't take (<see cref="Taken"/>).</summary>
-    private readonly HashSet<TypeName> taken = [];
+    /// <summary>R27: the names an inline record can't take (<see cref="Taken"/>), ignoring case, as files' paths may.</summary>
+    private readonly HashSet<TypeName> taken = new(TypeName.IgnoreCase);
+    /// <summary>R27: the names of the anonymous unions and enums mapped so far, ignoring case.</summary>
+    private readonly HashSet<TypeName> unionNames = new(TypeName.IgnoreCase);
     private readonly HashSet<ClassDeclaration> watchable = new(ReferenceEqualityComparer.Instance);
     private readonly Dictionary<Declaration, bool> scoped = new(ReferenceEqualityComparer.Instance);
     private readonly HashSet<Declaration> scoping = new(ReferenceEqualityComparer.Instance);
@@ -126,15 +129,16 @@ internal sealed class TypeMap
         (package, root) = (ir.Package.Name, ns);
         var emitted = selected.Select(s => (s.Module, s.Declaration.Name)).ToHashSet();
         // R27: sibling modules' types of one name. The first in IR order keeps it; a later one is prefixed with its
-        // module's class name (ops/b.js's Options is BOptions), so both compile, and so do their users.
-        var owners = new Dictionary<(string Namespace, string Name), string>();
+        // module's class name (ops/b.js's Options is BOptions), so both compile, and so do their users. Names that
+        // differ only in case count as one, since their files would be one where the file system ignores case.
+        var owners = new Dictionary<TypeName, string>(TypeName.IgnoreCase);
         foreach (var (module, d) in ir.Modules.SelectMany(m => m.Declarations.Select(d => (m.Specifier, d))))
         {
             if (!MakesType(d))
             {
                 continue;
             }
-            var key = (Namespace: Namespace(module), Name: Naming.Type(d.Name));
+            var key = new TypeName(Namespace(module), Naming.Type(d.Name));
             if (owners.TryAdd(key, module) || owners[key] == module)
             {
                 continue;
@@ -143,7 +147,7 @@ internal sealed class TypeMap
             renamed[(module, d.Name)] = name;
             if (emitted.Contains((module, d.Name)))
             {
-                diagnostics.Add(new(Diagnostic.Renamed, module, $"its {key.Item2} is {name}: {owners[key]} has one too (R27)"));
+                diagnostics.Add(new(Diagnostic.Renamed, module, $"its {key.Name} is {name}: {owners[key]} has one too (R27)"));
             }
         }
         // R27: the namespaces of the emitted types, below the root and with the namespaces they're in. The registry
@@ -476,6 +480,10 @@ internal sealed class TypeMap
                 type is UnionType u && u.Types.Count(t => !IsNullish(t)) == all.Count ? u.Discriminant : null,
                 WrittenOnly(type, all, flat), Dropped: flat.Count < all.Count);
         unions[name] = result;
+        if (result is not null)
+        {
+            unionNames.Add(name);
+        }
         return result;
     }
 
@@ -489,6 +497,7 @@ internal sealed class TypeMap
         var values = e.Members.Select(m => m.Value).ToList();
         var result = new EnumType(name, EnumMembers(name.Name, values, e.Members.Select(m => m.Name)), Extensible: false);
         unions[name] = result;
+        unionNames.Add(name);
         return result;
     }
 
@@ -601,9 +610,9 @@ internal sealed class TypeMap
 
     /// <summary>
     /// Whether an emitted type has that name, or an inline record, an anonymous union or enum, or a component (<see
-    /// cref="Reserve"/>) has taken it.
+    /// cref="Reserve"/>) has taken it. Case is ignored, since the file system may ignore it in the files' paths.
     /// </summary>
-    public bool Taken(TypeName name) => taken.Contains(name) || unions.TryGetValue(name, out var union) && union is not null;
+    public bool Taken(TypeName name) => taken.Contains(name) || unionNames.Contains(name);
 
     /// <summary>R28: takes a name for a component, so that an inline record met later doesn't take it too.</summary>
     public void Reserve(TypeName name) => taken.Add(name);
@@ -723,7 +732,7 @@ internal sealed class TypeMap
             }
             var (mapped, nullable) = Slot(p.Type, type.Owned(p.Name));
             var name = Naming.Member(taken, Naming.Pascal(p.Name), $"{type.Name}.{p.Name}", diagnostics);
-            result.Add(new(p.Name, name, mapped, Required: !p.Optional, Opt: (nullable || p.Optional) && !mapped.IsUnion));
+            result.Add(new(p.Name, name, mapped, Required: !p.Optional, Opt: (nullable || p.Optional) && !mapped.IsUnion, Doc: p.Doc));
         }
         return result;
     }
@@ -755,11 +764,11 @@ internal sealed class TypeMap
                 if (inherited < 0)
                 {
                     var name = Naming.Member(taken, Naming.Pascal(p.Name), $"{SnapshotName(c)}.{p.Name}", diagnostics);
-                    result.Add(new(p.Name, name, mapped, Required: false, Opt: !mapped.IsUnion));
+                    result.Add(new(p.Name, name, mapped, Required: false, Opt: !mapped.IsUnion, Doc: p.Doc));
                 }
                 else if (result[inherited] is { Constant: null } own && own.Type!.FullName != mapped.FullName)
                 {
-                    result[inherited] = new(p.Name, own.Name, mapped, Required: false, Opt: !mapped.IsUnion, Hides: true);
+                    result[inherited] = new(p.Name, own.Name, mapped, Required: false, Opt: !mapped.IsUnion, Hides: true, Doc: p.Doc);
                 }
             }
         }

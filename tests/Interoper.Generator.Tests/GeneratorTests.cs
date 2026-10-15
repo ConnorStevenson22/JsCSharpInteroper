@@ -17,6 +17,25 @@ public sealed class GeneratorTests
         Assert.Contains("    Low = 1,\n    High = 10,\n", File(result, "Level.cs"));
     }
 
+    [Fact] // R29: a TS enum's members have their own docs, which the golden slice's literal unions don't
+    public void EnumMembersHaveTheirDocs()
+    {
+        var result = Generate("""
+            { "kind": "enum", "name": "Speed", "doc": { "summary": "How fast <i>it</i> goes." },
+              "members": [{ "name": "Fast", "value": 1, "doc": { "summary": "Skips frames.", "deprecated": "" } }, { "name": "Slow", "value": 2 }] }
+            """);
+        Assert.Contains("""
+            /// <summary>How fast &lt;i&gt;it&lt;/i&gt; goes.</summary>
+            public enum Speed
+            {
+                /// <summary>Skips frames.</summary>
+                /// <remarks>Deprecated.</remarks>
+                Fast = 1,
+                Slow = 2,
+            }
+            """.ReplaceLineEndings("\n"), File(result, "Speed.cs"));
+    }
+
     [Fact] // R15, R3, R26
     public void ADataRecordHasItsBasesMembers()
     {
@@ -179,6 +198,37 @@ public sealed class GeneratorTests
         Assert.Contains("public static partial class Widgets2", File(result, "Widgets2.cs")); // next to the namespace Acme.Widgets
         Assert.Contains("global::Interoper.JsOp.Create(global::Acme.Widgets2.ThingId, ", File(result, "Widgets/Thing.cs"));
         Assert.Equal("IOP2006 Acme.Widgets: the registry is Widgets2: a namespace has its name (R27)", Assert.Single(result.Diagnostics).ToString());
+    }
+
+    [Fact] // R27: a type and a namespace that differ only in case don't clash: one is a file, the other a folder
+    public void ATypeAndANamespaceThatDifferOnlyInCaseDontClash()
+    {
+        var result = Generate(Api.Sync, ("SVG.js", """{ "kind": "class", "name": "SVG" }"""), ("svg/Thing.js", """{ "kind": "class", "name": "Thing" }"""));
+
+        Assert.Equal(["SVG.cs", "SVGSnapshot.cs", "Svg/Thing.cs", "Svg/ThingSnapshot.cs", "Maps.cs", "maps.meta.js"], result.Files.Select(f => f.Path));
+        Assert.Empty(result.Diagnostics);
+    }
+
+    [Fact] // R27: nor do the registry and a folder's namespace that differ only in case
+    public void TheRegistryKeepsItsNameNextToAFolderThatDiffersOnlyInCase()
+    {
+        var ir = IrDocument.Parse("""
+            { "version": 1, "package": { "name": "@acme/svg", "version": "1" }, "modules": [
+              { "specifier": "@acme/svg/SVG/Thing.js", "declarations": [{ "kind": "class", "name": "Thing" }] }] }
+            """);
+        var result = Generator.Generate(ir, new Profile { Package = "@acme/svg" }, new(Api.Sync, "Acme"));
+
+        Assert.Equal(["SVG/Thing.cs", "SVG/ThingSnapshot.cs", "Svg.cs", "svg.meta.js"], result.Files.Select(f => f.Path));
+        Assert.Empty(result.Diagnostics);
+    }
+
+    [Fact] // R27: sibling modules' types whose names differ only in case would be one file, so the later one is prefixed too
+    public void SiblingModulesTypesThatDifferOnlyInCaseArePrefixed()
+    {
+        var result = Generate(Api.Sync, ("a.js", """{ "kind": "class", "name": "SVGOptions" }"""), ("b.js", """{ "kind": "class", "name": "SvgOptions" }"""));
+
+        Assert.Equal(["SVGOptions.cs", "SVGOptionsSnapshot.cs", "BSvgOptions.cs", "BSvgOptionsSnapshot.cs", "Maps.cs", "maps.meta.js"], result.Files.Select(f => f.Path));
+        Assert.Equal("IOP2006 @acme/maps/b.js: its SvgOptions is BSvgOptions: @acme/maps/a.js has one too (R27)", Assert.Single(result.Diagnostics).ToString());
     }
 
     [Fact] // R27: sibling modules' types of one name both compile; the later one is prefixed with its module's name
@@ -758,13 +808,13 @@ public sealed class GeneratorTests
             { "kind": "class", "name": "Tile", "extends": {{Ref("Figure")}}, "members": [
               { "kind": "property", "name": "kind", "readonly": true, "type": { "kind": "literal", "value": "tile" } },
               { "kind": "property", "name": "anchor", "type": {{Ref("Anchor")}}, "writeType": {{Ref("AnchorProps")}} },
-              { "kind": "property", "name": "size", "type": {{String}} }] }
+              { "kind": "property", "name": "size", "type": {{String}}, "doc": { "summary": "Its label." } }] }
             """, new Profile { Package = "@acme/maps", ValueClasses = ["Figure", "Tile"] });
 
         var tile = File(result, "TileSnapshot.cs");
         Assert.DoesNotContain("Anchor {", tile); // the base's
         Assert.DoesNotContain("JsAnchor", tile);
-        Assert.Contains("public new global::Interoper.Opt<string> Size { get; init; }", tile);
+        Assert.Contains("    /// <summary>Its label.</summary>\n    public new global::Interoper.Opt<string> Size { get; init; }", tile); // R29: its own docs
         Assert.Single(tile.Split('\n'), l => l.Contains("\"anchor\"u8", StringComparison.Ordinal));
         Assert.Contains("""2: { module: "@acme/maps/a.js", export: "Tile", name: "a.Tile", value: true, members: ["anchor", "size", "kind"] },""", File(result, "maps.meta.js"));
         Assert.Empty(result.Diagnostics);
@@ -908,6 +958,22 @@ public sealed class GeneratorTests
         Assert.Contains("public XChartTags Tags { get; set; }", component);
         Assert.Contains("""global::Interoper.JsOp.Set(Element.Handle, "tags", """, component);
         Assert.DoesNotContain("""JsOp.Set(Element.Handle, "label", """, component);
+    }
+
+    [Theory] // R28, R27: a component whose name differs from its element class's only in case is suffixed too, as their files would clash
+    [InlineData(Api.Sync)]
+    [InlineData(Api.Async)]
+    public void AComponentNamedLikeItsClassButForCaseIsSuffixed(Api api)
+    {
+        var result = Elements(api, [("label.js", """{ "kind": "class", "name": "AcmeSVGLabel", "members": [] }""")], """
+            { "tag": "acme-svg-label", "class": { "kind": "ref", "name": "AcmeSVGLabel", "module": "@acme/maps/label.js" }, "attributes": [], "events": [], "slots": [] }
+            """);
+
+        Assert.Empty(result.Diagnostics); // R28: {Name}Component is the convention, not a rename
+        Assert.Contains("public sealed partial class AcmeSVGLabel : global::Interoper.JsObject", File(result, "AcmeSVGLabel.cs"));
+        Assert.Contains("public sealed partial class AcmeSvgLabelComponent : global::Interoper.JsComponentBase", File(result, "AcmeSvgLabelComponent.cs"));
+        // No two paths differ only in case, so the CLI's writer accepts them (design §5).
+        Assert.Equal(result.Files.Count, result.Files.Select(f => f.Path).Distinct(StringComparer.OrdinalIgnoreCase).Count());
     }
 
     [Fact] // R28, R24: elements that share an event name share its registration, which sends all their fields
@@ -1125,6 +1191,54 @@ public sealed class GeneratorTests
         // demo-maps' own types are where they are without demo-widgets.
         var alone = Generator.Generate(Fixture.Ir, Fixture.Profile, new(Api.Async, "Acme.Maps"));
         Assert.Empty(alone.Files.Select(f => f.Path).Except(result.Files.Select(f => f.Path)));
+    }
+
+    [Theory] // design §3.5: a prefix entry per package, and an exact one per module whose file an export maps elsewhere
+    [InlineData(Api.Sync)]
+    [InlineData(Api.Async)]
+    public void TheRegistrysImportMapCoversThePackagesAndTheirExportMappedModules(Api api)
+    {
+        var registry = File(Generator.Generate(Fixture.WithWidgetsIr, Fixture.Profile, new(api, "Acme.Maps")), "DemoMaps.cs");
+
+        // demo-maps' `./*.js` mirrors its files; demo-widgets' root, `./legend` and `./components/*` map into dist/.
+        // The root gets its trailing slash when it has none.
+        Assert.Contains("""
+                public static global::System.Collections.Generic.IReadOnlyDictionary<string, string> ImportMap(string root)
+                {
+                    root = root.EndsWith('/') ? root : root + "/";
+                    return new global::System.Collections.Generic.Dictionary<string, string>
+                    {
+                        ["@acme/demo-maps/"] = root + "@acme/demo-maps/",
+                        ["@acme/demo-widgets"] = root + "@acme/demo-widgets/dist/index.js",
+                        ["@acme/demo-widgets/"] = root + "@acme/demo-widgets/",
+                        ["@acme/demo-widgets/components/zoom-label"] = root + "@acme/demo-widgets/dist/components/zoom-label/index.js",
+                        ["@acme/demo-widgets/legend"] = root + "@acme/demo-widgets/dist/legend.js",
+                    };
+                }
+            """, registry);
+        Assert.Contains("""
+                    {
+                        ["@acme/demo-maps/"] = root + "@acme/demo-maps/",
+                    };
+            """, File(Generator.Generate(Fixture.Ir, Fixture.Profile, new(api, "Acme.Maps")), "DemoMaps.cs"));
+    }
+
+    [Fact] // design §3.5: an unscoped package, and one the IR names only through `importFrom`
+    public void TheImportMapNamesPackagesBySpecifier()
+    {
+        var ir = IrDocument.Parse("""
+            { "version": 1, "package": { "name": "maps", "version": "1" }, "modules": [
+              { "specifier": "maps/lib/a.js", "internal": true, "declarations": [
+                { "kind": "class", "name": "A", "importFrom": { "module": "maps-extra/a", "file": "dist/a.mjs" } }] }] }
+            """);
+
+        Assert.Contains("""
+                    {
+                        ["maps-extra/"] = root + "maps-extra/",
+                        ["maps-extra/a"] = root + "maps-extra/dist/a.mjs",
+                        ["maps/"] = root + "maps/",
+                    };
+            """, File(Generator.Generate(ir, new Profile { Package = "maps" }, new(Api.Async, "Maps")), "Maps.cs"));
     }
 
     [Theory] // R11, R15, R19, R27: an inline object type is a record named after its owner, without the optional members it can't map

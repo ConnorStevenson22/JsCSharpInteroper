@@ -3,6 +3,7 @@
 
 namespace GoldenSlice.Sync;
 
+/// <summary>Value-like shapes and an entity: written, never read back (R2, R17).</summary>
 [global::System.Runtime.CompilerServices.Union]
 public readonly partial struct Measurable : global::Interoper.IJsUnion<Measurable>, global::System.IEquatable<Measurable>
 {

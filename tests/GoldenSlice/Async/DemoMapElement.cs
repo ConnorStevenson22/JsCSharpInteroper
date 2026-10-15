@@ -3,6 +3,10 @@
 
 namespace GoldenSlice.Async;
 
+/// <summary>
+/// <c>&lt;demo-map&gt;</c>. Attributes: <c>basemap</c>, <c>zoom</c>. Slots: default, <c>toolbar</c>.
+/// Events: <c>demo-map-click</c>, <c>demo-map-zoom-change</c>, <c>demo-map-ready</c>.
+/// </summary>
 public sealed partial class DemoMapElement : global::Interoper.JsObject
 {
     internal DemoMapElement(global::Interoper.JsRealm realm, int handle) : base(realm, handle) { }
@@ -23,12 +27,15 @@ public sealed partial class DemoMapElement : global::Interoper.JsObject
 
     public global::System.Threading.Tasks.Task SetZoomAsync(double value) => Realm.SetAsync(Handle, "zoom", value);
 
+    /// <summary>The view's center.</summary>
     public async global::System.Threading.Tasks.Task<PointSnapshot> GetCenterAsync() =>
         (await Realm.CallAsync(global::Interoper.JsOp.Get(Handle, "center", byValue: true), PointSnapshot.Read))!;
 
+    /// <summary>The view's center.</summary>
     public global::System.Threading.Tasks.Task SetCenterAsync(PointSnapshot value) =>
         Realm.SendAsync(global::Interoper.JsOp.Set(Handle, "center", w => PointSnapshot.Write(w, value)));
 
+    /// <summary>Clicks the map at an offset from its center, in pixels.</summary>
     public global::System.Threading.Tasks.Task ClickAtAsync(double x, double y, global::Interoper.Opt<DemoMapElementClickAtButton> button = default) =>
         Realm.SendAsync(global::Interoper.JsOp.Call(Handle, "clickAt", w =>
         {

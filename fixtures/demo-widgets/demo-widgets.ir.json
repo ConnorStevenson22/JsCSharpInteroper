@@ -14,7 +14,8 @@
           "kind": "interface",
           "name": "ZoomLabelCopyDetail",
           "importFrom": {
-            "module": "@acme/demo-widgets/components/zoom-label"
+            "module": "@acme/demo-widgets/components/zoom-label",
+            "file": "dist/components/zoom-label/index.js"
           },
           "members": [
             {
@@ -31,7 +32,8 @@
           "kind": "class",
           "name": "ZoomLabelElement",
           "importFrom": {
-            "module": "@acme/demo-widgets/components/zoom-label"
+            "module": "@acme/demo-widgets/components/zoom-label",
+            "file": "dist/components/zoom-label/index.js"
           },
           "doc": {
             "summary": "`<demo-zoom-label>`: a view's zoom as text. Attribute: `precision`. Event: `demo-zoom-label-copy`.\nNo export reaches this file: the package exports `./components/*` as each folder's `index.js`, which re-exports it,\nand the manifest names the element's module by that subpath, `components/zoom-label`."
@@ -161,7 +163,8 @@
           "kind": "class",
           "name": "Swatch",
           "importFrom": {
-            "module": "@acme/demo-widgets"
+            "module": "@acme/demo-widgets",
+            "file": "dist/index.js"
           },
           "doc": {
             "summary": "A color chip for a legend entry. No export reaches this file; the package's root re-exports it."
@@ -205,7 +208,8 @@
           "kind": "function",
           "name": "swatchFor",
           "importFrom": {
-            "module": "@acme/demo-widgets"
+            "module": "@acme/demo-widgets",
+            "file": "dist/index.js"
           },
           "signatures": [
             {
@@ -235,6 +239,7 @@
     {
       "specifier": "@acme/demo-widgets/legend",
       "package": "@acme/demo-widgets",
+      "file": "dist/legend.js",
       "declarations": [
         {
           "kind": "interface",
