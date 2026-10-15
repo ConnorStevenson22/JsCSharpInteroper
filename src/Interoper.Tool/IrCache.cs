@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Diagnostics;
+using Interoper.Generator;
 using Interoper.Generator.Ir;
 
 namespace Interoper.Tool;

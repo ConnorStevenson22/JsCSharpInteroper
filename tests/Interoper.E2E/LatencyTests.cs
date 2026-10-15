@@ -8,7 +8,7 @@ namespace Interoper.E2E;
 /// <summary>
 /// Server under latency (design §3.3, §6): a second test host whose SignalR filter delays every message from the
 /// browser by <see cref="LatencyHost.Latency"/>, so each round trip costs at least that. The async golden suite and the
-/// transport contract still pass, and a batch of 100 writes is one round trip in well under three latencies.
+/// transport contract still pass, and a batch of 100 writes is one round trip within three latencies.
 /// </summary>
 public sealed partial class LatencyTests(BrowserHost browser, LatencyHost host) : IClassFixture<LatencyHost>
 {

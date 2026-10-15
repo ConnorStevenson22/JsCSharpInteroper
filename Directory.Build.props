@@ -11,7 +11,7 @@
   </PropertyGroup>
 
   <!-- The three packages (design §5): Interoper.Runtime, Interoper.Blazor and Interoper.Tool turn IsPackable on and
-       add their Description. No license expression until the repo has a LICENSE. -->
+       add their Description. No license expression (none chosen). -->
   <PropertyGroup>
     <IsPackable>false</IsPackable>
     <Version>0.1.0-preview.1</Version>

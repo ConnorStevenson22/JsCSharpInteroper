@@ -8,7 +8,7 @@ You need the .NET 11 SDK and Node.js (22 or newer) on `PATH`.
 
 ## 1. The packages
 
-Interoper isn't on nuget.org yet, so pack it from a clone of this repo. The sample's `nuget.config` reads the packages from its `packages/` folder, and its `package.json` installs the fixture from there too. From the repo's root:
+The packages aren't published; pack them from a clone of this repo. The sample's `nuget.config` reads the packages from its `packages/` folder, and its `package.json` installs the fixture from there too. From the repo's root:
 
 <!-- QuickstartTests: pack -->
 ```bash
@@ -96,7 +96,7 @@ Disposing the scope releases the view's handle in the browser ([design §3.2](de
 
 ## Your own app
 
-The same steps, with your library and a tool manifest of your own. Until the packages are on nuget.org, a `nuget.config` lists `./packages`, the folder you packed them into (step 1), beside nuget.org, as the sample's does:
+The same steps, with your library and a tool manifest of your own. The packages aren't published, so a `nuget.config` lists `./packages`, the folder you packed them into (step 1), beside nuget.org, as the sample's does:
 
 ```bash
 npm install @acme/maps

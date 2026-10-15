@@ -1,5 +1,4 @@
 using System.Runtime.CompilerServices;
-using Interoper.Tool;
 
 namespace Interoper.Generator.Tests;
 

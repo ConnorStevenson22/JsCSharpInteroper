@@ -10,7 +10,6 @@
     <PackageReference Include="xunit.v3" />
     <PackageReference Include="xunit.runner.visualstudio" />
     <ProjectReference Include="..\..\src\Interoper.Generator\Interoper.Generator.csproj" />
-    <ProjectReference Include="..\..\src\Interoper.Tool\Interoper.Tool.csproj" /> <!-- GoldenSliceTests writes with Bindings -->
   </ItemGroup>
 
   <ItemGroup>

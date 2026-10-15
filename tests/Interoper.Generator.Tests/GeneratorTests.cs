@@ -203,9 +203,9 @@ public sealed class GeneratorTests
     [Fact] // R27: a type and a namespace that differ only in case don't clash: one is a file, the other a folder
     public void ATypeAndANamespaceThatDifferOnlyInCaseDontClash()
     {
-        var result = Generate(Api.Sync, ("WebGL.js", """{ "kind": "class", "name": "WebGL" }"""), ("webgl/Thing.js", """{ "kind": "class", "name": "Thing" }"""));
+        var result = Generate(Api.Sync, ("SVG.js", """{ "kind": "class", "name": "SVG" }"""), ("svg/Thing.js", """{ "kind": "class", "name": "Thing" }"""));
 
-        Assert.Equal(["WebGL.cs", "WebGLSnapshot.cs", "Webgl/Thing.cs", "Webgl/ThingSnapshot.cs", "Maps.cs", "maps.meta.js"], result.Files.Select(f => f.Path));
+        Assert.Equal(["SVG.cs", "SVGSnapshot.cs", "Svg/Thing.cs", "Svg/ThingSnapshot.cs", "Maps.cs", "maps.meta.js"], result.Files.Select(f => f.Path));
         Assert.Empty(result.Diagnostics);
     }
 
@@ -213,22 +213,22 @@ public sealed class GeneratorTests
     public void TheRegistryKeepsItsNameNextToAFolderThatDiffersOnlyInCase()
     {
         var ir = IrDocument.Parse("""
-            { "version": 1, "package": { "name": "@acme/webgl", "version": "1" }, "modules": [
-              { "specifier": "@acme/webgl/WebGL/Thing.js", "declarations": [{ "kind": "class", "name": "Thing" }] }] }
+            { "version": 1, "package": { "name": "@acme/svg", "version": "1" }, "modules": [
+              { "specifier": "@acme/svg/SVG/Thing.js", "declarations": [{ "kind": "class", "name": "Thing" }] }] }
             """);
-        var result = Generator.Generate(ir, new Profile { Package = "@acme/webgl" }, new(Api.Sync, "Acme"));
+        var result = Generator.Generate(ir, new Profile { Package = "@acme/svg" }, new(Api.Sync, "Acme"));
 
-        Assert.Equal(["WebGL/Thing.cs", "WebGL/ThingSnapshot.cs", "Webgl.cs", "webgl.meta.js"], result.Files.Select(f => f.Path));
+        Assert.Equal(["SVG/Thing.cs", "SVG/ThingSnapshot.cs", "Svg.cs", "svg.meta.js"], result.Files.Select(f => f.Path));
         Assert.Empty(result.Diagnostics);
     }
 
     [Fact] // R27: sibling modules' types whose names differ only in case would be one file, so the later one is prefixed too
     public void SiblingModulesTypesThatDifferOnlyInCaseArePrefixed()
     {
-        var result = Generate(Api.Sync, ("a.js", """{ "kind": "class", "name": "WebGLOptions" }"""), ("b.js", """{ "kind": "class", "name": "WebglOptions" }"""));
+        var result = Generate(Api.Sync, ("a.js", """{ "kind": "class", "name": "SVGOptions" }"""), ("b.js", """{ "kind": "class", "name": "SvgOptions" }"""));
 
-        Assert.Equal(["WebGLOptions.cs", "WebGLOptionsSnapshot.cs", "BWebglOptions.cs", "BWebglOptionsSnapshot.cs", "Maps.cs", "maps.meta.js"], result.Files.Select(f => f.Path));
-        Assert.Equal("IOP2006 @acme/maps/b.js: its WebglOptions is BWebglOptions: @acme/maps/a.js has one too (R27)", Assert.Single(result.Diagnostics).ToString());
+        Assert.Equal(["SVGOptions.cs", "SVGOptionsSnapshot.cs", "BSvgOptions.cs", "BSvgOptionsSnapshot.cs", "Maps.cs", "maps.meta.js"], result.Files.Select(f => f.Path));
+        Assert.Equal("IOP2006 @acme/maps/b.js: its SvgOptions is BSvgOptions: @acme/maps/a.js has one too (R27)", Assert.Single(result.Diagnostics).ToString());
     }
 
     [Fact] // R27: sibling modules' types of one name both compile; the later one is prefixed with its module's name
@@ -965,13 +965,13 @@ public sealed class GeneratorTests
     [InlineData(Api.Async)]
     public void AComponentNamedLikeItsClassButForCaseIsSuffixed(Api api)
     {
-        var result = Elements(api, [("label.js", """{ "kind": "class", "name": "AcmeWebGlLabel", "members": [] }""")], """
-            { "tag": "acme-webgl-label", "class": { "kind": "ref", "name": "AcmeWebGlLabel", "module": "@acme/maps/label.js" }, "attributes": [], "events": [], "slots": [] }
+        var result = Elements(api, [("label.js", """{ "kind": "class", "name": "AcmeSVGLabel", "members": [] }""")], """
+            { "tag": "acme-svg-label", "class": { "kind": "ref", "name": "AcmeSVGLabel", "module": "@acme/maps/label.js" }, "attributes": [], "events": [], "slots": [] }
             """);
 
         Assert.Empty(result.Diagnostics); // R28: {Name}Component is the convention, not a rename
-        Assert.Contains("public sealed partial class AcmeWebGlLabel : global::Interoper.JsObject", File(result, "AcmeWebGlLabel.cs"));
-        Assert.Contains("public sealed partial class AcmeWebglLabelComponent : global::Interoper.JsComponentBase", File(result, "AcmeWebglLabelComponent.cs"));
+        Assert.Contains("public sealed partial class AcmeSVGLabel : global::Interoper.JsObject", File(result, "AcmeSVGLabel.cs"));
+        Assert.Contains("public sealed partial class AcmeSvgLabelComponent : global::Interoper.JsComponentBase", File(result, "AcmeSvgLabelComponent.cs"));
         // No two paths differ only in case, so the CLI's writer accepts them (design §5).
         Assert.Equal(result.Files.Count, result.Files.Select(f => f.Path).Distinct(StringComparer.OrdinalIgnoreCase).Count());
     }

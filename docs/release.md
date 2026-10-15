@@ -1,6 +1,6 @@
 # Release checklist
 
-What runs before a version of the three packages (`Interoper.Runtime`, `Interoper.Blazor`, `Interoper.Tool`) is tagged. They aren't on nuget.org yet, so a release is a tagged commit and the packages packed from it.
+What runs before a version of the three packages (`Interoper.Runtime`, `Interoper.Blazor`, `Interoper.Tool`) is tagged. The packages aren't published, so a release is a tagged commit and the packages packed from it.
 
 ## 1. The checks
 
@@ -11,7 +11,7 @@ On the commit to release, with nothing uncommitted:
 
 ## 2. Version and pack
 
-1. Set `Version` in `Directory.Build.props`; the three packages share it ([design §5](design.md#5-consumer-workflow-and-packages)).
+1. Set `Version` in `Directory.Build.props`; the three packages share it ([design §5](design.md#5-consumer-workflow-and-packages)). The sample pins the same version, so set it there too: `samples/Quickstart/.config/dotnet-tools.json` (the tool), `samples/Quickstart/Quickstart/Quickstart.csproj` and `samples/Quickstart/Quickstart.Client/Quickstart.Client.csproj` (`Interoper.Blazor`), and the status line in `README.md`.
 2. Pack them, and the fixture for step 3, with [quickstart §1](quickstart.md#1-the-packages)'s commands, into a folder outside the repo:
 
    ```bash

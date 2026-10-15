@@ -1,6 +1,4 @@
-using Interoper.Generator;
-
-namespace Interoper.Tool;
+namespace Interoper.Generator;
 
 /// <summary>What <see cref="Bindings.Write"/> changed, relative to the folder, with <c>/</c>.</summary>
 public sealed record BindingChanges(IReadOnlyList<string> Written, IReadOnlyList<string> Deleted);

@@ -1,6 +1,5 @@
-using Interoper.Generator;
 
-namespace Interoper.Tool.Tests;
+namespace Interoper.Generator.Tests;
 
 /// <summary><see cref="Bindings.Write"/>: what the CLI and the golden slice write with.</summary>
 public sealed class BindingsTests : IDisposable
@@ -70,6 +69,16 @@ public sealed class BindingsTests : IDisposable
     {
         Assert.Throws<InvalidDataException>(() => Bindings.Write(folder, [new(first, ""), new(second, "")], []));
         Assert.Empty(Directory.GetFileSystemEntries(folder));
+    }
+
+    [Theory] // Every generated file starts with the header that marks it as the generator's, so a later run may delete it
+    [InlineData(Api.Sync)]
+    [InlineData(Api.Async)]
+    public void EveryGeneratedFileStartsWithTheHeader(Api api)
+    {
+        var files = Generator.Generate(Fixture.WithWidgetsIr, Fixture.Profile, new(api, "Acme.Maps")).Files;
+        Assert.Contains(files, f => f.Path.EndsWith(".meta.js", StringComparison.Ordinal));
+        Assert.All(files, f => Assert.StartsWith(Bindings.Header + "\n", f.Text, StringComparison.Ordinal));
     }
 
     public void Dispose() => Directory.Delete(folder, recursive: true);

@@ -159,7 +159,7 @@ internal sealed record TypeName(string Namespace, string Name)
 
     /// <summary>
     /// R27, R28: names compared as a file system may compare their files' paths, ignoring case, for deciding whether a
-    /// name is taken: <c>AcmeWebglLabel.cs</c> and <c>AcmeWebGlLabel.cs</c> are one file on Windows and macOS.
+    /// name is taken: <c>AcmeSvgLabel.cs</c> and <c>AcmeSVGLabel.cs</c> are one file on Windows and macOS.
     /// </summary>
     public static readonly IEqualityComparer<TypeName> IgnoreCase = new IgnoreCaseComparer();
 

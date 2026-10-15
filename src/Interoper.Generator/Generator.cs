@@ -97,7 +97,7 @@ public static class Generator
         {
             // R28: nothing refers to a component either, so it takes a free name too: with Component (the element's own
             // class is often named like its tag, so that's the convention, not reported), then a number (IOP2006). A name
-            // taken in another case counts (class AcmeWebGlLabel, tag acme-webgl-label), since their files would clash.
+            // taken in another case counts (class AcmeSVGLabel, tag acme-svg-label), since their files would clash.
             var ns = types.Namespace(element.Class);
             var wanted = Naming.Type(element.Element.Tag);
             // An inline record or anonymous union named already takes its name too, and the component's is reserved.
