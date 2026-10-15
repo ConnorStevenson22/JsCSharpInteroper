@@ -1,0 +1,47 @@
+@page "/server-latency-batch"
+@rendermode @(new InteractiveServerRenderMode(prerender: false))
+@using System.Diagnostics
+@using GoldenSlice.Async
+@inherits JsComponentBase
+
+<pre id="result" data-done="@done">@result</pre>
+
+@code {
+    // Batching on Server (design §3.3), timed on the server: one awaited read, then a batch of 100 writes. LatencyTests
+    // open it on a host that delays every message from the browser, and check the round trips and the times.
+    string result = "";
+    bool done;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        try
+        {
+            var view = await MapView.CreateAsync(Scope, new MapViewSnapshot());
+            await view.GetZoomAsync(); // warm: the first call of each kind pays for JIT
+
+            var clock = Stopwatch.StartNew();
+            await view.GetZoomAsync();
+            var read = clock.Elapsed;
+
+            var start = Scope.Realm.RoundTrips;
+            clock.Restart();
+            await using (Scope.BeginBatch())
+            {
+                for (var i = 0; i < 100; i++)
+                {
+                    await view.SetZoomAsync(i % 20);
+                }
+            }
+            var batch = clock.Elapsed;
+            var trips = Scope.Realm.RoundTrips - start;
+            result = $"read {read.TotalMilliseconds:F0} ms, batch of 100 {batch.TotalMilliseconds:F0} ms in {trips} round trip(s), zoom {await view.GetZoomAsync()}";
+        }
+        catch (Exception e)
+        {
+            result = $"FAIL {e.GetType().Name}: {e.Message}";
+        }
+        done = true;
+        StateHasChanged();
+    }
+}

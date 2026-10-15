@@ -23,6 +23,14 @@ public sealed partial class BrowserHost : IAsyncLifetime
 
     public async ValueTask InitializeAsync()
     {
+        (host, BaseUrl) = await StartHostAsync();
+        playwright = await Playwright.CreateAsync();
+        Browser = await playwright.Chromium.LaunchAsync();
+    }
+
+    // Starts the test host on a free port, with extra configuration arguments (`--Key=value`) if given.
+    internal static async Task<(Process Process, Uri BaseUrl)> StartHostAsync(params string[] arguments)
+    {
         var directory = Metadata("HostDirectory");
         var start = new ProcessStartInfo(Environment.GetEnvironmentVariable("DOTNET_HOST_PATH") ?? "dotnet")
         {
@@ -32,19 +40,18 @@ public sealed partial class BrowserHost : IAsyncLifetime
             ArgumentList = { Path.Combine(directory, Metadata("HostAssembly")), "--urls", "http://127.0.0.1:0", "--contentRoot", directory },
             Environment = { ["ASPNETCORE_ENVIRONMENT"] = "Development" }, // serves static web assets from the build output
         };
-        host = Process.Start(start)!;
-        BaseUrl = await ListeningUrlAsync(host, "The test host");
-
-        playwright = await Playwright.CreateAsync();
-        Browser = await playwright.Chromium.LaunchAsync();
+        foreach (var argument in arguments) start.ArgumentList.Add(argument);
+        var process = Process.Start(start)!;
+        return (process, await ListeningUrlAsync(process, "The test host"));
     }
 
     // Opens the page in a fresh context, waits for it to finish, and returns what it printed. The first browser
-    // error fails the test at once.
-    public async Task<string> RunPageAsync(string path)
+    // error fails the test at once. The page is the test host's, unless another app's base URL is given; it has a
+    // minute to finish, unless the test gives it longer.
+    public async Task<string> RunPageAsync(string path, Uri? baseUrl = null, TimeSpan? timeout = null)
     {
-        await using var page = await OpenAsync(path);
-        return await page.ResultAsync();
+        await using var page = await OpenAsync(path, baseUrl);
+        return await page.ResultAsync(timeout);
     }
 
     // Opens the page in a fresh context, for a test that drives it; browser errors fail the test. The page is the test
@@ -62,12 +69,15 @@ public sealed partial class BrowserHost : IAsyncLifetime
     {
         if (Browser is not null) await Browser.DisposeAsync();
         playwright?.Dispose();
-        if (host is not null)
-        {
-            host.Kill(entireProcessTree: true);
-            await host.WaitForExitAsync();
-            host.Dispose();
-        }
+        await StopAsync(host);
+    }
+
+    internal static async Task StopAsync(Process? process)
+    {
+        if (process is null) return;
+        process.Kill(entireProcessTree: true);
+        await process.WaitForExitAsync();
+        process.Dispose();
     }
 
     // Kestrel logs the port it bound; the output is drained for the app's whole life so logging never blocks.
@@ -117,9 +127,10 @@ public sealed class BrowserPage : IAsyncDisposable
     public IPage Page { get; }
 
     // Waits for the page's #result to be done and returns its text.
-    public async Task<string> ResultAsync()
+    public async Task<string> ResultAsync(TimeSpan? timeout = null)
     {
-        var done = Page.Locator("#result[data-done]").WaitForAsync(new() { Timeout = 60_000 }); // WebAssembly boots first
+        // A minute by default: WebAssembly boots first.
+        var done = Page.Locator("#result[data-done]").WaitForAsync(new() { Timeout = (float)(timeout ?? TimeSpan.FromMinutes(1)).TotalMilliseconds });
         if (await Task.WhenAny(done, error.Task) == error.Task) Assert.Fail($"{path}: {await error.Task}");
         await done;
         var result = await Page.Locator("#result").TextContentAsync() ?? "";

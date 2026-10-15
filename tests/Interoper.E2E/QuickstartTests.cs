@@ -1,7 +1,6 @@
 using System.Diagnostics;
 using System.IO.Compression;
-using System.Runtime.CompilerServices;
-using System.Text;
+using static Interoper.E2E.Shell;
 using static Microsoft.Playwright.Assertions;
 
 namespace Interoper.E2E;
@@ -12,6 +11,7 @@ namespace Interoper.E2E;
 /// Server and the sync page on WebAssembly both change the map's zoom. The doc's commands are read from the doc, so the
 /// two can't drift apart.
 /// </summary>
+[Collection(SizeBudgetTests.ReleaseBuilds)] // SizeBudgetTests publishes the same projects in Release
 public sealed class QuickstartTests(BrowserHost host)
 {
     private static readonly string[] Packages = ["Interoper.Runtime", "Interoper.Blazor", "Interoper.Tool"];
@@ -132,63 +132,6 @@ public sealed class QuickstartTests(BrowserHost host)
         return [.. lines.Skip(1).TakeWhile(l => l != "```").Where(l => l.Trim() is { Length: > 0 } t && !t.StartsWith('#'))];
     }
 
-    private static async Task<string> RunAsync(string command, string directory, string? nugetPackages = null)
-    {
-        using var process = Start(command, directory, nugetPackages);
-        var output = new StringBuilder();
-        void OnLine(object sender, DataReceivedEventArgs e)
-        {
-            if (e.Data is not null) lock (output) output.AppendLine(e.Data);
-        }
-        process.OutputDataReceived += OnLine;
-        process.ErrorDataReceived += OnLine;
-        process.BeginOutputReadLine();
-        process.BeginErrorReadLine();
-        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
-        timeout.CancelAfter(TimeSpan.FromMinutes(5));
-        try
-        {
-            await process.WaitForExitAsync(timeout.Token);
-        }
-        catch (OperationCanceledException)
-        {
-            process.Kill(entireProcessTree: true);
-            if (TestContext.Current.CancellationToken.IsCancellationRequested) throw;
-            lock (output) Assert.Fail($"`{command}` didn't finish within 5 minutes:\n{output}");
-        }
-        process.WaitForExit(); // the output's last lines
-        lock (output)
-        {
-            Assert.True(process.ExitCode == 0, $"`{command}` exited with code {process.ExitCode}:\n{output}");
-            return output.ToString();
-        }
-    }
-
-    // Through the shell, as a reader would type it. The child doesn't inherit the test run's MSBuild settings, which
-    // would point a nested build at this repo's.
-    private static Process Start(string command, string directory, string? nugetPackages)
-    {
-        var start = OperatingSystem.IsWindows()
-            ? new ProcessStartInfo("cmd") { Arguments = $"/c {command}" } // cmd parses its own command line
-            : new ProcessStartInfo("/bin/sh") { ArgumentList = { "-c", command } };
-        start.WorkingDirectory = directory;
-        start.RedirectStandardOutput = true;
-        start.RedirectStandardError = true;
-        foreach (var name in start.Environment.Keys.Where(k => k.StartsWith("MSBuild", StringComparison.OrdinalIgnoreCase)).ToList())
-        {
-            start.Environment.Remove(name);
-        }
-        if (nugetPackages is not null)
-        {
-            start.Environment["NUGET_PACKAGES"] = nugetPackages;
-        }
-        if (Environment.GetEnvironmentVariable("DOTNET_HOST_PATH") is { Length: > 0 } dotnet)
-        {
-            start.Environment["PATH"] = Path.GetDirectoryName(dotnet) + Path.PathSeparator + start.Environment["PATH"];
-        }
-        return Process.Start(start)!;
-    }
-
     private static void CopyDirectory(string from, string to)
     {
         foreach (var file in Directory.GetFiles(from, "*", SearchOption.AllDirectories))
@@ -201,8 +144,4 @@ public sealed class QuickstartTests(BrowserHost host)
             File.Copy(file, target);
         }
     }
-
-    private static string Repo(params string[] parts) => Path.GetFullPath(Path.Combine([RepoRoot(), .. parts]));
-
-    private static string RepoRoot([CallerFilePath] string source = "") => Path.Combine(Path.GetDirectoryName(source)!, "..", "..");
 }
