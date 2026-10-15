@@ -24,7 +24,7 @@ npm pack ./fixtures/demo-maps --pack-destination samples/Quickstart/packages
 | `Interoper.Blazor` | `AddInteroper()`, the generated components' base class and the custom-event plumbing; it brings `Interoper.Runtime` |
 | `Interoper.Tool` | The `dotnet interoper` CLI: the generator, and the extractor as source, run with your Node and TypeScript |
 
-Every package has the same version. NuGet caches a package by its version, so after you change Interoper and pack the same version again, delete `~/.nuget/packages/interoper.*/<version>` (on Windows, `%USERPROFILE%\.nuget\packages\interoper.*\<version>`) first. The test doesn't need to: it restores into a packages folder of its own.
+Every package has the same version. NuGet caches a package by its version, so after you change Interoper and pack the same version again, delete `~/.nuget/packages/interoper.*/<version>` (on Windows, `%USERPROFILE%\.nuget\packages\interoper.*\<version>`) first. `dotnet tool restore` also remembers where it found each tool version, in `~/.dotnet/toolResolverCache`, so delete `~/.dotnet/toolResolverCache/1/interoper.tool` too; restoring into another packages folder (`NUGET_PACKAGES`) isn't enough on its own, since that cache still names the old one. The test doesn't need either: it restores into a packages folder of its own (`NUGET_PACKAGES`) and gives the .NET CLI a home of its own (`DOTNET_CLI_HOME`), both inside its copy.
 
 ## 2. Generate, build, run
 

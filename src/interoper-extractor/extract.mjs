@@ -101,8 +101,8 @@ export function extract(packageDirs, { eventMap } = {}) {
   let reexports;
   /**
    * Where a declaration of an internal module is imported from (ir.md `importFrom`): the first module, by specifier,
-   * that an export reaches and that re-exports it, with the name it's exported under there when that isn't its own, and
-   * its `file` as a module's: such a module declares nothing, so it isn't listed.
+   * that an export reaches and that re-exports it as a value (not `export type`), with the name it's exported under
+   * there when that isn't its own, and its `file` as a module's: such a module declares nothing, so it isn't listed.
    */
   function importFrom(sym, decl) {
     if (!infoOf(decl.getSourceFile())?.internal) return undefined;
@@ -112,6 +112,8 @@ export function extract(packageDirs, { eventMap } = {}) {
       for (const sf of reachable) {
         const moduleSym = checker.getSymbolAtLocation(sf);
         for (const e of moduleSym ? checker.getExportsOfModule(moduleSym) : []) {
+          // `export type { X } from` (or `export { type X }`) exports nothing at run time.
+          if (e.declarations?.some((d) => ts.isTypeOnlyImportOrExportDeclaration(d))) continue;
           const target = e.flags & F.Alias ? checker.getAliasedSymbol(e) : e;
           if (!reexports.has(target) && target.declarations?.length && target.declarations.every((d) => d.getSourceFile() !== sf)) {
             reexports.set(target, { module: infoOf(sf).specifier, file: infoOf(sf).file, name: e.name });
@@ -528,7 +530,8 @@ function readPackage(dir) {
 /**
  * A declaration file's module (ir.md): the nearest package.json with a name is its package, and its specifier is how
  * that package's `exports` reach the file (`@acme/widgets/legend`). Without `exports` it's `<name>/<path of the .js
- * next to the .d.ts>`, and so it is when no export reaches the file, which is then internal. `file` is, for import
+ * next to the .d.ts>`, and so it is when no export reaches the file, which is then internal, as it is when the only
+ * export that reaches it is for its typings and there's no .js next to them. `file` is, for import
  * maps, the JS file a browser loads for the subpath (its JS conditions' target, else that `.js`), when that isn't the
  * subpath itself.
  */
@@ -539,8 +542,11 @@ function moduleInfo(file) {
     const dts = `./${path.relative(d, file).split(path.sep).join("/")}`;
     const js = dts.replace(/\.d\.([mc]?)ts$/, ".$1js");
     const map = pkg.exports === undefined ? undefined : exportsMap(pkg.exports);
-    const subpath = map ? exportOf(map, [js, dts]) : js;
+    let subpath = map ? exportOf(map, [js, dts]) : js;
     const loaded = map && subpath !== undefined ? resolveExport(map, subpath, JS_CONDITIONS) : undefined;
+    // An export of the typings only (`{ "types": … }`), with no .js next to them, loads no JS: nothing can import the
+    // module, so it's internal, as when no export reaches it.
+    if (map && subpath !== undefined && typeof loaded !== "string" && !fs.existsSync(path.join(d, js))) subpath = undefined;
     const real = typeof loaded === "string" ? loaded : js;
     return compact({ specifier: pkg.name + (subpath ?? js).slice(1), package: pkg.name, file: subpath !== undefined && real !== subpath ? real.slice(2) : undefined,
       internal: subpath === undefined || undefined });

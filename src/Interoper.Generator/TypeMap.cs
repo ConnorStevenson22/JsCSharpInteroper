@@ -77,8 +77,10 @@ internal sealed class TypeMap
     private readonly Dictionary<ObjectType, AliasDeclaration> bags = new(ReferenceEqualityComparer.Instance);
     private readonly Dictionary<Declaration, TypeName> inline = new(ReferenceEqualityComparer.Instance);
     private readonly List<Declaration> records = [];
-    /// <summary>R27: the names an inline record can't take (<see cref="Taken"/>).</summary>
-    private readonly HashSet<TypeName> taken = [];
+    /// <summary>R27: the names an inline record can't take (<see cref="Taken"/>), ignoring case, as files' paths may.</summary>
+    private readonly HashSet<TypeName> taken = new(TypeName.IgnoreCase);
+    /// <summary>R27: the names of the anonymous unions and enums mapped so far, ignoring case.</summary>
+    private readonly HashSet<TypeName> unionNames = new(TypeName.IgnoreCase);
     private readonly HashSet<ClassDeclaration> watchable = new(ReferenceEqualityComparer.Instance);
     private readonly Dictionary<Declaration, bool> scoped = new(ReferenceEqualityComparer.Instance);
     private readonly HashSet<Declaration> scoping = new(ReferenceEqualityComparer.Instance);
@@ -149,7 +151,7 @@ internal sealed class TypeMap
         }
         // R27: the namespaces of the emitted types, below the root and with the namespaces they're in. The registry
         // takes the next free name when one of them has its name (Widgets2 next to a widgets/ folder).
-        Namespaces = selected.Select(s => Namespace(s.Module)).SelectMany(Parents).ToHashSet();
+        Namespaces = selected.Select(s => Namespace(s.Module)).SelectMany(Parents).ToHashSet(StringComparer.OrdinalIgnoreCase); // folders, like paths
         var registry = Naming.Type(ir.Package.Name.Split('/')[^1]);
         Registry = registry;
         for (var n = 2; Namespaces.Contains($"{root}.{Registry}"); n++)
@@ -477,6 +479,10 @@ internal sealed class TypeMap
                 type is UnionType u && u.Types.Count(t => !IsNullish(t)) == all.Count ? u.Discriminant : null,
                 WrittenOnly(type, all, flat), Dropped: flat.Count < all.Count);
         unions[name] = result;
+        if (result is not null)
+        {
+            unionNames.Add(name);
+        }
         return result;
     }
 
@@ -490,6 +496,7 @@ internal sealed class TypeMap
         var values = e.Members.Select(m => m.Value).ToList();
         var result = new EnumType(name, EnumMembers(name.Name, values, e.Members.Select(m => m.Name)), Extensible: false);
         unions[name] = result;
+        unionNames.Add(name);
         return result;
     }
 
@@ -602,9 +609,9 @@ internal sealed class TypeMap
 
     /// <summary>
     /// Whether an emitted type has that name, or an inline record, an anonymous union or enum, or a component (<see
-    /// cref="Reserve"/>) has taken it.
+    /// cref="Reserve"/>) has taken it. Case is ignored, since the file system may ignore it in the files' paths.
     /// </summary>
-    public bool Taken(TypeName name) => taken.Contains(name) || unions.TryGetValue(name, out var union) && union is not null;
+    public bool Taken(TypeName name) => taken.Contains(name) || unionNames.Contains(name);
 
     /// <summary>R28: takes a name for a component, so that an inline record met later doesn't take it too.</summary>
     public void Reserve(TypeName name) => taken.Add(name);

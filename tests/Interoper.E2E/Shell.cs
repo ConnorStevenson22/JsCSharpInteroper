@@ -7,9 +7,11 @@ namespace Interoper.E2E;
 /// <summary>Commands run through the shell, for the tests that build, pack or publish (QuickstartTests, SizeBudgetTests).</summary>
 internal static class Shell
 {
-    internal static async Task<string> RunAsync(string command, string directory, string? nugetPackages = null)
+    // Runs a command to its end and returns its output; it fails the test when the command does. With an isolated home,
+    // see Start.
+    internal static async Task<string> RunAsync(string command, string directory, string? isolatedHome = null)
     {
-        using var process = Start(command, directory, nugetPackages);
+        using var process = Start(command, directory, isolatedHome);
         var output = new StringBuilder();
         void OnLine(object sender, DataReceivedEventArgs e)
         {
@@ -40,8 +42,10 @@ internal static class Shell
     }
 
     // Through the shell, as a reader would type it. The child doesn't inherit the test run's MSBuild settings, which
-    // would point a nested build at this repo's.
-    internal static Process Start(string command, string directory, string? nugetPackages)
+    // would point a nested build at this repo's. With an isolated home, NuGet restores into its own packages folder
+    // there (NuGetPackages), and the .NET CLI keeps its own state there too (DOTNET_CLI_HOME): the local tool resolver's
+    // cache in ~/.dotnet would otherwise point `dotnet tool restore` at an earlier run's copy of a tool.
+    internal static Process Start(string command, string directory, string? isolatedHome)
     {
         var start = OperatingSystem.IsWindows()
             ? new ProcessStartInfo("cmd") { Arguments = $"/c {command}" } // cmd parses its own command line
@@ -53,9 +57,10 @@ internal static class Shell
         {
             start.Environment.Remove(name);
         }
-        if (nugetPackages is not null)
+        if (isolatedHome is not null)
         {
-            start.Environment["NUGET_PACKAGES"] = nugetPackages;
+            start.Environment["NUGET_PACKAGES"] = NuGetPackages(isolatedHome);
+            start.Environment["DOTNET_CLI_HOME"] = CliHome(isolatedHome);
         }
         if (Environment.GetEnvironmentVariable("DOTNET_HOST_PATH") is { Length: > 0 } dotnet)
         {
@@ -63,6 +68,11 @@ internal static class Shell
         }
         return Process.Start(start)!;
     }
+
+    // Where packages are restored to under an isolated home, and where the .NET CLI keeps its state.
+    internal static string NuGetPackages(string isolatedHome) => Path.Combine(isolatedHome, ".nuget-packages");
+
+    internal static string CliHome(string isolatedHome) => Path.Combine(isolatedHome, ".dotnet-home");
 
     internal static string Repo(params string[] parts) => Path.GetFullPath(Path.Combine([RepoRoot(), .. parts]));
 

@@ -32,27 +32,31 @@ public sealed class QuickstartTests(BrowserHost host)
             }
             var version = PackedVersion(feed);
             CheckPackages(feed, version);
-            // NuGet keeps the first copy of a version it restores, so the app restores into a cache of its own: an
-            // earlier run's packages of the same version can't shadow these.
-            var cache = Path.Combine(app, ".nuget-packages");
+            // NuGet keeps the first copy of a version it restores, so the app restores into a cache of its own, and
+            // the .NET CLI keeps its tool resolver's cache in a home of its own: an earlier run's packages or tool of
+            // the same version can't shadow these.
+            var cache = NuGetPackages(app);
 
             var steps = Commands(doc, "steps");
             Assert.StartsWith("dotnet run ", steps[^1], StringComparison.Ordinal);
             foreach (var command in steps[..^1])
             {
-                await RunAsync(command, app, cache);
+                await RunAsync(command, app, isolatedHome: app);
             }
+            // `dotnet tool restore` resolved the tool to this run's package, not to an earlier run's copy of the version.
+            var tool = File.ReadAllText(Path.Combine(CliHome(app), ".dotnet", "toolResolverCache", "1", "interoper.tool"));
+            Assert.Contains(Path.Combine(cache, "interoper.tool", version).Replace('\\', '/'), tool.Replace("\\\\", "/", StringComparison.Ordinal), StringComparison.Ordinal);
             // Referencing Interoper.Blazor brings the runtime's analyzer, IOP3001.
             foreach (var project in new[] { "Quickstart", "Quickstart.Client" })
             {
-                var analyzers = await RunAsync($"dotnet msbuild {project} -t:ResolveLockFileAnalyzers -getItem:Analyzer", app, cache);
+                var analyzers = await RunAsync($"dotnet msbuild {project} -t:ResolveLockFileAnalyzers -getItem:Analyzer", app, isolatedHome: app);
                 // From the app's own packages folder, so these packages, not an earlier run's.
                 var analyzer = Path.Combine(cache, "interoper.runtime", version, "analyzers", "dotnet", "cs", "Interoper.Analyzers.dll");
                 Assert.Contains(analyzer.Replace('\\', '/'), analyzers.Replace("\\\\", "/", StringComparison.Ordinal).Replace('\\', '/'), StringComparison.Ordinal);
             }
 
             // The last step, on a free port, without building again.
-            server = Start($"{steps[^1]} --no-build -- --urls http://127.0.0.1:0", app, cache);
+            server = Start($"{steps[^1]} --no-build -- --urls http://127.0.0.1:0", app, isolatedHome: app);
             var url = await BrowserHost.ListeningUrlAsync(server, "The quickstart app");
             await ZoomsAsync("zoom-server", url);
             await ZoomsAsync("zoom-wasm", url);
@@ -133,7 +137,7 @@ public sealed class QuickstartTests(BrowserHost host)
         {
             var relative = Path.GetRelativePath(from, file);
             // What a previous in-place run left: build output, installed packages, generated bindings.
-            if (relative.Split(Path.DirectorySeparatorChar).Any(part => part is "bin" or "obj" or "node_modules" or "packages" or ".nuget-packages" or "Maps")) continue;
+            if (relative.Split(Path.DirectorySeparatorChar).Any(part => part is "bin" or "obj" or "node_modules" or "packages" or ".nuget-packages" or ".dotnet-home" or "Maps")) continue;
             var target = Path.Combine(to, relative);
             Directory.CreateDirectory(Path.GetDirectoryName(target)!);
             File.Copy(file, target);

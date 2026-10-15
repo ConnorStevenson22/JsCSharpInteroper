@@ -929,6 +929,22 @@ public sealed class GeneratorTests
         Assert.DoesNotContain("""JsOp.Set(Element.Handle, "label", """, component);
     }
 
+    [Theory] // R28, R27: a component whose name differs from its element class's only in case is suffixed too, as their files would clash
+    [InlineData(Api.Sync)]
+    [InlineData(Api.Async)]
+    public void AComponentNamedLikeItsClassButForCaseIsSuffixed(Api api)
+    {
+        var result = Elements(api, [("label.js", """{ "kind": "class", "name": "AcmeWebGlLabel", "members": [] }""")], """
+            { "tag": "acme-webgl-label", "class": { "kind": "ref", "name": "AcmeWebGlLabel", "module": "@acme/maps/label.js" }, "attributes": [], "events": [], "slots": [] }
+            """);
+
+        Assert.Empty(result.Diagnostics); // R28: {Name}Component is the convention, not a rename
+        Assert.Contains("public sealed partial class AcmeWebGlLabel : global::Interoper.JsObject", File(result, "AcmeWebGlLabel.cs"));
+        Assert.Contains("public sealed partial class AcmeWebglLabelComponent : global::Interoper.JsComponentBase", File(result, "AcmeWebglLabelComponent.cs"));
+        // No two paths differ only in case, so the CLI's writer accepts them (design §5).
+        Assert.Equal(result.Files.Count, result.Files.Select(f => f.Path).Distinct(StringComparer.OrdinalIgnoreCase).Count());
+    }
+
     [Fact] // R28, R24: elements that share an event name share its registration, which sends all their fields
     public void ElementsSharingAnEventShareItsFields()
     {

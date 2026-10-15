@@ -201,6 +201,40 @@ public sealed class CliTests(SeededConsumer seeded) : IClassFixture<SeededConsum
         Assert.Equal(0, Consumer.Run(Consumer.Generate("Linked"), NoNode).ExitCode);
         Assert.True(File.Exists(Path.Combine(outside, "Shared.cs")));
     }
+    [Fact] // design §3.5: a base class whose module is exported for its typings only has no module to import
+    public void ABaseClassExportedForItsTypingsOnlyIsNeverImported()
+    {
+        var package = Path.Combine(Consumer.Directory, "node_modules", "@acme", "labels");
+        Directory.CreateDirectory(package);
+        File.WriteAllText(Path.Combine(package, "package.json"), """
+            { "name": "@acme/labels", "version": "1.0.0", "type": "module",
+              "exports": { ".": { "types": "./index.d.ts", "import": "./index.js" }, "./base": { "types": "./base.d.ts" } } }
+            """);
+        File.WriteAllText(Path.Combine(package, "base.d.ts"), "export declare class LabelBase { text: string }");
+        File.WriteAllText(Path.Combine(package, "index.d.ts"), """
+            import { LabelBase } from "./base.js";
+            export type { LabelBase } from "./base.js";
+            export declare class Label extends LabelBase { constructor(props?: { text?: string }) }
+            """);
+        File.WriteAllText(Path.Combine(package, "index.js"), "export class Label { text = \"\"; constructor(props) { Object.assign(this, props); } }");
+
+        var (exitCode, error) = Consumer.Run(["generate", "@acme/labels", "--api", "sync", "--namespace", "Acme.Labels", "--out", "Labels"]);
+
+        Assert.True(exitCode == 0, error);
+        var outDir = Path.Combine(Consumer.Directory, "Labels");
+        // Only index.js is imported: the sync registry preloads it alone, the metadata module names no other, and the
+        // import map has only the package's folder. base.js doesn't exist.
+        var registry = File.ReadAllText(Path.Combine(outDir, "Labels.cs"));
+        Assert.Contains(""".Preload("@acme/labels");""", registry);
+        Assert.Contains("""["@acme/labels/"] = root + "@acme/labels/",""", registry);
+        Assert.DoesNotContain("@acme/labels/base", registry, StringComparison.Ordinal);
+        var meta = File.ReadAllText(Path.Combine(outDir, "labels.meta.js"));
+        Assert.Contains("""1: { module: "@acme/labels", export: "Label", name: "Label", members: ["text"] },""", meta);
+        Assert.Contains("""2: { name: "base.LabelBase", members: ["text"] },""", meta); // no module
+        Assert.DoesNotContain("@acme/labels/base", meta, StringComparison.Ordinal);
+        Assert.DoesNotContain("global::Interoper.JsOp.Create(", File.ReadAllText(Assert.Single(Directory.GetFiles(outDir, "LabelBase.cs", SearchOption.AllDirectories))));
+    }
+
     [Theory]
     [InlineData]
     [InlineData("build")]

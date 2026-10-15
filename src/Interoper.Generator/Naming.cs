@@ -156,4 +156,17 @@ internal sealed record TypeName(string Namespace, string Name)
     public TypeName Owned(string member) => this with { Name = Naming.OwnedType(Name, member) };
 
     public override string ToString() => $"{Namespace}.{Name}";
+
+    /// <summary>
+    /// R27, R28: names compared as a file system may compare their files' paths, ignoring case, for deciding whether a
+    /// name is taken: <c>AcmeWebglLabel.cs</c> and <c>AcmeWebGlLabel.cs</c> are one file on Windows and macOS.
+    /// </summary>
+    public static readonly IEqualityComparer<TypeName> IgnoreCase = new IgnoreCaseComparer();
+
+    private sealed class IgnoreCaseComparer : IEqualityComparer<TypeName>
+    {
+        public bool Equals(TypeName? x, TypeName? y) => StringComparer.OrdinalIgnoreCase.Equals(x?.ToString(), y?.ToString());
+
+        public int GetHashCode(TypeName obj) => StringComparer.OrdinalIgnoreCase.GetHashCode(obj.ToString());
+    }
 }
