@@ -4,6 +4,10 @@
     <IsAotCompatible>true</IsAotCompatible>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks> <!-- [JSImport] -->
     <IsPackable>true</IsPackable>
+    <!-- The XML docs ship in the package, and malformed ones fail the build (CS1570, CS0419 and kin). CS1591 (a public
+         member without docs) is off until every member has them. -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
     <Description>Interoper's runtime: the value model, realms, scopes and handles, both seams and their transports, and interoper.js (a static web asset) for the C# bindings `dotnet interoper generate` writes. Brings the chatty-await analyzer (IOP3001).</Description>
     <TargetsForTfmSpecificContentInPackage>$(TargetsForTfmSpecificContentInPackage);PackAnalyzer</TargetsForTfmSpecificContentInPackage>
   </PropertyGroup>

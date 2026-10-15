@@ -4,6 +4,7 @@
   "private": true,
   "description": "A tiny made-up map library that Interoper's tests bind. Not a real map library.",
   "type": "module",
+  "files": ["*.js", "*.d.ts", "layers/", "ops/", "custom-elements.json", "profile.json"],
   "exports": {
     "./*.js": "./*.js"
   },

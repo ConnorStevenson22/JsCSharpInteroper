@@ -14,14 +14,12 @@
     MapView? view;
     double zoom;
 
-    protected override async Task OnAfterRenderAsync(bool firstRender)
+    protected override async Task OnInitializedAsync()
     {
-        if (!firstRender) return;
-        await Realm.StartAsync();
+        await Realm.StartAsync(); // not prerendered, so the browser is there already
         scope = new JsScope(Realm);
         view = await MapView.CreateAsync(scope, new MapViewSnapshot { Zoom = 3 });
         zoom = await view.GetZoomAsync();
-        StateHasChanged();
     }
 
     async Task ZoomInAsync()

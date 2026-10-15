@@ -55,7 +55,7 @@ public sealed class JsScope(JsRealm realm) : IDisposable, IAsyncDisposable
     }
 
     /// <summary>
-    /// Reads a <c>{"$h","$t"}</c> handle and wraps it (<see cref="Wrap{T}"/>): the reader for live results in
+    /// Reads a <c>{"$h","$t"}</c> handle and wraps it (<see cref="Wrap{T}(int, int)"/>): the reader for live results in
     /// generated code.
     /// </summary>
     public T Read<T>(ref Utf8JsonReader reader) where T : JsObject

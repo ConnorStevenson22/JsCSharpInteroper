@@ -1,6 +1,7 @@
 <Project>
 
   <PropertyGroup>
+    <!-- samples/Quickstart's project files name this version too: bump them with it. -->
     <AspNetCoreVersion>11.0.0-rc.1.26425.128</AspNetCoreVersion>
   </PropertyGroup>
 

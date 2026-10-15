@@ -24,7 +24,7 @@ npm pack ./fixtures/demo-maps --pack-destination samples/Quickstart/packages
 | `Interoper.Blazor` | `AddInteroper()`, the generated components' base class and the custom-event plumbing; it brings `Interoper.Runtime` |
 | `Interoper.Tool` | The `dotnet interoper` CLI: the generator, and the extractor as source, run with your Node and TypeScript |
 
-Every package has the same version. NuGet caches a package by its version, so after you change Interoper and pack the same version again, delete `~/.nuget/packages/interoper.*/<version>` first (the test does).
+Every package has the same version. NuGet caches a package by its version, so after you change Interoper and pack the same version again, delete `~/.nuget/packages/interoper.*/<version>` (on Windows, `%USERPROFILE%\.nuget\packages\interoper.*\<version>`) first. The test doesn't need to: it restores into a packages folder of its own.
 
 ## 2. Generate, build, run
 
@@ -96,10 +96,13 @@ Disposing the scope releases the view's handle in the browser ([design §3.2](de
 
 ## Your own app
 
-The same steps, with your library and a tool manifest of your own:
+The same steps, with your library and a tool manifest of your own. Until the packages are on nuget.org, a `nuget.config` lists `./packages`, the folder you packed them into (step 1), beside nuget.org, as the sample's does:
 
 ```bash
-npm install @acme/maps typescript@6.0.3
+npm install @acme/maps
+npm install -D typescript@6.0.3
+dotnet new nugetconfig
+dotnet nuget add source ./packages --name local
 dotnet new tool-manifest
 dotnet tool install Interoper.Tool --prerelease
 dotnet add package Interoper.Blazor --prerelease
