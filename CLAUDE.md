@@ -32,4 +32,5 @@ node --test "tests/interoper-js/*.test.mjs" "fixtures/demo-maps/test/*.test.mjs"
 ## Environment
 
 - Cloud sessions run `.claude/hooks/session-start.sh`, which installs the pinned SDK into `~/.dotnet` and restores packages.
+- `samples/Quickstart` stays out of `Interoper.slnx`: it builds against the packed packages. `QuickstartTests` (in the E2E run) runs [docs/quickstart.md](docs/quickstart.md)'s commands as written, so change them there; it needs npm's registry and nuget.org.
 - Chromium for browser tests is preinstalled under `/opt/pw-browsers` (`PLAYWRIGHT_BROWSERS_PATH`). Don't run `playwright install` there; if the Playwright package expects a different browser revision, pass an explicit `ExecutablePath`.

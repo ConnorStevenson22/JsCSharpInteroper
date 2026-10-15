@@ -33,7 +33,7 @@ public sealed partial class BrowserHost : IAsyncLifetime
             Environment = { ["ASPNETCORE_ENVIRONMENT"] = "Development" }, // serves static web assets from the build output
         };
         host = Process.Start(start)!;
-        BaseUrl = await ListeningUrlAsync(host);
+        BaseUrl = await ListeningUrlAsync(host, "The test host");
 
         playwright = await Playwright.CreateAsync();
         Browser = await playwright.Chromium.LaunchAsync();
@@ -47,11 +47,12 @@ public sealed partial class BrowserHost : IAsyncLifetime
         return await page.ResultAsync();
     }
 
-    // Opens the page in a fresh context, for a test that drives it; browser errors fail the test.
-    public async Task<BrowserPage> OpenAsync(string path)
+    // Opens the page in a fresh context, for a test that drives it; browser errors fail the test. The page is the test
+    // host's, unless another app's base URL is given.
+    public async Task<BrowserPage> OpenAsync(string path, Uri? baseUrl = null)
     {
         // A fixed locale: .NET on WebAssembly rejects the POSIX one headless Chromium reports on Linux.
-        var context = await Browser.NewContextAsync(new() { BaseURL = BaseUrl.ToString(), Locale = "en-US" });
+        var context = await Browser.NewContextAsync(new() { BaseURL = (baseUrl ?? BaseUrl).ToString(), Locale = "en-US" });
         var page = new BrowserPage(path, context, await context.NewPageAsync());
         await page.Page.GotoAsync(path);
         return page;
@@ -69,8 +70,8 @@ public sealed partial class BrowserHost : IAsyncLifetime
         }
     }
 
-    // Kestrel logs the port it bound; the output is drained for the host's whole life so logging never blocks.
-    private static async Task<Uri> ListeningUrlAsync(Process process)
+    // Kestrel logs the port it bound; the output is drained for the app's whole life so logging never blocks.
+    internal static async Task<Uri> ListeningUrlAsync(Process process, string name)
     {
         var url = new TaskCompletionSource<Uri>(TaskCreationOptions.RunContinuationsAsynchronously);
         var log = new StringBuilder();
@@ -89,7 +90,7 @@ public sealed partial class BrowserHost : IAsyncLifetime
         var first = await Task.WhenAny(url.Task, exited, Task.Delay(TimeSpan.FromSeconds(60)));
         if (first == url.Task) return await url.Task;
         var why = first == exited ? $"exited with code {process.ExitCode}" : "didn't start within 60 s";
-        lock (log) throw new InvalidOperationException($"The test host {why}:\n{log}");
+        lock (log) throw new InvalidOperationException($"{name} {why}:\n{log}");
     }
 
     private static string Metadata(string key) =>

@@ -7,6 +7,8 @@
     <PackAsTool>true</PackAsTool>
     <ToolCommandName>dotnet-interoper</ToolCommandName>
     <PackageId>Interoper.Tool</PackageId>
+    <IsPackable>true</IsPackable>
+    <Description>The `dotnet interoper` CLI: generates C# bindings for Blazor from a JavaScript library's TypeScript typings in node_modules. Needs Node.js and TypeScript 6.x.</Description>
   </PropertyGroup>
 
   <ItemGroup>

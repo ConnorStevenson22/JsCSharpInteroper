@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <base href="/" />
+    <ImportMap ImportMapDefinition="importMap" />
+    <HeadOutlet />
+</head>
+<body>
+    <Routes />
+    <script src="@Assets["_framework/blazor.web.js"]"></script>
+</body>
+</html>
+
+@code {
+    // The app's own assets, plus the generated entries for the library's modules below /node_modules/.
+    ImportMapDefinition importMap => ImportMapDefinition.Combine(
+        ImportMapDefinition.FromResourceCollection(Assets),
+        new ImportMapDefinition(Quickstart.Maps.DemoMaps.ImportMap("/node_modules"), null, null));
+}

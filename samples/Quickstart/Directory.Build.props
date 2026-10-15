@@ -1,0 +1,9 @@
+<Project>
+
+  <!-- This app builds as a consumer's would, on its own: this file stops MSBuild from importing the repo's
+       Directory.Build.props, and Directory.Packages.props keeps out its central package versions. -->
+  <PropertyGroup>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+
+</Project>
