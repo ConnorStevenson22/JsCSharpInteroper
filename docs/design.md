@@ -101,7 +101,7 @@ await using (scope.BeginBatch())
   - `{"$e":"<id>"}` is a DOM element by its Blazor `ElementReference` id (mapping R13), written only: JS finds it by Blazor's capture attribute, `[_bl_<id>]`, and fails if no rendered element has it. The attribute is a detail of Blazor's renderer, pinned with the SDK, so a Blazor upgrade must rerun the component tests (§6);
   - `{"$u":1}` is undefined inside arrays and arguments, in both directions; the `JSON.parse` reviver and the .NET readers restore it.
 - **Batches** travel as one op array.
-- **Errors** become `JsException` with the JS name, message and stack. The profile can map library error classes to typed subclasses.
+- **Errors** become `JsException` with the JS name, message and stack.
 
 **Wire protocol** (`src/Interoper.Runtime/wwwroot/interoper.js`). .NET sends one op as a JSON string and gets back a JSON envelope: `{"v": result}`, `{}` when the result is undefined, or `{"e": {"name", "message", "stack"}}`. A thrown non-`Error` becomes `{"name":"Error","message":String(x)}`.
 
@@ -120,7 +120,7 @@ await using (scope.BeginBatch())
 | `batch` | `ops`: only ops that return nothing (writes and void calls, §3.3) | — ; if any op failed, `BatchError` with `errors: [{index, name, message, stack}]` |
 
 - Results encode class instances as handles; with `byValue`, and always in callback arguments and snapshots, value-like instances go as `$c` data instead. Plain objects and arrays are copied.
-- A handle's `$t` is the id of the runtime class name (the profile's runtime-class property); for a DOM element, the id of the class whose `tag` is its `localName`, never the runtime-class property, since `className` means something else on an element. 0 when the metadata doesn't know it.
+- A handle's `$t` is the id of the runtime class name (the profile's runtime-class property); for a DOM element, the id of the class whose `tag` is its `localName`, never the runtime-class property, since `className` means something else on an element. When the metadata doesn't know the name, the property is read on each prototype up the chain (a read that throws counts as none), so an object of a class the typings don't declare is its nearest known ancestor (mapping R19); 0 when there's none, or after 32 prototypes. A function value walks constructor to constructor (a subclass's prototype is its base class), so a class itself is named by its static property.
 - A batch runs its ops in order, awaits a Promise before the next op, and keeps going after a failure. An unknown `$h` fails while parsing, so it fails the whole batch.
 - Every `$h` that reaches .NET (results, callback arguments, snapshots) is owned by .NET and must be released.
 - A `subscribe` op's `options` (`{"preventDefault":true,"stopPropagation":true,"fields":["x","y"]}`, each part only when set, the whole left out when empty) wrap the listener: JS calls the event's `preventDefault()` and `stopPropagation()` when it has them, then passes on only the named top-level members of the event (mapping R24).
@@ -153,14 +153,15 @@ node_modules/@acme/maps/custom-elements.json ─► extractor (CEM) ────
 
 - **Extractor** (`src/interoper-extractor`). Node + the TypeScript 6.x checker. It ships as source in `Interoper.Tool` (`extract.mjs` and `program.mjs`, in an `extractor/` folder next to the tool) and runs on the consumer's Node with the consumer's TypeScript: the CLI finds `typescript` in the working directory's `node_modules` (or the nearest one above it), fails unless it's 6.x ("run `npm install -D typescript@6.0.3`"), and passes its folder to the extractor (`INTEROPER_TYPESCRIPT`). Without `INTEROPER_TYPESCRIPT` (`node extract.mjs`, for development), the extractor takes its own folder's `typescript`, pinned exactly in its `package.json` (it has no dependencies, so there's no lockfile). It resolves types with the checker, not a syntax walk ([mapping.md §7](mapping.md#7-what-the-extractor-must-resolve-with-the-checker)). It takes several packages at once (a library and its components, say), the first being the IR's, and adds the declarations they reference in the packages they depend on. Specifiers come from each package's `exports` map, and references through re-exports resolve to the declaring module ([ir.md](ir.md#document)). We stay on 6.x until TypeScript 7 has a stable programmatic API. It grew from `tools/dts-survey`, which shares its program setup and discriminant check (`program.mjs`).
 - **IR.** A language-neutral, versioned JSON model ([ir.md](ir.md)). A library upgrade is an IR diff.
-- **Profile.** Optional, consumer-owned data for library-specific decisions:
-  - entity vs value classes;
-  - the runtime-class property, a prefix of runtime class names (`runtimeClassPrefix`), and discriminators;
-  - event conventions and collection types;
-  - renames, numeric overrides, skips and JS-side callback implementations;
-  - what to emit (`include`): module specifier globs (`"@acme/maps/layers/*"`, where `*` matches any characters, `/` included). Every exported declaration of a matching module is emitted, along with the bases of emitted classes and the data types they use, whole. A member that uses a class outside the selection is skipped (IOP2007). Absent means every module. This keeps a large library's bindings as small as the consumer needs.
+- **Profile.** Optional, consumer-owned data for library-specific decisions, in a `profile.json` whose schema is [`Profile.cs`](../src/Interoper.Generator/Profile.cs) (an unknown field is an error; the fixture's [`PATTERNS.md`](../fixtures/demo-maps/PATTERNS.md#profilejson) explains each):
+  - `package`, the IR's package;
+  - `valueClasses`: the value-like classes (mapping R16); every other class is an entity;
+  - `runtimeClassProperty` and `runtimeClassPrefix`: the runtime class name (mapping R19, §2);
+  - `events` (`mapProperty`, `subscribe`) and `watch`: the event and watch conventions (mapping R24);
+  - `collections`: generic classes that are live collections (mapping §2);
+  - `include`, what to emit: module specifier globs (`"@acme/maps/layers/*"`, where `*` matches any characters, `/` included). Every exported declaration of a matching module is emitted, along with the bases of emitted classes and the data types they use, whole. A member that uses a class outside the selection is skipped (IOP2007). Absent means every module. This keeps a large library's bindings as small as the consumer needs.
 
-  Good defaults cover most of a typical library.
+  That's all: names, numeric types, union classifiers and skips can't be set.
 - **Generator** (`src/Interoper.Generator`). A .NET library with a small indented writer: `Generator.Generate(ir, profile, options)`, whose options are the mode and the root namespace, returns the diagnostics and the files and writes nothing; `Bindings.Write` writes them to a folder, for the CLI and the golden slice. It emits one `{Type}.cs` per type, in a folder per namespace (`Layers/TileLayer.cs`, R27), plus a `{Component}.cs` per custom element (R28) in its element class's folder, and the registry `{Package}.cs`, the event registrations `{Package}Events.cs` and `{package}.meta.js` at the root, each marked `// <auto-generated/>` (`Bindings.Header`; with `#nullable enable`). All output is `partial`.
   - **It never throws for input it can't map**, only for a malformed IR or profile (`InvalidDataException`). What it can't map is found while selecting, by the type map's mapping checks, so a skipped type takes the members that use it along with it ([mapping §8](mapping.md#8-diagnostics)): IOP2003 for an ambiguous union, IOP2007 for anything else. A type whose path is taken is renamed or skipped by R27 (IOP2006).
 
@@ -245,7 +246,7 @@ The private validation repo generates bindings for ArcGIS exactly as a consumer 
 ## 7. Risks
 
 - **Server chattiness** (~1 ms+ per await). Mitigated by batching, snapshots, module functions, the chatty-await analyzer and latency-throttled tests.
-- **Things async mode can't do.** JS events can't be cancelled from .NET, and callbacks can't return a value synchronously. Mitigated by declarative JS-side event options, diagnostic IOP2005 and JS-side implementations via the profile.
+- **Things async mode can't do.** JS events can't be cancelled from .NET, and callbacks can't return a value synchronously. Mitigated by declarative JS-side event options and diagnostic IOP2005.
 - **Sync-mode bindings used on Server, Hybrid or `InteractiveAuto`.** They fail fast with "regenerate with `--api async`", and the quickstart calls it out.
 - **The C# union feature may still change before .NET 11 GA** (November 2026). The SDK is pinned, the value-model tests (ported in phase 1) catch regressions, and our `[Union]` structs use only the stable core.
 

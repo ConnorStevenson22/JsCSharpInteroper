@@ -11,7 +11,7 @@ public sealed partial record MapViewOptions
     public global::Interoper.Opt<Basemap> Basemap { get; init; }
     public global::Interoper.Opt<Cursor> Cursor { get; init; }
     public global::Interoper.Opt<string> Title { get; init; }
-    public global::Interoper.Opt<global::Microsoft.AspNetCore.Components.ElementReference> Container { get; init; }
+    public MapViewOptionsContainer Container { get; init; }
 
     public static void Write(global::System.Text.Json.Utf8JsonWriter writer, MapViewOptions value)
     {
@@ -22,7 +22,7 @@ public sealed partial record MapViewOptions
         global::Interoper.JsJson.WriteProperty(writer, "basemap"u8, value.Basemap, BasemapNames.Write);
         global::Interoper.JsJson.WriteProperty(writer, "cursor"u8, value.Cursor, global::GoldenSlice.Sync.Cursor.Write);
         global::Interoper.JsJson.WriteProperty(writer, "title"u8, value.Title, global::Interoper.JsJson.WriteString);
-        global::Interoper.JsJson.WriteProperty(writer, "container"u8, value.Container, global::Interoper.JsElement.Write);
+        global::Interoper.JsJson.WriteProperty(writer, "container"u8, value.Container);
         writer.WriteEndObject();
     }
 }

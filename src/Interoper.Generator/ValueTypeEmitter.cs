@@ -113,13 +113,14 @@ internal static class ValueTypeEmitter
             w.Line($"private {name}(object? value, byte tag) => (_ref, _tag) = (value, tag);");
             foreach (var (type, tag, _) in cases)
             {
-                w.Line($"public {name}({type.Name} value) : this(value, {tag}) {{ }}");
+                w.Line($"public {name}({type.Name} value) : this(value{(IsElement(type) ? ".Id" : "")}, {tag}) {{ }}");
             }
             w.Line($"public {name}(global::Interoper.Undefined? value) : this(null, value is null ? (byte)1 : (byte)0) {{ }}");
             w.Line();
             w.Line($"public static implicit operator {name}(global::Interoper.Undefined? value) => new(value);");
             w.Line();
-            w.Line("public object? Value => _tag switch { 0 => global::Interoper.Undefined.Value, 1 => null, _ => _ref };");
+            var element = cases.Where(c => IsElement(c.Type)).Select(c => $"{c.Tag} => {Load(c.Type)}, ").SingleOrDefault();
+            w.Line($"public object? Value => _tag switch {{ 0 => global::Interoper.Undefined.Value, 1 => null, {element}_ => _ref }};");
             w.Line("public bool HasValue => _tag != 1;");
             w.Line("public bool IsUndefined => _tag == 0;");
             w.Line("public bool IsNull => _tag == 1;");
@@ -134,7 +135,7 @@ internal static class ValueTypeEmitter
                 w.Line();
                 using (w.Block($"public bool TryGetValue([global::System.Diagnostics.CodeAnalysis.MaybeNullWhen(false)] out {type.Name} value)"))
                 {
-                    w.Line($"value = _tag == {tag} ? ({type.Name})_ref! : null;");
+                    w.Line($"value = _tag == {tag} ? {Load(type)} : {(IsElement(type) ? "default" : "null")};");
                     w.Line($"return _tag == {tag};");
                 }
             }
@@ -144,7 +145,7 @@ internal static class ValueTypeEmitter
             {
                 foreach (var (type, tag, _) in cases)
                 {
-                    w.Line($"case {tag}: {type.WriteCall("writer", $"({type.Name})value._ref!", 0)}; break;");
+                    w.Line($"case {tag}: {type.WriteCall("writer", Load(type, "value._ref"), 0)}; break;");
                 }
             }
             w.Line();
@@ -156,6 +157,16 @@ internal static class ValueTypeEmitter
             w.Line("public override string ToString() => _tag switch { 0 => \"undefined\", 1 => \"null\", _ => $\"{_ref}\" };");
         }
     }
+
+    /// <summary>
+    /// R13: an element case, an <c>ElementReference</c>, is a value type, so the struct keeps its id, which is all
+    /// <c>JsElement.Write</c> sends, and doesn't box it (R2).
+    /// </summary>
+    private static bool IsElement(CsType type) => type.FullName == CsType.DomElement.FullName;
+
+    /// <summary>A case's value from <paramref name="field"/>: cast, or for an element case made from its id.</summary>
+    private static string Load(CsType type, string field = "_ref") =>
+        IsElement(type) ? $"new {type.Name}((string){field}!)" : $"({type.Name}){field}!";
 
     /// <summary>
     /// R19: by the discriminant (step 2), or by the JSON token (step 4), objects last, told apart by a required member

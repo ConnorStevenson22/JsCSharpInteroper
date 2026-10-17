@@ -109,4 +109,15 @@ dotnet add package Interoper.Blazor --prerelease
 dotnet interoper generate @acme/maps --api async --namespace Acme.Maps --out Generated/AcmeMaps
 ```
 
-Write a profile for your library when the report asks for one ([design §4](design.md#4-generator-architecture)), and serve its folder and the metadata module as the sample does.
+Write a profile to mark value-like classes, events, collections or a selection ([design §4](design.md#4-generator-architecture)), and serve its folder and the metadata module as the sample does.
+
+## In a Razor class library
+
+To ship bindings for apps to reference, put them in a Razor class library (RCL), say `Acme.Maps.Blazor`:
+
+- **Generate into the RCL.** Run `generate` with an `--out` folder in the RCL's project, so the RCL compiles the bindings. Keep that folder out of `wwwroot`, since everything there is served.
+- **Serve the metadata module from `wwwroot`.** Copy or link `{package}.meta.js` from the output into the RCL's `wwwroot` after each `generate`. It's then a static web asset at `/_content/Acme.Maps.Blazor/…` (`/_content/Acme.Maps.Blazor/maps.meta.js`, say), and that's the specifier to give `AddInteroper`.
+- **Register it for the app.** Expose an extension method, `services.AddAcmeMaps()`, that calls `AddInteroper` with that specifier and the generated registry's `Classes`. The app calls it in the server project and in the WebAssembly client, as the sample does.
+- **The host renders the import map.** An RCL can't add to the app's import map itself, so the app's `App.razor` still renders `<ImportMap>`. The RCL can offer a helper that returns the registry's `ImportMap(root)` entries for the app to combine with its own, as the sample's `App.razor` does.
+- **The library's own dependencies.** `ImportMap(root)` maps only the bound packages' modules. When the library's JS imports other packages by bare specifiers (a helper library, a date library), add import-map entries for those too, or serve a bundle or a CDN build that has them resolved ([design §3.5](design.md#35-module-loading)).
+- **One `generate` run per app.** An app has one realm, and each `generate` run numbers its classes from 1 ([design §2](design.md#2-what-we-generate)), so two sets of bindings generated apart can't share it. Bind every library an app uses in one run (`generate @acme/maps @acme/widgets …`), which also lets their types refer to each other.

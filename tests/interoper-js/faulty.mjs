@@ -1,4 +1,7 @@
-// Misbehaving library code for error-path tests (loaded with a module `call`, not part of demo-maps).
+// Misbehaving library code, and code the typings don't have, for edge-case tests (loaded with a module `call`, not part
+// of demo-maps).
+import { Marker } from "../../fixtures/demo-maps/Marker.js";
+
 export class Source {
   // Returns a subscription whose dispose() throws.
   onFaulty() {
@@ -23,3 +26,22 @@ export const big = () => 1n; // JSON.stringify can't encode a BigInt
 export function throwBare() {
   throw Object.create(null); // no string form
 }
+
+// A subclass the typings don't have, as libraries keep internal ones: the metadata doesn't know its runtime class name.
+class FastMarker extends Marker {
+  static className = "FastMarker";
+}
+export const fastMarker = () => new FastMarker();
+
+// Another, whose runtime class-name getter throws when it's read on its prototype, as a getter of private state does.
+class GuardedMarker extends Marker {
+  #name = "GuardedMarker";
+  get className() {
+    return this.#name;
+  }
+}
+export const guardedMarker = () => new GuardedMarker();
+
+// A proxy whose prototype chain never ends, each prototype a new proxy: the class-id walk gives up.
+const endless = () => new Proxy({}, { getPrototypeOf: endless });
+export const endlessChain = () => endless();

@@ -51,9 +51,9 @@ public sealed partial class MapView : Emitter
         set => Realm.Send(global::Interoper.JsOp.Set(Handle, "title", w => global::Interoper.JsJson.WriteValue(w, value, global::Interoper.JsJson.WriteString)));
     }
 
-    /// <summary>The element the map draws into.</summary>
-    public void SetContainer(global::Interoper.Opt<global::Microsoft.AspNetCore.Components.ElementReference> value) =>
-        Realm.Send(global::Interoper.JsOp.Set(Handle, "container", w => global::Interoper.JsJson.WriteValue(w, value, global::Interoper.JsElement.Write)));
+    /// <summary>The element the map draws into, or its id.</summary>
+    public void SetContainer(MapViewContainer value) =>
+        Realm.Send(global::Interoper.JsOp.Set(Handle, "container", w => global::Interoper.JsJson.WriteValue(w, value)));
 
     /// <summary>The <c>Marker</c> the user picked last, or <c>null</c> when none is.</summary>
     public global::Interoper.Opt<Marker> GetSelected(global::Interoper.JsScope scope) =>

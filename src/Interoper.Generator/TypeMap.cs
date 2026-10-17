@@ -31,9 +31,10 @@ internal sealed record EnumType(TypeName Type, IReadOnlyList<(string Name, JsonE
 
 /// <summary>
 /// A generated union struct (R2). <see cref="Discriminant"/> is the property its object cases are told apart by (R19
-/// step 2). A <see cref="WrittenOnly"/> one is a parameter's that has an entity case, or that dropped a case and can't
-/// tell the others apart: it's never read, so R19 doesn't apply. One that <see cref="Dropped"/> a case outside the
-/// selection reads the others, and fails on a handle, which is how JS sends a class outside the selection.
+/// step 2). A <see cref="WrittenOnly"/> one is a parameter's that has an entity case or a DOM element case, or that
+/// dropped a case and can't tell the others apart: it's never read, so R19 doesn't apply. One that
+/// <see cref="Dropped"/> a case outside the selection reads the others, and fails on a handle, which is how JS sends a
+/// class outside the selection.
 /// </summary>
 internal sealed record UnionStruct(TypeName Type, IReadOnlyList<UnionCase> Cases, string? Discriminant, bool WrittenOnly = false, bool Dropped = false) : DataType(Type);
 
@@ -355,7 +356,10 @@ internal sealed class TypeMap
     /// <summary>R21: a property typed with a callback, which is setter-only.</summary>
     public bool IsCallback(PropertyMember p) => CallbackOf(p.Type) is not null;
 
-    /// <summary>R13: a property typed with a DOM element (or null), which is setter-only: JS can't hand an element back.</summary>
+    /// <summary>
+    /// R13: a property typed with a DOM element, or a union with one (R2), which is setter-only: JS can't hand an element
+    /// back.
+    /// </summary>
     public bool IsElement(PropertyMember p) => ElementOf(p.Type);
 
     /// <summary>
@@ -366,13 +370,12 @@ internal sealed class TypeMap
         type is RefType { Module: null, Name: var name } &&
         (name is "Element" or "HTMLElement" or "SVGElement" || (name.StartsWith("HTML", StringComparison.Ordinal) || name.StartsWith("SVG", StringComparison.Ordinal)) && name.EndsWith("Element", StringComparison.Ordinal));
 
-    /// <summary>A DOM element type, or one with null and undefined: a member that is one is written only (R13).</summary>
-    private static bool ElementOf(IrType type) =>
-        IsElement(type) || type is UnionType u && u.Types.Count(t => !IsNullish(t)) == 1 && u.Types.Any(IsElement);
+    /// <summary>A DOM element type, or a union with one (R2): a member that is one is written only (R13).</summary>
+    private bool ElementOf(IrType type) => Values(type).Any(IsElement);
 
     /// <summary>
-    /// R13: a data record with a member that is a DOM element: it can be written (<c>$e</c>), but not read, so it has
-    /// no <c>Read</c> and is only a parameter's.
+    /// R13: a data record with a member that is a DOM element, or a union with one: it can be written (<c>$e</c>), but
+    /// not read, so it has no <c>Read</c> and is only a parameter's.
     /// </summary>
     public bool HoldsElement(Declaration declaration) =>
         declaration is (InterfaceDeclaration or AliasDeclaration { Type: ObjectType }) && RecordMembers(declaration).Any(p => ElementOf(p.Type));
@@ -695,11 +698,15 @@ internal sealed class TypeMap
     public static bool IsVoid(IrType type) => type is PrimitiveType { Name: "void" } || IsNullish(type) || type is UnionType u && u.Types.All(IsVoid);
 
     /// <summary>
-    /// R2: a union that has an entity case, which needs a scope to be read, or that dropped a case outside the selection
-    /// and can't tell the others apart (R19): only a parameter's, never read.
+    /// R2: a union that has an entity case, which needs a scope to be read, or a case JS can't return (R13), or that dropped a
+    /// case outside the selection and can't tell the others apart (R19): only a parameter's, never read.
     /// </summary>
     private bool WrittenOnly(IrType type, List<IrType> all, List<IrType> flat) =>
-        flat.Any(UsesEntity) || flat.Count < all.Count && UnionProblem(type, null, written: false) is not null;
+        flat.Any(t => UsesEntity(t) || Unreadable(t)) || flat.Count < all.Count && UnionProblem(type, null, written: false) is not null;
+
+    /// <summary>R13: a case JS can't return: a DOM element, or a record that holds one, which has no <c>Read</c>.</summary>
+    private bool Unreadable(IrType type) => IsElement(type) ||
+        type is RefType { Module: not null } r && Find(r) is { } d && HoldsElement(d) || type is ObjectType o && HoldsElement(Bag(o));
 
     /// <summary>A class outside the selection, or an alias of one: a union drops it as a case (R2).</summary>
     internal bool IsUnselected(IrType type) => type is RefType { Module: not null } r && Find(r) switch
@@ -1056,8 +1063,8 @@ internal sealed class TypeMap
     /// keeps unions non-boxing), a non-integer number, a discriminant that isn't a string on every case, or cases it
     /// can't tell apart, which is IOP2003. Any union drops its cases outside the selection: with one left it's that case,
     /// and with none it can't be mapped. A union that is only
-    /// <paramref name="written"/> (a parameter's, R2) may have an entity case, which needs no scope to be written, and may
-    /// fail R19 when it dropped a case; it's never read then.
+    /// <paramref name="written"/> (a parameter's, R2) may have an entity case, which needs no scope to be written, and a
+    /// DOM element case (R13), and may fail R19 when it dropped a case; it's never read then.
     /// </summary>
     private Unmappable? UnionProblem(IrType type, string? name, bool written)
     {
@@ -1094,7 +1101,11 @@ internal sealed class TypeMap
             }
             if (IsElement(t))
             {
-                return new($"{label} with a DOM element (R13)");
+                if (!written)
+                {
+                    return new($"{label} with a DOM element JS returns (R13)");
+                }
+                continue; // R13: written as $e
             }
             if (MapProblem(t, written) is { } problem)
             {
@@ -1117,7 +1128,7 @@ internal sealed class TypeMap
                 cases.Add((NameOf(t), NameOf(t, full: true), JsonOf(t), t is RefType r ? Find(r) : t is ObjectType o ? Bag(o) : null));
             }
         }
-        if (flat.Any(UsesEntity))
+        if (flat.Any(t => UsesEntity(t) || Unreadable(t)))
         {
             return null; // only written, so R19 doesn't apply
         }
@@ -1167,9 +1178,12 @@ internal sealed class TypeMap
     /// <summary>A member a data record leaves out when it can't be mapped: an optional one (R15), or an event payload's (R24).</summary>
     private bool Droppable(PropertyMember p) => p.Optional || payloadMembers.Contains(p);
 
-    /// <summary>Why a data record's member can't be mapped: a constant can (R20), and so can a DOM element, which is written (R13).</summary>
+    /// <summary>
+    /// Why a data record's member can't be mapped: a constant can (R20), and so can a DOM element, or a union with one,
+    /// which is written (R13).
+    /// </summary>
     private Unmappable? MemberProblem(PropertyMember p) =>
-        p.Static || p.Type is LiteralType || ElementOf(p.Type) ? null : Problem(p.Type, Position.Data);
+        p.Static || p.Type is LiteralType ? null : Problem(p.Type, ElementOf(p.Type) ? Position.Parameter : Position.Data);
 
     /// <summary>
     /// R15: why a data record drops an optional member (or an event payload's, R24), or null. Selection drops it (with what it can't reach, too), and
