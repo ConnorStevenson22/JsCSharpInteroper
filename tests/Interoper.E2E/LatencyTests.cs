@@ -29,10 +29,8 @@ public sealed partial class LatencyTests(BrowserHost browser, LatencyHost host) 
         Assert.Equal(TransportContract.Cases.Select(c => $"PASS {c.Name}"), output.Split('\n'));
     }
 
-    // One round trip pays the latency once, so a batch takes at least it. The bound, three latencies, leaves two (100 ms)
-    // for what isn't latency: 100 writes serialised, sent and run in JS, and a busy machine's scheduling. Sending the
-    // writes one by one would take at least 100 latencies; a second round trip would still fit the bound, which is why
-    // the round-trip counter is checked too.
+    // A batch is one round trip, so it takes at least one latency. The bound is three latencies, leaving slack for a busy
+    // machine. A second round trip would still fit it, so the round-trip counter is checked too.
     [Fact]
     public async Task ABatchOf100WritesIsOneRoundTrip()
     {

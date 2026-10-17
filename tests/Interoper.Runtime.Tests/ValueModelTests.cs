@@ -1,14 +1,11 @@
-// Ported from the value-model experiment (design §8, 7d48a23:spikes/value-model).
-//
-// Compile-time facts these tests rely on but can't assert at run time (checked by hand when writing them):
+// Compile-time facts these tests rely on but can't assert at run time (design §8):
 // - Removing the `Undefined` arm from a switch below warns CS8509; removing the `null` arm warns CS8655.
 //   The `null` arm is only demanded because the bottom case is the nullable `Undefined?` (design §8).
 // - `ColorInput c = null;` compiles only through `implicit operator ColorInput(Undefined? value)`
 //   (without it, CS0037); IJsUnion<T> makes every generated union declare it.
 // - Removing a subclass arm from a switch over the `closed` Shape warns CS8509, through `Opt<Shape>` too.
 // TreatWarningsAsErrors turns each of those into a build break.
-// R5 (collapse) and R6 (flatten) are generator rules, tested in phase 2.
-// The types are the golden slice's (tests/GoldenSlice).
+// The types come from tests/GoldenSlice.
 using GoldenSlice.Async;
 
 namespace Interoper.Runtime.Tests;

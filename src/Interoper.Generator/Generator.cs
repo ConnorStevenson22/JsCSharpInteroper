@@ -34,10 +34,8 @@ public static class Generator
         var types = new TypeMap(ir, profile, selection.Declarations, diagnostics, options.Namespace, selection.Payloads);
         var root = options.Namespace;
         var files = new List<GeneratedFile>();
-        // R27: the registry keeps its path (the type map has given it a name no namespace has); a later type whose path is
-        // taken, or whose name is a namespace's, is skipped, reported as IOP2006. The type map has renamed a sibling
-        // module's type of the same name, and a namespace that a declared type has the name of, so that's rare.
-        // Paths are compared ignoring case: on Windows and macOS, files whose paths differ only in case are one file.
+        // R27: the registry keeps its path. A later type whose path is taken, or whose name is a namespace's, is skipped with
+        // IOP2006, and generated code that uses it won't compile. Case is ignored, as on Windows and macOS.
         var paths = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { $"{types.Registry}.cs" };
         var namespaces = types.Namespaces;
         var declared = new Dictionary<ClassDeclaration, IReadOnlySet<string>>(ReferenceEqualityComparer.Instance); // R26, per class
@@ -96,9 +94,8 @@ public static class Generator
         }
         foreach (var element in selection.Elements)
         {
-            // R28: nothing refers to a component either, so it takes a free name too: with Component (the element's own
-            // class is often named like its tag, so that's the convention, not reported), then a number (IOP2006). A name
-            // taken in another case counts (class AcmeSVGLabel, tag acme-svg-label), since their files would clash.
+            // R28: a component takes a free name: its tag's, else with Component (common, not reported), else with a
+            // number (IOP2006). A name taken in another case counts, since the files would clash.
             var ns = types.Namespace(element.Class);
             var wanted = Naming.Type(element.Element.Tag);
             // An inline record or anonymous union named already takes its name too, and the component's is reserved.

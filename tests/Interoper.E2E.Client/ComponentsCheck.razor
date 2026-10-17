@@ -12,10 +12,8 @@
 <pre id="result" data-done="@done">@result</pre>
 
 @code {
-    // The async-mode component (R28) on its host, driven by tests/Interoper.E2E/ComponentTests: once its Element is
-    // ready, Center was set after the first render; then the test clicks through the shadow surface, and binds Zoom
-    // both ways. A hand-written element uses the generated [EventHandler]s (EventHandlers, in DemoMapsEvents.cs). ComponentsCheckSync is
-    // the same in sync mode.
+    // The async-mode component (R28), driven by ComponentTests: Center set after the first render, clicks through the
+    // shadow DOM, and Zoom bound both ways. ComponentsCheckSync is the same in sync mode.
     DemoMap map = null!;
     double zoom = 3;
     readonly PointSnapshot center = new() { X = 2, Y = 3 };
