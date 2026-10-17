@@ -176,26 +176,33 @@ public sealed class PartialSelectionCompileTests
 
     /// <summary>
     /// R2, R13: a union that is only written may have a DOM element case: a setter's, a parameter's record's and a
-    /// union alias's, which compile with the element kept by its id.
+    /// union alias's, which compile with the element kept by its id; so may one whose case is a record holding an
+    /// element, named or inline, which has no <c>Read</c>.
     /// </summary>
     [Theory]
     [InlineData(Api.Sync)]
     [InlineData(Api.Async)]
     public void AWrittenUnionWithADomElementCaseCompiles(Api api)
     {
-        const string Host = """{ "kind": "union", "types": [{ "kind": "ref", "name": "HTMLElement" }, { "kind": "primitive", "name": "string" }, { "kind": "primitive", "name": "null" }] }""";
+        const string String = """{ "kind": "primitive", "name": "string" }""";
+        const string Void = """{ "kind": "primitive", "name": "void" }""";
+        const string Host = $$"""{ "kind": "union", "types": [{ "kind": "ref", "name": "HTMLElement" }, {{String}}, { "kind": "primitive", "name": "null" }] }""";
+        const string Options = """{ "kind": "ref", "name": "CanvasOptions", "module": "@acme/maps/Canvas.js" }""";
+        const string Spot = """{ "kind": "object", "members": [{ "kind": "property", "name": "pin", "type": { "kind": "ref", "name": "SVGElement" } }] }""";
         var ir = IrDocument.Parse($$"""
             { "version": 1, "package": { "name": "@acme/maps", "version": "1" }, "modules": [
-              { "specifier": "@acme/maps/View.js", "declarations": [
-                { "kind": "alias", "name": "Host", "type": {{Host}} },
-                { "kind": "interface", "name": "ViewOptions", "members": [{ "kind": "property", "name": "container", "optional": true, "type": {{Host}} }] },
-                { "kind": "class", "name": "View", "members": [
-                  { "kind": "property", "name": "container", "type": {{Host}} },
-                  { "kind": "method", "name": "add", "signatures": [{ "params": [{ "name": "item", "type": { "kind": "ref", "name": "Host", "module": "@acme/maps/View.js" } },
-                    { "name": "options", "optional": true, "type": { "kind": "ref", "name": "ViewOptions", "module": "@acme/maps/View.js" } }], "returns": { "kind": "primitive", "name": "void" } }] }] }] }] }
+              { "specifier": "@acme/maps/Canvas.js", "declarations": [
+                { "kind": "alias", "name": "Surface", "type": {{Host}} },
+                { "kind": "interface", "name": "CanvasOptions", "members": [{ "kind": "property", "name": "host", "optional": true, "type": {{Host}} }] },
+                { "kind": "class", "name": "Canvas", "members": [
+                  { "kind": "property", "name": "host", "type": {{Host}} },
+                  { "kind": "method", "name": "add", "signatures": [{ "params": [{ "name": "item", "type": { "kind": "ref", "name": "Surface", "module": "@acme/maps/Canvas.js" } },
+                    { "name": "options", "optional": true, "type": {{Options}} }], "returns": {{Void}} }] },
+                  { "kind": "method", "name": "mount", "signatures": [{ "params": [{ "name": "options", "type": { "kind": "union", "types": [{{Options}}, {{String}}] } }], "returns": {{Void}} }] },
+                  { "kind": "method", "name": "pinAt", "signatures": [{ "params": [{ "name": "at", "type": { "kind": "union", "types": [{{Spot}}, {{String}}] } }], "returns": {{Void}} }] }] }] }] }
             """);
         var result = Generator.Generator.Generate(ir, new Generator.Profile { Package = "@acme/maps" }, new(api, "Acme.Maps"));
-        Assert.Empty(result.Diagnostics);
+        Assert.Equal("IOP2006 Acme.Maps.CanvasPinAtAt: its case 1 is CanvasPinAtAtCase1: the inline cases have no string tag (R27)", Assert.Single(result.Diagnostics).ToString());
         Compile(result);
     }
 

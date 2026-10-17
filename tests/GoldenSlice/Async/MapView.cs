@@ -52,9 +52,9 @@ public sealed partial class MapView : Emitter
     public global::System.Threading.Tasks.Task SetTitleAsync(global::Interoper.Opt<string> value) =>
         Realm.SendAsync(global::Interoper.JsOp.Set(Handle, "title", w => global::Interoper.JsJson.WriteValue(w, value, global::Interoper.JsJson.WriteString)));
 
-    /// <summary>The element the map draws into.</summary>
-    public global::System.Threading.Tasks.Task SetContainerAsync(global::Interoper.Opt<global::Microsoft.AspNetCore.Components.ElementReference> value) =>
-        Realm.SendAsync(global::Interoper.JsOp.Set(Handle, "container", w => global::Interoper.JsJson.WriteValue(w, value, global::Interoper.JsElement.Write)));
+    /// <summary>The element the map draws into, or its id.</summary>
+    public global::System.Threading.Tasks.Task SetContainerAsync(MapViewContainer value) =>
+        Realm.SendAsync(global::Interoper.JsOp.Set(Handle, "container", w => global::Interoper.JsJson.WriteValue(w, value)));
 
     /// <summary>The <c>Marker</c> the user picked last, or <c>null</c> when none is.</summary>
     public global::System.Threading.Tasks.Task<global::Interoper.Opt<Marker>> GetSelectedAsync(global::Interoper.JsScope scope) =>

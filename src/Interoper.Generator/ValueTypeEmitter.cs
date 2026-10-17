@@ -119,7 +119,7 @@ internal static class ValueTypeEmitter
             w.Line();
             w.Line($"public static implicit operator {name}(global::Interoper.Undefined? value) => new(value);");
             w.Line();
-            var element = cases.Where(c => IsElement(c.Type)).Select(c => $"{c.Tag} => {Load(c.Type)}, ").FirstOrDefault();
+            var element = cases.Where(c => IsElement(c.Type)).Select(c => $"{c.Tag} => {Load(c.Type)}, ").SingleOrDefault();
             w.Line($"public object? Value => _tag switch {{ 0 => global::Interoper.Undefined.Value, 1 => null, {element}_ => _ref }};");
             w.Line("public bool HasValue => _tag != 1;");
             w.Line("public bool IsUndefined => _tag == 0;");

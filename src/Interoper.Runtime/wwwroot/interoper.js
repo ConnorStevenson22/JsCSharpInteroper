@@ -305,10 +305,12 @@ function classEntry(classId) {
 // The most-derived class id: an element's by its tag, since a runtime class-name property such as `className` means
 // something else on an element (its CSS classes, R28); otherwise from that property, read on the object and then up its
 // prototype chain, so a class the typings don't have is its nearest registered ancestor (R19 step 1); 0 if unknown. A
-// read that throws (a getter on a prototype) counts as no name.
+// read that throws (a getter on a prototype) counts as no name. The walk stops after maxPrototypes, in case a proxy's
+// chain never ends.
+const maxPrototypes = 32;
 function classIdOf(object) {
   if (globalThis.Element && object instanceof globalThis.Element) return classIdsByTag.get(object.localName) ?? 0;
-  for (let p = object; p !== null; p = Object.getPrototypeOf(p)) {
+  for (let p = object, depth = 0; p !== null && depth < maxPrototypes; p = Object.getPrototypeOf(p), depth++) {
     let name;
     try {
       name = p[meta.classNameProperty];

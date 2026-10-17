@@ -41,3 +41,7 @@ class GuardedMarker extends Marker {
   }
 }
 export const guardedMarker = () => new GuardedMarker();
+
+// A proxy whose prototype chain never ends, each prototype a new proxy: the class-id walk gives up.
+const endless = () => new Proxy({}, { getPrototypeOf: endless });
+export const endlessChain = () => endless();

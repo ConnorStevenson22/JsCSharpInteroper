@@ -698,11 +698,15 @@ internal sealed class TypeMap
     public static bool IsVoid(IrType type) => type is PrimitiveType { Name: "void" } || IsNullish(type) || type is UnionType u && u.Types.All(IsVoid);
 
     /// <summary>
-    /// R2: a union that has an entity case, which needs a scope to be read, or a DOM element case (R13), or that dropped a
+    /// R2: a union that has an entity case, which needs a scope to be read, or a case JS can't return (R13), or that dropped a
     /// case outside the selection and can't tell the others apart (R19): only a parameter's, never read.
     /// </summary>
     private bool WrittenOnly(IrType type, List<IrType> all, List<IrType> flat) =>
-        flat.Any(t => UsesEntity(t) || IsElement(t)) || flat.Count < all.Count && UnionProblem(type, null, written: false) is not null;
+        flat.Any(t => UsesEntity(t) || Unreadable(t)) || flat.Count < all.Count && UnionProblem(type, null, written: false) is not null;
+
+    /// <summary>R13: a case JS can't return: a DOM element, or a record that holds one, which has no <c>Read</c>.</summary>
+    private bool Unreadable(IrType type) => IsElement(type) ||
+        type is RefType { Module: not null } r && Find(r) is { } d && HoldsElement(d) || type is ObjectType o && HoldsElement(Bag(o));
 
     /// <summary>A class outside the selection, or an alias of one: a union drops it as a case (R2).</summary>
     internal bool IsUnselected(IrType type) => type is RefType { Module: not null } r && Find(r) switch
@@ -1124,7 +1128,7 @@ internal sealed class TypeMap
                 cases.Add((NameOf(t), NameOf(t, full: true), JsonOf(t), t is RefType r ? Find(r) : t is ObjectType o ? Bag(o) : null));
             }
         }
-        if (flat.Any(t => UsesEntity(t) || IsElement(t)))
+        if (flat.Any(t => UsesEntity(t) || Unreadable(t)))
         {
             return null; // only written, so R19 doesn't apply
         }

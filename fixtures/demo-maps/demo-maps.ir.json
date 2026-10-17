@@ -361,6 +361,10 @@
                     },
                     {
                       "kind": "primitive",
+                      "name": "string"
+                    },
+                    {
+                      "kind": "primitive",
                       "name": "null"
                     }
                   ]
@@ -474,7 +478,7 @@
               "kind": "property",
               "name": "container",
               "doc": {
-                "summary": "The element the map draws into."
+                "summary": "The element the map draws into, or its id."
               },
               "type": {
                 "kind": "union",
@@ -482,6 +486,10 @@
                   {
                     "kind": "ref",
                     "name": "HTMLElement"
+                  },
+                  {
+                    "kind": "primitive",
+                    "name": "string"
                   },
                   {
                     "kind": "primitive",

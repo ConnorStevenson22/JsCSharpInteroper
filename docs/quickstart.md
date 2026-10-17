@@ -109,7 +109,7 @@ dotnet add package Interoper.Blazor --prerelease
 dotnet interoper generate @acme/maps --api async --namespace Acme.Maps --out Generated/AcmeMaps
 ```
 
-Write a profile for your library when the report asks for one ([design §4](design.md#4-generator-architecture)), and serve its folder and the metadata module as the sample does.
+Write a profile to mark value-like classes, events, collections or a selection ([design §4](design.md#4-generator-architecture)), and serve its folder and the metadata module as the sample does.
 
 ## In a Razor class library
 

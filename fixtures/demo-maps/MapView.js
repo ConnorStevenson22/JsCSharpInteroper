@@ -35,7 +35,7 @@ export class MapView extends Emitter {
   get markers() { return this.#markers; }
   get layers() { return this.#layers; }
 
-  // The element the map draws into. Only stored, never touched, so the view also runs without a DOM.
+  // The element the map draws into, or its id. Only stored, never touched, so the view also runs without a DOM.
   get container() { return this._get("container"); }
   set container(value) { this._set("container", value ?? null); }
 

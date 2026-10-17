@@ -47,7 +47,9 @@ test("an object of a class the metadata doesn't know is its nearest registered a
   assert.equal(guarded.$t, ids.Marker);
   const source = value(await sendAsync({ op: "call", module: faulty, name: "source" })); // no registered ancestor
   assert.equal(source.$t, 0);
-  release(fast, guarded, source);
+  const endless = value(await sendAsync({ op: "call", module: faulty, name: "endlessChain" })); // the walk stops (design §3.4)
+  assert.equal(endless.$t, 0);
+  release(fast, guarded, source, endless);
 });
 
 test("call returns handles, or value-like instances by value with byValue (R16)", () => {

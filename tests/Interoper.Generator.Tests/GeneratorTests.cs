@@ -949,33 +949,58 @@ public sealed class GeneratorTests
     [InlineData(Api.Async)]
     public void AWrittenUnionMayHaveADomElementCase(Api api)
     {
-        const string Element = """{ "kind": "ref", "name": "HTMLDivElement" }""";
+        const string Element = """{ "kind": "ref", "name": "HTMLElement" }""";
         var host = $$"""{ "kind": "union", "types": [{{Element}}, {{String}}, { "kind": "primitive", "name": "null" }] }""";
-        var result = Generate(api, ("View.js", $$"""
-            { "kind": "alias", "name": "Host", "type": {{host}} },
-            { "kind": "interface", "name": "ViewOptions", "members": [{ "kind": "property", "name": "container", "optional": true, "type": {{host}} }] },
-            { "kind": "class", "name": "View", "members": [
-              { "kind": "property", "name": "container", "type": {{host}} },
-              { "kind": "property", "name": "host", "type": { "kind": "ref", "name": "Host", "module": "@acme/maps/View.js" } },
-              { "kind": "method", "name": "mount", "signatures": [{ "params": [{ "name": "options", "type": { "kind": "ref", "name": "ViewOptions", "module": "@acme/maps/View.js" } }], "returns": { "kind": "primitive", "name": "void" } }] },
+        var result = Generate(api, ("Canvas.js", $$"""
+            { "kind": "alias", "name": "Surface", "type": {{host}} },
+            { "kind": "interface", "name": "CanvasOptions", "members": [{ "kind": "property", "name": "host", "optional": true, "type": {{host}} }] },
+            { "kind": "class", "name": "Canvas", "members": [
+              { "kind": "property", "name": "host", "type": {{host}} },
+              { "kind": "property", "name": "surface", "type": { "kind": "ref", "name": "Surface", "module": "@acme/maps/Canvas.js" } },
+              { "kind": "method", "name": "mount", "signatures": [{ "params": [{ "name": "options", "type": { "kind": "ref", "name": "CanvasOptions", "module": "@acme/maps/Canvas.js" } }], "returns": { "kind": "primitive", "name": "void" } }] },
               { "kind": "method", "name": "frame", "signatures": [{ "returns": {{host}} }] },
-              { "kind": "method", "name": "lastHost", "signatures": [{ "returns": { "kind": "ref", "name": "Host", "module": "@acme/maps/View.js" } }] }] }
+              { "kind": "method", "name": "lastSurface", "signatures": [{ "returns": { "kind": "ref", "name": "Surface", "module": "@acme/maps/Canvas.js" } }] }] }
             """));
 
         Assert.Equal([
-            "IOP2007 View.frame: skipped: uses a union with a DOM element JS returns (R13)",
-            "IOP2007 View.lastHost: skipped: uses the union `Host` with a DOM element JS returns (R13)",
+            "IOP2007 Canvas.frame: skipped: uses a union with a DOM element JS returns (R13)",
+            "IOP2007 Canvas.lastSurface: skipped: uses the union `Surface` with a DOM element JS returns (R13)",
         ], result.Diagnostics.Select(d => d.ToString()));
-        var view = File(result, "View.cs");
-        Assert.Contains(api == Api.Sync ? "public void SetContainer(ViewContainer value)" : "public global::System.Threading.Tasks.Task SetContainerAsync(ViewContainer value)", view);
-        Assert.Contains(api == Api.Sync ? "public void SetHost(Host value)" : "public global::System.Threading.Tasks.Task SetHostAsync(Host value)", view);
-        Assert.DoesNotContain("GetContainer", view); // setter-only, as a DOM element property is
-        var container = File(result, "ViewContainer.cs");
-        Assert.Contains("public ViewContainer(global::Microsoft.AspNetCore.Components.ElementReference value) : this(value.Id, 2) { }", container); // not boxed
-        Assert.Contains("case 2: global::Interoper.JsElement.Write(writer, new global::Microsoft.AspNetCore.Components.ElementReference((string)value._ref!)); break;", container);
-        Assert.Contains("value = _tag == 2 ? new global::Microsoft.AspNetCore.Components.ElementReference((string)_ref!) : default;", container);
-        Assert.Contains("throw new global::System.Text.Json.JsonException(\"ViewContainer is only written (R2)\")", container);
-        Assert.DoesNotContain(" Read(", File(result, "ViewOptions.cs")); // a record with one is only written too
+        var canvas = File(result, "Canvas.cs");
+        Assert.Contains(api == Api.Sync ? "public void SetHost(CanvasHost value)" : "public global::System.Threading.Tasks.Task SetHostAsync(CanvasHost value)", canvas);
+        Assert.Contains(api == Api.Sync ? "public void SetSurface(Surface value)" : "public global::System.Threading.Tasks.Task SetSurfaceAsync(Surface value)", canvas);
+        Assert.DoesNotContain("GetHost", canvas); // setter-only, as a DOM element property is
+        var union = File(result, "CanvasHost.cs");
+        Assert.Contains("public CanvasHost(global::Microsoft.AspNetCore.Components.ElementReference value) : this(value.Id, 2) { }", union); // not boxed
+        Assert.Contains("case 2: global::Interoper.JsElement.Write(writer, new global::Microsoft.AspNetCore.Components.ElementReference((string)value._ref!)); break;", union);
+        Assert.Contains("value = _tag == 2 ? new global::Microsoft.AspNetCore.Components.ElementReference((string)_ref!) : default;", union);
+        Assert.Contains("throw new global::System.Text.Json.JsonException(\"CanvasHost is only written (R2)\")", union);
+        Assert.DoesNotContain(" Read(", File(result, "CanvasOptions.cs")); // a record with one is only written too
+    }
+
+    [Fact] // R2, R13: a union with a case that is a record holding a DOM element, named or inline, is only written too
+    public void AUnionWithARecordHoldingADomElementIsOnlyWritten()
+    {
+        var anchor = $$"""{ "kind": "union", "types": [{ "kind": "ref", "name": "HTMLElement" }, {{String}}] }""";
+        var spec = """{ "kind": "ref", "name": "PanelSpec", "module": "@acme/maps/Panel.js" }""";
+        var spot = $$"""{ "kind": "object", "members": [{ "kind": "property", "name": "pin", "type": { "kind": "ref", "name": "SVGElement" } }] }""";
+        var result = Generate(Api.Sync, ("Panel.js", $$"""
+            { "kind": "interface", "name": "PanelSpec", "members": [{ "kind": "property", "name": "anchor", "type": {{anchor}} }] },
+            { "kind": "class", "name": "Panel", "members": [
+              { "kind": "method", "name": "dock", "signatures": [{ "params": [{ "name": "spec", "type": { "kind": "union", "types": [{{spec}}, {{String}}] } }], "returns": {{Void}} }] },
+              { "kind": "method", "name": "pinAt", "signatures": [{ "params": [{ "name": "at", "type": { "kind": "union", "types": [{{spot}}, {{String}}] } }], "returns": {{Void}} }] },
+              { "kind": "method", "name": "lastSpec", "signatures": [{ "returns": { "kind": "union", "types": [{{spec}}, {{String}}] } }] }] }
+            """));
+
+        Assert.Equal([
+            "IOP2007 Panel.lastSpec: skipped: uses the record `PanelSpec`, which holds a DOM element JS can't return (R13)",
+            "IOP2006 Acme.Maps.PanelPinAtAt: its case 1 is PanelPinAtAtCase1: the inline cases have no string tag (R27)",
+        ], result.Diagnostics.Select(d => d.ToString()));
+        Assert.Contains("public void Dock(PanelDockSpec spec)", File(result, "Panel.cs"));
+        Assert.Contains("public void PinAt(PanelPinAtAt at)", File(result, "Panel.cs"));
+        Assert.Contains("case 2: PanelSpec.Write(writer, (PanelSpec)value._ref!); break;", File(result, "PanelDockSpec.cs"));
+        Assert.Contains("throw new global::System.Text.Json.JsonException(\"PanelDockSpec is only written (R2)\")", File(result, "PanelDockSpec.cs")); // no PanelSpec.Read
+        Assert.Contains("throw new global::System.Text.Json.JsonException(\"PanelPinAtAt is only written (R2)\")", File(result, "PanelPinAtAt.cs"));
     }
 
     [Theory] // R28, design §3.2: an abstract element class named like its tag; an attribute the manifest types as a primitive
