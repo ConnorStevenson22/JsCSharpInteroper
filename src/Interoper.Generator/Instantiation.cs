@@ -63,8 +63,8 @@ internal static class Instantiation
 
     /// <summary>
     /// Mapping §2: a class's or interface's type parameter with a constraint stands for its constraint, so it's gone, and
-    /// so are its type arguments: <c>View&lt;V extends LayerView&gt;</c> is <c>View</c>, whose <c>V</c>s are
-    /// <c>LayerView</c>s, and <c>View&lt;TileLayerView&gt;</c> is <c>View</c>. Not one whose constraint names the
+    /// so are its type arguments: <c>Scene&lt;V extends Overlay&gt;</c> is <c>Scene</c>, whose <c>V</c>s are
+    /// <c>Overlay</c>s, and <c>Scene&lt;TileOverlay&gt;</c> is <c>Scene</c>. Not one whose constraint names the
     /// declaration's type parameters, one that a signature or callback in it declares again, or a profile collection's
     /// (<paramref name="collections"/>): those stay, and are skipped.
     /// </summary>

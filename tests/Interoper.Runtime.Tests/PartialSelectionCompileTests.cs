@@ -149,7 +149,7 @@ public sealed class PartialSelectionCompileTests
                 { "kind": "interface", "name": "Input", "members": [{ "kind": "property", "name": "button", "type": {{Number}} }] },
                 { "kind": "interface", "name": "InputEvent", "typeParameters": [{ "name": "E", "constraint": {{Input}} }], "members": [
                   { "kind": "property", "name": "native", "type": { "kind": "typeParameter", "name": "E" } },
-                  { "kind": "property", "name": "defer", "type": { "kind": "function", "typeParameters": [{ "name": "T" }], "params": [{ "name": "op", "type": { "kind": "function", "returns": {{Promise}} } }], "returns": {{Promise}} } },
+                  { "kind": "property", "name": "wait", "type": { "kind": "function", "typeParameters": [{ "name": "T" }], "params": [{ "name": "op", "type": { "kind": "function", "returns": {{Promise}} } }], "returns": {{Promise}} } },
                   { "kind": "method", "name": "stopPropagation", "signatures": [{ "params": [], "returns": {{Void}} }] }] },
                 { "kind": "interface", "name": "PressEvent", "extends": [{{Ref("InputEvent", "Marker.js", Input)}}], "members": [{ "kind": "property", "name": "x", "type": {{Number}} }] },
                 { "kind": "alias", "name": "Warm", "type": {{Literals("red", "amber")}} },
@@ -157,15 +157,15 @@ public sealed class PartialSelectionCompileTests
                 { "kind": "class", "name": "Marker", "typeParameters": [{ "name": "V", "constraint": {{Ref("Icon", "marker/Icon.js")}} }], "members": [
                   { "kind": "property", "name": "icon", "type": { "kind": "typeParameter", "name": "V" } },
                   { "kind": "property", "name": "tone", "type": { "kind": "union", "types": [{{Ref("Warm", "Marker.js")}}, {{Ref("Cool", "Marker.js")}}] } },
-                  { "kind": "property", "name": "legend", "type": {{Ref("Panel", "marker/Icon.js")}} }],
+                  { "kind": "property", "name": "caption", "type": {{Ref("Card", "marker/Icon.js")}} }],
                   "events": [{ "name": "press", "type": {{Ref("PressEvent", "Marker.js")}} }] },
                 { "kind": "class", "name": "List", "typeParameters": [{ "name": "T" }], "events": [{ "name": "change", "type": {{Ref("Change", "Marker.js", T)}} }] },
                 { "kind": "interface", "name": "Change", "typeParameters": [{ "name": "T" }], "members": [{ "kind": "property", "name": "added", "type": { "kind": "array", "element": {{T}} } }] },
                 { "kind": "class", "name": "Route", "extends": {{Ref("List", "Marker.js", Marker)}}, "events": [{ "name": "change", "type": {{Ref("Change", "Marker.js", Marker)}} }] }] },
               { "specifier": "@acme/maps/marker/Icon.js", "declarations": [
                 { "kind": "class", "name": "Icon" },
-                { "kind": "interface", "name": "Legend", "members": [{ "kind": "property", "name": "icon", "type": {{Ref("Icon", "marker/Icon.js")}} }] },
-                { "kind": "interface", "name": "Panel", "members": [{ "kind": "property", "name": "legend", "optional": true, "type": {{Ref("Legend", "marker/Icon.js")}} }] }] }] }
+                { "kind": "interface", "name": "Caption", "members": [{ "kind": "property", "name": "icon", "type": {{Ref("Icon", "marker/Icon.js")}} }] },
+                { "kind": "interface", "name": "Card", "members": [{ "kind": "property", "name": "caption", "optional": true, "type": {{Ref("Caption", "marker/Icon.js")}} }] }] }] }
             """);
         var profile = new Generator.Profile { Package = "@acme/maps", Events = new(Subscribe: "on"), Collections = ["List"] };
         var result = Generator.Generator.Generate(ir, profile, new(api, "Acme.Maps"));

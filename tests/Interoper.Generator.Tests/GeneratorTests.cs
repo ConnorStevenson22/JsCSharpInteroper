@@ -1475,35 +1475,35 @@ public sealed class GeneratorTests
     public void AnEventOfAClassWithAConstrainedTypeParameterIsBound()
     {
         const string Input = """{ "kind": "ref", "name": "Input", "module": "@acme/maps/a.js" }""";
-        const string LayerView = """{ "kind": "ref", "name": "LayerView", "module": "@acme/maps/a.js" }""";
+        const string Overlay = """{ "kind": "ref", "name": "Overlay", "module": "@acme/maps/a.js" }""";
         const string Promise = """{ "kind": "ref", "name": "Promise", "args": [{ "kind": "typeParameter", "name": "T" }] }""";
-        const string Defer = $$"""{ "kind": "function", "typeParameters": [{ "name": "T" }], "params": [{ "name": "op", "type": { "kind": "function", "returns": {{Promise}} } }], "returns": {{Promise}} }""";
+        const string Wait = $$"""{ "kind": "function", "typeParameters": [{ "name": "T" }], "params": [{ "name": "op", "type": { "kind": "function", "returns": {{Promise}} } }], "returns": {{Promise}} }""";
         var result = Generate(new Profile { Package = "@acme/maps", Events = new(Subscribe: "on") }, Api.Sync, ("a.js", $$"""
             { "kind": "interface", "name": "Input", "members": [{ "kind": "property", "name": "button", "type": {{Number}} }] },
             { "kind": "interface", "name": "InputEvent", "typeParameters": [{ "name": "E", "constraint": {{Input}}, "default": {{Input}} }], "members": [
               { "kind": "property", "name": "timestamp", "type": {{Number}} },
               { "kind": "property", "name": "native", "type": { "kind": "typeParameter", "name": "E" } },
-              { "kind": "property", "name": "defer", "type": {{Defer}} },
+              { "kind": "property", "name": "wait", "type": {{Wait}} },
               { "kind": "method", "name": "stopPropagation", "signatures": [{ "params": [], "returns": {{Void}} }] }] },
             { "kind": "interface", "name": "PressEvent", "extends": [{ "kind": "ref", "name": "InputEvent", "module": "@acme/maps/a.js", "args": [{{Input}}] }], "members": [
               { "kind": "property", "name": "type", "type": { "kind": "literal", "value": "press" } }, {{X}}] },
-            { "kind": "class", "name": "LayerView" },
-            { "kind": "class", "name": "View", "typeParameters": [{ "name": "V", "constraint": {{LayerView}}, "default": {{LayerView}} }], "members": [
-              { "kind": "property", "name": "layerView", "readonly": true, "type": { "kind": "typeParameter", "name": "V" } }],
+            { "kind": "class", "name": "Overlay" },
+            { "kind": "class", "name": "Scene", "typeParameters": [{ "name": "V", "constraint": {{Overlay}}, "default": {{Overlay}} }], "members": [
+              { "kind": "property", "name": "overlay", "readonly": true, "type": { "kind": "typeParameter", "name": "V" } }],
               "events": [{ "name": "press", "type": { "kind": "ref", "name": "PressEvent", "module": "@acme/maps/a.js" } }] },
-            { "kind": "class", "name": "MapView", "extends": { "kind": "ref", "name": "View", "module": "@acme/maps/a.js", "args": [{{LayerView}}] } }
+            { "kind": "class", "name": "MapView", "extends": { "kind": "ref", "name": "Scene", "module": "@acme/maps/a.js", "args": [{{Overlay}}] } }
             """));
 
-        var view = File(result, "View.cs");
-        Assert.Contains("public partial class View : global::Interoper.JsObject", view);
-        Assert.Contains("public LayerView GetLayerView(global::Interoper.JsScope scope) =>", view);
-        Assert.Contains("""scope.Subscribe(Handle, "on", "press", PressEvent.Read, handler, options, ["type", "x", "timestamp", "native"]);""", view);
-        Assert.Contains("public sealed partial class MapView : View", File(result, "MapView.cs"));
+        var scene = File(result, "Scene.cs");
+        Assert.Contains("public partial class Scene : global::Interoper.JsObject", scene);
+        Assert.Contains("public Overlay GetOverlay(global::Interoper.JsScope scope) =>", scene);
+        Assert.Contains("""scope.Subscribe(Handle, "on", "press", PressEvent.Read, handler, options, ["type", "x", "timestamp", "native"]);""", scene);
+        Assert.Contains("public sealed partial class MapView : Scene", File(result, "MapView.cs"));
         Assert.Contains("public required Input Native { get; init; }", File(result, "InputEvent.cs"));
-        Assert.DoesNotContain("Defer", File(result, "InputEvent.cs"));
+        Assert.DoesNotContain("Wait", File(result, "InputEvent.cs"));
         Assert.Equal(
         [
-            "IOP2007 InputEvent.defer: skipped: uses type parameter `T`",
+            "IOP2007 InputEvent.wait: skipped: uses type parameter `T`",
             "IOP2007 InputEvent.stopPropagation: skipped: a method of an event payload (R24)",
         ], result.Diagnostics.Select(d => d.ToString()));
     }
@@ -1526,13 +1526,13 @@ public sealed class GeneratorTests
     {
         var result = Generate("""
             { "kind": "class", "name": "Marker" },
-            { "kind": "interface", "name": "Legend", "members": [{ "kind": "property", "name": "marker", "type": { "kind": "ref", "name": "Marker", "module": "@acme/maps/a.js" } }] },
-            { "kind": "interface", "name": "Panel", "members": [{ "kind": "property", "name": "legend", "optional": true, "type": { "kind": "ref", "name": "Legend", "module": "@acme/maps/a.js" } }] },
-            { "kind": "function", "name": "panel", "signatures": [{ "returns": { "kind": "ref", "name": "Panel", "module": "@acme/maps/a.js" } }] }
+            { "kind": "interface", "name": "Caption", "members": [{ "kind": "property", "name": "marker", "type": { "kind": "ref", "name": "Marker", "module": "@acme/maps/a.js" } }] },
+            { "kind": "interface", "name": "Card", "members": [{ "kind": "property", "name": "caption", "optional": true, "type": { "kind": "ref", "name": "Caption", "module": "@acme/maps/a.js" } }] },
+            { "kind": "function", "name": "card", "signatures": [{ "returns": { "kind": "ref", "name": "Card", "module": "@acme/maps/a.js" } }] }
             """);
-        var panel = File(result, "Panel.cs");
-        Assert.Contains("public global::Interoper.Opt<Legend> Legend { get; init; }", panel);
-        Assert.Contains("(ref r) => global::Acme.Maps.Legend.Read(ref r, scope)", panel);
+        var card = File(result, "Card.cs");
+        Assert.Contains("public global::Interoper.Opt<Caption> Caption { get; init; }", card);
+        Assert.Contains("(ref r) => global::Acme.Maps.Caption.Read(ref r, scope)", card);
     }
 
     [Fact] // R26, §2: an event a subclass of a generic collection redeclares, with its type argument, is new (CS0108)
