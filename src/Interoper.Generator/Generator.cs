@@ -27,15 +27,16 @@ public static class Generator
     /// </summary>
     public static GeneratorResult Generate(IrDocument ir, Profile profile, GeneratorOptions options)
     {
-        ir = Instantiation.Instantiate(ir); // §2: a generic union alias's uses are its unions
+        // §2: a constrained type parameter is its constraint, and a generic union alias's uses are its unions.
+        ir = Instantiation.Instantiate(Instantiation.Erase(ir, profile.Collections));
         var selection = Selection.Select(ir, profile);
         var diagnostics = selection.Diagnostics.ToList();
-        var types = new TypeMap(ir, profile, selection.Declarations, diagnostics, options.Namespace);
+        var types = new TypeMap(ir, profile, selection.Declarations, diagnostics, options.Namespace, selection.Payloads);
         var root = options.Namespace;
         var files = new List<GeneratedFile>();
         // R27: the registry keeps its path (the type map has given it a name no namespace has); a later type whose path is
-        // taken, or whose name is a namespace's, is skipped, reported as IOP2006. What uses it isn't, so its code won't
-        // compile until a profile rename (mapping R27). The type map has renamed a sibling module's type of the same name.
+        // taken, or whose name is a namespace's, is skipped, reported as IOP2006. The type map has renamed a sibling
+        // module's type of the same name, and a namespace that a declared type has the name of, so that's rare.
         // Paths are compared ignoring case: on Windows and macOS, files whose paths differ only in case are one file.
         var paths = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { $"{types.Registry}.cs" };
         var namespaces = types.Namespaces;

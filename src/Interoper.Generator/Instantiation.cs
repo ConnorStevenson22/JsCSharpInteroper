@@ -61,6 +61,106 @@ internal static class Instantiation
         };
     }
 
+    /// <summary>
+    /// Mapping §2: a class's or interface's type parameter with a constraint stands for its constraint, so it's gone, and
+    /// so are its type arguments: <c>Scene&lt;V extends Overlay&gt;</c> is <c>Scene</c>, whose <c>V</c>s are
+    /// <c>Overlay</c>s, and <c>Scene&lt;TileOverlay&gt;</c> is <c>Scene</c>. Not one whose constraint names the
+    /// declaration's type parameters, one that a signature or callback in it declares again, or a profile collection's
+    /// (<paramref name="collections"/>): those stay, and are skipped.
+    /// </summary>
+    public static IrDocument Erase(IrDocument ir, IReadOnlyCollection<string> collections)
+    {
+        // Each generic declaration with a parameter to erase: all its type parameters, and those.
+        var erased = new Dictionary<(string Module, string Name), (IReadOnlyList<TypeParameter> All, IReadOnlyList<TypeParameter> Gone)>();
+        foreach (var m in ir.Modules)
+        {
+            foreach (var d in m.Declarations)
+            {
+                var parameters = d switch
+                {
+                    ClassDeclaration c when !collections.Contains(c.Name) => c.TypeParameters,
+                    InterfaceDeclaration i => i.TypeParameters,
+                    _ => [],
+                };
+                var shadowed = parameters.Count > 0 ? Declared(d) : [];
+                var own = parameters.Select(t => t.Name).ToHashSet();
+                if (parameters.Where(t => t.Constraint is { } c && !Names(c).Overlaps(own) && !shadowed.Contains(t.Name)).ToList() is { Count: > 0 } gone)
+                {
+                    erased[(m.Specifier, d.Name)] = (parameters, gone);
+                }
+            }
+        }
+        if (erased.Count == 0)
+        {
+            return ir;
+        }
+
+        // A reference to such a declaration, without the arguments of its erased parameters (one past those given is a default).
+        IrType? Drop(IrType type, Func<IrType, IrType?> replace) =>
+            type is RefType { Module: { } module } r && erased.TryGetValue((module, r.Name), out var e)
+                ? r with { Args = [.. r.Args.Where((_, i) => i >= e.All.Count || !e.Gone.Contains(e.All[i])).Select(a => Map(a, replace))] }
+                : null;
+        Declaration Declaration(string module, Declaration d)
+        {
+            var gone = erased.TryGetValue((module, d.Name), out var e) ? e.Gone : [];
+            var constraints = gone.ToDictionary(t => t.Name, t => t.Constraint!);
+            IrType? Replace(IrType type) => type is TypeParameterType p && constraints.TryGetValue(p.Name, out var constraint)
+                ? Map(constraint, Replace)
+                : Drop(type, Replace);
+            var result = Instantiation.Declaration(d, Replace);
+            return gone.Count == 0 ? result : result switch
+            {
+                ClassDeclaration c => c with { TypeParameters = [.. c.TypeParameters.Where(t => !gone.Contains(t))] },
+                InterfaceDeclaration i => i with { TypeParameters = [.. i.TypeParameters.Where(t => !gone.Contains(t))] },
+                _ => result,
+            };
+        }
+        IrType? Global(IrType type) => Drop(type, Global);
+
+        return ir with
+        {
+            Modules = [.. ir.Modules.Select(m => m with { Declarations = [.. m.Declarations.Select(d => Declaration(m.Specifier, d))] })],
+            Elements = [.. ir.Elements.Select(e => Element(e, Global) with { Class = Map(e.Class, Global) })],
+        };
+    }
+
+    /// <summary>The type parameters a type names.</summary>
+    private static HashSet<string> Names(IrType type)
+    {
+        var names = new HashSet<string>();
+        Map(type, t =>
+        {
+            if (t is TypeParameterType p)
+            {
+                names.Add(p.Name);
+            }
+            return null;
+        });
+        return names;
+    }
+
+    /// <summary>The type parameters a declaration's signatures and callbacks declare.</summary>
+    private static HashSet<string> Declared(Declaration d)
+    {
+        var names = new HashSet<string>();
+        var signatures = d switch
+        {
+            ClassDeclaration c => c.Constructors.Concat(c.Members.OfType<MethodMember>().SelectMany(m => m.Signatures)),
+            InterfaceDeclaration i => i.CallSignatures.Concat(i.ConstructSignatures).Concat(i.Members.OfType<MethodMember>().SelectMany(m => m.Signatures)),
+            _ => [],
+        };
+        names.UnionWith(signatures.SelectMany(s => s.TypeParameters).Select(t => t.Name));
+        Declaration(d, t =>
+        {
+            if (t is FunctionType f)
+            {
+                names.UnionWith(f.TypeParameters.Select(p => p.Name));
+            }
+            return null;
+        });
+        return names;
+    }
+
     private static IrType? Substitute(IrType type, Dictionary<string, IrType> args) =>
         type is TypeParameterType p && args.TryGetValue(p.Name, out var arg) ? arg : null;
 

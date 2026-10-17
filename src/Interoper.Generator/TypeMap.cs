@@ -86,6 +86,10 @@ internal sealed class TypeMap
     private readonly HashSet<Declaration> scoping = new(ReferenceEqualityComparer.Instance);
     private readonly Dictionary<PropertyMember, Unmappable?> dropped = new(ReferenceEqualityComparer.Instance);
     private readonly HashSet<PropertyMember> dropping = new(ReferenceEqualityComparer.Instance);
+    private readonly HashSet<PropertyMember> payloadMembers = new(ReferenceEqualityComparer.Instance);
+    /// <summary>R27: the last part of each namespace a type has the name of, renamed (<c>Acme.Maps.Marker</c> is <c>Marker2</c>).</summary>
+    private readonly Dictionary<string, string> namespaceRenames = [];
+    private readonly Dictionary<string, string> namespaceOf = [];
     /// <summary>R27: the names of declarations a sibling module's type of the same name has taken (<c>BOptions</c>).</summary>
     private readonly Dictionary<(string Module, string Name), string> renamed = [];
     /// <summary>R25: each distinct enum member rename, the enum it was first met in, and how many others have it.</summary>
@@ -95,8 +99,11 @@ internal sealed class TypeMap
     /// <paramref name="selected"/> stand for themselves (a class trimmed to what can be mapped); its classes are the
     /// live classes to emit. <paramref name="ns"/> is the root namespace (R27).
     /// </summary>
-    public TypeMap(IrDocument ir, Profile profile, IEnumerable<Selected> selected, ICollection<Diagnostic> diagnostics, string ns)
+    /// <param name="payloads">The event payloads (R24), whose required members are dropped like optional ones (<see cref="DroppedProblem"/>).</param>
+    public TypeMap(IrDocument ir, Profile profile, IEnumerable<Selected> selected, ICollection<Diagnostic> diagnostics, string ns,
+        IEnumerable<InterfaceDeclaration>? payloads = null)
     {
+        payloadMembers.UnionWith((payloads ?? []).SelectMany(i => i.Members.OfType<PropertyMember>()));
         foreach (var module in ir.Modules)
         {
             modules[module.Specifier] = module;
@@ -127,6 +134,22 @@ internal sealed class TypeMap
         valueClasses = [.. profile.ValueClasses];
         this.diagnostics = diagnostics;
         (package, root) = (ir.Package.Name, ns);
+        // R27: a namespace that an emitted type has the name of (a Marker class next to a marker/ folder) takes the next
+        // free name, Marker2, so that both compile; a type and a namespace that differ only in case don't clash.
+        var typeNames = selected.Where(s => MakesType(s.Declaration) && (s.Declaration is not AliasDeclaration { Type: not ObjectType } a || Kept(a.Type).Count > 1))
+            .Select(s => $"{NaturalNamespace(s.Module)}.{Naming.Type(s.Declaration.Name)}").ToHashSet();
+        var natural = selected.Select(s => NaturalNamespace(s.Module)).SelectMany(Parents).ToHashSet();
+        foreach (var clash in natural.Where(typeNames.Contains).OrderBy(n => n.Length))
+        {
+            var (parent, segment) = (clash[..clash.LastIndexOf('.')], clash[(clash.LastIndexOf('.') + 1)..]);
+            var name = segment + "2";
+            for (var n = 3; typeNames.Contains($"{parent}.{name}") || natural.Contains($"{parent}.{name}"); n++)
+            {
+                name = segment + n;
+            }
+            namespaceRenames[clash] = name;
+            diagnostics.Add(new(Diagnostic.Renamed, clash, $"the namespace is {Renamed(clash)}: a type has its name (R27)"));
+        }
         var emitted = selected.Select(s => (s.Module, s.Declaration.Name)).ToHashSet();
         // R27: sibling modules' types of one name. The first in IR order keeps it; a later one is prefixed with its
         // module's class name (ops/b.js's Options is BOptions), so both compile, and so do their users. Names that
@@ -229,10 +252,39 @@ internal sealed class TypeMap
     /// <summary>R27: the namespace of a declaration's types: the root namespace plus its module's folders.</summary>
     public string Namespace(Declaration declaration) => inline.TryGetValue(declaration, out var name) ? name.Namespace : Namespace(moduleOf[declaration]);
 
-    /// <summary>R27: the namespace of a module's types: the root namespace, another package's name, and its folders.</summary>
-    public string Namespace(string module) => modules.GetValueOrDefault(module)?.Package is { } other
+    /// <summary>
+    /// R27: the namespace of a module's types: the root namespace, another package's name, and its folders, with a
+    /// suffix on a folder that a type has the name of.
+    /// </summary>
+    public string Namespace(string module)
+    {
+        if (!namespaceOf.TryGetValue(module, out var ns))
+        {
+            namespaceOf[module] = ns = Renamed(NaturalNamespace(module));
+        }
+        return ns;
+    }
+
+    private string NaturalNamespace(string module) => modules.GetValueOrDefault(module)?.Package is { } other
         ? Naming.Namespace(root, other, module, otherPackage: true)
         : Naming.Namespace(root, package, module);
+
+    /// <summary>A namespace with each of its parts that clashes with a type renamed (<see cref="namespaceRenames"/>).</summary>
+    private string Renamed(string ns)
+    {
+        if (namespaceRenames.Count == 0 || ns.Length <= root.Length)
+        {
+            return ns;
+        }
+        var parts = ns[(root.Length + 1)..].Split('.');
+        var (natural, result) = (root, root);
+        foreach (var part in parts)
+        {
+            natural = $"{natural}.{part}";
+            result = $"{result}.{namespaceRenames.GetValueOrDefault(natural) ?? part}";
+        }
+        return result;
+    }
 
     /// <summary>The package a module is in.</summary>
     public string PackageOf(string module) => modules.GetValueOrDefault(module)?.Package ?? package;
@@ -469,7 +521,8 @@ internal sealed class TypeMap
         {
             diagnostics.Add(new(Diagnostic.NotSupported, name.Name, $"case `{dropped.Name}` dropped: a class outside the selection (R2)"));
         }
-        var literals = flat.OfType<LiteralType>().Select(l => l.Value).ToList();
+        // R6: flattened literal unions may share values ("a" | "b" and "b" | "c"), which are one member.
+        var literals = flat.OfType<LiteralType>().Select(l => l.Value).DistinctBy(v => v.GetRawText()).ToList();
         DataType? result =
             flat.Count < 2 ? null
             : flat.All(t => t is LiteralType { Value.ValueKind: JsonValueKind.String } || IsOpenString(t)) ? new EnumType(name,
@@ -1104,25 +1157,28 @@ internal sealed class TypeMap
             : null;
 
     /// <summary>
-    /// A data record's required members (R15); an optional one that can't be mapped is dropped instead (selection), and
-    /// one that is a DOM element is written only, and so is the record (R13).
+    /// A data record's required members (R15); an optional one that can't be mapped is dropped instead (selection), and so
+    /// is any member of an event payload (R24); one that is a DOM element is written only, and so is the record (R13).
     /// </summary>
     private Unmappable? RecordProblem(int indexSignatures, IEnumerable<PropertyMember> members) =>
         indexSignatures > 0 ? new("an index signature")
-        : members.Where(p => !p.Optional).Select(MemberProblem).FirstOrDefault(p => p is not null);
+        : members.Where(p => !Droppable(p)).Select(MemberProblem).FirstOrDefault(p => p is not null);
+
+    /// <summary>A member a data record leaves out when it can't be mapped: an optional one (R15), or an event payload's (R24).</summary>
+    private bool Droppable(PropertyMember p) => p.Optional || payloadMembers.Contains(p);
 
     /// <summary>Why a data record's member can't be mapped: a constant can (R20), and so can a DOM element, which is written (R13).</summary>
     private Unmappable? MemberProblem(PropertyMember p) =>
         p.Static || p.Type is LiteralType || ElementOf(p.Type) ? null : Problem(p.Type, Position.Data);
 
     /// <summary>
-    /// R15: why a data record drops an optional member, or null. Selection drops it (with what it can't reach, too), and
+    /// R15: why a data record drops an optional member (or an event payload's, R24), or null. Selection drops it (with what it can't reach, too), and
     /// the checks here leave it out, so a record is scoped (R17) or told apart (R19) as it's emitted. A member met again
     /// while it's being checked (a record that holds itself) isn't dropped for that.
     /// </summary>
     public Unmappable? DroppedProblem(PropertyMember p)
     {
-        if (!p.Optional || p.Static)
+        if (!Droppable(p) || p.Static)
         {
             return null;
         }
