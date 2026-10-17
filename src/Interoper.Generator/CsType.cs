@@ -241,7 +241,9 @@ internal sealed class CsType
             return Qualified(named!(Generic(new TypeName(Namespace, baseName).FullName, args.Select(a => a.Name))));
         }
         string? Qualify(string? method) => method?.StartsWith(Name + ".", StringComparison.Ordinal) == true ? $"global::{Namespace}.{method}" : method;
-        return new(Name, Json, IsValueType, Qualify(writeMethod), Qualify(readMethod), write, read, IsUnion, Scoped, Fast, Names) { Namespace = Namespace, baseName = baseName, named = named };
+        // A scoped record's reader is a call, not a method group: Cursor.Read(ref r, scope).
+        Func<string, int, string>? QualifyRead(Func<string, int, string>? f) => f is null ? null : (r, d) => Qualify(f(r, d))!;
+        return new(Name, Json, IsValueType, Qualify(writeMethod), Qualify(readMethod), write, QualifyRead(read), IsUnion, Scoped, Fast, Names) { Namespace = Namespace, baseName = baseName, named = named };
     }
 
     /// <summary>An expression that writes <paramref name="value"/> with <paramref name="writer"/>.</summary>

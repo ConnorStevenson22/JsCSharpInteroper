@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using Interoper.Generator.Ir;
 
 namespace Interoper.Generator;
@@ -58,7 +59,9 @@ internal sealed class LiveEmitter
         Dictionary<ClassDeclaration, IReadOnlySet<string>> declared, ClassDeclaration c)
     {
         var e = new LiveEmitter(types, profile, options, diagnostics, types.Namespace(c));
-        for (var b = types.LiveBase(c); b is not null; b = types.LiveBase(b))
+        // A generic base's members have its type arguments in place of its type parameters (Collection<Marker>'s OnChange).
+        var arguments = new Dictionary<string, string>();
+        for (var (k, b) = (c, types.LiveBase(c)); b is not null; (k, b) = (b, types.LiveBase(b)))
         {
             if (!declared.TryGetValue(b, out var members))
             {
@@ -67,7 +70,9 @@ internal sealed class LiveEmitter
                 emitted.ClassBody(b);
                 declared[b] = members = emitted.declared;
             }
-            e.inherited.UnionWith(members);
+            var args = ((RefType)k.Extends!).Args.Select(a => Substitute(types.Map(a, types.Name(k)).FullName, arguments)).ToList();
+            arguments = b.TypeParameters.Select((t, i) => (t.Name, Arg: i < args.Count ? args[i] : t.Name)).ToDictionary(x => x.Name, x => x.Arg);
+            e.inherited.UnionWith(members.Select(m => Substitute(m, arguments)));
         }
         e.ClassBody(c);
         declared[c] = e.declared;
@@ -463,6 +468,10 @@ internal sealed class LiveEmitter
         var hides = parameters is null ? inherited.Contains(name) || inherited.Contains(name + "(") : inherited.Contains(keys[0]) || inherited.Contains(name);
         return hides ? "new " : "";
     }
+
+    /// <summary>A member's key (<see cref="Declare"/>) with type arguments in place of the type parameters it names.</summary>
+    private static string Substitute(string key, Dictionary<string, string> arguments) =>
+        arguments.Count == 0 ? key : Regex.Replace(key, @"(?<![\w.:])\w+", m => arguments.GetValueOrDefault(m.Value) ?? m.Value);
 
     private static string Join(string? first, string rest) =>
         first is null ? rest : rest.Length == 0 ? first : $"{first}, {rest}";
