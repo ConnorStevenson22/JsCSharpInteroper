@@ -303,10 +303,22 @@ function classEntry(classId) {
 }
 
 // The most-derived class id: an element's by its tag, since a runtime class-name property such as `className` means
-// something else on an element (its CSS classes, R28); otherwise from that property; 0 if unknown.
+// something else on an element (its CSS classes, R28); otherwise from that property, read on the object and then up its
+// prototype chain, so a class the typings don't have is its nearest registered ancestor (R19 step 1); 0 if unknown. A
+// read that throws (a getter on a prototype) counts as no name.
 function classIdOf(object) {
   if (globalThis.Element && object instanceof globalThis.Element) return classIdsByTag.get(object.localName) ?? 0;
-  return classIdsByName.get(object[meta.classNameProperty]) ?? 0;
+  for (let p = object; p !== null; p = Object.getPrototypeOf(p)) {
+    let name;
+    try {
+      name = p[meta.classNameProperty];
+    } catch {
+      continue;
+    }
+    const id = classIdsByName.get(name);
+    if (id !== undefined) return id;
+  }
+  return 0;
 }
 
 // R13: the element Blazor rendered for an ElementReference, by the capture attribute it gives every @ref element.

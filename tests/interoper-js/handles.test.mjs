@@ -40,6 +40,16 @@ test("handles report the most-derived class id (design §3.2)", () => {
   release(shapes, shape);
 });
 
+test("an object of a class the metadata doesn't know is its nearest registered ancestor (R19 step 1)", async () => {
+  const fast = value(await sendAsync({ op: "call", module: faulty, name: "fastMarker" }));
+  assert.equal(fast.$t, ids.Marker);
+  const guarded = value(await sendAsync({ op: "call", module: faulty, name: "guardedMarker" })); // its prototype's read throws
+  assert.equal(guarded.$t, ids.Marker);
+  const source = value(await sendAsync({ op: "call", module: faulty, name: "source" })); // no registered ancestor
+  assert.equal(source.$t, 0);
+  release(fast, guarded, source);
+});
+
 test("call returns handles, or value-like instances by value with byValue (R16)", () => {
   const view = create(ids.MapView, { zoom: 0 });
   const point = call(view, "screenToMap", 3, 4);

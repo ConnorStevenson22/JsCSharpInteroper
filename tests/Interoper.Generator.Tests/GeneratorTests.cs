@@ -944,6 +944,40 @@ public sealed class GeneratorTests
         Assert.Contains("""{ name: "level-change", fields: ["level"] },""", meta);
     }
 
+    [Theory] // R2, R13: a union that is only written may have a DOM element case, kept by its id; one that is read is skipped
+    [InlineData(Api.Sync)]
+    [InlineData(Api.Async)]
+    public void AWrittenUnionMayHaveADomElementCase(Api api)
+    {
+        const string Element = """{ "kind": "ref", "name": "HTMLDivElement" }""";
+        var host = $$"""{ "kind": "union", "types": [{{Element}}, {{String}}, { "kind": "primitive", "name": "null" }] }""";
+        var result = Generate(api, ("View.js", $$"""
+            { "kind": "alias", "name": "Host", "type": {{host}} },
+            { "kind": "interface", "name": "ViewOptions", "members": [{ "kind": "property", "name": "container", "optional": true, "type": {{host}} }] },
+            { "kind": "class", "name": "View", "members": [
+              { "kind": "property", "name": "container", "type": {{host}} },
+              { "kind": "property", "name": "host", "type": { "kind": "ref", "name": "Host", "module": "@acme/maps/View.js" } },
+              { "kind": "method", "name": "mount", "signatures": [{ "params": [{ "name": "options", "type": { "kind": "ref", "name": "ViewOptions", "module": "@acme/maps/View.js" } }], "returns": { "kind": "primitive", "name": "void" } }] },
+              { "kind": "method", "name": "frame", "signatures": [{ "returns": {{host}} }] },
+              { "kind": "method", "name": "lastHost", "signatures": [{ "returns": { "kind": "ref", "name": "Host", "module": "@acme/maps/View.js" } }] }] }
+            """));
+
+        Assert.Equal([
+            "IOP2007 View.frame: skipped: uses a union with a DOM element JS returns (R13)",
+            "IOP2007 View.lastHost: skipped: uses the union `Host` with a DOM element JS returns (R13)",
+        ], result.Diagnostics.Select(d => d.ToString()));
+        var view = File(result, "View.cs");
+        Assert.Contains(api == Api.Sync ? "public void SetContainer(ViewContainer value)" : "public global::System.Threading.Tasks.Task SetContainerAsync(ViewContainer value)", view);
+        Assert.Contains(api == Api.Sync ? "public void SetHost(Host value)" : "public global::System.Threading.Tasks.Task SetHostAsync(Host value)", view);
+        Assert.DoesNotContain("GetContainer", view); // setter-only, as a DOM element property is
+        var container = File(result, "ViewContainer.cs");
+        Assert.Contains("public ViewContainer(global::Microsoft.AspNetCore.Components.ElementReference value) : this(value.Id, 2) { }", container); // not boxed
+        Assert.Contains("case 2: global::Interoper.JsElement.Write(writer, new global::Microsoft.AspNetCore.Components.ElementReference((string)value._ref!)); break;", container);
+        Assert.Contains("value = _tag == 2 ? new global::Microsoft.AspNetCore.Components.ElementReference((string)_ref!) : default;", container);
+        Assert.Contains("throw new global::System.Text.Json.JsonException(\"ViewContainer is only written (R2)\")", container);
+        Assert.DoesNotContain(" Read(", File(result, "ViewOptions.cs")); // a record with one is only written too
+    }
+
     [Theory] // R28, design §3.2: an abstract element class named like its tag; an attribute the manifest types as a primitive
     [InlineData(Api.Sync)]
     [InlineData(Api.Async)]

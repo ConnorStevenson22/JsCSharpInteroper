@@ -174,6 +174,31 @@ public sealed class PartialSelectionCompileTests
         Compile(result);
     }
 
+    /// <summary>
+    /// R2, R13: a union that is only written may have a DOM element case: a setter's, a parameter's record's and a
+    /// union alias's, which compile with the element kept by its id.
+    /// </summary>
+    [Theory]
+    [InlineData(Api.Sync)]
+    [InlineData(Api.Async)]
+    public void AWrittenUnionWithADomElementCaseCompiles(Api api)
+    {
+        const string Host = """{ "kind": "union", "types": [{ "kind": "ref", "name": "HTMLElement" }, { "kind": "primitive", "name": "string" }, { "kind": "primitive", "name": "null" }] }""";
+        var ir = IrDocument.Parse($$"""
+            { "version": 1, "package": { "name": "@acme/maps", "version": "1" }, "modules": [
+              { "specifier": "@acme/maps/View.js", "declarations": [
+                { "kind": "alias", "name": "Host", "type": {{Host}} },
+                { "kind": "interface", "name": "ViewOptions", "members": [{ "kind": "property", "name": "container", "optional": true, "type": {{Host}} }] },
+                { "kind": "class", "name": "View", "members": [
+                  { "kind": "property", "name": "container", "type": {{Host}} },
+                  { "kind": "method", "name": "add", "signatures": [{ "params": [{ "name": "item", "type": { "kind": "ref", "name": "Host", "module": "@acme/maps/View.js" } },
+                    { "name": "options", "optional": true, "type": { "kind": "ref", "name": "ViewOptions", "module": "@acme/maps/View.js" } }], "returns": { "kind": "primitive", "name": "void" } }] }] }] }] }
+            """);
+        var result = Generator.Generator.Generate(ir, new Generator.Profile { Package = "@acme/maps" }, new(api, "Acme.Maps"));
+        Assert.Empty(result.Diagnostics);
+        Compile(result);
+    }
+
     private static void Compile(GeneratorResult result)
     {
         var trees = result.Files.Where(f => f.Path.EndsWith(".cs", StringComparison.Ordinal))
