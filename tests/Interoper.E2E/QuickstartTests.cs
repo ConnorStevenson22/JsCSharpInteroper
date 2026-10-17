@@ -32,9 +32,7 @@ public sealed class QuickstartTests(BrowserHost host)
             }
             var version = PackedVersion(feed);
             CheckPackages(feed, version);
-            // NuGet keeps the first copy of a version it restores, so the app restores into a cache of its own, and
-            // the .NET CLI keeps its tool resolver's cache in a home of its own: an earlier run's packages or tool of
-            // the same version can't shadow these.
+            // A private package cache and CLI home, so an earlier run's copies of the same version can't shadow these.
             var cache = NuGetPackages(app);
 
             var steps = Commands(doc, "steps");

@@ -13,9 +13,8 @@ public sealed partial class SizeBudgetTests
 {
     internal const string ReleaseBuilds = "Release builds";
 
-    // The summed size, in bytes, of Interoper.Runtime, Interoper.Blazor and GoldenSlice as published (webcil .wasm,
-    // trimmed, uncompressed): 398,155 when it was set (0.1.0-preview.1, .NET 11 RC 1), plus about 10%. Raising it is a
-    // one-line change, reviewed like any other.
+    // The summed published size, in bytes, of the assemblies below (webcil .wasm, trimmed, uncompressed), with about
+    // 10% headroom.
     private const long Budget = 438_000;
 
     private static readonly string[] Assemblies = ["Interoper.Runtime", "Interoper.Blazor", "GoldenSlice"];

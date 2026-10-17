@@ -1,14 +1,14 @@
 # Quickstart
 
-A Blazor Web App that binds a JavaScript library and drives it from C#: one page on **Interactive Server** with `--api async` bindings, one on **WebAssembly** with `--api sync` bindings. Both set and read a map's zoom.
+A Blazor Web App that binds a JavaScript library and sets and reads a map's zoom from C#. One page runs on Interactive Server with `--api async` bindings. The other runs on WebAssembly with `--api sync` bindings.
 
-The finished app is [`samples/Quickstart`](../samples/Quickstart): a server project (`Quickstart`) and its WebAssembly client (`Quickstart.Client`), like `dotnet new blazor --interactivity Auto` makes. Its library is the repo's made-up fixture, `@acme/demo-maps`. [`QuickstartTests`](../tests/Interoper.E2E/QuickstartTests.cs) runs the commands below as they are written here, in a copy of the sample, so keep the two in step.
+The finished app is [`samples/Quickstart`](../samples/Quickstart): a server project and its WebAssembly client, as `dotnet new blazor --interactivity Auto` makes them. Its library is the repo's made-up fixture, `@acme/demo-maps`. [`QuickstartTests`](../tests/Interoper.E2E/QuickstartTests.cs) runs the commands below exactly as written, so keep the two in step.
 
-You need the .NET 11 SDK and Node.js (22 or newer) on `PATH`.
+You need the .NET 11 SDK and Node.js 22 or newer.
 
 ## 1. The packages
 
-The packages aren't published; pack them from a clone of this repo. The sample's `nuget.config` reads the packages from its `packages/` folder, and its `package.json` installs the fixture from there too. From the repo's root:
+The packages aren't published, so pack them from a clone of this repo. The sample reads them, and the fixture, from its `packages/` folder. From the repo's root:
 
 <!-- QuickstartTests: pack -->
 ```bash
@@ -18,13 +18,10 @@ dotnet pack src/Interoper.Tool -o samples/Quickstart/packages
 npm pack ./fixtures/demo-maps --pack-destination samples/Quickstart/packages
 ```
 
-| Package | What it brings |
-|---|---|
-| `Interoper.Runtime` | The runtime, `interoper.js` (a static web asset, `_content/Interoper.Runtime/interoper.js`) and the chatty-await analyzer (IOP3001) |
-| `Interoper.Blazor` | `AddInteroper()`, the generated components' base class and the custom-event plumbing; it brings `Interoper.Runtime` |
-| `Interoper.Tool` | The `dotnet interoper` CLI: the generator, and the extractor as source, run with your Node and TypeScript |
+What each package holds is in [design §5](design.md#5-consumer-workflow-and-packages). All three share one version. NuGet caches packages by version, so if you change Interoper and pack the same version again, delete these first:
 
-Every package has the same version. NuGet caches a package by its version, so after you change Interoper and pack the same version again, delete `~/.nuget/packages/interoper.*/<version>` (on Windows, `%USERPROFILE%\.nuget\packages\interoper.*\<version>`) first. `dotnet tool restore` also remembers where it found each tool version, in `~/.dotnet/toolResolverCache`, so delete `~/.dotnet/toolResolverCache/1/interoper.tool` too; restoring into another packages folder (`NUGET_PACKAGES`) isn't enough on its own, since that cache still names the old one. The test doesn't need either: it restores into a packages folder of its own (`NUGET_PACKAGES`) and gives the .NET CLI a home of its own (`DOTNET_CLI_HOME`), both inside its copy.
+- `~/.nuget/packages/interoper.*/<version>` (on Windows, `%USERPROFILE%\.nuget\packages\interoper.*\<version>`)
+- `~/.dotnet/toolResolverCache/1/interoper.tool`
 
 ## 2. Generate, build, run
 
@@ -40,29 +37,29 @@ dotnet build Quickstart
 dotnet run --project Quickstart
 ```
 
-1. `npm install` installs the library and the TypeScript the extractor runs on (`typescript@6.0.3`, from `package.json`).
-2. `dotnet tool restore` installs `dotnet interoper` from the tool manifest (`.config/dotnet-tools.json`).
-3. One `generate` per mode, each into the project that compiles it: the server project gets the async bindings, which work on every host; the WebAssembly client gets the sync ones, plain properties that only work where .NET runs in the browser. Each run writes a report (`interoper-report.txt`) with the typings' constructs it fell back on or skipped, and the profile is the library's: which classes are value-like, how its events work, and so on ([design §4](design.md#4-generator-architecture)). Both runs write the same metadata module, `demo-maps.meta.js`; the server serves one copy for both.
-4. `dotnet build Quickstart` builds both projects; the sample treats warnings as errors, so the generated code builds clean.
-5. `dotnet run --project Quickstart` serves the app at http://localhost:5080. Open `/zoom-server` and `/zoom-wasm`, and press **Zoom in**.
+1. `npm install` installs the library and the TypeScript the extractor uses.
+2. `dotnet tool restore` installs `dotnet interoper` from `.config/dotnet-tools.json`.
+3. Each `generate` writes into the project that compiles it. The server gets async bindings, which work on every host. The client gets sync bindings, plain properties that only work where .NET runs in the browser. Each run writes `interoper-report.txt`, listing what it skipped or fell back on. The profile holds the library's settings, such as which classes are value-like and how its events work ([design §4](design.md#4-generator-architecture)). Both runs write the same `demo-maps.meta.js`, and the server serves one copy.
+4. `dotnet build Quickstart` builds both projects with warnings as errors.
+5. `dotnet run --project Quickstart` serves the app at http://localhost:5080. Open `/zoom-server` and `/zoom-wasm` and press Zoom in.
 
-Run `generate` again after `npm install` brings a new version of the library: it reuses its IR while the versions are the same ([design §5](design.md#5-consumer-workflow-and-packages)).
+Run `generate` again when `npm install` brings a new version of the library.
 
 ## 3. What's in the app
 
-**Server, `Program.cs`.** Registers the realm for Server components over the async bindings, serves `node_modules` at `/node_modules/` and the metadata module at `/maps/demo-maps.meta.js` (`Quickstart.Client.Metadata.Path`). An app that ships would copy the library into `wwwroot`, or map it to a CDN or a bundle ([design §3.5](design.md#35-module-loading)).
+The server's `Program.cs` registers the async bindings. It serves `node_modules` at `/node_modules/` and the metadata module at `/maps/demo-maps.meta.js`. A real app would copy the library into `wwwroot` or use a CDN or bundle ([design §3.5](design.md#35-module-loading)).
 
 ```csharp
 builder.Services.AddInteroper(Metadata.Path, Quickstart.Maps.DemoMaps.Classes);
 ```
 
-**Client, `Program.cs`.** The same, over the sync bindings:
+The client's `Program.cs` does the same with the sync bindings:
 
 ```csharp
 builder.Services.AddInteroper(Metadata.Path, Quickstart.Client.Maps.DemoMaps.Classes);
 ```
 
-**`App.razor`.** Generated code imports the library by its bare specifiers (`@acme/demo-maps/MapView.js`), and the import map says where they are. The generated registry has the entries, `ImportMap(root)`:
+Generated code imports the library by bare specifiers such as `@acme/demo-maps/MapView.js`. `App.razor` adds an import map with the entries from the generated `ImportMap(root)`:
 
 ```razor
 <ImportMap ImportMapDefinition="importMap" />
@@ -73,7 +70,7 @@ builder.Services.AddInteroper(Metadata.Path, Quickstart.Client.Maps.DemoMaps.Cla
 }
 ```
 
-**`/zoom-server`** (`Quickstart/Components/Pages/ZoomServer.razor`). Every call is a round trip to the browser, so every member is a `Task`:
+On `/zoom-server` every call is a round trip to the browser, so every member returns a `Task`:
 
 ```csharp
 await Realm.StartAsync();
@@ -83,7 +80,7 @@ await view.SetZoomAsync(zoom + 1);
 zoom = await view.GetZoomAsync();
 ```
 
-**`/zoom-wasm`** (`Quickstart.Client/Pages/ZoomWasm.razor`). Members are plain properties, so the markup reads `view.Zoom` from JS as it renders:
+On `/zoom-wasm` members are plain properties:
 
 ```csharp
 await Realm.StartAsync();
@@ -92,11 +89,11 @@ view = MapView.Create(scope, new MapViewSnapshot { Zoom = 3 });
 view.Zoom += 1;
 ```
 
-Disposing the scope releases the view's handle in the browser ([design §3.2](design.md#32-handles-identity-and-lifetime)).
+Disposing the scope releases the view in the browser ([design §3.2](design.md#32-handles-identity-and-lifetime)).
 
 ## Your own app
 
-The same steps, with your library and a tool manifest of your own. The packages aren't published, so a `nuget.config` lists `./packages`, the folder you packed them into (step 1), beside nuget.org, as the sample's does:
+Use the same steps with your library and your own tool manifest. Add a `nuget.config` that lists `./packages`, the folder from step 1, next to nuget.org:
 
 ```bash
 npm install @acme/maps
@@ -109,4 +106,4 @@ dotnet add package Interoper.Blazor --prerelease
 dotnet interoper generate @acme/maps --api async --namespace Acme.Maps --out Generated/AcmeMaps
 ```
 
-Write a profile for your library when the report asks for one ([design §4](design.md#4-generator-architecture)), and serve its folder and the metadata module as the sample does.
+Write a profile for your library when the report asks for one, and serve the library and the metadata module as the sample does.

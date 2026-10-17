@@ -128,9 +128,8 @@ internal sealed class TypeMap
         this.diagnostics = diagnostics;
         (package, root) = (ir.Package.Name, ns);
         var emitted = selected.Select(s => (s.Module, s.Declaration.Name)).ToHashSet();
-        // R27: sibling modules' types of one name. The first in IR order keeps it; a later one is prefixed with its
-        // module's class name (ops/b.js's Options is BOptions), so both compile, and so do their users. Names that
-        // differ only in case count as one, since their files would be one where the file system ignores case.
+        // R27: sibling modules' types of one name. The first in IR order keeps it; a later one gets its module's class
+        // name as a prefix (ops/b.js's Options is BOptions). Names that differ only in case count as one.
         var owners = new Dictionary<TypeName, string>(TypeName.IgnoreCase);
         foreach (var (module, d) in ir.Modules.SelectMany(m => m.Declarations.Select(d => (m.Specifier, d))))
         {
@@ -851,9 +850,8 @@ internal sealed class TypeMap
 
     // --- What can't be mapped (mapping §8) ---
     //
-    // These checks decide, without mapping anything, what Map, Union, Cases and the union reader (ValueTypeEmitter) would
-    // refuse, so selection can skip it with what uses it. Every branch must mirror theirs; where it can't be exact, it
-    // refuses more, never less. SelectionTests pairs each refused shape with an accepted one.
+    // These checks predict what Map, Union, Cases and the union reader would refuse, so selection can skip it first.
+    // They must mirror those methods; where they can't be exact, they refuse more, never less.
 
     /// <summary>
     /// Why a type can't be mapped where it is (<paramref name="position"/>), or null. Anywhere an entity is a live object;

@@ -20,20 +20,14 @@ public sealed record Selected(string Module, Declaration Declaration);
 public sealed record SelectedElement(string Module, Element Element, ClassDeclaration Class);
 
 /// <summary>
-/// What to emit for an IR and a profile. The profile's <c>include</c> lists module specifier globs (absent: every
-/// module); every exported declaration of a matching module is emitted, and so are the bases of emitted classes and the
-/// data types (interfaces, aliases, enums) they use, whole. What can't be mapped is found here, so that a skipped type
-/// takes the members that use it along with it (mapping §8): a member that uses a class outside the selection, or a
-/// type the type map can't map (<see cref="TypeMap.Problem(IrType, Position)"/>), is skipped with IOP2007, or IOP2003
-/// for an ambiguous union; an optional trailing parameter or a rest parameter is dropped instead (R22), and so are a
-/// setter (§5), a data record's or inline record's optional member (R15, R11), a method of an interface that an event
-/// delivers (R24) and an interface's iterator method. A union drops its cases outside the selection instead, and with one
-/// left it's that case (R2). The profile's collection classes are generic live
-/// classes, and generic interfaces generic records; their type parameters are entities (mapping §2). A use of
-/// <c>any</c>, <c>unknown</c> or <c>object</c> is reported as IOP2001. Each custom element of an emitted class gets a
-/// component (R28); an element's event map, whose events the component binds from the manifest, isn't emitted. A
-/// declaration that can't be imported (an internal module's that nothing re-exports, design §3.5) has no <c>Create</c>,
-/// function or component (IOP2007). The generator instantiates generic union aliases first (<see cref="Instantiation"/>).
+/// What to emit for an IR and a profile. The profile's <c>include</c> lists module globs (absent: every module). Every
+/// export of a matching module is emitted, plus the bases of emitted classes and the data types they use.
+/// A member that uses a type that can't be mapped is skipped with IOP2007 (IOP2003 for an ambiguous union), so a
+/// skipped type takes its users with it (mapping §8). Optional trailing and rest parameters (R22), setters (§5), optional
+/// record members (R15, R11), methods of event payload interfaces (R24) and iterator methods are dropped instead.
+/// A union drops cases outside the selection (R2). Each use of <c>any</c>, <c>unknown</c> or <c>object</c> is reported
+/// as IOP2001. Each custom element of an emitted class gets a component (R28). A declaration that can't be imported
+/// (design §3.5) has no <c>Create</c>, function or component (IOP2007).
 /// </summary>
 public sealed class Selection
 {

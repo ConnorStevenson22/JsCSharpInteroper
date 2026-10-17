@@ -41,11 +41,8 @@ internal static class Shell
         }
     }
 
-    // Through the shell, as a reader would type it. The child doesn't inherit the test run's MSBuild settings, which
-    // would point a nested build at this repo's. With an isolated home, NuGet restores into its own packages folder
-    // there (NuGetPackages), and the .NET CLI keeps its own state there too (DOTNET_CLI_HOME): the local tool resolver's
-    // cache in ~/.dotnet would otherwise point `dotnet tool restore` at an earlier run's copy of a tool. Workloads are
-    // then the dotnet root's only, not user-local ones: the WebAssembly build needs none of those.
+    // Runs through the shell, as a reader would type it, without the test run's MSBuild settings. With an isolated
+    // home, NuGet packages and the .NET CLI's state (DOTNET_CLI_HOME) live there, so an earlier run's copies can't be used.
     internal static Process Start(string command, string directory, string? isolatedHome)
     {
         var start = OperatingSystem.IsWindows()
