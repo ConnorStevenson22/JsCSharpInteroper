@@ -1481,8 +1481,8 @@ public sealed class GeneratorTests
         var result = Generate(new Profile { Package = "@acme/maps", Events = new(Subscribe: "on") }, Api.Sync, ("a.js", $$"""
             { "kind": "interface", "name": "Input", "members": [{ "kind": "property", "name": "button", "type": {{Number}} }] },
             { "kind": "interface", "name": "InputEvent", "typeParameters": [{ "name": "E", "constraint": {{Input}}, "default": {{Input}} }], "members": [
-              { "kind": "property", "name": "timestamp", "type": {{Number}} },
-              { "kind": "property", "name": "native", "type": { "kind": "typeParameter", "name": "E" } },
+              { "kind": "property", "name": "time", "type": {{Number}} },
+              { "kind": "property", "name": "source", "type": { "kind": "typeParameter", "name": "E" } },
               { "kind": "property", "name": "wait", "type": {{Wait}} },
               { "kind": "method", "name": "stopPropagation", "signatures": [{ "params": [], "returns": {{Void}} }] }] },
             { "kind": "interface", "name": "PressEvent", "extends": [{ "kind": "ref", "name": "InputEvent", "module": "@acme/maps/a.js", "args": [{{Input}}] }], "members": [
@@ -1497,15 +1497,29 @@ public sealed class GeneratorTests
         var scene = File(result, "Scene.cs");
         Assert.Contains("public partial class Scene : global::Interoper.JsObject", scene);
         Assert.Contains("public Overlay GetOverlay(global::Interoper.JsScope scope) =>", scene);
-        Assert.Contains("""scope.Subscribe(Handle, "on", "press", PressEvent.Read, handler, options, ["type", "x", "timestamp", "native"]);""", scene);
+        Assert.Contains("""scope.Subscribe(Handle, "on", "press", PressEvent.Read, handler, options, ["type", "x", "time", "source"]);""", scene);
         Assert.Contains("public sealed partial class MapView : Scene", File(result, "MapView.cs"));
-        Assert.Contains("public required Input Native { get; init; }", File(result, "InputEvent.cs"));
+        Assert.Contains("public required Input Source { get; init; }", File(result, "InputEvent.cs"));
         Assert.DoesNotContain("Wait", File(result, "InputEvent.cs"));
         Assert.Equal(
         [
             "IOP2007 InputEvent.wait: skipped: uses type parameter `T`",
             "IOP2007 InputEvent.stopPropagation: skipped: a method of an event payload (R24)",
         ], result.Diagnostics.Select(d => d.ToString()));
+    }
+
+    [Fact] // §2: a constrained type parameter that a method declares again isn't erased, so its type is skipped
+    public void AConstrainedTypeParameterAMethodRedeclaresIsntErased()
+    {
+        const string Overlay = """{ "kind": "ref", "name": "Overlay", "module": "@acme/maps/a.js" }""";
+        const string V = """{ "kind": "typeParameter", "name": "V" }""";
+        var result = Generate($$"""
+            { "kind": "class", "name": "Overlay" },
+            { "kind": "class", "name": "Scene", "typeParameters": [{ "name": "V", "constraint": {{Overlay}} }], "members": [
+              { "kind": "method", "name": "pick", "signatures": [{ "typeParameters": [{ "name": "V" }], "params": [{ "name": "v", "type": {{V}} }], "returns": {{V}} }] }] }
+            """);
+        Assert.DoesNotContain(result.Files, f => f.Path == "Scene.cs");
+        Assert.Equal("IOP2007 Scene: skipped: uses generic `Scene`", Assert.Single(result.Diagnostics).ToString());
     }
 
     [Fact] // R6, R9: literal unions flattened into one may share values, which are one member
@@ -1550,6 +1564,23 @@ public sealed class GeneratorTests
         var route = File(result, "Route.cs");
         Assert.Contains("public new global::System.Threading.Tasks.Task<global::System.IAsyncDisposable> OnChangeAsync(", route);
         Assert.Contains("public new global::System.Collections.Generic.IAsyncEnumerable<Change<Marker>> OnChangeStreamAsync(", route);
+    }
+
+    [Fact] // R26, §2: so is one over a generic base two levels up, whose type argument the middle class's erased constraint gives
+    public void AnEventOverATwoLevelGenericBaseIsNew()
+    {
+        const string Marker = """{ "kind": "ref", "name": "Marker", "module": "@acme/maps/a.js" }""";
+        const string U = """{ "kind": "typeParameter", "name": "U" }""";
+        static string Change(string item) => $$"""{ "kind": "ref", "name": "Change", "module": "@acme/maps/a.js", "args": [{{item}}] }""";
+        var result = Generate(new Profile { Package = "@acme/maps", Events = new(Subscribe: "on"), Collections = ["List"] }, Api.Sync, ("a.js", $$"""
+            { "kind": "class", "name": "Marker" },
+            { "kind": "interface", "name": "Change", "typeParameters": [{ "name": "T" }], "members": [{ "kind": "property", "name": "added", "type": { "kind": "array", "element": { "kind": "typeParameter", "name": "T" } } }] },
+            { "kind": "class", "name": "List", "typeParameters": [{ "name": "T" }], "events": [{ "name": "change", "type": {{Change("""{ "kind": "typeParameter", "name": "T" }""")}} }] },
+            { "kind": "class", "name": "Mid", "typeParameters": [{ "name": "U", "constraint": {{Marker}} }], "extends": { "kind": "ref", "name": "List", "module": "@acme/maps/a.js", "args": [{{U}}] } },
+            { "kind": "class", "name": "Route", "extends": { "kind": "ref", "name": "Mid", "module": "@acme/maps/a.js" }, "events": [{ "name": "change", "type": {{Change(Marker)}} }] }
+            """));
+        Assert.Contains("public partial class Mid : List<Marker>", File(result, "Mid.cs"));
+        Assert.Contains("public new global::System.IDisposable OnChange(", File(result, "Route.cs"));
     }
 
     private const string Void = """{ "kind": "primitive", "name": "void" }""";

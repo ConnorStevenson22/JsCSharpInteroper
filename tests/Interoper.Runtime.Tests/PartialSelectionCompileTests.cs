@@ -148,7 +148,7 @@ public sealed class PartialSelectionCompileTests
               { "specifier": "@acme/maps/Marker.js", "declarations": [
                 { "kind": "interface", "name": "Input", "members": [{ "kind": "property", "name": "button", "type": {{Number}} }] },
                 { "kind": "interface", "name": "InputEvent", "typeParameters": [{ "name": "E", "constraint": {{Input}} }], "members": [
-                  { "kind": "property", "name": "native", "type": { "kind": "typeParameter", "name": "E" } },
+                  { "kind": "property", "name": "source", "type": { "kind": "typeParameter", "name": "E" } },
                   { "kind": "property", "name": "wait", "type": { "kind": "function", "typeParameters": [{ "name": "T" }], "params": [{ "name": "op", "type": { "kind": "function", "returns": {{Promise}} } }], "returns": {{Promise}} } },
                   { "kind": "method", "name": "stopPropagation", "signatures": [{ "params": [], "returns": {{Void}} }] }] },
                 { "kind": "interface", "name": "PressEvent", "extends": [{{Ref("InputEvent", "Marker.js", Input)}}], "members": [{ "kind": "property", "name": "x", "type": {{Number}} }] },
