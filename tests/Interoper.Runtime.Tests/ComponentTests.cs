@@ -22,8 +22,8 @@ public sealed partial class ComponentTests
         Assert.StartsWith("The ElementReference has no element yet", e.Message, StringComparison.Ordinal);
     }
 
-    [Fact] // R13: a DOM-typed property is setter-only; the element is the one rendered for the reference
-    public async Task SetContainerSendsTheRenderedElement()
+    [Fact] // R2, R13: a property of a union with a DOM element is setter-only; the element is the one rendered for the reference (@ref), and a string is sent as it is
+    public async Task SetContainerSendsTheRenderedElementOrAnId()
     {
         var container = new FakeContainer();
         var transport = InMemoryDemoMaps.Create().DefineElement("c1", container);
@@ -34,6 +34,8 @@ public sealed partial class ComponentTests
         var element = Handle(transport, JsOp.Wrap(w => JsElement.Write(w, new("c1")))); // one JS object has one handle
         await view.SetContainerAsync(new ElementReference("c1"));
         Assert.Equal(element, Handle(transport, JsOp.Get(view.Handle, "container")));
+        await view.SetContainerAsync("map-host");
+        Assert.Equal("map-host", Value(transport, JsOp.Get(view.Handle, "container")).GetString());
         await view.SetContainerAsync(null);
         Assert.Null(Handle(transport, JsOp.Get(view.Handle, "container")));
 
@@ -42,6 +44,8 @@ public sealed partial class ComponentTests
         var syncView = Sync.MapView.Create(sync, new());
         syncView.SetContainer(new ElementReference("c1"));
         Assert.Equal(element, Handle(transport, JsOp.Get(syncView.Handle, "container")));
+        syncView.SetContainer("map-host");
+        Assert.Equal("map-host", Value(transport, JsOp.Get(syncView.Handle, "container")).GetString());
         sync.Dispose();
     }
 
@@ -156,11 +160,10 @@ public sealed partial class ComponentTests
     }
 
     // The handle of an op's result, or null for JS null.
-    private static int? Handle(InMemoryTransport transport, string op)
-    {
-        var value = JsonDocument.Parse(transport.Invoke(op)).RootElement.GetProperty("v");
-        return value.ValueKind == JsonValueKind.Null ? null : value.GetProperty("$h").GetInt32();
-    }
+    private static int? Handle(InMemoryTransport transport, string op) =>
+        Value(transport, op) is { ValueKind: not JsonValueKind.Null } value ? value.GetProperty("$h").GetInt32() : null;
+
+    private static JsonElement Value(InMemoryTransport transport, string op) => JsonDocument.Parse(transport.Invoke(op)).RootElement.GetProperty("v");
 
     private sealed class FakeContainer : InMemoryObject
     {

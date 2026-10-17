@@ -91,7 +91,8 @@ public sealed class Selection
             classes.Remove(closed);
             types = Checker();
         }
-        // R24: an interface an emitted class's event names as its payload, and its bases, are data records without their methods.
+        // R24: an interface an emitted class's event names as its payload, and its bases, are data records without their
+        // methods and without the members they can't map, required ones too: a payload is only read.
         var payloadTypes = new Stack<IrType>(classes.SelectMany(c => c.Events).Select(e => e.Type));
         while (payloadTypes.TryPop(out var type))
         {
@@ -102,6 +103,10 @@ public sealed class Selection
                     payloadTypes.Push(b);
                 }
             }
+        }
+        if (payloads.Count > 0)
+        {
+            types = Checker();
         }
         foreach (var (_, declaration) in all.Where(x => roots.Contains(x.Declaration)))
         {
@@ -119,6 +124,9 @@ public sealed class Selection
 
     /// <summary>The custom elements to make components of (R28), in IR order.</summary>
     public IReadOnlyList<SelectedElement> Elements => elements;
+
+    /// <summary>The interfaces an emitted class's events deliver, and their bases (R24): they drop every member they can't map.</summary>
+    public IReadOnlySet<InterfaceDeclaration> Payloads => payloads;
 
     /// <summary>What was skipped or dropped (IOP2007, IOP2003), each once.</summary>
     public IReadOnlyList<Diagnostic> Diagnostics => diagnostics;
@@ -155,7 +163,7 @@ public sealed class Selection
     /// any root namespace does.
     /// </summary>
     private TypeMap Checker() =>
-        new(ir, profile, all.Where(x => x.Declaration is ClassDeclaration c && classes.Contains(c)).Select(x => new Selected(x.Module, x.Declaration)), [], ns: "");
+        new(ir, profile, all.Where(x => x.Declaration is ClassDeclaration c && classes.Contains(c)).Select(x => new Selected(x.Module, x.Declaration)), [], ns: "", payloads);
 
     private ClassDeclaration? Base(ClassDeclaration c) => c.Extends is RefType { Module: not null } r ? Find(r) as ClassDeclaration : null;
 
@@ -642,7 +650,7 @@ public sealed class Selection
 
     /// <summary>
     /// R15: a data record's own optional members that can't be mapped, each with why: the record is emitted without them
-    /// (IOP2007), as a required one skips it. Its bases drop their own.
+    /// (IOP2007), as a required one skips it. An event payload's drop their required ones too (R24). Its bases drop their own.
     /// </summary>
     private List<(PropertyMember Member, Unmappable Problem)> Dropped(Declaration declaration)
     {
@@ -655,7 +663,8 @@ public sealed class Selection
         var outer = typeParameters;
         typeParameters = declaration is InterfaceDeclaration generic ? generic.TypeParameters : [];
         var dropped = new List<(PropertyMember, Unmappable)>();
-        foreach (var p in members.OfType<PropertyMember>().Where(p => p.Optional && !p.Static))
+        var payload = declaration is InterfaceDeclaration && payloads.Contains((InterfaceDeclaration)declaration);
+        foreach (var p in members.OfType<PropertyMember>().Where(p => (p.Optional || payload) && !p.Static))
         {
             if ((Problem(p.Type) ?? types.DroppedProblem(p)) is { } problem)
             {
@@ -666,7 +675,7 @@ public sealed class Selection
         return dropped;
     }
 
-    /// <summary>A data record without the optional members it drops (<see cref="Dropped"/>); any other declaration as it is.</summary>
+    /// <summary>A data record without the members it drops (<see cref="Dropped"/>); any other declaration as it is.</summary>
     private T Trim<T>(T declaration) where T : Declaration
     {
         var dropped = Dropped(declaration).Select(d => d.Member).ToHashSet(ReferenceEqualityComparer.Instance);

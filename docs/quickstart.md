@@ -106,4 +106,15 @@ dotnet add package Interoper.Blazor --prerelease
 dotnet interoper generate @acme/maps --api async --namespace Acme.Maps --out Generated/AcmeMaps
 ```
 
-Write a profile for your library when the report asks for one, and serve the library and the metadata module as the sample does.
+Write a profile to mark value-like classes, events, collections or a selection ([design §4](design.md#4-generator-architecture)), and serve the library and the metadata module as the sample does.
+
+## In a Razor class library
+
+To ship bindings for apps to reference, put them in a Razor class library (RCL), say `Acme.Maps.Blazor`:
+
+- Run `generate` with an `--out` folder in the RCL's project, outside `wwwroot`, so the RCL compiles the bindings and doesn't serve them.
+- After each `generate`, copy `{package}.meta.js` into the RCL's `wwwroot`. Its static web asset path (`/_content/Acme.Maps.Blazor/maps.meta.js`) is the specifier to give `AddInteroper`.
+- Expose an extension method, `services.AddAcmeMaps()`, that calls `AddInteroper` with that specifier and the registry's `Classes`. The app calls it in the server project and in the WebAssembly client.
+- An RCL can't add to the app's import map, so the app's `App.razor` still renders `<ImportMap>`. The RCL can offer a helper that returns the registry's `ImportMap(root)` entries.
+- `ImportMap(root)` covers only the bound packages. If the library's JS imports other packages by bare specifier, add entries for them, or serve a bundle or CDN build ([design §3.5](design.md#35-module-loading)).
+- An app has one realm, and each `generate` run numbers its classes from 1, so bind every library the app uses in one run (`generate @acme/maps @acme/widgets`).

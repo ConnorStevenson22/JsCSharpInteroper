@@ -70,8 +70,7 @@ public sealed class SelectionTests
         Assert.Equal(
         [
             "IOP2007 FlyToOptions.signal: skipped: uses `AbortSignal`", // R15: an optional member is dropped, a required one skips its record
-            "IOP2007 ClickEvent: skipped: uses class `Point` outside the selection (in `ClickEvent`)",
-            "IOP2007 MapViewEvents: skipped: uses class `Point` outside the selection (in `ClickEvent`) (in `MapViewEvents`)",
+            "IOP2007 ClickEvent.mapPoint: skipped: uses class `Point` outside the selection", // R24: a payload drops a required member too
             "IOP2007 MapViewOptions.center: skipped: uses class `Point` outside the selection",
             "IOP2007 MapView.center: skipped: uses class `Point` outside the selection",
             "IOP2007 MapView.selected: skipped: uses class `Marker` outside the selection",
@@ -79,7 +78,6 @@ public sealed class SelectionTests
             "IOP2007 MapView.layers: skipped: uses class `Collection` outside the selection",
             "IOP2007 MapView.screenToMap: skipped: uses class `Point` outside the selection", // once for its two overloads
             "IOP2007 MapView.markerAt: skipped: uses class `Marker` outside the selection",
-            "IOP2007 MapView.on:click: skipped: uses class `Point` outside the selection (in `ClickEvent`)",
             "IOP2007 Emitter.emit: skipped: uses type parameter `K`",
         ], selection.Diagnostics.Select(d => d.ToString()));
     }
@@ -155,8 +153,8 @@ public sealed class SelectionTests
           { "name": "e", "type": { "kind": "primitive", "name": "number" } }], "returns": { "kind": "primitive", "name": "void" } } }
         """,
         "IOP2007", "a callback with more than 4 parameters (R21)")]
-    [InlineData( // §2: a generic record's type parameters are entities
-        """{ "kind": "interface", "name": "T", "typeParameters": [{ "name": "U", "constraint": { "kind": "primitive", "name": "string" } }], "members": [{ "kind": "property", "name": "u", "type": { "kind": "typeParameter", "name": "U" } }] }""",
+    [InlineData( // §2: a generic record's type parameters are entities; one constrained by its own type parameters isn't its constraint
+        """{ "kind": "interface", "name": "T", "typeParameters": [{ "name": "U", "constraint": { "kind": "array", "element": { "kind": "typeParameter", "name": "U" } } }], "members": [{ "kind": "property", "name": "u", "type": { "kind": "typeParameter", "name": "U" } }] }""",
         "IOP2007", "the type parameter `U` with a constraint (§2)")]
     [InlineData( // §2: so are its type arguments
         """

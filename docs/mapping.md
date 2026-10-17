@@ -12,7 +12,8 @@ What the generator emits for each TypeScript construct. Rules are numbered (R1�
 - `default` is `undefined`. The `null` literal converts through a generated `implicit operator X(Undefined? value)` and means JS `null`.
 - Each case has `TryGetValue(out T)`. The struct also has `HasValue`, `IsUndefined` and `IsNull`.
 - The struct implements the runtime's `IJsUnion<TSelf>`, with static `WriteValue`/`ReadValue`. The runtime's `JsJson` helpers handle undefined and null for every union and `Opt<T>`.
-- The nullable bottom case makes the compiler demand a `null` arm. A switch that misses `Undefined` warns CS8509, and one that misses `null` warns CS8655 ([design §8](design.md#8-evidence)).
+- The nullable bottom case makes the compiler demand a `null` arm. A switch that misses `Undefined` warns CS8509, and one that misses `null` warns CS8655 ([design §8](design.md#8-constraints)).
+- A `number`, `boolean` or enum case next to other types (`number | string`, `number | number[]`) isn't mapped yet (IOP2007), since the struct keeps its cases in one reference field. Literal unions are enums, not structs (R9, R10).
 
 ```csharp
 // type ColorInput = string | number[] | RGBA;   used as  color?: ColorInput | null
@@ -41,9 +42,10 @@ Cases outside the selection:
 - A case that is a class outside the selection (or an alias of one) is dropped, with IOP2007. Nested union aliases are flattened first (R6).
 - One case left: the union is that case. `type Owner = Layer | TileLayer | Folder` with only `Layer` selected is `Layer`. Widening the selection later can turn it back into the union struct, so code written against it may need changes.
 - No cases left: what uses it is skipped (IOP2007).
-- Two or more left: it is read as usual (R19). Its `ReadValue` throws `JsonException` if JS sends a handle, which is how an instance of an unselected class arrives. If the narrowed type is a record, a handle is read as an empty record without error.
+- Two or more left: it is read as usual (R19). Its `ReadValue` throws `JsonException` if JS sends a handle, which is how an instance of an unselected class arrives.
+- Read through a union narrowed to one case: an entity case reads an unselected subclass as its nearest selected ancestor (R19), and throws if there is none. A primitive or enum case throws `JsonException`. A record case reads the handle's object as a record whose members are all missing, without error.
 
-A union that is only written (a parameter, or a setter's wider type) may have cases that need a scope to read: an entity, or a scoped record (R17). It may also have cases R19 can't tell apart. Its `ReadValue` throws. The same union in a read position (a getter, a result, a record member) skips that member (IOP2007). A union struct isn't generic, so no case can name a type parameter.
+A union that is only written (a parameter, or a setter's wider type) may have cases that need a scope to read: an entity, or a scoped record (R17). It may also have a DOM element case (R13), or cases R19 can't tell apart. Its `ReadValue` throws. The same union in a read position (a getter, a result, a record member) skips that member (IOP2007). A union struct isn't generic, so no case can name a type parameter.
 
 **R3. Non-union types in optional or nullable positions use `Opt<T>`.** It has the same three states and conversions (`Opt<double> z = 5; z = null; z = default;`). Required, non-null positions stay plain (`double`).
 
@@ -51,20 +53,16 @@ A union that is only written (a parameter, or a setter's wider type) may have ca
 
 **R5. Collapse after mapping, then de-duplicate.** `number[]` and `[number, number, number]` both map to `double[]`, so they become one case.
 
-**R6. Flatten nested unions.** C# gives no one-step conversion from an inner union's cases, so `type A = B | C; type B = X | Y` gives the cases `X, Y, C`. Cases keep declaration order.
+**R6. Flatten nested unions.** C# gives no one-step conversion from an inner union's cases, so `type A = B | C; type B = X | Y` gives the cases `X, Y, C`. Cases keep declaration order. Literal unions flattened together that share a value get one enum member for it.
 
 ## 2. Type mapping
 
 | TypeScript | C# | Notes |
 |---|---|---|
-| `number` | `double` | **R7** |
+| `number` | `double` | **R7.** Always `double` |
 | `string`, `boolean` | `string`, `bool` | |
-| `bigint` | `BigInteger` | |
-| `Date` | `DateTimeOffset` | |
 | `T[]`, `readonly T[]`, `Array<T>` | `T[]` | |
 | homogeneous numeric tuple | `double[]` | R5 |
-| heterogeneous tuple | `ValueTuple`, e.g. `(string, double)` | |
-| `Record<string, T>`, `{ [k: string]: T }` | `Dictionary<string, T>` | Known members next to an index signature stay typed |
 | `Promise<T>` | `Task<T>` | **R8.** In both modes |
 | `void` (return) | `void` (sync), `Task` (async) | |
 | string-literal union | `enum` plus a name map (`BasemapNames`: `ToJs`, `FromJs`, `Write`, `Read`) | **R9.** Names by R25 |
@@ -77,17 +75,15 @@ A union that is only written (a parameter, or a setter's wider type) may have ca
 | value-like class (per profile) | live class plus `XSnapshot` record | §3 |
 | interface with only data members | data record with the same name | §3 |
 | inline object type, including an intersection of data bags | data record named after its owner | **R11** |
-| intersection used as a mixin | C# interfaces on the live class | |
 | class extending a mixin's base (`PinBase: typeof Marker & typeof Draggable`) | derives from the named class (`Pin : Marker`), with the mixin's members as its own | [ir.md](ir.md#declarations) |
-| generic `T` | generic over entities (`where T : JsObject`) | See Generics below |
+| generic `T` | generic over entities (`where T : JsObject`), or its constraint | See Generics below |
 | `this` (return type) | the declaring type | |
 | `keyof`, indexed access, mapped, conditional, `typeof` | the type the checker resolves | **R12.** Unresolvable: skipped with its users (IOP2007) |
 | `any`, `unknown`, `object` | `JsAny` (`Opt<JsAny>` for `any` and `unknown`) | IOP2001. See below |
 | DOM element types (`HTMLElement`) | `ElementReference` | **R13.** Written only |
-| other DOM types (`MouseEvent`) | none yet | Skipped with its users (IOP2007) |
-| `AbortSignal` (parameter) | `CancellationToken` | **R14.** Bridged by the runtime |
-| `ArrayBuffer`, typed arrays | `byte[]`, `T[]` | |
 | function type | delegate (`Action<…>`, `Func<…>`) | R21 |
+| `AbortSignal` | not mapped yet | **R14.** IOP2007 |
+| `bigint`, `Date`, heterogeneous tuples, `Record<string, T>` and index signatures, intersections used as mixins, `ArrayBuffer`, typed arrays, other DOM and platform types (`MouseEvent`, `Blob`) | not mapped yet | Skipped with their users (IOP2007) |
 
 `JsAny` holds the value's JSON, untyped. Plain objects and arrays are copies. Other objects are handles owned by the scope that read them, so a `JsAny` is read with a scope (R17) and isn't in snapshots. It is not a union case. Read it as a type with `meta.Read(JsJson.ReadNumber)` or `meta.Read(scope.Read<Marker>)`. Make one with `JsAny.Parse(json)` or `JsAny.From(value, write)`.
 
@@ -101,12 +97,14 @@ A union that is only written (a parameter, or a setter's wider type) may have ca
 
 **R13. DOM elements** (`Element`, `HTMLElement`, `SVGElement` and their subtypes) are `ElementReference`, written by `JsElement.Write` (`Interoper.Blazor`) as `{"$e":"<id>"}`. JS finds the element by Blazor's capture attribute, so the reference must come from an `@ref` after the first render. Otherwise the call throws `JsException`. The capture attribute is a Blazor internal, so a Blazor upgrade must rerun the component tests ([design §6](design.md#6-testing)).
 
-- JS can't hand an element back, so a DOM-typed property is setter-only (`SetContainer(Opt<ElementReference>)`), with no watch and no snapshot member. A read-only one is skipped. DOM results, event payloads and unions with a DOM case are skipped (IOP2007).
-- A data record with a DOM member has no `Read`. If something reads it, that user is skipped (IOP2007).
+- JS can't hand an element back, so a DOM-typed property is setter-only (`host: HTMLElement | null` is `SetHost(Opt<ElementReference>)`), with no watch and no snapshot member. A read-only one is skipped. DOM results and event payloads are skipped (IOP2007).
+- A union with a DOM element case is only written (R2). A property of that type is setter-only (`container: HTMLElement | string | null` is `SetContainer(MapViewContainer)`). Where it would be read, the member is skipped (IOP2007).
+- A data record with a DOM member, or a member of a union with one, has no `Read`. If something reads it, that user is skipped (IOP2007). A member that is an array of such a union or record isn't mapped, even when the record is only written.
 - Custom elements are live classes like any other, found by their tag (R28). This includes abstract element classes.
 
-Generics: an unconstrained type parameter is an entity (`where T : JsObject`). A constrained one isn't mapped yet (IOP2007). A default (`Tagged<T = any>`) is ignored, since C# always has the type argument.
+Generics: an unconstrained type parameter is an entity (`where T : JsObject`). A default (`Tagged<T = any>`) is ignored, since C# always has the type argument.
 
+- A class's or interface's constrained type parameter is replaced by its constraint, and the type loses its type arguments: `class Scene<V extends Overlay>` is a plain `Scene` whose `V` members are `Overlay`. Values read are still their most-derived type (R19). A constraint that names the type's own parameters (`T extends Box<T>`), a profile collection's constrained parameter, and a method's or function's type parameters aren't mapped yet (IOP2007).
 - A class listed in the profile's `collections` is a live generic class (`Collection<T> : Emitter where T : JsObject`). It has no `Create` and no registry entry. Its owner makes it, and readers pass a factory to `JsScope.Read(ref reader, create)`. So it is read only through members typed with it (`MapView.markers`), never as a `JsObject` or a base. A use whose type argument isn't an entity (`Collection<number>`) is skipped (IOP2007).
 - A generic data interface is a generic record (`CollectionChangeEvent<T>`) with the same constraint.
 - A use of a generic union alias is expanded in place: `OneOrMany<Marker>`, where `type OneOrMany<T> = T | T[]`, is the anonymous union `Marker | Marker[]` named after its owner. Missing type arguments take their defaults. The alias itself has no type. A recursive alias stops after a few levels and is skipped. Other generic aliases aren't mapped yet (IOP2007).
@@ -118,7 +116,7 @@ The central decision for every class and interface.
 **R15. Default classification.**
 
 - A `class` is an entity: a live object with identity, behind a handle.
-- An interface whose members are all data is a data record. So is an interface an event names as its payload, minus its methods (R24).
+- An interface whose members are all data is a data record. So is an interface an event names as its payload, minus its methods (R24). Any other interface with methods isn't mapped yet (IOP2007).
 - A data record's optional member that can't be mapped is left out (IOP2007), so the record still maps. A required one skips the record and its users.
 - An interface's iterator methods (`values()` returning `Iterator` and kin) are left out (IOP2007). Symbol-keyed members never reach the IR.
 
@@ -157,7 +155,7 @@ When JS returns a value for a union position, the runtime must pick the case.
 
 **R19. Classification order:**
 
-1. **Handle with a class id** (`{"$h": 12, "$t": 7}`). The generated registry maps the id to the most-derived live type, and the case is the one that type converts to.
+1. **Handle with a class id** (`{"$h": 12, "$t": 7}`). The generated registry maps the id to the most-derived live type, and the case is the one that type converts to. An object whose class isn't in the metadata (undeclared, or outside the selection) gets the id of its nearest known ancestor: the runtime reads the class-name property up the prototype chain. With none, the id is 0, and reading it as an entity throws.
 2. **Object with a discriminant.** The extractor finds a property every member declares with a distinct literal type (`type: "point"`). The generator switches on its value.
 3. **Object without a discriminant.** If the sets of *required* member names separate the cases, the generator emits a structural check. Otherwise the union is ambiguous and is skipped (IOP2003). Optional members don't count, because typings make most of them optional.
 4. **Primitives** by JSON token kind. Two cases with the same kind (`string` and a string enum) are told apart by value where possible, otherwise IOP2003.
@@ -187,10 +185,11 @@ When JS returns a value for a union position, the runtime must pick the case.
 
 - Live results, events and watches belong to the scope the caller passes ([design §3.2](design.md#32-handles-identity-and-lifetime)). Disposing a returned subscription releases it sooner. Value-like classes are values (R16), so `PointSnapshot Center { get; set; }` needs no scope.
 - Discriminants aren't members of live classes, since the live type already says it.
+- Static members and exported variables (`export const`) aren't mapped yet (IOP2007).
 
 **R21. Callbacks** become delegates in the runtime's callback registry, owned by the scope.
 
-- A callback returning `void` is an `Action<…>`, any other a `Func<…, R>`. At most 4 parameters; more is IOP2007. The member registers it with `scope.Callback(handler, read1, …, write)` and sends `{"$f":id}`. Arguments are read with the scope. A named function alias has no C# type; its uses are delegates.
+- A callback returning `void` is an `Action<…>`, any other a `Func<…, R>`. A callback with more than 4 parameters, a rest parameter or type parameters, or one that returns a Promise, isn't mapped yet (IOP2007). The member registers it with `scope.Callback(handler, read1, …, write)` and sends `{"$f":id}`. Arguments are read with the scope. A named function alias has no C# type; its uses are delegates.
 - Each call registers a new callback that lives until its scope is disposed. Replacing or clearing a callback property doesn't release the old one, so use a short-lived scope for repeated calls. A callback called after its scope is disposed is dropped and returns undefined to JS.
 - In async mode on Server and Hybrid, JS doesn't wait for .NET, so a void callback can run after the member's `Task` completes.
 - A callback property is setter-only, `SetX(scope, value)`, with `null` to clear and no watch. A read-only callback property, or a callback anywhere other than a parameter or property, is skipped (IOP2007).
@@ -207,7 +206,7 @@ When JS returns a value for a union position, the runtime must pick the case.
 
 - `EventOptions` (`Interoper.Runtime`) say what JS does before the event reaches .NET, because Server and Hybrid can't call `preventDefault()` in time. `PreventDefault` and `StopPropagation` call those methods when the event has them. `Fields` names the payload members to send. Watches take no options.
 - When the payload is a data record, the default fields are the record's wire members, and `options.Fields` replaces them. Anything not sent is `default` in the record. Other payloads are sent whole.
-- An interface named directly as a payload, and its bases, become data records with their methods left out (one IOP2007 each).
+- An interface named directly as a payload, and its bases, become data records with their methods left out (one IOP2007 each). Members they can't map are left out too, required or not, since a payload is only read.
 - The profile's subscribe and watch methods return an object with `dispose()` or `remove()`. Releasing calls whichever it has.
 - An event whose payload is `void`, `undefined` or `null` has a parameterless `Action`, sends no fields and has no stream.
 - Streams (async mode) subscribe on the first `MoveNext` and unsubscribe on `break`, cancellation or disposal. Disposing the scope ends them after what's queued. There is no backpressure.
@@ -230,16 +229,17 @@ So `"--"` is `MinusMinus`. The empty string is `Empty`. Duplicates get a numeric
 **R26. Members** are PascalCased. Async mode appends `Async`.
 
 - A member that collides with a generated member (`getZoom()` next to `zoom` in async mode) or an `object` member (`toString()`) is renamed (`JsToString`) with IOP2006.
-- A member that hides a base member with the same name and parameter types is `new` (`TileLayer Clone(JsScope)` over `Layer Clone(JsScope)`, and every subclass's `Snapshot()`). Different parameter types make an overload. Between a property and a method, the name alone decides. A collision with a base is never a rename.
+- A member that hides a base member with the same name and parameter types is `new` (`TileLayer Clone(JsScope)` over `Layer Clone(JsScope)`, and every subclass's `Snapshot()`). A generic base's parameter types use the subclass's type arguments. Different parameter types make an overload. Between a property and a method, the name alone decides. A collision with a base is never a rename.
 
 **R27. Types** keep the TypeScript name in PascalCase.
 
 - Namespaces. The consumer's root namespace plus the module's folders, PascalCased: `layers/TileLayer.js` gives `Acme.Maps.Layers`. A module of another package than the IR's first adds that package's name without scope: `@acme/widgets/legend` gives `Acme.Maps.Widgets`. File paths mirror namespaces (`Layers/TileLayer.cs`). The registry `{Package}.cs` and the metadata module stay at the root.
-- References. Generated code names types in its own namespace plainly and all others with `global::`. Runtime and .NET types are always qualified and generated files have no usings, so a generated name like `Opt` or `Task` hides nothing.
+- References. Generated code names types in its own namespace plainly and all others with `global::`. Runtime and .NET types are always qualified and generated files have no usings, so a generated name like `Opt` or `Task` hides nothing. A record reader qualifies a type that one of its members is named after.
 - Sibling modules. When modules in one folder export the same name (`ops/a.js` and `ops/b.js` each export `Options`), the first in IR order keeps it and later ones get their module's name as a prefix (`BOptions`). Names that differ only in case count as the same.
 - Case. Two generated paths that differ only in case clash, since Windows and macOS ignore case. A file and a folder that differ only in case don't.
 - Anonymous types are named after their owner: `Feature.shape` gives `FeatureShape`, its setter's wider type `FeatureShapeInput`, a method result `FeatureMoveTo`, a parameter `FeatureMoveToTarget`, an event payload `FeatureClick`.
 - The registry is named after the package without scope (`Maps`), or the next free name (`Widgets2`) if a namespace has it.
+- A namespace with the full name of a declared type (`Marker` next to a `marker/` folder) takes the next free name (`Acme.Maps.Marker2`), so the type keeps its name.
 - Clashes. When two generated types would share a path, the registry keeps its name, and a module's static class takes the next free one (`Measure2`). Any other later type is skipped, and so is a type with a namespace's full name. A skipped type's users are not removed, so they won't compile.
 - Class ids. Classes with the same name in different namespaces get id constants prefixed with their namespace below the root (`LayersPointId`). A root class keeps `PointId`.
 

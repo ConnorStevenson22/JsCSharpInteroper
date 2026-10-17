@@ -123,6 +123,89 @@ public sealed class PartialSelectionCompileTests
         Compile(result);
     }
 
+    /// <summary>
+    /// Names and generics that real libraries have and the fixture doesn't compile too: an event payload with a required
+    /// member it can't map (R24); classes and payloads with constrained type parameters (§2); a namespace named like a type
+    /// (R27); flattened literal unions that share a value (R6); a record member named like the scoped record it holds
+    /// (R17); and events a subclass of a generic collection redeclares (R26).
+    /// </summary>
+    [Theory]
+    [InlineData(Api.Sync)]
+    [InlineData(Api.Async)]
+    public void TheNamesAndGenericsOfLargerLibrariesCompile(Api api)
+    {
+        const string Number = """{ "kind": "primitive", "name": "number" }""";
+        const string Void = """{ "kind": "primitive", "name": "void" }""";
+        const string T = """{ "kind": "typeParameter", "name": "T" }""";
+        const string Input = """{ "kind": "ref", "name": "Input", "module": "@acme/maps/Marker.js" }""";
+        const string Marker = """{ "kind": "ref", "name": "Marker", "module": "@acme/maps/Marker.js" }""";
+        const string Promise = """{ "kind": "ref", "name": "Promise", "args": [{ "kind": "typeParameter", "name": "T" }] }""";
+        static string Ref(string name, string module, params string[] args) =>
+            $$"""{ "kind": "ref", "name": "{{name}}", "module": "@acme/maps/{{module}}", "args": [{{string.Join(", ", args)}}] }""";
+        static string Literals(params string[] values) => $$"""{ "kind": "union", "types": [{{string.Join(", ", values.Select(v => $$"""{ "kind": "literal", "value": "{{v}}" }"""))}}] }""";
+        var ir = IrDocument.Parse($$"""
+            { "version": 1, "package": { "name": "@acme/maps", "version": "1" }, "modules": [
+              { "specifier": "@acme/maps/Marker.js", "declarations": [
+                { "kind": "interface", "name": "Input", "members": [{ "kind": "property", "name": "button", "type": {{Number}} }] },
+                { "kind": "interface", "name": "InputEvent", "typeParameters": [{ "name": "E", "constraint": {{Input}} }], "members": [
+                  { "kind": "property", "name": "source", "type": { "kind": "typeParameter", "name": "E" } },
+                  { "kind": "property", "name": "wait", "type": { "kind": "function", "typeParameters": [{ "name": "T" }], "params": [{ "name": "op", "type": { "kind": "function", "returns": {{Promise}} } }], "returns": {{Promise}} } },
+                  { "kind": "method", "name": "stopPropagation", "signatures": [{ "params": [], "returns": {{Void}} }] }] },
+                { "kind": "interface", "name": "PressEvent", "extends": [{{Ref("InputEvent", "Marker.js", Input)}}], "members": [{ "kind": "property", "name": "x", "type": {{Number}} }] },
+                { "kind": "alias", "name": "Warm", "type": {{Literals("red", "amber")}} },
+                { "kind": "alias", "name": "Cool", "type": {{Literals("amber", "blue")}} },
+                { "kind": "class", "name": "Marker", "typeParameters": [{ "name": "V", "constraint": {{Ref("Icon", "marker/Icon.js")}} }], "members": [
+                  { "kind": "property", "name": "icon", "type": { "kind": "typeParameter", "name": "V" } },
+                  { "kind": "property", "name": "tone", "type": { "kind": "union", "types": [{{Ref("Warm", "Marker.js")}}, {{Ref("Cool", "Marker.js")}}] } },
+                  { "kind": "property", "name": "caption", "type": {{Ref("Card", "marker/Icon.js")}} }],
+                  "events": [{ "name": "press", "type": {{Ref("PressEvent", "Marker.js")}} }] },
+                { "kind": "class", "name": "List", "typeParameters": [{ "name": "T" }], "events": [{ "name": "change", "type": {{Ref("Change", "Marker.js", T)}} }] },
+                { "kind": "interface", "name": "Change", "typeParameters": [{ "name": "T" }], "members": [{ "kind": "property", "name": "added", "type": { "kind": "array", "element": {{T}} } }] },
+                { "kind": "class", "name": "Route", "extends": {{Ref("List", "Marker.js", Marker)}}, "events": [{ "name": "change", "type": {{Ref("Change", "Marker.js", Marker)}} }] }] },
+              { "specifier": "@acme/maps/marker/Icon.js", "declarations": [
+                { "kind": "class", "name": "Icon" },
+                { "kind": "interface", "name": "Caption", "members": [{ "kind": "property", "name": "icon", "type": {{Ref("Icon", "marker/Icon.js")}} }] },
+                { "kind": "interface", "name": "Card", "members": [{ "kind": "property", "name": "caption", "optional": true, "type": {{Ref("Caption", "marker/Icon.js")}} }] }] }] }
+            """);
+        var profile = new Generator.Profile { Package = "@acme/maps", Events = new(Subscribe: "on"), Collections = ["List"] };
+        var result = Generator.Generator.Generate(ir, profile, new(api, "Acme.Maps"));
+        Assert.Contains(result.Files, f => f.Path == "Marker2/Icon.cs");
+        Assert.Contains(result.Files, f => f.Path == "Marker.cs");
+        Compile(result);
+    }
+
+    /// <summary>
+    /// R2, R13: a union that is only written may have a DOM element case: a setter's, a parameter's record's and a
+    /// union alias's, which compile with the element kept by its id; so may one whose case is a record holding an
+    /// element, named or inline, which has no <c>Read</c>.
+    /// </summary>
+    [Theory]
+    [InlineData(Api.Sync)]
+    [InlineData(Api.Async)]
+    public void AWrittenUnionWithADomElementCaseCompiles(Api api)
+    {
+        const string String = """{ "kind": "primitive", "name": "string" }""";
+        const string Void = """{ "kind": "primitive", "name": "void" }""";
+        const string Host = $$"""{ "kind": "union", "types": [{ "kind": "ref", "name": "HTMLElement" }, {{String}}, { "kind": "primitive", "name": "null" }] }""";
+        const string Options = """{ "kind": "ref", "name": "CanvasOptions", "module": "@acme/maps/Canvas.js" }""";
+        const string Spot = """{ "kind": "object", "members": [{ "kind": "property", "name": "pin", "type": { "kind": "ref", "name": "SVGElement" } }] }""";
+        var ir = IrDocument.Parse($$"""
+            { "version": 1, "package": { "name": "@acme/maps", "version": "1" }, "modules": [
+              { "specifier": "@acme/maps/Canvas.js", "declarations": [
+                { "kind": "alias", "name": "Surface", "type": {{Host}} },
+                { "kind": "interface", "name": "CanvasOptions", "members": [{ "kind": "property", "name": "host", "optional": true, "type": {{Host}} }] },
+                { "kind": "class", "name": "Canvas", "members": [
+                  { "kind": "property", "name": "host", "type": {{Host}} },
+                  { "kind": "method", "name": "add", "signatures": [{ "params": [{ "name": "item", "type": { "kind": "ref", "name": "Surface", "module": "@acme/maps/Canvas.js" } },
+                    { "name": "options", "optional": true, "type": {{Options}} }], "returns": {{Void}} }] },
+                  { "kind": "method", "name": "mount", "signatures": [{ "params": [{ "name": "options", "type": { "kind": "union", "types": [{{Options}}, {{String}}] } }], "returns": {{Void}} }] },
+                  { "kind": "method", "name": "pinAt", "signatures": [{ "params": [{ "name": "at", "type": { "kind": "union", "types": [{{Spot}}, {{String}}] } }], "returns": {{Void}} }] }] }] }] }
+            """);
+        var result = Generator.Generator.Generate(ir, new Generator.Profile { Package = "@acme/maps" }, new(api, "Acme.Maps"));
+        Assert.Equal("IOP2006 Acme.Maps.CanvasPinAtAt: its case 1 is CanvasPinAtAtCase1: the inline cases have no string tag (R27)", Assert.Single(result.Diagnostics).ToString());
+        Compile(result);
+    }
+
     private static void Compile(GeneratorResult result)
     {
         var trees = result.Files.Where(f => f.Path.EndsWith(".cs", StringComparison.Ordinal))

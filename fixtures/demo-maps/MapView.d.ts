@@ -59,8 +59,8 @@ export class MapView extends Emitter {
   /** Undefined: the container's own CSS cursor. */
   cursor?: Cursor;
   title?: string | null;
-  /** The element the map draws into. */
-  container: HTMLElement | null;
+  /** The element the map draws into, or its id. */
+  container: HTMLElement | string | null;
   /** The {@link Marker} the user picked last, or `null` when none is. */
   selected: Marker | null;
   readonly markers: Collection<Marker>;

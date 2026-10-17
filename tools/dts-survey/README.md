@@ -1,6 +1,6 @@
 # dts-survey
 
-Counts which TypeScript type shapes a `.d.ts` to C# generator has to handle, per library. A run over 12 real libraries (151,353 API positions) found that 68–91% of positions map directly, 2.4–12.5% need a real union, and 4–24% need judgement. Unions are small (median 2–4 members). The hard part is telling their cases apart, which is why [mapping R19](../../docs/mapping.md#4-reading-union-values-back-classification) exists.
+Counts which TypeScript type shapes a `.d.ts` to C# generator has to handle, per library. A run over a dozen widely used libraries (151,353 API positions) found that 68–91% of positions map directly, 2.4–12.5% need a real union, and 4–24% need judgement. Unions are small (median 2–4 members). The hard part is telling their cases apart, which is why [mapping R19](../../docs/mapping.md#4-reading-union-values-back-classification) exists.
 
 It loads each library's declaration files into the TypeScript checker. Every API position (property, accessor, parameter, return type, type alias, index signature) is resolved and counted in one bucket: primitive, object, enum, literal union, the kinds of union, intersection, callback, `any`, and so on. It also counts positions that need type-level evaluation, such as mapped, conditional and indexed-access types, `keyof` and utility types.
 

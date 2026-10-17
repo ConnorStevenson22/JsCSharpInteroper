@@ -3,11 +3,6 @@
 Interoper generates C# bindings for JavaScript libraries from their TypeScript typings. It also ships the runtime that drives them on Blazor Server, WebAssembly and Hybrid. It targets .NET 11 and C# 15.
 
 ```bash
-npm install @acme/maps
-npm install -D typescript@6.0.3
-dotnet new nugetconfig && dotnet nuget add source ./packages --name local
-dotnet new tool-manifest && dotnet tool install Interoper.Tool --prerelease
-dotnet add package Interoper.Blazor --prerelease
 dotnet interoper generate @acme/maps --api async --namespace Acme.Maps --out Generated/AcmeMaps
 ```
 
@@ -16,9 +11,9 @@ await view.SetZoomAsync(7);   // --api async: works on every host
 view.Zoom = 7;                // --api sync: WebAssembly only
 ```
 
-The packages (`Interoper.Runtime`, `Interoper.Blazor` and `Interoper.Tool`, version 0.1.0-preview.1) aren't published yet. Pack them from a clone into `./packages` as the [quickstart](docs/quickstart.md#1-the-packages) shows.
+The packages (`Interoper.Runtime`, `Interoper.Blazor` and `Interoper.Tool`, version 0.1.0-preview.1) aren't published yet. The [quickstart](docs/quickstart.md) shows how to pack them and set up an app.
 
-Open work is listed at the end of [design.md](docs/design.md#9-not-done-yet).
+What isn't supported yet is listed at the end of [design.md](docs/design.md#9-limitations).
 
 ## Docs
 
