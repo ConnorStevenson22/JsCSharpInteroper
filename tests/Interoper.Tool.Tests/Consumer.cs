@@ -29,13 +29,17 @@ public sealed class Consumer : IDisposable
     public string ProfilePath => Path.Combine(Package, "profile.json");
 
     /// <summary>Runs the CLI in this folder, with stderr captured.</summary>
-    public (int ExitCode, string Error) Run(string[] args, string? node = null)
+    public (int ExitCode, string Error) Run(string[] args, string? node = null, string? extractor = null)
     {
         var error = new StringWriter();
         var env = new CliEnvironment(Directory, error) { TypeScript = TypeScript };
         if (node is not null)
         {
             env = env with { Node = node };
+        }
+        if (extractor is not null)
+        {
+            env = env with { ExtractorDirectory = extractor };
         }
         return (Cli.Run(args, env), error.ToString());
     }

@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using Interoper.Generator;
 using Interoper.Generator.Ir;
 
@@ -48,8 +49,8 @@ public sealed class CliTests(SeededConsumer seeded) : IClassFixture<SeededConsum
         Assert.True(seeded.ExitCode == 0, seeded.Error);
         Assert.Contains("IR: extracting @acme/demo-maps@0.0.0 with TypeScript 6.0.3", seeded.Error, StringComparison.Ordinal);
         Assert.Equal(File.ReadAllText(Consumer.Repo("fixtures", "demo-maps", "demo-maps.ir.json")), File.ReadAllText(Path.Combine(seeded.Seed, ".interoper", "ir.json")));
-        Assert.Equal(
-            $"interoper {Cli.Version}\ntypescript 6.0.3\npackage @acme/demo-maps@0.0.0\nevents.mapProperty $events\n",
+        Assert.Matches(
+            $"^interoper {Regex.Escape(Cli.Version)}\nextractor [0-9a-f]{{64}}\ntypescript 6\\.0\\.3\npackage @acme/demo-maps@0\\.0\\.0\nevents\\.mapProperty \\$events\n$",
             File.ReadAllText(Path.Combine(seeded.Seed, ".interoper", "ir.key")));
         Assert.Equal("*\n", File.ReadAllText(Path.Combine(seeded.Seed, ".interoper", ".gitignore")));
         Assert.True(File.Exists(Path.Combine(seeded.Seed, "MapView.cs")));
@@ -322,6 +323,20 @@ public sealed class CliTests(SeededConsumer seeded) : IClassFixture<SeededConsum
         (exitCode, error) = consumer.Run(args, NoNode);
         Assert.Equal(2, exitCode);
         Assert.Contains("IR: extracting @acme/demo-widgets@0.0.0", error, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void AChangedExtractorReExtracts()
+    {
+        seeded.OutWithCache("Extractor");
+        var extractor = Path.Combine(Consumer.Directory, "extractor");
+        Consumer.CopyDirectory(new CliEnvironment(Consumer.Directory, TextWriter.Null).ExtractorDirectory, extractor);
+        Assert.Equal(0, Consumer.Run(Consumer.Generate("Extractor"), NoNode, extractor).ExitCode);
+
+        File.AppendAllText(Path.Combine(extractor, "extract.mjs"), "\n// changed\n");
+        var (exitCode, error) = Consumer.Run(Consumer.Generate("Extractor"), NoNode, extractor);
+        Assert.Equal(2, exitCode);
+        Assert.Contains("IR: extracting @acme/demo-maps@0.0.0", error, StringComparison.Ordinal);
     }
 
     [Fact]
