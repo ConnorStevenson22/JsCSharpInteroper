@@ -487,9 +487,9 @@ public sealed class Selection
         PrimitiveType p => SupportedPrimitives.Contains(p.Name) ? null : new($"`{p.Name}`"),
         LiteralType or ThisType => null,
         RefType { Module: null, Name: "Promise" } r => FirstProblem(r.Args),
-        // R2: a union drops a case that is a class outside the selection; R6: a union alias in it is flattened, so its
+        // R2: a union drops a case that is a class outside the selection or a platform type; R6: a union alias in it is flattened, so its
         // own cases are what's checked, not the alias on its own (the type map checks the whole union).
-        UnionType u when u.Types.Count(t => !IsNullish(t)) > 1 => FirstProblem(Cases(u).Where(t => !types.IsUnselected(t))),
+        UnionType u when u.Types.Count(t => !IsNullish(t)) > 1 => FirstProblem(Cases(u).Where(t => !types.IsDropped(t))),
         RefType { Module: null } r => TypeMap.IsElement(r) ? null : new($"`{r.Name}`"), // R13: a DOM element is an ElementReference
         RefType r => Find(r) is { } declaration ? DeclarationProblem(declaration) ?? FirstProblem(r.Args) : new($"`{r.Name}`"),
         // R11, R15: an inline record drops an optional member that can't be mapped (TrimInline); it isn't generic (§2).

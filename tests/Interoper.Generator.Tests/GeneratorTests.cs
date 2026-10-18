@@ -1465,6 +1465,28 @@ public sealed class GeneratorTests
         Assert.Contains("public required double X { get; init; }", File(result, "Owner.cs"));
     }
 
+    [Fact] // R2: a union drops a platform type it can't map (MouseEvent), as it does a class outside the selection
+    public void AUnionDropsAPlatformTypeCase()
+    {
+        // toMap(screen: ScreenPoint | MouseEvent): number;  hit(at: ScreenPoint | number[] | MouseEvent): void
+        var result = Generate($$"""
+            { "kind": "interface", "name": "ScreenPoint", "members": [{{X}}] },
+            { "kind": "class", "name": "View", "members": [
+              { "kind": "method", "name": "toMap", "signatures": [{ "params": [{ "name": "screen", "type": { "kind": "union", "types": [
+                { "kind": "ref", "name": "ScreenPoint", "module": "@acme/maps/a.js" }, { "kind": "ref", "name": "MouseEvent" }] } }], "returns": {{Number}} }] },
+              { "kind": "method", "name": "hit", "signatures": [{ "params": [{ "name": "at", "type": { "kind": "union", "types": [
+                { "kind": "ref", "name": "ScreenPoint", "module": "@acme/maps/a.js" }, { "kind": "array", "element": {{Number}} }, { "kind": "ref", "name": "MouseEvent" }] } }], "returns": {{Void}} }] }] }
+            """);
+
+        Assert.Equal([
+            "IOP2007 ViewHitAt: case `MouseEvent` dropped: a platform type (R2)",
+            "IOP2007 ViewToMapScreen: case `MouseEvent` dropped: a platform type (R2)",
+        ], result.Diagnostics.Select(d => d.ToString()).Order(StringComparer.Ordinal));
+        Assert.Contains("public double ToMap(ScreenPoint screen) =>", File(result, "View.cs"));
+        Assert.Contains("public void Hit(ViewHitAt at) =>", File(result, "View.cs"));
+        Assert.DoesNotContain("MouseEvent", File(result, "ViewHitAt.cs"));
+    }
+
     [Fact] // R28, R6: a property whose type has null through an alias (`Title | undefined`, `type Title = string | null`) sets JS null
     public void AComponentPropertyNullThroughAnAliasIsSetAsNull()
     {

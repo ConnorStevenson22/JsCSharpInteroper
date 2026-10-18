@@ -37,9 +37,9 @@ What the generator emits for each TypeScript construct. Rules are numbered (R1�
 
 Where a value can't be omitted (array elements, arguments), undefined is `{"$u":1}` in both directions ([design §3.4](design.md#34-protocol)).
 
-Cases outside the selection:
+Cases outside the selection, and platform types:
 
-- A case that is a class outside the selection (or an alias of one) is dropped, with IOP2007. Nested union aliases are flattened first (R6).
+- A case that is a class outside the selection (or an alias of one) is dropped, with IOP2007. So is a platform type that isn't mapped (`MouseEvent`, R14): `toMap(p: ScreenPoint | MouseEvent)` takes a `ScreenPoint`. Nested union aliases are flattened first (R6).
 - One case left: the union is that case. `type Owner = Layer | TileLayer | Folder` with only `Layer` selected is `Layer`. Widening the selection later can turn it back into the union struct, so code written against it may need changes.
 - No cases left: what uses it is skipped (IOP2007).
 - Two or more left: it is read as usual (R19). Its `ReadValue` throws `JsonException` if JS sends a handle, which is how an instance of an unselected class arrives.
@@ -83,7 +83,7 @@ A union that is only written (a parameter, or a setter's wider type) may have ca
 | DOM element types (`HTMLElement`) | `ElementReference` | **R13.** Written only |
 | function type | delegate (`Action<…>`, `Func<…>`) | R21 |
 | `AbortSignal` | not mapped yet | **R14.** IOP2007 |
-| `bigint`, `Date`, heterogeneous tuples, `Record<string, T>` and index signatures, intersections used as mixins, `ArrayBuffer`, typed arrays, other DOM and platform types (`MouseEvent`, `Blob`) | not mapped yet | Skipped with their users (IOP2007) |
+| `bigint`, `Date`, heterogeneous tuples, `Record<string, T>` and index signatures, intersections used as mixins, `ArrayBuffer`, typed arrays, other DOM and platform types (`MouseEvent`, `Blob`) | not mapped yet | Skipped with their users (IOP2007); a union drops them as cases (R2) |
 
 `JsAny` holds the value's JSON, untyped. Plain objects and arrays are copies. Other objects are handles owned by the scope that read them, so a `JsAny` is read with a scope (R17) and isn't in snapshots. It is not a union case. Read it as a type with `meta.Read(JsJson.ReadNumber)` or `meta.Read(scope.Read<Marker>)`. Make one with `JsAny.Parse(json)` or `JsAny.From(value, write)`.
 

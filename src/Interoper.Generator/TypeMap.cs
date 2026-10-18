@@ -521,7 +521,7 @@ internal sealed class TypeMap
         var flat = Kept(type);
         foreach (var dropped in all.Except(flat).OfType<RefType>())
         {
-            diagnostics.Add(new(Diagnostic.NotSupported, name.Name, $"case `{dropped.Name}` dropped: a class outside the selection (R2)"));
+            diagnostics.Add(new(Diagnostic.NotSupported, name.Name, $"case `{dropped.Name}` dropped: {(dropped.Module is null ? "a platform type" : "a class outside the selection")} (R2)"));
         }
         // R6: flattened literal unions may share values ("a" | "b" and "b" | "c"), which are one member.
         var literals = flat.OfType<LiteralType>().Select(l => l.Value).DistinctBy(v => v.GetRawText()).ToList();
@@ -683,8 +683,8 @@ internal sealed class TypeMap
     /// <summary>A union's members after R6, without null and undefined.</summary>
     private List<IrType> Values(IrType type) => [.. Flatten(type).Where(t => !IsNullish(t))];
 
-    /// <summary>R2: a union's members after R6 that it keeps: without null, undefined and the classes outside the selection.</summary>
-    private List<IrType> Kept(IrType type) => [.. Values(type).Where(t => !IsUnselected(t))];
+    /// <summary>R2: a union's members after R6 that it keeps: without null, undefined, the classes outside the selection and platform types.</summary>
+    private List<IrType> Kept(IrType type) => [.. Values(type).Where(t => !IsDropped(t))];
 
     /// <summary>R10: <c>string &amp; {}</c>, which keeps a literal union open-ended.</summary>
     private static bool IsOpenString(IrType type) =>
@@ -707,11 +707,19 @@ internal sealed class TypeMap
     private bool Unreadable(IrType type) => IsElement(type) ||
         type is RefType { Module: not null } r && Find(r) is { } d && HoldsElement(d) || type is ObjectType o && HoldsElement(Bag(o));
 
-    /// <summary>A class outside the selection, or an alias of one: a union drops it as a case (R2).</summary>
-    internal bool IsUnselected(IrType type) => type is RefType { Module: not null } r && Find(r) switch
+    /// <summary>
+    /// A case a union drops (R2): a class outside the selection, or an alias of one, or a platform type that isn't mapped
+    /// (<c>MouseEvent</c>; a DOM element is, R13).
+    /// </summary>
+    internal bool IsDropped(IrType type) => type switch
     {
-        ClassDeclaration c => !classes.Contains(c),
-        AliasDeclaration { Type: not (ObjectType or UnionType) } a => IsUnselected(a.Type),
+        RefType { Module: null } r => !IsElement(r),
+        RefType r => Find(r) switch
+        {
+            ClassDeclaration c => !classes.Contains(c),
+            AliasDeclaration { Type: not (ObjectType or UnionType) } a => IsDropped(a.Type),
+            _ => false,
+        },
         _ => false,
     };
 
