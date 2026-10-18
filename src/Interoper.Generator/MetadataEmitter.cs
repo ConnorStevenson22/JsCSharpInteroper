@@ -101,10 +101,10 @@ internal static class MetadataEmitter
         string.Join('/', specifier.Split('/').Take(specifier.StartsWith('@') ? 2 : 1));
 
     /// <summary>
-    /// Per class id: the module and export that construct it, its runtime class name (with the profile's prefix when
-    /// it's the first package's), a custom element's tag (R28), whether it's value-like (R16), and its snapshot members
-    /// (R18), a value-like one's with its constants. Then the components' custom events, each with its detail's default
-    /// projection (R24, R28).
+    /// Per class id: the module and export that construct it (an omitted export is <c>default</c>), its runtime class name
+    /// (with the profile's prefix when it's the first package's), or a custom element's tag instead (R28), since JS finds
+    /// an element by its tag, whether it's value-like (R16), and its snapshot members (R18), a value-like one's with its
+    /// constants, when it has any. Then the components' custom events, each with its detail's default projection (R24, R28).
     /// </summary>
     /// <remarks>§5: a variant's entry is its runtime class name and the class id whose entry it shares (<c>of</c>).</remarks>
     public static string Module(IrDocument ir, Profile profile, TypeMap types, IReadOnlyList<Selected> classes, IReadOnlyList<SelectedVariant> variants,
@@ -123,12 +123,27 @@ internal static class MetadataEmitter
         {
             var c = (ClassDeclaration)s.Declaration;
             var members = string.Join(", ", types.WireMembers(c).Select(m => Syntax.Literal(m.Name)));
-            var name = Named(s.Module, c.Name);
             var tag = elements.FirstOrDefault(e => e.Class.Name == c.Name && e.Module == s.Module)?.Element.Tag;
+            List<string> fields = [];
             // Design §3.5: a class that can't be imported has neither, so it isn't constructed or imported for $c.
-            var import = types.Import(c) is { } i ? $"module: {Syntax.Literal(i.Module)}, export: {Syntax.Literal(i.Export)}, " : "";
-            lines.Add($"    {id}: {{ {import}" +
-                $"name: {Syntax.Literal(name)}, {(tag is null ? "" : $"tag: {Syntax.Literal(tag)}, ")}{(types.IsValueLike(c) ? "value: true, " : "")}members: [{members}] }},");
+            if (types.Import(c) is { } i)
+            {
+                fields.Add($"module: {Syntax.Literal(i.Module)}");
+                if (i.Export != "default")
+                {
+                    fields.Add($"export: {Syntax.Literal(i.Export)}");
+                }
+            }
+            fields.Add(tag is null ? $"name: {Syntax.Literal(Named(s.Module, c.Name))}" : $"tag: {Syntax.Literal(tag)}");
+            if (types.IsValueLike(c))
+            {
+                fields.Add("value: true");
+            }
+            if (members.Length > 0)
+            {
+                fields.Add($"members: [{members}]");
+            }
+            lines.Add($"    {id}: {{ {string.Join(", ", fields)} }},");
         }
         foreach (var (v, id) in variants.Select((v, i) => (v, classes.Count + i + 1)))
         {

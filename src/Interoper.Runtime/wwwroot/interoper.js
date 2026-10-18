@@ -42,7 +42,12 @@ class BatchError extends Error {
 export async function start(metadataSpecifier, sink) {
   meta = (await import(metadataSpecifier)).default;
   const classes = Object.entries(meta.classes);
-  classIdsByName = new Map(classes.map(([id, c]) => [c.name, Number(id)]));
+  // What an entry leaves out: an import's export is `default`, and there are no members.
+  for (const [, c] of classes) {
+    if (c.module) c.export ??= "default";
+    c.members ??= [];
+  }
+  classIdsByName = new Map(classes.filter(([, c]) => c.name).map(([id, c]) => [c.name, Number(id)]));
   classIdsByTag = new Map(classes.filter(([, c]) => c.tag).map(([id, c]) => [c.tag, Number(id)]));
   classesByModule = Map.groupBy(classes.filter(([, c]) => c.module && c.export), ([, c]) => c.module);
   classIdsByConstructor = new Map();

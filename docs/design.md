@@ -26,7 +26,7 @@ Interoper turns a JavaScript library's TypeScript typings into C# bindings for B
 | Module functions | Stateless library functions over records. One call, no handles. |
 | Components | One plain C# class per custom element in the library's Custom Elements Manifest (R28). |
 | Custom events | `{Package}Events.cs`, the `[EventHandler]` attributes for the manifest's events (R28). |
-| JS metadata | One module, `{package}.meta.js`. For each class id it lists the module and export that construct it, its runtime class name, whether it is value-like, and its snapshot members. A variant (a class outside the selection that adds a mixin, [mapping §5](mapping.md#5-members)) lists only its runtime class name and `of`, the class whose entry it shares. There is no per-member generated JS. |
+| JS metadata | One module, `{package}.meta.js`. For each class id it lists the module and export that construct it (`default` when left out), its runtime class name (a custom element's tag instead, since JS finds an element by its tag), whether it is value-like, and its snapshot members (none when left out). A variant (a class outside the selection that adds a mixin, [mapping §5](mapping.md#5-members)) lists only its runtime class name and `of`, the class whose entry it shares. There is no per-member generated JS. |
 
 Class ids start at 1 (0 means unknown): value-like classes first, then entities, each in IR order. A runtime class name is the declaring module's path within its package, dotted, plus the class name unless the file is named after it: `geometry.Point`, `MapView`, `layers.TileLayer`. The profile can add a prefix (`runtimeClassPrefix`).
 

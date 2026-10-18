@@ -68,6 +68,15 @@ test("an object of a plain class with no runtime class name is found by its cons
   release(plain, internal);
 });
 
+test("an entry's export is default and its members none when left out (design §2)", async () => {
+  const layer = create(ids.TileLayer, { url: "tiles" });
+  assert.equal(layer.$t, ids.TileLayer);
+  assert.deepEqual(value(send({ op: "snapshot", h: layer.$h })), { url: "tiles" });
+  const plain = value(await sendAsync({ op: "call", module: faulty, name: "plain" }));
+  assert.deepEqual(value(send({ op: "snapshot", h: plain.$h })), {});
+  release(layer, plain);
+});
+
 test("call returns handles, or value-like instances by value with byValue (R16)", () => {
   const view = create(ids.MapView, { zoom: 0 });
   const point = call(view, "screenToMap", 3, 4);
