@@ -220,18 +220,19 @@ internal static class RecordEmitter
     }
 
     /// <summary>
-    /// Reads the members it knows and skips the rest, constants included. A <paramref name="scoped"/> record reads its
-    /// entities with the caller's scope, which owns them (R17).
+    /// Reads the members it knows and skips the rest, constants and members only written (R2, R17) included. A
+    /// <paramref name="scoped"/> record reads its entities with the caller's scope, which owns them (R17).
     /// </summary>
     private static void Read(CodeWriter w, string name, string modifier, IReadOnlyList<Field> fields, bool scoped = false)
     {
-        var read = fields.Where(f => f.Constant is null).Select(f => (Field: f, Local: Syntax.Local(f.Name, "reader", "property", "scope"))).ToList();
+        var read = fields.Where(f => f.Constant is null && !f.WriteOnly).Select(f => (Field: f, Local: Syntax.Local(f.Name, "reader", "property", "scope"))).ToList();
+        var unread = fields.Where(f => f.WriteOnly && f.Required).Select(f => $"{f.Name} = default").ToList(); // undefined, though `required`
         using (w.Block($"public static {modifier}{name} Read(ref global::System.Text.Json.Utf8JsonReader reader{(scoped ? ", global::Interoper.JsScope scope" : "")})"))
         {
             if (read.Count == 0)
             {
                 w.Line("reader.Skip();");
-                w.Line($"return new {name}();");
+                w.Line(unread.Count == 0 ? $"return new {name}();" : $"return new {name} {{ {string.Join(", ", unread)} }};");
                 return;
             }
             // One declaration per run of locals of one type: double minX = default, minY = default;
@@ -256,7 +257,7 @@ internal static class RecordEmitter
                     w.Line("default: reader.Skip(); break;");
                 }
             }
-            w.Line($"return new {name} {{ {string.Join(", ", read.Select(x => $"{x.Field.Name} = {x.Local}"))} }};");
+            w.Line($"return new {name} {{ {string.Join(", ", read.Select(x => $"{x.Field.Name} = {x.Local}").Concat(unread))} }};");
         }
     }
 

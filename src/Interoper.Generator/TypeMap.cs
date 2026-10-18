@@ -10,8 +10,9 @@ namespace Interoper.Generator;
 /// <param name="Inherited">Declared by the base snapshot record (R16).</param>
 /// <param name="Hides">Redeclares a base snapshot record's member with another type, so it's <c>new</c> (R18, R26).</param>
 /// <param name="Doc">The property's docs (R29).</param>
+/// <param name="WriteOnly">A union that is only written (R2, R17): <c>Read</c> leaves it undefined.</param>
 internal sealed record Field(string JsName, string Name, CsType? Type, bool Required, bool Opt = false, JsonElement? Constant = null, bool Inherited = false,
-    bool Hides = false, Doc? Doc = null)
+    bool Hides = false, Doc? Doc = null, bool WriteOnly = false)
 {
     public string TypeName => Opt ? $"global::Interoper.Opt<{Type!.Name}>" : Type!.Name;
 }
@@ -799,7 +800,7 @@ internal sealed class TypeMap
             }
             var (mapped, nullable) = Slot(p.Type, type.Owned(p.Name));
             var name = Naming.Member(taken, Naming.Pascal(p.Name), $"{type.Name}.{p.Name}", diagnostics);
-            result.Add(new(p.Name, name, mapped, Required: !p.Optional, Opt: (nullable || p.Optional) && !mapped.IsUnion, Doc: p.Doc));
+            result.Add(new(p.Name, name, mapped, Required: !p.Optional, Opt: (nullable || p.Optional) && !mapped.IsUnion, Doc: p.Doc, WriteOnly: IsWrittenMember(p)));
         }
         return result;
     }
@@ -893,7 +894,7 @@ internal sealed class TypeMap
         {
             return false;
         }
-        var result = RecordMembers(declaration).Any(p => p.Type is not LiteralType && UsesEntity(p.Type));
+        var result = RecordMembers(declaration).Any(p => p.Type is not LiteralType && !IsWrittenMember(p) && UsesEntity(p.Type));
         scoping.Remove(declaration);
         if (result || scoping.Count == 0) // "not scoped" inside a recursion may only mean the record further up isn't known yet
         {
@@ -1186,10 +1187,17 @@ internal sealed class TypeMap
 
     /// <summary>
     /// Why a data record's member can't be mapped: a constant can (R20), and so can a DOM element, or a union with one,
-    /// which is written (R13).
+    /// which is written (R13), and a union only written (<see cref="IsWrittenMember"/>).
     /// </summary>
     private Unmappable? MemberProblem(PropertyMember p) =>
-        p.Static || p.Type is LiteralType ? null : Problem(p.Type, ElementOf(p.Type) ? Position.Parameter : Position.Data);
+        p.Static || p.Type is LiteralType ? null : Problem(p.Type, ElementOf(p.Type) || IsWrittenMember(p) ? Position.Parameter : Position.Data);
+
+    /// <summary>
+    /// R2, R17: a data record's member typed with a union that has a case needing a scope to be read (an entity, or a
+    /// scoped record), which a union reader has none of. It's written, and <c>Read</c> leaves it undefined; the record
+    /// isn't scoped for it. An event payload's is dropped instead, since a payload is only read (R24).
+    /// </summary>
+    private bool IsWrittenMember(PropertyMember p) => !payloadMembers.Contains(p) && Kept(p.Type) is { Count: > 1 } cases && cases.Any(UsesEntity);
 
     /// <summary>
     /// R15: why a data record drops an optional member (or an event payload's, R24), or null. Selection drops it (with what it can't reach, too), and

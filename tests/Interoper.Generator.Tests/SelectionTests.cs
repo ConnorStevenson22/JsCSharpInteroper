@@ -259,7 +259,7 @@ public sealed class SelectionTests
 
     /// <summary>
     /// R2, R17: a union with a case that needs a scope to be read (an entity, or a record that holds one) can still be
-    /// written, so a parameter takes it; what reads it, such as a record holding it, is skipped.
+    /// written, so a parameter takes it, and so does a record: it writes the member, and its reader leaves it undefined.
     /// </summary>
     [Theory]
     [InlineData("""{ "kind": "ref", "name": "Layer", "module": "@acme/maps/a.js" }""", "Layer")]
@@ -273,9 +273,12 @@ public sealed class SelectionTests
             { "kind": "interface", "name": "Holder", "members": [{ "kind": "property", "name": "t", "type": { "kind": "ref", "name": "T", "module": "@acme/maps/a.js" } }] },
             { "kind": "function", "name": "f", "signatures": [{ "params": [{ "name": "x", "type": { "kind": "ref", "name": "T", "module": "@acme/maps/a.js" } }] }] }
             """), new Profile { Package = "@acme/maps" }, new(Api.Sync, "Acme.Maps"));
-        Assert.Equal($"IOP2007 Holder: skipped: uses the union `T` with the case {name}, which needs a scope to be read (R17, R19) (in `Holder`)",
-            Assert.Single(result.Diagnostics).ToString());
-        Assert.DoesNotContain("Holder.cs", result.Files.Select(f => f.Path));
+        Assert.Empty(result.Diagnostics);
+        var holder = result.Files.Single(f => f.Path == "Holder.cs").Text;
+        Assert.Contains("global::Interoper.JsJson.WriteProperty(writer, \"t\"u8, value.T);", holder);
+        Assert.Contains("public static Holder Read(ref global::System.Text.Json.Utf8JsonReader reader)", holder); // not scoped for it
+        Assert.Contains("return new Holder { T = default };", holder);
+        Assert.Contains($"public T({name} value)", result.Files.Single(f => f.Path == "T.cs").Text);
         Assert.Contains("public static void F(global::Interoper.JsRealm realm, T x) =>", result.Files.Single(f => f.Path == "A.cs").Text);
         Assert.Contains("public static T ReadValue(ref global::System.Text.Json.Utf8JsonReader reader) => throw new global::System.Text.Json.JsonException(\"T is only written (R2)\");",
             result.Files.Single(f => f.Path == "T.cs").Text);
