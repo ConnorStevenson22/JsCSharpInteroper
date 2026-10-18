@@ -213,7 +213,7 @@ export function extract(packageDirs, { eventMap } = {}) {
   /**
    * Checker-resolved members. Those a named base declares stay with that base (follow `extends`). Members of an
    * anonymous base, a mixin or a mapped type are kept, as inherited, unless the platform declares them (DOM members aren't bound).
-   * A member keyed by a symbol is left out.
+   * A member keyed by a symbol, or named like a type-only marker (`@setterTypes`), is left out.
    */
   function members(type, isStatic = false) {
     const owners = type.symbol?.declarations ?? [];
@@ -222,6 +222,7 @@ export function extract(packageDirs, { eventMap } = {}) {
       const decls = p.declarations ?? []; // none for a mapped type's synthetic keys (Record<"x" | "y", T>)
       if (p.name === eventMap || p.name === "prototype" || (decls.length && decls.every(isPlatform))) return [];
       if (String(p.escapedName).startsWith("__@")) return []; // keyed by a symbol ([Symbol.iterator]), which has no name to bind
+      if (p.name.startsWith("@")) return []; // a type-only marker ("@setterTypes"), which no object has
       const inherited = decls.length > 0 && !decls.some((d) => owners.includes(d.parent));
       return inherited && (isStatic || bases.some((b) => b.getProperty(p.name))) ? [] : [member(p, inherited, isStatic)];
     });
