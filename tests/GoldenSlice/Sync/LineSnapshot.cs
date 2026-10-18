@@ -3,7 +3,8 @@
 
 namespace GoldenSlice.Sync;
 
-public sealed partial record LineSnapshot : ShapeSnapshot
+[global::System.Text.Json.Serialization.JsonConverter(typeof(global::Interoper.JsRecordConverter<LineSnapshot>))]
+public sealed partial record LineSnapshot : ShapeSnapshot, global::Interoper.IJsRecord<LineSnapshot>
 {
     public global::Interoper.Opt<double[][]> Path { get; init; }
 

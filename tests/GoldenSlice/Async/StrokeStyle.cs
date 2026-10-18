@@ -3,7 +3,8 @@
 
 namespace GoldenSlice.Async;
 
-public sealed partial record StrokeStyle
+[global::System.Text.Json.Serialization.JsonConverter(typeof(global::Interoper.JsRecordConverter<StrokeStyle>))]
+public sealed partial record StrokeStyle : global::Interoper.IJsRecord<StrokeStyle>
 {
     public ColorInput Color { get; init; }
     public global::Interoper.Opt<double> Width { get; init; }

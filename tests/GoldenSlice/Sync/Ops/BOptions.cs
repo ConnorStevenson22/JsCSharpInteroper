@@ -4,7 +4,8 @@
 namespace GoldenSlice.Sync.Ops;
 
 /// <summary>The same names as <c>ops/a</c>, with other members (R27).</summary>
-public sealed partial record BOptions
+[global::System.Text.Json.Serialization.JsonConverter(typeof(global::Interoper.JsRecordConverter<BOptions>))]
+public sealed partial record BOptions : global::Interoper.IJsRecord<BOptions>
 {
     public global::Interoper.Opt<double> Offset { get; init; }
 

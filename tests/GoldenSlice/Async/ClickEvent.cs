@@ -3,7 +3,8 @@
 
 namespace GoldenSlice.Async;
 
-public sealed partial record ClickEvent
+[global::System.Text.Json.Serialization.JsonConverter(typeof(global::Interoper.JsRecordConverter<ClickEvent>))]
+public sealed partial record ClickEvent : global::Interoper.IJsRecord<ClickEvent>
 {
     /// <summary>Pixels from the view's center.</summary>
     public required double X { get; init; }

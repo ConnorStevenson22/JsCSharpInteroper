@@ -3,12 +3,20 @@
 
 namespace GoldenSlice.Async;
 
-public sealed partial record PinSnapshot
+[global::System.Text.Json.Serialization.JsonConverter(typeof(global::Interoper.JsRecordConverter<PinSnapshot>))]
+public sealed partial record PinSnapshot : global::Interoper.IJsRecord<PinSnapshot>
 {
     /// <summary>Where the marker is; a pair is taken as <c>[x, y]</c>.</summary>
     public global::Interoper.Opt<PointSnapshot> Position { get; init; }
     public global::Interoper.Opt<string> Label { get; init; }
     public Style Style { get; init; }
+
+    public static void Write(global::System.Text.Json.Utf8JsonWriter writer, PinSnapshot value)
+    {
+        writer.WriteStartObject();
+        WriteMembers(writer, value);
+        writer.WriteEndObject();
+    }
 
     public static void WriteMembers(global::System.Text.Json.Utf8JsonWriter writer, PinSnapshot value)
     {

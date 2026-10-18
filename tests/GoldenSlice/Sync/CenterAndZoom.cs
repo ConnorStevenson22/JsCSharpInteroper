@@ -3,7 +3,8 @@
 
 namespace GoldenSlice.Sync;
 
-public sealed partial record CenterAndZoom
+[global::System.Text.Json.Serialization.JsonConverter(typeof(global::Interoper.JsRecordConverter<CenterAndZoom>))]
+public sealed partial record CenterAndZoom : global::Interoper.IJsRecord<CenterAndZoom>
 {
     public required double[] Center { get; init; }
     public required double Zoom { get; init; }

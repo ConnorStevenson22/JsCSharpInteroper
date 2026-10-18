@@ -3,10 +3,18 @@
 
 namespace GoldenSlice.Sync.Layers;
 
-public sealed partial record LayerSnapshot
+[global::System.Text.Json.Serialization.JsonConverter(typeof(global::Interoper.JsRecordConverter<LayerSnapshot>))]
+public sealed partial record LayerSnapshot : global::Interoper.IJsRecord<LayerSnapshot>
 {
     public global::Interoper.Opt<string> Title { get; init; }
     public global::Interoper.Opt<bool> Visible { get; init; }
+
+    public static void Write(global::System.Text.Json.Utf8JsonWriter writer, LayerSnapshot value)
+    {
+        writer.WriteStartObject();
+        WriteMembers(writer, value);
+        writer.WriteEndObject();
+    }
 
     public static void WriteMembers(global::System.Text.Json.Utf8JsonWriter writer, LayerSnapshot value)
     {

@@ -3,7 +3,8 @@
 
 namespace GoldenSlice.Sync;
 
-public sealed partial record PinEvents
+[global::System.Text.Json.Serialization.JsonConverter(typeof(global::Interoper.JsRecordConverter<PinEvents>))]
+public sealed partial record PinEvents : global::Interoper.IJsRecord<PinEvents>
 {
     public required PinDragEvent Drag { get; init; }
 

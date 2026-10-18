@@ -3,7 +3,8 @@
 
 namespace GoldenSlice.Async;
 
-public sealed partial record MapViewEvents
+[global::System.Text.Json.Serialization.JsonConverter(typeof(global::Interoper.JsRecordConverter<MapViewEvents>))]
+public sealed partial record MapViewEvents : global::Interoper.IJsRecord<MapViewEvents>
 {
     /// <summary>A click on the map, after the view has handled it.</summary>
     public required ClickEvent Click { get; init; }

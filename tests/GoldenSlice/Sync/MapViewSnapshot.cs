@@ -3,7 +3,8 @@
 
 namespace GoldenSlice.Sync;
 
-public sealed partial record MapViewSnapshot
+[global::System.Text.Json.Serialization.JsonConverter(typeof(global::Interoper.JsRecordConverter<MapViewSnapshot>))]
+public sealed partial record MapViewSnapshot : global::Interoper.IJsRecord<MapViewSnapshot>
 {
     public global::Interoper.Opt<PointSnapshot> Center { get; init; }
     /// <summary>Clamped to 0–20.</summary>
@@ -15,6 +16,13 @@ public sealed partial record MapViewSnapshot
     /// <summary>Undefined: the container's own CSS cursor.</summary>
     public global::Interoper.Opt<Cursor> Cursor { get; init; }
     public global::Interoper.Opt<string> Title { get; init; }
+
+    public static void Write(global::System.Text.Json.Utf8JsonWriter writer, MapViewSnapshot value)
+    {
+        writer.WriteStartObject();
+        WriteMembers(writer, value);
+        writer.WriteEndObject();
+    }
 
     public static void WriteMembers(global::System.Text.Json.Utf8JsonWriter writer, MapViewSnapshot value)
     {

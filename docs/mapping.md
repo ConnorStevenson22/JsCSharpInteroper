@@ -141,7 +141,9 @@ A data record (not a snapshot) may hold entities, directly, in arrays or through
 
 A member a subclass redeclares appears once. Under a closed base (R16) it stays on the base record if its type is unchanged, and is a `new` property on the subclass record if not (R26). In that case the subclass's `WriteMembers` doesn't write the hidden base property.
 
-Every snapshot record has `WriteMembers` (the bag for `create`, the patch for `apply`) and `Read`. A value-like one also has `Write`, which adds `$c` and the discriminant.
+Every snapshot record has `Write` (the whole object, with its constants; a value-like one's adds `$c`), `WriteMembers` (the bag for `create`, the patch for `apply`) and `Read`.
+
+System.Text.Json: every snapshot record, and every data record that reads without a scope (not scoped, R17; no DOM member, R13; not generic), implements `IJsRecord<T>` and has `[JsonConverter(typeof(JsRecordConverter<T>))]`. So app types that hold them serialize in their wire format, with no reflection over the record. A value-like snapshot keeps its `$c`, which `Read` ignores.
 
 `Diff`: every snapshot record except a closed base has `static XSnapshot Diff(XSnapshot before, XSnapshot after)`, which returns the patch from `before` to `after`.
 

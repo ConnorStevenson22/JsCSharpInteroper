@@ -4,7 +4,8 @@
 namespace GoldenSlice.Async;
 
 /// <summary>A data record: plain JSON, no class behind it.</summary>
-public sealed partial record Bounds
+[global::System.Text.Json.Serialization.JsonConverter(typeof(global::Interoper.JsRecordConverter<Bounds>))]
+public sealed partial record Bounds : global::Interoper.IJsRecord<Bounds>
 {
     public required double MinX { get; init; }
     public required double MinY { get; init; }

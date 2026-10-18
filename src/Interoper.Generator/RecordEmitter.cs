@@ -9,7 +9,8 @@ internal static class RecordEmitter
     /// <summary>
     /// A data record: plain JSON, its constants written in place (R20). One that holds an entity is read with a scope
     /// (R17); one that holds a DOM element is only written, so it has no reader (R13). A generic interface is a generic
-    /// record whose type parameters are entities (mapping §2).
+    /// record whose type parameters are entities (mapping §2). Any other is an <c>IJsRecord</c>, with a System.Text.Json
+    /// converter.
     /// </summary>
     public static string Data(TypeMap types, Declaration declaration)
     {
@@ -20,9 +21,15 @@ internal static class RecordEmitter
             name = $"{name}<{string.Join(", ", parameters)}>";
         }
         var fields = Unhidden(types.Fields(declaration), ns);
+        var readable = !types.HoldsElement(declaration);
+        var plain = readable && parameters.Count == 0 && !types.IsScoped(declaration);
         var w = CodeWriter.CSharp(ns);
         XmlDoc.Write(w, declaration.Doc);
-        using (w.Block($"public sealed partial record {name}{string.Concat(parameters.Select(t => $" where {t} : global::Interoper.JsObject"))}"))
+        if (plain)
+        {
+            Converter(w, name);
+        }
+        using (w.Block($"public sealed partial record {name}{(plain ? $" : global::Interoper.IJsRecord<{name}>" : "")}{string.Concat(parameters.Select(t => $" where {t} : global::Interoper.JsObject"))}"))
         {
             Properties(w, fields, required: true);
             using (w.Block($"public static void Write(global::System.Text.Json.Utf8JsonWriter writer, {name} value)"))
@@ -32,7 +39,7 @@ internal static class RecordEmitter
                 WriteFields(w, fields);
                 w.Line("writer.WriteEndObject();");
             }
-            if (!types.HoldsElement(declaration))
+            if (readable)
             {
                 w.Line();
                 Read(w, name, "", fields, types.IsScoped(declaration));
@@ -42,7 +49,8 @@ internal static class RecordEmitter
     }
 
     /// <summary>
-    /// A class's snapshot record (R18). A value-like one is also written as a value: <c>$c</c> and its constants (R16).
+    /// A class's snapshot record (R18), an <c>IJsRecord</c> with a System.Text.Json converter. A value-like one is
+    /// written as a value: <c>$c</c> and its constants (R16), and any other as an object of its members and constants.
     /// An abstract value-like class's is the closed base of its subclasses', read by their discriminant (R19 step 2).
     /// </summary>
     public static string Snapshot(TypeMap types, ClassDeclaration c)
@@ -51,7 +59,8 @@ internal static class RecordEmitter
         var fields = Unhidden(types.Fields(c), ns);
         var b = types.SnapshotBase(c);
         var w = CodeWriter.CSharp(ns);
-        using (w.Block($"public {(types.IsClosed(c) ? "closed" : "sealed")} partial record {name}{(b is null ? "" : " : " + types.Snapshot(b).In(ns))}"))
+        Converter(w, name);
+        using (w.Block($"public {(types.IsClosed(c) ? "closed" : "sealed")} partial record {name} : {(b is null ? "" : types.Snapshot(b).In(ns) + ", ")}global::Interoper.IJsRecord<{name}>"))
         {
             Properties(w, fields, required: false);
             if (types.IsClosed(c))
@@ -66,21 +75,21 @@ internal static class RecordEmitter
         return w.ToString();
     }
 
-    /// <summary>WriteMembers, Read and Diff, and for a value-like class Write.</summary>
+    /// <summary>Write, WriteMembers, Read and Diff.</summary>
     private static void Leaf(CodeWriter w, TypeMap types, ClassDeclaration c, string ns, string name, string modifier, IReadOnlyList<Field> fields)
     {
-        if (types.IsValueLike(c))
+        using (w.Block($"public static void Write(global::System.Text.Json.Utf8JsonWriter writer, {name} value)"))
         {
-            using (w.Block($"public static void Write(global::System.Text.Json.Utf8JsonWriter writer, {name} value)"))
+            w.Line("writer.WriteStartObject();");
+            if (types.IsValueLike(c))
             {
-                w.Line("writer.WriteStartObject();");
                 w.Line($"writer.WriteNumber(\"$c\"u8, {types.ClassId(c, ns)});");
-                WriteConstants(w, fields);
-                w.Line("WriteMembers(writer, value);");
-                w.Line("writer.WriteEndObject();");
             }
-            w.Line();
+            WriteConstants(w, fields);
+            w.Line("WriteMembers(writer, value);");
+            w.Line("writer.WriteEndObject();");
         }
+        w.Line();
         using (w.Block($"public static void WriteMembers(global::System.Text.Json.Utf8JsonWriter writer, {name} value)"))
         {
             WriteFields(w, fields);
@@ -156,6 +165,10 @@ internal static class RecordEmitter
             w.Line($"var {local} => throw new global::System.Text.Json.JsonException($\"{type}: unexpected {discriminant} {{{local}}}\"),");
         }
     }
+
+    /// <summary>The attribute that serializes the record with System.Text.Json in its wire format.</summary>
+    private static void Converter(CodeWriter w, string name) =>
+        w.Line($"[global::System.Text.Json.Serialization.JsonConverter(typeof(global::Interoper.JsRecordConverter<{name}>))]");
 
     /// <summary>
     /// The fields' types as code in namespace <paramref name="ns"/> names them (R27). A property hides a type of its name

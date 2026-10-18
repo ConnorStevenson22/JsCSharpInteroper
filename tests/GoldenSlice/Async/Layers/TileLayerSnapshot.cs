@@ -3,12 +3,20 @@
 
 namespace GoldenSlice.Async.Layers;
 
-public sealed partial record TileLayerSnapshot
+[global::System.Text.Json.Serialization.JsonConverter(typeof(global::Interoper.JsRecordConverter<TileLayerSnapshot>))]
+public sealed partial record TileLayerSnapshot : global::Interoper.IJsRecord<TileLayerSnapshot>
 {
     /// <summary>The URL template of the tiles.</summary>
     public global::Interoper.Opt<string> Url { get; init; }
     public global::Interoper.Opt<string> Title { get; init; }
     public global::Interoper.Opt<bool> Visible { get; init; }
+
+    public static void Write(global::System.Text.Json.Utf8JsonWriter writer, TileLayerSnapshot value)
+    {
+        writer.WriteStartObject();
+        WriteMembers(writer, value);
+        writer.WriteEndObject();
+    }
 
     public static void WriteMembers(global::System.Text.Json.Utf8JsonWriter writer, TileLayerSnapshot value)
     {

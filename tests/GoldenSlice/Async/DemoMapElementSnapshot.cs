@@ -3,12 +3,20 @@
 
 namespace GoldenSlice.Async;
 
-public sealed partial record DemoMapElementSnapshot
+[global::System.Text.Json.Serialization.JsonConverter(typeof(global::Interoper.JsRecordConverter<DemoMapElementSnapshot>))]
+public sealed partial record DemoMapElementSnapshot : global::Interoper.IJsRecord<DemoMapElementSnapshot>
 {
     public global::Interoper.Opt<Basemap> Basemap { get; init; }
     public global::Interoper.Opt<double> Zoom { get; init; }
     /// <summary>The view's center.</summary>
     public global::Interoper.Opt<PointSnapshot> Center { get; init; }
+
+    public static void Write(global::System.Text.Json.Utf8JsonWriter writer, DemoMapElementSnapshot value)
+    {
+        writer.WriteStartObject();
+        WriteMembers(writer, value);
+        writer.WriteEndObject();
+    }
 
     public static void WriteMembers(global::System.Text.Json.Utf8JsonWriter writer, DemoMapElementSnapshot value)
     {

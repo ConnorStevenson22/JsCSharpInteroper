@@ -20,6 +20,17 @@ public class JsJsonTests
         Assert.Throws<JsonException>(() => Json.Read(Handle, JsJson.ReadUnion<FlyToTarget>)); // R19 step 3
     }
 
+    private sealed record Saved(PointSnapshot Center, ShapeSnapshot Shape, StrokeStyle Style, MapViewSnapshot View);
+
+    [Fact] // R15, R16, R18: System.Text.Json uses a record's own wire format, so app types can hold records and snapshots
+    public void Records_and_snapshots_serialize_with_System_Text_Json()
+    {
+        var saved = new Saved(new PointSnapshot { X = 1, Y = 2 }, new PointSnapshot { X = 3 }, new StrokeStyle { Width = 2 }, new MapViewSnapshot { Zoom = 4 });
+        var json = JsonSerializer.Serialize(saved);
+        Assert.Equal($$$"""{"Center":{"$c":{{{DemoMaps.PointId}}},"type":"point","x":1,"y":2},"Shape":{"$c":{{{DemoMaps.PointId}}},"type":"point","x":3},"Style":{"type":"stroke","width":2},"View":{"zoom":4}}""", json);
+        Assert.Equal(saved, JsonSerializer.Deserialize<Saved>(json));
+    }
+
     [Theory] // R2, R3, R20: undefined omitted, null kept, value written, discriminant always written
     [InlineData("""{"type":"stroke"}""")]
     [InlineData("""{"type":"stroke","color":null}""")]

@@ -3,7 +3,8 @@
 
 namespace GoldenSlice.Async;
 
-public sealed partial record Rgba
+[global::System.Text.Json.Serialization.JsonConverter(typeof(global::Interoper.JsRecordConverter<Rgba>))]
+public sealed partial record Rgba : global::Interoper.IJsRecord<Rgba>
 {
     public required double R { get; init; }
     public required double G { get; init; }
