@@ -123,7 +123,7 @@ Structured data is UTF-8 JSON. Undefined members are left out. Special values:
 | `batch` | `ops` (only ops that return nothing) | none, or a `BatchError` listing failed ops |
 
 - Results send class instances as handles. With `byValue`, and always in callback arguments and snapshots, value-like instances go as `$c` data. Plain objects and arrays are copied.
-- A handle's `$t` is the class id of the object's runtime class name (R19). For a DOM element it is the class whose `tag` is the element's `localName`. When the metadata doesn't know the name, JS walks up the prototype chain to the nearest class it knows, so an object of an undeclared subclass gets its nearest declared ancestor. `$t` is 0 when no ancestor is known.
+- A handle's `$t` is the class id of the object's runtime class name (R19). For a DOM element it is the class whose `tag` is the element's `localName`. A class with no runtime class name (a plain class, as an app's own module has) is known by its constructor once its module is loaded. When the metadata doesn't know the object's class, JS walks up the prototype chain to the nearest class it knows, so an object of an undeclared subclass gets its nearest declared ancestor. `$t` is 0 when no ancestor is known.
 - Every handle that reaches .NET is owned by .NET and must be released.
 - `subscribe` options wrap the listener in JS, so they apply in time even on Server (R24).
 - A result that can't be encoded (a `BigInt`, a cycle) becomes an error envelope.

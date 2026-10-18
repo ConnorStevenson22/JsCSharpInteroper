@@ -10,6 +10,8 @@ let nextId = 1;
 let meta = { classes: {} };
 let classIdsByName = new Map();
 let classIdsByTag = new Map(); // a custom element's localName -> its class id
+let classIdsByConstructor = new Map(); // a loaded module's exported class -> its class id
+let classesByModule = new Map(); // module specifier -> [export, class id][]
 let callbackSink = null;
 let fastPathError = null; // { error } until takeError reads it
 let syncOnly = false; // set while invokeSync runs: nothing may start async work
@@ -41,6 +43,9 @@ export async function start(metadataSpecifier, sink) {
   const classes = Object.entries(meta.classes);
   classIdsByName = new Map(classes.map(([id, c]) => [c.name, Number(id)]));
   classIdsByTag = new Map(classes.filter(([, c]) => c.tag).map(([id, c]) => [c.tag, Number(id)]));
+  classesByModule = Map.groupBy(classes.filter(([, c]) => c.module && c.export), ([, c]) => c.module);
+  classIdsByConstructor = new Map();
+  modules.forEach(registerClasses);
   callbackSink = sink;
   registerCustomEvents(meta.customEvents ?? []);
   // A class that can't be imported has no module (design §3.5).
@@ -303,7 +308,8 @@ function classEntry(classId) {
 }
 
 // The most-derived class id: an element's by its tag, since a runtime class-name property such as `className` means
-// something else on an element (its CSS classes, R28); otherwise from that property, read on the object and then up its
+// something else on an element (its CSS classes, R28); otherwise from that property, or from the prototype's own
+// constructor once its module is loaded (a plain class with no such property), read on the object and then up its
 // prototype chain, so a class the typings don't have is its nearest registered ancestor (R19 step 1); 0 if unknown. A
 // read that throws (a getter on a prototype) counts as no name. The walk stops after maxPrototypes, in case a proxy's
 // chain never ends.
@@ -311,13 +317,13 @@ const maxPrototypes = 32;
 function classIdOf(object) {
   if (globalThis.Element && object instanceof globalThis.Element) return classIdsByTag.get(object.localName) ?? 0;
   for (let p = object, depth = 0; p !== null && depth < maxPrototypes; p = Object.getPrototypeOf(p), depth++) {
-    let name;
+    let id;
     try {
-      name = p[meta.classNameProperty];
+      id = classIdsByName.get(p[meta.classNameProperty]);
+      if (id === undefined && Object.hasOwn(p, "constructor")) id = classIdsByConstructor.get(p.constructor);
     } catch {
       continue;
     }
-    const id = classIdsByName.get(name);
     if (id !== undefined) return id;
   }
   return 0;
@@ -333,8 +339,15 @@ function element(id) {
 function load(specifier) {
   return import(specifier).then((m) => {
     modules.set(specifier, m);
+    registerClasses(m, specifier);
     return m;
   });
+}
+
+function registerClasses(m, specifier) {
+  for (const [id, c] of classesByModule.get(specifier) ?? []) {
+    if (typeof m[c.export] === "function") classIdsByConstructor.set(m[c.export], Number(id));
+  }
 }
 
 function withModule(specifier, fn) {

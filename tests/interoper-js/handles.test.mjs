@@ -52,6 +52,14 @@ test("an object of a class the metadata doesn't know is its nearest registered a
   release(fast, guarded, source, endless);
 });
 
+test("an object of a plain class with no runtime class name is found by its constructor (R19 step 1)", async () => {
+  const plain = value(await sendAsync({ op: "call", module: faulty, name: "plain" }));
+  assert.equal(plain.$t, ids.Plain);
+  const internal = value(await sendAsync({ op: "call", module: faulty, name: "internalPlain" }));
+  assert.equal(internal.$t, ids.Plain);
+  release(plain, internal);
+});
+
 test("call returns handles, or value-like instances by value with byValue (R16)", () => {
   const view = create(ids.MapView, { zoom: 0 });
   const point = call(view, "screenToMap", 3, 4);
