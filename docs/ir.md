@@ -143,5 +143,5 @@ These are the custom elements from the listed packages' Custom Elements Manifest
 | `unresolved` | `text` (the checker's spelling). The generator skips it (R12) | `keyof this`, `this["$events"][K]` |
 
 - A union keeps named members as written. `FlyToTarget` is `Shape | [number, number] | Camera`, not the checker's flattened list. The generator flattens it (R6). `boolean` is a `primitive`, never `true | false`.
-- A `discriminant` is the first property that every non-nullish member declares with a distinct literal type.
+- A `discriminant` is the first property that every non-nullish member declares with a distinct literal type. A member may be an object type or an intersection of them.
 - Aliases declared by a package, including a dependency, are `ref`s. Platform aliases such as `Partial` are resolved in place.

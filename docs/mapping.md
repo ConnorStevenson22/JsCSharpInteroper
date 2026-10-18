@@ -156,7 +156,7 @@ When JS returns a value for a union position, the runtime must pick the case.
 **R19. Classification order:**
 
 1. **Handle with a class id** (`{"$h": 12, "$t": 7}`). The generated registry maps the id to the most-derived live type, and the case is the one that type converts to. An object whose class isn't in the metadata (undeclared, or outside the selection) gets the id of its nearest known ancestor: the runtime reads the class-name property up the prototype chain. With none, the id is 0, and reading it as an entity throws.
-2. **Object with a discriminant.** The extractor finds a property every member declares with a distinct literal type (`type: "point"`). The generator switches on its value.
+2. **Object with a discriminant.** The extractor finds a property every member declares with a distinct literal type (`type: "point"`), intersections (`Props & { type: "cluster" }`) included. The generator switches on its value. A nullable union that holds one union (`(A | B) | null`) uses that union's.
 3. **Object without a discriminant.** If the sets of *required* member names separate the cases, the generator emits a structural check. Otherwise the union is ambiguous and is skipped (IOP2003). Optional members don't count, because typings make most of them optional.
 4. **Primitives** by JSON token kind. Two cases with the same kind (`string` and a string enum) are told apart by value where possible, otherwise IOP2003.
 

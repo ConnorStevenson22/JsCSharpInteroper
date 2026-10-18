@@ -1487,6 +1487,22 @@ public sealed class GeneratorTests
         Assert.DoesNotContain("MouseEvent", File(result, "ViewHitAt.cs"));
     }
 
+    [Fact] // R19 step 2: a nullable union that holds one union is told apart by that union's discriminant
+    public void ANullableUnionOfAUnionReadsItsDiscriminant()
+    {
+        // reduction?: ((Cluster & { type: "cluster" }) | (Bins & { type: "binning" })) | null, the intersections resolved.
+        static string Tagged(string tag, string member) =>
+            $$"""{ "kind": "object", "members": [{ "kind": "property", "name": "type", "type": { "kind": "literal", "value": "{{tag}}" } }, { "kind": "property", "name": "{{member}}", "type": { "kind": "primitive", "name": "number" } }] }""";
+        var result = Generate($$"""
+            { "kind": "class", "name": "Layer", "members": [{ "kind": "property", "name": "reduction", "optional": true, "type": { "kind": "union", "types": [
+              { "kind": "union", "types": [{{Tagged("cluster", "radius")}}, {{Tagged("binning", "radius")}}], "discriminant": "type" }, { "kind": "primitive", "name": "null" }] } }] }
+            """);
+
+        Assert.Empty(result.Diagnostics);
+        Assert.Contains("global::Interoper.JsJson.PeekString(reader, \"type\"u8) switch", File(result, "LayerReduction.cs"));
+        Assert.Contains("public LayerReduction(LayerReductionCluster value)", File(result, "LayerReduction.cs"));
+    }
+
     [Fact] // R28, R6: a property whose type has null through an alias (`Title | undefined`, `type Title = string | null`) sets JS null
     public void AComponentPropertyNullThroughAnAliasIsSetAsNull()
     {

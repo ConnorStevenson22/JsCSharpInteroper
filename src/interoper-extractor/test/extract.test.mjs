@@ -67,6 +67,18 @@ test("R19: a union of records gets its discriminant", () => {
   assert.equal(decl("MapView", "Camera").type.discriminant, undefined);
 });
 
+test("R19: a union of intersections with a literal gets its discriminant", (t) => {
+  const dir = tempDir(t);
+  fs.writeFileSync(path.join(dir, "package.json"), JSON.stringify({ name: "@acme/extra", version: "1.0.0" }));
+  fs.writeFileSync(path.join(dir, "index.d.ts"), `
+    export interface Cluster { radius: number }
+    export interface Bins { size: number }
+    export type Reduction = (Cluster & { type: "cluster" }) | (Bins & { type: "binning" });`);
+  const [{ declarations: [, , reduction] }] = extract(dir).modules;
+  assert.equal(reduction.type.discriminant, "type");
+  assert.deepEqual(reduction.type.types.map((c) => c.kind), ["object", "object"]); // R11: resolved
+});
+
 test("R6: unions keep written order and named members", () => {
   assert.deepEqual(decl("MapView", "FlyToTarget").type.types, [ref("geometry", "Shape"), pair, ref("MapView", "Camera")]);
   assert.deepEqual(member("MapView", "MapView", "title"), { kind: "property", name: "title", optional: true, type: { kind: "union", types: [{ kind: "primitive", name: "string" }, { kind: "primitive", name: "null" }] } });

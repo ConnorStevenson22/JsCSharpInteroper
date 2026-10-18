@@ -348,7 +348,8 @@ export function extract(packageDirs, { eventMap } = {}) {
     if (bools.length === 2) parts = parts.filter((p) => p !== bools[1]).map((p) => (p === bools[0] ? [checker.getBooleanType()] : p));
     if (parts.length === 1) return typeRef(parts[0][0], parts[0][1]);
     const records = parts.map(([t]) => t).filter((t) => !(t.flags & (T.Null | T.Undefined)));
-    const tagged = records.length > 1 && records.every((t) => t.flags & T.Object && !checker.isArrayLikeType(t) && !t.getCallSignatures().length);
+    // Object types, and intersections of them (`Props & { type: "cluster" }`), which TypeScript doesn't flag as objects.
+    const tagged = records.length > 1 && records.every((t) => t.flags & (T.Object | T.Intersection) && !checker.isArrayLikeType(t) && !t.getCallSignatures().length);
     return compact({
       kind: "union",
       types: parts.map(([t, n]) => typeRef(t, n)),

@@ -532,8 +532,7 @@ internal sealed class TypeMap
                 EnumMembers(name.Name, literals, literals.Select(v => v.GetString()!)), literals.Count > MaxEnumMembers || flat.Any(IsOpenString))
             : flat.All(t => t is LiteralType { Value.ValueKind: JsonValueKind.Number }) ? new EnumType(name,
                 EnumMembers(name.Name, literals, literals.Select(v => v.GetRawText())), Extensible: false)
-            : new UnionStruct(name, Cases(name, all, flat, type is UnionType d ? d.Discriminant : null),
-                type is UnionType u && u.Types.Count(t => !IsNullish(t)) == all.Count ? u.Discriminant : null,
+            : new UnionStruct(name, Cases(name, all, flat, DiscriminantOf(type, all.Count)), DiscriminantOf(type, all.Count),
                 WrittenOnly(type, all, flat), Dropped: flat.Count < all.Count);
         unions[name] = result;
         if (result is not null)
@@ -683,6 +682,17 @@ internal sealed class TypeMap
 
     /// <summary>A union's members after R6, without null and undefined.</summary>
     private List<IrType> Values(IrType type) => [.. Flatten(type).Where(t => !IsNullish(t))];
+
+    /// <summary>
+    /// R19 step 2: the extractor's discriminant of a union of <paramref name="count"/> members after R6, also of the one
+    /// union a nullable union holds (<c>(A | B) | null</c>); null when R6 flattened another union into it.
+    /// </summary>
+    private static string? DiscriminantOf(IrType type, int count) => type switch
+    {
+        UnionType u when u.Types.Count(t => !IsNullish(t)) == count => u.Discriminant,
+        UnionType u when u.Types.Where(t => !IsNullish(t)).ToList() is [UnionType inner] => DiscriminantOf(inner, count),
+        _ => null,
+    };
 
     /// <summary>R2: a union's members after R6 that it keeps: without null, undefined, the classes outside the selection and platform types.</summary>
     private List<IrType> Kept(IrType type) => [.. Values(type).Where(t => !IsDropped(t))];
@@ -1146,7 +1156,7 @@ internal sealed class TypeMap
     /// <summary>R19 without mapping: the discriminant is a string on every case, or the cases' JSON or required members tell them apart.</summary>
     private Unmappable? Classification(IrType type, int count, List<(string? Name, string? FullName, JsonKind Json, Declaration? Declaration)> cases, string label, string ambiguous)
     {
-        if (type is UnionType u && u.Types.Count(t => !IsNullish(t)) == count && u.Discriminant is { } discriminant) // as Union() reads it
+        if (DiscriminantOf(type, count) is { } discriminant) // as Union() reads it
         {
             return cases.All(c => c.Declaration is { } d && StringConstants(d).Contains(discriminant)) ? null
                 : new($"{label}, whose discriminant `{discriminant}` isn't a string on every case (R19)");
