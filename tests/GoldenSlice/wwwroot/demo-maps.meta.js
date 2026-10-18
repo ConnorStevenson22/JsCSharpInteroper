@@ -13,7 +13,7 @@ export default {
     9: { module: "@acme/demo-maps/core.js", export: "Collection", name: "core.Collection", members: [] },
     10: { module: "@acme/demo-maps/demo-map.js", export: "DemoMapElement", name: "demo-map.DemoMapElement", tag: "demo-map", members: ["basemap", "zoom", "center"] },
     11: { module: "@acme/demo-maps/layers/Layer.js", export: "Layer", name: "layers.Layer", members: ["title", "visible"] },
-    12: { module: "@acme/demo-maps/layers/TileLayer.js", export: "default", name: "layers.TileLayer", members: ["url", "title", "visible"] },
+    12: { module: "@acme/demo-maps/layers/TileLayer.js", export: "default", name: "layers.TileLayer", members: ["url", "refreshInterval", "title", "visible"] },
     13: { module: "@acme/demo-maps/pins.js", export: "Pin", name: "pins.Pin", members: ["position", "label", "style"] },
   },
   customEvents: [

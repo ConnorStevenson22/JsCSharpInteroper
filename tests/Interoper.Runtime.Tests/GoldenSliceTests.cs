@@ -20,14 +20,14 @@ public sealed class GoldenSliceTests
     public async Task Async(string name) =>
         await GoldenAsyncSuite.Cases.Single(c => c.Name == name).Run(await Realm(GoldenSlice.Async.DemoMaps.Classes));
 
-    [Fact] // design §1: data types are identical in both modes; only live classes, the registry and module functions differ
+    [Fact] // design §1: data types are identical in both modes; only live classes and mixins (§5), the registry and module functions differ
     public void BothModesHaveTheSameDataTypes()
     {
         var root = Path.Combine(SourceFolder(), "..", "GoldenSlice");
         string[] live =
         [
             "DemoMaps.cs", "Observable.cs", "Emitter.cs", "Collection.cs", "Shape.cs", "Point.cs", "Line.cs", "Polygon.cs", "MapView.cs", "Marker.cs",
-            "DemoMapElement.cs", "DemoMap.cs", "Layers/Layer.cs", "Layers/TileLayer.cs", "Measure.cs", "Styles.cs", "Pin.cs", "Ops/A.cs", "Ops/B.cs",
+            "DemoMapElement.cs", "DemoMap.cs", "Layers/Layer.cs", "Layers/IRefreshable.cs", "Layers/TileLayer.cs", "Measure.cs", "Styles.cs", "Pin.cs", "Ops/A.cs", "Ops/B.cs",
         ];
         var files = Files(Path.Combine(root, "Async"));
         Assert.Equal(files, Files(Path.Combine(root, "Sync")));

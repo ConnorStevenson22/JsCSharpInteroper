@@ -31,7 +31,7 @@ public static class Generator
         ir = Instantiation.Instantiate(Instantiation.Erase(ir, profile.Collections));
         var selection = Selection.Select(ir, profile);
         var diagnostics = selection.Diagnostics.ToList();
-        var types = new TypeMap(ir, profile, selection.Declarations, diagnostics, options.Namespace, selection.Payloads);
+        var types = new TypeMap(ir, profile, selection.Declarations, diagnostics, options.Namespace, selection.Payloads, selection);
         var root = options.Namespace;
         var files = new List<GeneratedFile>();
         // R27: the registry keeps its path. A later type whose path is taken, or whose name is a namespace's, is skipped with
@@ -75,6 +75,11 @@ public static class Generator
                     break;
             }
         }
+        foreach (var mixin in selection.Mixins)
+        {
+            var m = (ClassDeclaration)mixin.Declaration;
+            Add(types.MixinName(m), LiveEmitter.Mixin(types, profile, options, diagnostics, m));
+        }
         var modules = selection.Declarations.Where(s => s.Declaration is FunctionDeclaration).GroupBy(s => s.Module).ToList();
         foreach (var module in modules)
         {
@@ -113,8 +118,8 @@ public static class Generator
             Add(new(ns, name), ComponentEmitter.Component(types, options, diagnostics, element, name));
         }
         var classes = MetadataEmitter.ClassIds(types, selection);
-        files.Add(new($"{types.Registry}.cs", MetadataEmitter.Registry(ir, types, options, classes, modules.SelectMany(m => m), selection.Elements)));
-        files.Add(new(MetadataEmitter.FileName(ir), MetadataEmitter.Module(ir, profile, types, classes, selection.Elements)));
+        files.Add(new($"{types.Registry}.cs", MetadataEmitter.Registry(ir, types, options, classes, selection.Variants, modules.SelectMany(m => m), selection.Elements)));
+        files.Add(new(MetadataEmitter.FileName(ir), MetadataEmitter.Module(ir, profile, types, classes, selection.Variants, selection.Elements)));
         // The anonymous unions and inline records (R11, R27), unions first; emitting one can meet more of them.
         var (unions, records) = (0, 0);
         while (unions < types.Owned.Count || records < types.Records.Count)

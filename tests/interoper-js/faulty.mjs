@@ -52,3 +52,9 @@ export class Plain {}
 class InternalPlain extends Plain {}
 export const plain = () => new Plain();
 export const internalPlain = () => new InternalPlain();
+
+// A subclass the selection leaves out that adds a mixin: the metadata gives it a variant entry (`of`, mapping §5).
+class GlowMarker extends Marker {
+  static className = "GlowMarker";
+}
+export const glowMarker = () => new GlowMarker();

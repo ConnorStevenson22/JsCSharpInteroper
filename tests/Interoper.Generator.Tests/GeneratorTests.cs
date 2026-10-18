@@ -1465,6 +1465,47 @@ public sealed class GeneratorTests
         Assert.Contains("public required double X { get; init; }", File(result, "Owner.cs"));
     }
 
+    [Fact] // R2, R17: a class outside the selection is no entity, so a member that only it would make scoped is read, or skipped
+    public void AClassOutsideTheSelectionMakesNothingScoped()
+    {
+        // renderer?: { size?: Symbol; radius?: number } | { size?: Symbol; width?: number }, with Symbol outside the selection.
+        const string Symbol = """{ "kind": "property", "name": "size", "optional": true, "type": { "kind": "ref", "name": "Symbol", "module": "@acme/maps/b.js" } }""";
+        var result = Generate(new Profile { Package = "@acme/maps", Include = ["@acme/maps/a.js"] }, Api.Sync, ("a.js", $$"""
+            { "kind": "interface", "name": "Props", "members": [{ "kind": "property", "name": "renderer", "optional": true, "type": { "kind": "union", "types": [
+              { "kind": "object", "members": [{{Symbol}}, { "kind": "property", "name": "radius", "optional": true, "type": {{Number}} }] },
+              { "kind": "object", "members": [{{Symbol}}, { "kind": "property", "name": "width", "optional": true, "type": {{Number}} }] }] } }] }
+            """), ("b.js", """{ "kind": "class", "name": "Symbol" }"""));
+
+        Assert.Contains(result.Diagnostics, d => d.ToString().StartsWith("IOP2003 Props.renderer:", StringComparison.Ordinal));
+        Assert.DoesNotContain(result.Files, f => f.Path == "PropsRenderer.cs");
+    }
+
+    [Fact] // §5: a mixin is an interface each class with it implements; a class outside the selection that adds one is a variant
+    public void AMixinIsAnInterfaceAndAnUnselectedClassWithItAVariant()
+    {
+        var result = Generate(new Profile { Package = "@acme/maps", Include = ["@acme/maps/layers/Layer.js", "@acme/maps/layers/FeatureLayer.js"], Events = new(Subscribe: "on") },
+            Api.Async, Mixins);
+
+        var refreshable = File(result, "Layers/Mixins/IRefreshable.cs");
+        Assert.Contains("public partial interface IRefreshable : global::Interoper.IJsObject", refreshable);
+        Assert.Contains("public global::System.Threading.Tasks.Task RefreshAsync(global::System.Threading.CancellationToken cancellationToken = default) =>", refreshable);
+        Assert.Contains("public global::System.Threading.Tasks.Task<global::System.IAsyncDisposable> OnRefreshAsync(global::Interoper.JsScope scope, global::System.Action<RefreshEvent> handler", refreshable);
+        Assert.DoesNotContain("Copy", refreshable); // `this` is a live class's
+        Assert.Contains("public sealed partial class FeatureLayer : Layer, global::Acme.Maps.Layers.Mixins.IRefreshable", File(result, "Layers/FeatureLayer.cs"));
+        Assert.Contains("public partial class Layer : global::Interoper.JsObject", File(result, "Layers/Layer.cs")); // a variant derives from it
+        Assert.DoesNotContain(result.Files, f => f.Path.Contains("Refreshable.cs", StringComparison.Ordinal) && !f.Path.EndsWith("IRefreshable.cs", StringComparison.Ordinal));
+
+        // TileLayer adds no mixin, so JS reads it as Layer; WmsLayer adds Refreshable, and Internal adds nothing to WmsLayer.
+        var registry = File(result, "Maps.cs");
+        Assert.Contains(".Add(3, static (realm, handle) => new WmsLayer(realm, handle));", registry);
+        Assert.Contains("private sealed class WmsLayer(global::Interoper.JsRealm realm, int handle) : global::Acme.Maps.Layers.Layer(realm, handle), global::Acme.Maps.Layers.Mixins.IRefreshable;", registry);
+        Assert.DoesNotContain("TileLayer", registry);
+        Assert.DoesNotContain("Internal", registry);
+        var meta = File(result, "maps.meta.js");
+        Assert.Contains("""    3: { name: "layers.WmsLayer", of: 1 },""", meta);
+        Assert.DoesNotContain("Refreshable", meta);
+    }
+
     [Fact] // R2: a union drops a platform type it can't map (MouseEvent), as it does a class outside the selection
     public void AUnionDropsAPlatformTypeCase()
     {
@@ -1726,6 +1767,40 @@ public sealed class GeneratorTests
             """);
         return Generator.Generate(ir, profile ?? new Profile { Package = "@acme/maps" }, new(Api.Sync, "Acme.Maps"));
     }
+
+    /// <summary>
+    /// §5: <c>Refreshable</c>, a mixin with a property, a method, a <c>this</c> method and an event; <c>FeatureLayer</c>
+    /// and <c>WmsLayer</c> have it on top of <c>Layer</c>, which <c>Layer.parent</c> names, and <c>TileLayer</c> doesn't.
+    /// </summary>
+    internal static readonly (string Path, string Declarations)[] Mixins =
+    [
+        ("layers/Layer.js", """
+            { "kind": "class", "name": "Layer", "members": [{ "kind": "property", "name": "title", "type": { "kind": "primitive", "name": "string" } },
+              { "kind": "property", "name": "parent", "type": { "kind": "ref", "name": "Layer", "module": "@acme/maps/layers/Layer.js" } }] }
+            """),
+        ("layers/mixins/Refreshable.js", $$"""
+            { "kind": "interface", "name": "RefreshEvent", "members": [{ "kind": "property", "name": "dataChanged", "type": { "kind": "primitive", "name": "boolean" } }] },
+            { "kind": "class", "name": "Refreshable", "abstract": true, "members": [
+              { "kind": "property", "name": "refreshInterval", "type": {{Number}} },
+              { "kind": "method", "name": "refresh", "signatures": [{ "returns": {{Void}} }] },
+              { "kind": "method", "name": "copy", "signatures": [{ "returns": { "kind": "this" } }] }],
+              "events": [{ "name": "refresh", "type": { "kind": "ref", "name": "RefreshEvent", "module": "@acme/maps/layers/mixins/Refreshable.js" } }] }
+            """),
+        ("layers/FeatureLayer.js", MixedIn("FeatureLayer", "Layer")),
+        ("layers/WmsLayer.js", MixedIn("WmsLayer", "Layer")),
+        ("layers/support/Internal.js", """{ "kind": "class", "name": "Internal", "extends": { "kind": "ref", "name": "WmsLayer", "module": "@acme/maps/layers/WmsLayer.js" } }"""),
+        ("layers/TileLayer.js", """{ "kind": "class", "name": "TileLayer", "extends": { "kind": "ref", "name": "Layer", "module": "@acme/maps/layers/Layer.js" } }"""),
+    ];
+
+    private static string MixedIn(string name, string baseName) => $$"""
+        { "kind": "class", "name": "{{name}}", "extends": { "kind": "ref", "name": "{{baseName}}", "module": "@acme/maps/layers/{{baseName}}.js" },
+          "mixins": [{ "kind": "ref", "name": "Refreshable", "module": "@acme/maps/layers/mixins/Refreshable.js" }],
+          "members": [
+            { "kind": "property", "name": "refreshInterval", "inherited": true, "type": {{Number}} },
+            { "kind": "method", "name": "refresh", "inherited": true, "signatures": [{ "returns": {{Void}} }] },
+            { "kind": "method", "name": "copy", "inherited": true, "signatures": [{ "returns": { "kind": "this" } }] }],
+          "events": [{ "name": "refresh", "type": { "kind": "ref", "name": "RefreshEvent", "module": "@acme/maps/layers/mixins/Refreshable.js" } }] }
+        """;
 
     /// <summary>The modules of <c>@acme/maps</c>, by their path in it.</summary>
     private static GeneratorResult Generate(Api api, params (string Path, string Declarations)[] modules) =>

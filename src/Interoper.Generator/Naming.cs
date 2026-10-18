@@ -132,7 +132,7 @@ public static class Naming
     }
 
     /// <summary><paramref name="name"/> if it's free, otherwise the first free <c>name2</c>, <c>name3</c>, …; claimed.</summary>
-    private static string Unique(HashSet<string> taken, string name)
+    public static string Unique(HashSet<string> taken, string name)
     {
         var unique = name;
         for (var n = 2; !taken.Add(unique); n++)

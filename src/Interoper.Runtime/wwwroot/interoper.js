@@ -32,10 +32,11 @@ class BatchError extends Error {
 // --- Start ---
 
 // metadataSpecifier: a module whose default export is the generated metadata table:
-//   { classNameProperty: "className", classes: { [classId]: { module?, export?, name, tag?, value?, members } },
+//   { classNameProperty: "className", classes: { [classId]: { module?, export?, name, tag?, value?, members } | { name, of } },
 //     customEvents?: [{ name, fields? }] }
 // sink(callbackId, argsJson) calls a .NET callback and returns its result as JSON text ("null" for null), null or
 // nothing for undefined, or a Promise of either.
+// An entry with `of` is a variant (mapping §5): its own class id for its runtime class name, and of's entry otherwise.
 // Value-like classes are imported here so `$c` can be built synchronously, in sync mode too. A custom element's module
 // is loaded by its component (R28), or by the sync-mode registry's preload list.
 export async function start(metadataSpecifier, sink) {
@@ -304,7 +305,7 @@ function handleOf(object) {
 function classEntry(classId) {
   const entry = meta.classes[classId];
   if (!entry) throw new InteroperError(`Unknown class id: ${classId}`);
-  return entry;
+  return entry.of ? classEntry(entry.of) : entry;
 }
 
 // The most-derived class id: an element's by its tag, since a runtime class-name property such as `className` means

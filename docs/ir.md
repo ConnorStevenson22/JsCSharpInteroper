@@ -80,7 +80,7 @@ Every declaration has `kind`, `name` and an optional `doc`. A function's docs ar
 
 | `kind` | Fields |
 |---|---|
-| `class` | `abstract`, `typeParameters`, `extends` (one type), `implements`, `constructors` (signatures), `members`, `events` |
+| `class` | `abstract`, `typeParameters`, `extends` (one type), `mixins` (named classes), `implements`, `constructors` (signatures), `members`, `events` |
 | `interface` | `typeParameters`, `extends` (named bases), `members`, `indexSignatures`, `callSignatures`, `constructSignatures` |
 | `alias` | `typeParameters`, `type` (resolved: `Partial<Pick<…>>` becomes an `object`, R12) |
 | `enum` | `members`: `{ name, value, doc }` |
@@ -98,7 +98,7 @@ A member is one of:
 
 Members declared by a named base are listed on that base only, so follow `extends`. Members of an anonymous base or a mapped type are listed with `inherited`. Platform members (the DOM's) and symbol-keyed members (`[Symbol.iterator]()`) are left out.
 
-A mixin's base is an intersection, as in `class Pin extends PinBase` where `PinBase: typeof Marker & typeof Draggable`. Its `extends` is the first part that is a named, exported class, wherever it sits in the intersection. Here that's `Marker`. The other parts' members are listed with `inherited`.
+A mixin's base is an intersection, as in `class Pin extends PinBase` where `PinBase: typeof Marker & typeof Draggable`. Its `extends` is the first part that is a named, exported class, wherever it sits in the intersection. Here that's `Marker`. The other parts' members are listed with `inherited`. The other parts that are named, exported classes are its `mixins`, in order: `Draggable` isn't exported, so `Pin` has none, and `TileLayer` (`typeof Layer & typeof Refreshable`) has `Refreshable`.
 
 ### Other fields
 

@@ -27,7 +27,7 @@ internal static class InMemoryDemoMaps
         .Define(new(DemoMaps.CollectionId, "core.Collection", args => new FakeCollection(args.FirstOrDefault() as List<object?> ?? [])))
         .Define(new(DemoMaps.DemoMapElementId, "demo-map.DemoMapElement", _ => new FakeDemoMapElement()) { Members = ["basemap", "zoom", "center"] })
         .Define(new(DemoMaps.LayerId, "layers.Layer", _ => throw new JsException("TypeError", "Layer is abstract", null)) { Members = ["title", "visible"] })
-        .Define(new(DemoMaps.TileLayerId, "layers.TileLayer", args => new FakeTileLayer(Bag(args))) { Members = ["url", "title", "visible"] })
+        .Define(new(DemoMaps.TileLayerId, "layers.TileLayer", args => new FakeTileLayer(Bag(args))) { Members = ["url", "refreshInterval", "title", "visible"] })
         .Define(new(DemoMaps.PinId, "pins.Pin", args => new FakePin(Bag(args))) { Members = ["position", "label", "style"] })
         .DefineModule(TransportContract.Measure, new FakeMeasure())
         .DefineModule("@acme/demo-maps/ops/a.js", new FakeExecute((x, options) => x * (double)options.GetValueOrDefault("scale", 1.0)!))
@@ -431,12 +431,24 @@ internal abstract class FakeLayer : FakeObservable
     public override object? Call(string name, object?[] args) => name == "clone" ? Clone() : base.Call(name, args);
 }
 
-/// <summary><c>layers.TileLayer</c>, the default export of its module.</summary>
+/// <summary><c>layers.TileLayer</c>, the default export of its module, with the <c>Refreshable</c> mixin.</summary>
 internal sealed class FakeTileLayer : FakeLayer
 {
-    public FakeTileLayer(Dictionary<string, object?> bag) : base(bag) => Set("url", bag.GetValueOrDefault("url", ""));
+    public FakeTileLayer(Dictionary<string, object?> bag) : base(bag)
+    {
+        Set("url", bag.GetValueOrDefault("url", ""));
+        Set("refreshInterval", 0.0);
+        Set("refreshCount", 0.0);
+    }
 
     public override string ClassName => "layers.TileLayer";
+
+    public override object? Call(string name, object?[] args)
+    {
+        if (name != "refresh") return base.Call(name, args);
+        Set("refreshCount", (double)Get("refreshCount")! + 1);
+        return Undefined.Value;
+    }
 
     protected override FakeLayer Clone() => new FakeTileLayer(new() { ["url"] = Get("url"), ["title"] = Get("title"), ["visible"] = Get("visible") });
 }

@@ -40,6 +40,7 @@ public static class GoldenSyncSuite
         ("handles in a callback's arguments that nothing reads are released with its scope (R21)", InScope(UnreadArgumentsAreReleased)),
         ("Diff: arrays, unions and nested snapshots, then Apply (R18)", InScope(DiffThenApply)),
         ("a mixin keeps its class's base: a Pin is a Marker (R4, R19)", InScope(Mixin)),
+        ("an exported mixin is an interface: a TileLayer is an IRefreshable (§5)", InScope(MixinInterface)),
         ("a subscription with remove() instead of dispose(), delivered then released (R24)", InScope(RemoveSubscription)),
         ("any is JsAny: data, or a handle the scope owns (§2)", InScope(Any)),
         ("a union with an entity case is a parameter's (R2, R17)", InScope(WrittenUnion)),
@@ -251,12 +252,21 @@ public static class GoldenSyncSuite
     private static void DefaultExport(JsScope scope)
     {
         var tile = TileLayer.Create(scope, new TileLayerSnapshot { Url = "u", Title = "Streets" });
-        Equal(new TileLayerSnapshot { Url = "u", Title = "Streets", Visible = true }, tile.Snapshot());
+        Equal(new TileLayerSnapshot { Url = "u", RefreshInterval = 0, Title = "Streets", Visible = true }, tile.Snapshot());
         TileLayer copy = tile.Clone(scope); // TileLayer's clone hides Layer's
         Expect(!ReferenceEquals(copy, tile), "a clone to be another object");
-        Equal(new TileLayerSnapshot { Url = "u", Title = "Streets", Visible = true }, copy.Snapshot());
+        Equal(new TileLayerSnapshot { Url = "u", RefreshInterval = 0, Title = "Streets", Visible = true }, copy.Snapshot());
         Layer layer = tile;
         Expect(layer.Clone(scope) is TileLayer { Url: "u" }, "a Layer's clone to be a TileLayer");
+    }
+
+    private static void MixinInterface(JsScope scope)
+    {
+        IRefreshable refreshable = TileLayer.Create(scope, new TileLayerSnapshot());
+        refreshable.RefreshInterval = 30;
+        refreshable.Refresh();
+        Equal(30.0, refreshable.RefreshInterval);
+        Equal(1.0, refreshable.RefreshCount);
     }
 
     private static void RestParameter(JsScope scope)
@@ -272,7 +282,7 @@ public static class GoldenSyncSuite
         Expect(tile is Layer and Observable, "a TileLayer to be a Layer and an Observable");
         tile.Title = null;
         tile.Visible = false;
-        Equal(new TileLayerSnapshot { Url = "", Title = null, Visible = false }, tile.Snapshot());
+        Equal(new TileLayerSnapshot { Url = "", RefreshInterval = 0, Title = null, Visible = false }, tile.Snapshot());
     }
 
     private static void Collections(JsScope scope)

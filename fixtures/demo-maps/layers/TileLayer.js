@@ -1,6 +1,7 @@
 import { Layer } from "./Layer.js";
+import { Refreshable } from "./Refreshable.js";
 
-export default class TileLayer extends Layer {
+export default class TileLayer extends Refreshable(Layer) {
   static className = "layers.TileLayer";
 
   constructor(options = {}) {

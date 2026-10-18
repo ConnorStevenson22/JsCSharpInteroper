@@ -79,6 +79,17 @@ internal sealed class LiveEmitter
         return e.File();
     }
 
+    /// <summary>
+    /// §5: a mixin's interface, <c>I</c> and its name, with its properties, methods and events as default members, so
+    /// that any live class with the mixin has them, a variant's too.
+    /// </summary>
+    public static string Mixin(TypeMap types, Profile profile, GeneratorOptions options, ICollection<Diagnostic> diagnostics, ClassDeclaration m)
+    {
+        var e = new LiveEmitter(types, profile, options, diagnostics, types.Namespace(m));
+        e.MixinBody(m);
+        return e.File();
+    }
+
     /// <summary>A module's functions, as a static class named after its file, in the module's namespace (§5, R27).</summary>
     public static string Module(TypeMap types, Profile profile, GeneratorOptions options, ICollection<Diagnostic> diagnostics,
         string name, string specifier, IEnumerable<FunctionDeclaration> functions)
@@ -110,7 +121,8 @@ internal sealed class LiveEmitter
         // Mapping §2: a generic class's type parameters are entities.
         var constraints = string.Concat(c.TypeParameters.Select(t => $" where {t.Name} : global::Interoper.JsObject"));
         XmlDoc.Write(w, c.Doc);
-        using (w.Block($"public {modifier}partial class {self.Name} : {types.LiveBaseName(c, ns)}{constraints}"))
+        var mixins = string.Concat(types.Mixins(c).Select(m => ", " + types.MixinName(m).In(ns)));
+        using (w.Block($"public {modifier}partial class {self.Name} : {types.LiveBaseName(c, ns)}{mixins}{constraints}"))
         {
             Separate();
             w.Line($"internal {name}(global::Interoper.JsRealm realm, int handle) : base(realm, handle) {{ }}");
@@ -120,18 +132,7 @@ internal sealed class LiveEmitter
                 var create = Claim(Mode("Create"), c.Name);
                 Expression($"public static {Declare(create, ["global::Interoper.JsScope", snapshotKey])}{type} {create}(global::Interoper.JsScope scope, {snapshot} props)", body, c.Constructors.FirstOrDefault()?.Doc);
             }
-            foreach (var p in c.Members.OfType<PropertyMember>().Where(p => p.Type is not LiteralType)) // R20: a constant is no property
-            {
-                Property(name, p);
-            }
-            foreach (var m in c.Members.OfType<MethodMember>())
-            {
-                Calls(name, m.Name, m.Signatures, name);
-            }
-            foreach (var e in c.Events)
-            {
-                Subscription(name, "On" + Naming.Pascal(e.Name), profile.Events!.Subscribe!, e.Name, e.Type, $"{name}.on:{e.Name}", optional: false, isEvent: true, e.Doc);
-            }
+            Members(name, c);
             // §5; a callback or a DOM element can't be read back (R21, R13).
             foreach (var p in types.HasWatches(c) ? c.Members.OfType<PropertyMember>().Where(p => p.Type is not LiteralType && !types.IsCallback(p) && !types.IsElement(p)) : [])
             {
@@ -141,6 +142,39 @@ internal sealed class LiveEmitter
             Expression($"public {Declare(Mode("Snapshot"), [])}{snapshotType} {Mode("Snapshot")}()", read);
             var (applyType, apply) = Run("Realm", $"global::Interoper.JsOp.Apply(Handle, w => {snapshot}.WriteMembers(w, patch))", null, async);
             Expression($"public {Declare(Mode("Apply"), [snapshotKey])}{applyType} {Mode("Apply")}({snapshot} patch)", apply);
+        }
+    }
+
+    private void MixinBody(ClassDeclaration m)
+    {
+        var name = types.Name(m).Name;
+        self = types.Self(m);
+        taken.UnionWith([types.MixinName(m).Name, "Realm", "Handle"]);
+        if (!async)
+        {
+            Hide(m);
+        }
+        XmlDoc.Write(w, m.Doc);
+        using (w.Block($"public partial interface {types.MixinName(m).Name} : global::Interoper.IJsObject"))
+        {
+            Members(name, m);
+        }
+    }
+
+    /// <summary>A class's or a mixin's properties, methods and events (R24).</summary>
+    private void Members(string name, ClassDeclaration c)
+    {
+        foreach (var p in c.Members.OfType<PropertyMember>().Where(p => p.Type is not LiteralType)) // R20: a constant is no property
+        {
+            Property(name, p);
+        }
+        foreach (var m in c.Members.OfType<MethodMember>())
+        {
+            Calls(name, m.Name, m.Signatures, name);
+        }
+        foreach (var e in c.Events)
+        {
+            Subscription(name, "On" + Naming.Pascal(e.Name), profile.Events!.Subscribe!, e.Name, e.Type, $"{name}.on:{e.Name}", optional: false, isEvent: true, e.Doc);
         }
     }
 

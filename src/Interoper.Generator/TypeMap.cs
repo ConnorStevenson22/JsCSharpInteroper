@@ -84,6 +84,8 @@ internal sealed class TypeMap
     /// <summary>R27: the names of the anonymous unions and enums mapped so far, ignoring case.</summary>
     private readonly HashSet<TypeName> unionNames = new(TypeName.IgnoreCase);
     private readonly HashSet<ClassDeclaration> watchable = new(ReferenceEqualityComparer.Instance);
+    /// <summary>§5: the mixins that are interfaces, and the emitted classes a variant derives from.</summary>
+    private readonly HashSet<ClassDeclaration> mixins = new(ReferenceEqualityComparer.Instance), variantBases = new(ReferenceEqualityComparer.Instance);
     private readonly Dictionary<Declaration, bool> scoped = new(ReferenceEqualityComparer.Instance);
     private readonly HashSet<Declaration> scoping = new(ReferenceEqualityComparer.Instance);
     private readonly Dictionary<PropertyMember, Unmappable?> dropped = new(ReferenceEqualityComparer.Instance);
@@ -102,8 +104,9 @@ internal sealed class TypeMap
     /// live classes to emit. <paramref name="ns"/> is the root namespace (R27).
     /// </summary>
     /// <param name="payloads">The event payloads (R24), whose required members are dropped like optional ones (<see cref="DroppedProblem"/>).</param>
+    /// <param name="selection">The selection's mixins and variants (§5), once it has them.</param>
     public TypeMap(IrDocument ir, Profile profile, IEnumerable<Selected> selected, ICollection<Diagnostic> diagnostics, string ns,
-        IEnumerable<InterfaceDeclaration>? payloads = null)
+        IEnumerable<InterfaceDeclaration>? payloads = null, Selection? selection = null)
     {
         payloadMembers.UnionWith((payloads ?? []).SelectMany(i => i.Members.OfType<PropertyMember>()));
         foreach (var module in ir.Modules)
@@ -133,6 +136,13 @@ internal sealed class TypeMap
                 classes.Add(c);
             }
         }
+        foreach (var m in selection?.Mixins ?? [])
+        {
+            declarations[(m.Module, m.Declaration.Name)] = m.Declaration;
+            moduleOf[m.Declaration] = m.Module;
+            mixins.Add((ClassDeclaration)m.Declaration);
+        }
+        variantBases.UnionWith((selection?.Variants ?? []).Select(v => v.Base));
         valueClasses = [.. profile.ValueClasses];
         this.diagnostics = diagnostics;
         (package, root) = (ir.Package.Name, ns);
@@ -387,7 +397,14 @@ internal sealed class TypeMap
     public IReadOnlyList<ClassDeclaration> ConcreteSubclasses(ClassDeclaration c) =>
         [.. classes.Where(sub => !sub.Abstract && Bases(sub).Contains(c))];
 
-    public bool HasSubclasses(ClassDeclaration c) => classes.Any(sub => LiveBase(sub) == c);
+    public bool HasSubclasses(ClassDeclaration c) => variantBases.Contains(c) || classes.Any(sub => LiveBase(sub) == c);
+
+    /// <summary>§5: a class's mixins that are interfaces.</summary>
+    public IReadOnlyList<ClassDeclaration> Mixins(ClassDeclaration c) =>
+        [.. c.Mixins.OfType<RefType>().Select(Find).OfType<ClassDeclaration>().Where(mixins.Contains)];
+
+    /// <summary>§5: a mixin's interface, <c>I</c> and its name, in its namespace.</summary>
+    public TypeName MixinName(ClassDeclaration m) => Name(m) with { Name = "I" + Name(m).Name };
 
     private IEnumerable<ClassDeclaration> Bases(ClassDeclaration c)
     {
@@ -874,7 +891,7 @@ internal sealed class TypeMap
         PrimitiveType { Name: "any" or "unknown" or "object" } => true, // a JsAny, whose handles the scope owns
         RefType { Module: not null } r => Find(r) switch
         {
-            ClassDeclaration c => !IsValueLike(c),
+            ClassDeclaration c => classes.Contains(c) && !IsValueLike(c), // one outside the selection is dropped (R2)
             AliasDeclaration { Type: not ObjectType } a => UsesEntity(a.Type),
             { } d => IsScoped(d),
             null => false,

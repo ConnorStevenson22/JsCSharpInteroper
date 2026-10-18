@@ -75,7 +75,7 @@ A union that is only written (a parameter, or a setter's wider type) may have ca
 | value-like class (per profile) | live class plus `XSnapshot` record | §3 |
 | interface with only data members | data record with the same name | §3 |
 | inline object type, including an intersection of data bags | data record named after its owner | **R11** |
-| class extending a mixin's base (`PinBase: typeof Marker & typeof Draggable`) | derives from the named class (`Pin : Marker`), with the mixin's members as its own | [ir.md](ir.md#declarations) |
+| class extending a mixin's base (`PinBase: typeof Marker & typeof Draggable`) | derives from the named class (`Pin : Marker`), with the mixin's members as its own, and implements each exported mixin's interface (§5) | [ir.md](ir.md#declarations) |
 | generic `T` | generic over entities (`where T : JsObject`), or its constraint | See Generics below |
 | `this` (return type) | the declaring type | |
 | `keyof`, indexed access, mapped, conditional, `typeof` | the type the checker resolves | **R12.** Unresolvable: skipped with its users (IOP2007) |
@@ -131,7 +131,7 @@ Sent to JS, a value-like snapshot arrives as an instance. The writer adds its cl
 
 **R17. Snapshot depth.** Snapshots hold data members only. Value-like members are copied deeply as their snapshots. Entity members are left out, since reading one needs a scope; use the scoped getter (`GetSelected(scope)`).
 
-A data record (not a snapshot) may hold entities, directly, in arrays or through a type parameter. Such a record is *scoped*: its reader is `Read(ref reader, JsScope scope)`, so whatever returns it takes a scope (§5). Union readers take no scope, so only a write-only union can have an entity or scoped record case (R2).
+A data record (not a snapshot) may hold entities, directly, in arrays or through a type parameter. Only emitted classes count: a member typed with a class outside the selection is dropped or skipped (R2), so it makes nothing scoped. Such a record is *scoped*: its reader is `Read(ref reader, JsScope scope)`, so whatever returns it takes a scope (§5). Union readers take no scope, so only a write-only union can have an entity or scoped record case (R2).
 
 **R18. Every live class has an `XSnapshot` record.** It holds the class's writable data members, all optional, typed as the getter where getter and setter differ. One type serves as:
 
@@ -157,7 +157,7 @@ When JS returns a value for a union position, the runtime must pick the case.
 
 **R19. Classification order:**
 
-1. **Handle with a class id** (`{"$h": 12, "$t": 7}`). The generated registry maps the id to the most-derived live type, and the case is the one that type converts to. An object whose class isn't in the metadata (undeclared, or outside the selection) gets the id of its nearest known ancestor: the runtime walks up the prototype chain, reading at each level the class-name property, or else the prototype's own `constructor` when it is a loaded module's export. So a plain class with no class-name property, as an app's own module has, is still known. With none, the id is 0, and reading it as an entity throws.
+1. **Handle with a class id** (`{"$h": 12, "$t": 7}`). The generated registry maps the id to the most-derived live type, and the case is the one that type converts to. An object whose class isn't in the metadata (undeclared, or outside the selection) gets the id of its nearest known ancestor: the runtime walks up the prototype chain, reading at each level the class-name property, or else the prototype's own `constructor` when it is a loaded module's export. So a plain class with no class-name property, as an app's own module has, is still known. A variant (§5) is known too, so an unselected class that adds a mixin reads as its nearest emitted ancestor with the mixin's interface. With none, the id is 0, and reading it as an entity throws.
 2. **Object with a discriminant.** The extractor finds a property every member declares with a distinct literal type (`type: "point"`), intersections (`Props & { type: "cluster" }`) included. The generator switches on its value. A nullable union that holds one union (`(A | B) | null`) uses that union's.
 3. **Object without a discriminant.** If the sets of *required* member names separate the cases, the generator emits a structural check. Otherwise the union is ambiguous and is skipped (IOP2003). Optional members don't count, because typings make most of them optional.
 4. **Primitives** by JSON token kind. Two cases with the same kind (`string` and a string enum) are told apart by value where possible, otherwise IOP2003.
@@ -189,6 +189,8 @@ When JS returns a value for a union position, the runtime must pick the case.
 - A method or module function that returns a `Task` takes `CancellationToken cancellationToken = default` last, except after a rest parameter (R22). Cancelling stops the wait, not the JS call, which runs to the end. A result that arrives later is still read, so the caller's scope owns its handles.
 - Live results, events and watches belong to the scope the caller passes ([design §3.2](design.md#32-handles-identity-and-lifetime)). Disposing a returned subscription releases it sooner. Value-like classes are values (R16), so `PointSnapshot Center { get; set; }` needs no scope.
 - Discriminants aren't members of live classes, since the live type already says it.
+- An exported mixin class (`Refreshable` in `TileLayerBase: typeof Layer & typeof Refreshable`) is an interface, `IRefreshable : IJsObject`, never a live class. Its properties, methods and events are default members, and each emitted class with the mixin implements it, so code holding a `Layer` can test `layer is IRefreshable r` and call `r.RefreshAsync()`. A member that names `this` is left to the classes. Only the mixins of emitted classes get one, and only when members are left.
+- A class outside the selection that adds one of those mixins to its base (an unselected `WmsLayer : Layer` that is refreshable) is a variant when emitted members name its nearest emitted ancestor (`Map.layers` names `Layer`), since only then can JS hand one to .NET: it gets a class id, and the registry reads its objects as a private subclass of its nearest emitted ancestor that implements the interfaces it adds. Its metadata entry is its runtime class name and `of`, the ancestor's class id, whose entry it shares. A subclass that adds no mixin has none: JS finds its base (R19 step 1).
 - Static members and exported variables (`export const`) aren't mapped yet (IOP2007).
 
 **R21. Callbacks** become delegates in the runtime's callback registry, owned by the scope.

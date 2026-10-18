@@ -11,7 +11,7 @@ public sealed class IrTests
     {
         var ir = Fixture.Ir;
         Assert.Equal(new IrPackage("@acme/demo-maps", "0.0.0"), ir.Package);
-        Assert.Equal(["MapView", "Marker", "core", "demo-map", "geometry", "layers/Layer", "layers/TileLayer", "measure", "ops/a", "ops/b", "pins", "styles"],
+        Assert.Equal(["MapView", "Marker", "core", "demo-map", "geometry", "layers/Layer", "layers/Refreshable", "layers/TileLayer", "measure", "ops/a", "ops/b", "pins", "styles"],
             ir.Modules.Select(m => m.Specifier["@acme/demo-maps/".Length..^".js".Length]));
 
         var mapView = Declaration<ClassDeclaration>("MapView");

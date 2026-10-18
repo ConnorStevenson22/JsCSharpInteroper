@@ -20,6 +20,13 @@ public sealed record Selected(string Module, Declaration Declaration);
 public sealed record SelectedElement(string Module, Element Element, ClassDeclaration Class);
 
 /// <summary>
+/// §5: a class outside the selection whose objects have mixins its nearest emitted ancestor doesn't (an unselected
+/// <c>WMSLayer</c> under <c>Layer</c>). It gets a class id, so JS reads its objects as an anonymous subclass of
+/// <see cref="Base"/> that implements <see cref="Mixins"/>' interfaces. Both are as selected.
+/// </summary>
+public sealed record SelectedVariant(string Module, ClassDeclaration Class, ClassDeclaration Base, IReadOnlyList<ClassDeclaration> Mixins);
+
+/// <summary>
 /// What to emit for an IR and a profile. The profile's <c>include</c> lists module globs (absent: every module). Every
 /// export of a matching module is emitted, plus the bases of emitted classes and the data types they use.
 /// A member that uses a type that can't be mapped is skipped with IOP2007 (IOP2003 for an ambiguous union), so a
@@ -52,6 +59,10 @@ public sealed class Selection
     private readonly HashSet<InterfaceDeclaration> payloads = new(ReferenceEqualityComparer.Instance);
     private readonly HashSet<AliasDeclaration> callbacks = new(ReferenceEqualityComparer.Instance);
     private readonly List<SelectedElement> elements = [];
+    /// <summary>§5: the classes a class has as a mixin (ir.md), which are interfaces, never live classes, unless they're a base too.</summary>
+    private readonly HashSet<ClassDeclaration> mixinClasses = new(ReferenceEqualityComparer.Instance);
+    /// <summary>§5: the mixins of emitted classes, trimmed like a class, by their IR declaration; one left with no members has no interface.</summary>
+    private readonly Dictionary<ClassDeclaration, Selected> mixins = new(ReferenceEqualityComparer.Instance);
     /// <summary>§5: the emitted entity classes by the constructor bag each takes, for <see cref="Autocast"/>; one bag, one class.</summary>
     private readonly Dictionary<Declaration, ClassDeclaration?> constructedFrom = new(ReferenceEqualityComparer.Instance);
     /// <summary>The type parameters of the generic declaration being checked or added, which its types can use (mapping §2).</summary>
@@ -75,8 +86,10 @@ public sealed class Selection
             moduleOf[declaration] = module;
         }
 
+        mixinClasses.UnionWith(all.Select(x => x.Declaration).OfType<ClassDeclaration>().SelectMany(MixinsOf));
         var included = Included();
-        var roots = all.Where(x => included.Contains(x.Module)).Select(x => x.Declaration).ToHashSet(ReferenceEqualityComparer.Instance);
+        var roots = all.Where(x => included.Contains(x.Module) && !(x.Declaration is ClassDeclaration c && mixinClasses.Contains(c)))
+            .Select(x => x.Declaration).ToHashSet(ReferenceEqualityComparer.Instance);
         foreach (var c in roots.OfType<ClassDeclaration>().ToList())
         {
             for (var b = Base(c); b is not null; b = Base(b))
@@ -125,7 +138,21 @@ public sealed class Selection
         {
             AddElement(element);
         }
+        foreach (var m in selected.Values.Select(s => s.Declaration).OfType<ClassDeclaration>().SelectMany(MixinsOf).Distinct().ToList())
+        {
+            typeParameters = m.TypeParameters;
+            var trimmed = Trim(m);
+            trimmed = trimmed with { Members = [.. trimmed.Members.Where(member => !UsesThis(member))] };
+            if (trimmed.Members.Count + trimmed.Events.Count > 0)
+            {
+                mixins[m] = new(moduleOf[m], trimmed);
+            }
+            typeParameters = [];
+        }
         Declarations = [.. all.Where(x => selected.ContainsKey(x.Declaration)).Select(x => selected[x.Declaration])];
+        Mixins = [.. all.Where(x => x.Declaration is ClassDeclaration c && mixins.ContainsKey(c)).Select(x => mixins[(ClassDeclaration)x.Declaration])];
+        var named = Named();
+        Variants = [.. all.Select(x => x.Declaration is ClassDeclaration c ? Variant(x.Module, c) : null).OfType<SelectedVariant>().Where(v => named.Contains(v.Base))];
     }
 
     /// <summary>The declarations to emit, in IR order.</summary>
@@ -133,6 +160,12 @@ public sealed class Selection
 
     /// <summary>The custom elements to make components of (R28), in IR order.</summary>
     public IReadOnlyList<SelectedElement> Elements => elements;
+
+    /// <summary>§5: the mixins of the emitted classes, each an interface, in IR order.</summary>
+    public IReadOnlyList<Selected> Mixins { get; }
+
+    /// <summary>§5: the classes outside the selection that add mixins to their nearest emitted ancestor, in IR order.</summary>
+    public IReadOnlyList<SelectedVariant> Variants { get; }
 
     /// <summary>The interfaces an emitted class's events deliver, and their bases (R24): they drop every member they can't map.</summary>
     public IReadOnlySet<InterfaceDeclaration> Payloads => payloads;
@@ -224,6 +257,13 @@ public sealed class Selection
                 ? "skipped: its parameter isn't a bag, so there's no Create (R18)"
                 : $"skipped: it {Unimportable}, so there's no Create (R18){(types.IsValueLike(c) ? " and it can't be sent as a value (R16)" : "")}"));
         }
+        selected[c] = new(moduleOf[c], Trim(c));
+        typeParameters = [];
+    }
+
+    /// <summary>A class, or a mixin, with the members and events that can be mapped.</summary>
+    private ClassDeclaration Trim(ClassDeclaration c)
+    {
         var members = new List<Member>();
         foreach (var member in c.Members.Where(m => !IsConvention(m)))
         {
@@ -292,8 +332,96 @@ public sealed class Selection
             ReportUntyped($"{c.Name}.on:{e.Name}", payload);
             events.Add(e with { Type = payload });
         }
-        selected[c] = new(moduleOf[c], c with { Members = members, Events = events });
-        typeParameters = [];
+        return c with { Members = members, Events = events };
+    }
+
+    /// <summary>A class's mixins (ir.md).</summary>
+    private IEnumerable<ClassDeclaration> MixinsOf(ClassDeclaration c) => c.Mixins.OfType<RefType>().Select(Find).OfType<ClassDeclaration>();
+
+    /// <summary>§5: a member that names <c>this</c>, which only a live class can map: a mixin's interface leaves it to the classes.</summary>
+    private static bool UsesThis(Member member) => member switch
+    {
+        PropertyMember p => UsesThis(p.Type) || p.WriteType is { } w && UsesThis(w),
+        MethodMember m => m.Signatures.Any(s => s.Params.Any(p => UsesThis(p.Type)) || s.Returns is { } r && UsesThis(r)),
+        _ => false,
+    };
+
+    private static bool UsesThis(IrType type) => type is ThisType || Children(type).Any(UsesThis);
+
+    /// <summary>
+    /// §5: a class outside the selection with a mixin its base doesn't have, which is an interface. Its interfaces are its
+    /// mixins and those of its bases up to its nearest emitted ancestor, less that ancestor's; a subclass that adds none
+    /// is its base's, which JS finds up the prototype chain (R19 step 1). Not when the ancestor is value-like (read by
+    /// value, R16) or generic.
+    /// </summary>
+    private SelectedVariant? Variant(string module, ClassDeclaration c)
+    {
+        if (selected.ContainsKey(c) || mixinClasses.Contains(c) || c.TypeParameters.Count > 0 || Base(c) is not { } b ||
+            !MixinsOf(c).Any(m => mixins.ContainsKey(m) && !MixinsUpFrom(b).Contains(m)))
+        {
+            return null;
+        }
+        var k = b;
+        while (k is not null && !selected.ContainsKey(k))
+        {
+            k = Base(k);
+        }
+        if (k is null || types.IsValueLike(k) || k.TypeParameters.Count > 0)
+        {
+            return null;
+        }
+        var inherited = MixinsUpFrom(k);
+        List<ClassDeclaration> interfaces = [.. MixinsUpFrom(c).Where(m => mixins.ContainsKey(m) && !inherited.Contains(m)).Select(m => (ClassDeclaration)mixins[m].Declaration)];
+        return new(module, c, (ClassDeclaration)selected[k].Declaration, interfaces);
+    }
+
+    /// <summary>
+    /// §5: the emitted classes that emitted members name, the types JS hands back objects of: a variant's base is one, or
+    /// no object of the variant reaches .NET.
+    /// </summary>
+    private HashSet<ClassDeclaration> Named()
+    {
+        static IEnumerable<IrType> Types(Member m) => m switch
+        {
+            PropertyMember p => p.WriteType is { } w ? [p.Type, w] : [p.Type],
+            MethodMember method => method.Signatures.SelectMany(s => s.Params.Select(p => p.Type).Concat(s.Returns is { } r ? [r] : [])),
+            _ => [],
+        };
+        var types = new Stack<IrType>(selected.Values.Concat(mixins.Values).Select(s => s.Declaration).SelectMany(d => d switch
+        {
+            ClassDeclaration c => c.Members.SelectMany(Types).Concat(c.Events.Select(e => e.Type)),
+            FunctionDeclaration f => f.Signatures.SelectMany(s => s.Params.Select(p => p.Type).Concat(s.Returns is { } r ? [r] : [])),
+            _ => Parts(d),
+        }));
+        var seen = new HashSet<IrType>();
+        var result = new HashSet<ClassDeclaration>(ReferenceEqualityComparer.Instance);
+        while (types.TryPop(out var type))
+        {
+            if (!seen.Add(type))
+            {
+                continue;
+            }
+            if (type is RefType { Module: not null } r && Find(r) is ClassDeclaration c && selected.TryGetValue(c, out var s))
+            {
+                result.Add((ClassDeclaration)s.Declaration);
+            }
+            foreach (var child in Children(type))
+            {
+                types.Push(child);
+            }
+        }
+        return result;
+    }
+
+    /// <summary>The mixins of a class and of all its bases.</summary>
+    private HashSet<ClassDeclaration> MixinsUpFrom(ClassDeclaration c)
+    {
+        var result = new HashSet<ClassDeclaration>(ReferenceEqualityComparer.Instance);
+        for (ClassDeclaration? k = c; k is not null; k = Base(k))
+        {
+            result.UnionWith(MixinsOf(k));
+        }
+        return result;
     }
 
     /// <summary>The named record a constructor parameter is, without null and undefined: its bag (R18).</summary>

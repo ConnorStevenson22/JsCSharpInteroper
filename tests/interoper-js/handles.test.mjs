@@ -52,6 +52,14 @@ test("an object of a class the metadata doesn't know is its nearest registered a
   release(fast, guarded, source, endless);
 });
 
+test("a variant has its own class id and its base's entry (§5)", async () => {
+  const glow = value(await sendAsync({ op: "call", module: faulty, name: "glowMarker" }));
+  assert.equal(glow.$t, ids.GlowMarker);
+  set(glow, "label", "lit");
+  assert.deepEqual(Object.keys(value(send({ op: "snapshot", h: glow.$h }))), ["position", "label", "style"]); // Marker's members
+  release(glow);
+});
+
 test("an object of a plain class with no runtime class name is found by its constructor (R19 step 1)", async () => {
   const plain = value(await sendAsync({ op: "call", module: faulty, name: "plain" }));
   assert.equal(plain.$t, ids.Plain);

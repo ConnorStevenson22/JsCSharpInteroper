@@ -29,7 +29,7 @@ const pair = { kind: "tuple", elements: [num, num] };
 test("modules are keyed by specifier, declarations keep source order", () => {
   assert.equal(ir.version, 1);
   assert.deepEqual(ir.package, { name: "@acme/demo-maps", version: "0.0.0" });
-  assert.deepEqual(ir.modules.map((m) => m.specifier.slice("@acme/demo-maps/".length)), ["MapView.js", "Marker.js", "core.js", "demo-map.js", "geometry.js", "layers/Layer.js", "layers/TileLayer.js", "measure.js", "ops/a.js", "ops/b.js", "pins.js", "styles.js"]);
+  assert.deepEqual(ir.modules.map((m) => m.specifier.slice("@acme/demo-maps/".length)), ["MapView.js", "Marker.js", "core.js", "demo-map.js", "geometry.js", "layers/Layer.js", "layers/Refreshable.js", "layers/TileLayer.js", "measure.js", "ops/a.js", "ops/b.js", "pins.js", "styles.js"]);
   assert.deepEqual(ir.modules.find((m) => m.specifier.endsWith("/geometry.js")).declarations.map((d) => `${d.kind} ${d.name}`),
     ["alias ShapeType", "interface Bounds", "class Shape", "class Point", "class Line", "class Polygon"]);
 });
@@ -150,6 +150,11 @@ test("a mixin's base: the class it starts with, and the mixin's members as inher
   assert.deepEqual(pin.extends, ref("Marker", "Marker"));
   assert.deepEqual(pin.members.map((m) => `${m.name}${m.inherited ? " (inherited)" : ""}`), ["meta", "on (inherited)", "dragBy (inherited)"]);
   assert.deepEqual(pin.events, [{ name: "drag", type: ref("pins", "PinDragEvent") }]);
+  assert.equal(pin.mixins, undefined); // Draggable isn't exported
+  // An exported mixin is listed, and its members are still inherited.
+  const tile = decl("layers/TileLayer", "TileLayer");
+  assert.deepEqual(tile.mixins, [ref("layers/Refreshable", "Refreshable")]);
+  assert.ok(["refreshInterval", "refresh"].every((name) => tile.members.find((m) => m.name === name)?.inherited));
   // The mixin class and the constant aren't exported.
   assert.deepEqual(ir.modules.find((m) => m.specifier.endsWith("/pins.js")).declarations.map((d) => d.name), ["PinDragEvent", "PinEvents", "Pin"]);
 });
@@ -172,6 +177,23 @@ test("a mixin's base in any order: the first named, exported class", (t) => {
   assert.deepEqual(lamp.members.map((m) => `${m.name}${m.inherited ? " (inherited)" : ""}`), ["watts", "glow (inherited)"]);
   assert.deepEqual(top.extends, shape);
   assert.deepEqual(top.members.map((m) => `${m.name}${m.inherited ? " (inherited)" : ""}`), ["speed", "spin (inherited)"]);
+});
+
+test("a mixin's base: its other exported classes are its mixins", (t) => {
+  const dir = tempDir(t);
+  fs.writeFileSync(path.join(dir, "package.json"), JSON.stringify({ name: "@acme/extra", version: "1.0.0" }));
+  fs.writeFileSync(path.join(dir, "index.d.ts"), `
+    export {};
+    export class Shape { area: number }
+    export abstract class Dimmable { constructor(...args: any[]); dim(): void }
+    declare class Glow { constructor(...args: any[]); glow(): void }
+    declare const BulbBase: typeof Dimmable & typeof Shape & typeof Glow;
+    export class Bulb extends BulbBase { watts: number }`);
+  const [{ declarations }] = extract(dir).modules;
+  const bulb = declarations.find((d) => d.name === "Bulb");
+  assert.deepEqual(bulb.extends, { kind: "ref", name: "Dimmable", module: "@acme/extra/index.js" });
+  assert.deepEqual(bulb.mixins, [{ kind: "ref", name: "Shape", module: "@acme/extra/index.js" }]);
+  assert.equal(declarations.find((d) => d.name === "Shape").mixins, undefined);
 });
 
 test("R8, R22: Promise returns and optional parameters", () => {

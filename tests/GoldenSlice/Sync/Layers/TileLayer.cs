@@ -3,8 +3,8 @@
 
 namespace GoldenSlice.Sync.Layers;
 
-/// <summary>The module's default export, as many libraries' one-class modules have.</summary>
-public sealed partial class TileLayer : Layer
+/// <summary>The module's default export, as many libraries' one-class modules have. It has the <c>Refreshable</c> mixin.</summary>
+public sealed partial class TileLayer : Layer, IRefreshable
 {
     internal TileLayer(global::Interoper.JsRealm realm, int handle) : base(realm, handle) { }
 
@@ -28,6 +28,14 @@ public sealed partial class TileLayer : Layer
     public global::GoldenSlice.Sync.Marker[] GetEmphasized(global::Interoper.JsScope scope) =>
         Realm.Call(global::Interoper.JsOp.Get(Handle, "emphasized"), (ref r) => global::Interoper.JsJson.ReadArray(ref r, scope.Read<global::GoldenSlice.Sync.Marker>))!;
 
+    public double RefreshInterval
+    {
+        get => Realm.GetNumber(Handle, "refreshInterval");
+        set => Realm.Set(Handle, "refreshInterval", value);
+    }
+
+    public double RefreshCount => Realm.GetNumber(Handle, "refreshCount");
+
     /// <summary>Highlights one marker or several: <c>OneOrMany&lt;Marker&gt;</c> is <c>Marker | Marker[]</c> (§2).</summary>
     public void Emphasize(TileLayerEmphasizeMarkers markers) =>
         Realm.Send(global::Interoper.JsOp.Call(Handle, "emphasize", w => global::Interoper.JsJson.WriteValue(w, markers)));
@@ -35,6 +43,13 @@ public sealed partial class TileLayer : Layer
     /// <summary>Redeclared with the subclass's type.</summary>
     public new TileLayer Clone(global::Interoper.JsScope scope) =>
         Realm.Call(global::Interoper.JsOp.Call(Handle, "clone"), scope.Read<TileLayer>)!;
+
+    /// <summary>Fetches the layer's data again.</summary>
+    public void Refresh() => Realm.Send(global::Interoper.JsOp.Call(Handle, "refresh"));
+
+    /// <summary>A copy, of the same class: <c>this</c> is the class's, so the interface leaves it out.</summary>
+    public TileLayer Sibling(global::Interoper.JsScope scope) =>
+        Realm.Call(global::Interoper.JsOp.Call(Handle, "sibling"), scope.Read<TileLayer>)!;
 
     public global::System.IDisposable WatchUrl(global::Interoper.JsScope scope, global::System.Action<string> handler) =>
         scope.Subscribe(Handle, "watch", "url", global::Interoper.JsJson.ReadString, handler, null, null);
@@ -44,6 +59,12 @@ public sealed partial class TileLayer : Layer
 
     public global::System.IDisposable WatchEmphasized(global::Interoper.JsScope scope, global::System.Action<global::GoldenSlice.Sync.Marker[]> handler) =>
         scope.Subscribe(Handle, "watch", "emphasized", (ref r) => global::Interoper.JsJson.ReadArray(ref r, scope.Read<global::GoldenSlice.Sync.Marker>), handler, null, null);
+
+    public global::System.IDisposable WatchRefreshInterval(global::Interoper.JsScope scope, global::System.Action<double> handler) =>
+        scope.Subscribe(Handle, "watch", "refreshInterval", global::Interoper.JsJson.ReadNumber, handler, null, null);
+
+    public global::System.IDisposable WatchRefreshCount(global::Interoper.JsScope scope, global::System.Action<double> handler) =>
+        scope.Subscribe(Handle, "watch", "refreshCount", global::Interoper.JsJson.ReadNumber, handler, null, null);
 
     public new TileLayerSnapshot Snapshot() =>
         Realm.Call(global::Interoper.JsOp.Snapshot(Handle), TileLayerSnapshot.Read)!;

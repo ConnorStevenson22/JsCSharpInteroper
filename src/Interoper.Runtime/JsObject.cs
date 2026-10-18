@@ -7,7 +7,7 @@ namespace Interoper;
 /// <see cref="JsScope.Wrap{T}(int, int)"/>, so one JS object is always one C# object; whatever a live object returns is
 /// owned by the scope the caller passes, not by the object.
 /// </summary>
-public abstract class JsObject(JsRealm realm, int handle)
+public abstract class JsObject(JsRealm realm, int handle) : IJsObject
 {
     public JsRealm Realm { get; } = realm;
 

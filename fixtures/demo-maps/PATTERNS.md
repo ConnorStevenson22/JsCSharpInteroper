@@ -17,6 +17,7 @@ node --test "fixtures/demo-maps/test/*.test.mjs"
 | Module folders | R27 | `layers/Layer`, `layers/TileLayer`: the `Layers` namespace |
 | Same names in sibling modules | R27 | `ops/a` and `ops/b` each export an `Options` and an `execute(x, options?)` |
 | Mixin base | [IR `extends`](../../docs/ir.md#declarations), §2 | `class Pin extends PinBase`, where `PinBase: typeof Marker & typeof Draggable` (`pins`) |
+| Exported mixin | [IR `mixins`](../../docs/ir.md#declarations), [§5](../../docs/mapping.md#5-members) | `TileLayer extends TileLayerBase`, where `TileLayerBase: typeof Layer & typeof Refreshable`, with `refresh()` and `sibling(): this` (`layers/Refreshable`) |
 | Default export | [IR `export`](../../docs/ir.md#declarations), [design §2](../../docs/design.md#2-what-we-generate) | `export default class TileLayer` (`layers/TileLayer`) |
 | Member a subclass redeclares | R26 (`new`) | `TileLayer.clone(): TileLayer` over `Layer.clone(): Layer` |
 | Value-like classes (live class + snapshot) | R16–R18 | `Shape` and subclasses, via `profile.json` |
