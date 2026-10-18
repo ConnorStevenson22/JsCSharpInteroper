@@ -52,6 +52,8 @@ public sealed class Selection
     private readonly HashSet<InterfaceDeclaration> payloads = new(ReferenceEqualityComparer.Instance);
     private readonly HashSet<AliasDeclaration> callbacks = new(ReferenceEqualityComparer.Instance);
     private readonly List<SelectedElement> elements = [];
+    /// <summary>§5: the emitted entity classes by the constructor bag each takes, for <see cref="Autocast"/>; one bag, one class.</summary>
+    private readonly Dictionary<Declaration, ClassDeclaration?> constructedFrom = new(ReferenceEqualityComparer.Instance);
     /// <summary>The type parameters of the generic declaration being checked or added, which its types can use (mapping §2).</summary>
     private IReadOnlyList<TypeParameter> typeParameters = [];
     private readonly List<Diagnostic> diagnostics = [];
@@ -107,6 +109,13 @@ public sealed class Selection
         if (payloads.Count > 0)
         {
             types = Checker();
+        }
+        foreach (var c in classes.Where(c => !c.Abstract && !types.IsValueLike(c)))
+        {
+            foreach (var bag in c.Constructors.Select(s => s.Params.FirstOrDefault()?.Type).OfType<IrType>().Select(Bag).OfType<Declaration>().Distinct())
+            {
+                constructedFrom[bag] = constructedFrom.ContainsKey(bag) ? null : c;
+            }
         }
         foreach (var (_, declaration) in all.Where(x => roots.Contains(x.Declaration)))
         {
@@ -233,7 +242,7 @@ public sealed class Selection
                 }
                 continue;
             }
-            var property = (PropertyMember)member;
+            var property = Autocast((PropertyMember)member);
             if (IsDiscriminant(c, property))
             {
                 continue;
@@ -285,6 +294,29 @@ public sealed class Selection
         }
         selected[c] = new(moduleOf[c], c with { Members = members, Events = events });
         typeParameters = [];
+    }
+
+    /// <summary>The named record a constructor parameter is, without null and undefined: its bag (R18).</summary>
+    private Declaration? Bag(IrType type) =>
+        Cases(type).Where(t => !IsNullish(t)).ToList() is [RefType { Module: not null } r] && Find(r) is (InterfaceDeclaration or AliasDeclaration { Type: ObjectType }) and var bag ? bag : null;
+
+    /// <summary>
+    /// §5: a setter whose wider type takes a class's constructor bag (<c>set basemap(v: BasemapProperties | string)</c>
+    /// next to <c>get basemap(): Basemap</c>) also takes that class, which the getter returns, as libraries that build an
+    /// instance from the bag (autocasting) do.
+    /// </summary>
+    private PropertyMember Autocast(PropertyMember p)
+    {
+        if (p.WriteType is not { } write)
+        {
+            return p;
+        }
+        var read = Cases(p.Type).OfType<RefType>().Select(r => (r.Module, r.Name)).ToHashSet();
+        var cases = Cases(write).ToList();
+        var added = cases.OfType<RefType>().Select(r => r.Module is null ? null : Find(r) is { } bag ? constructedFrom.GetValueOrDefault(bag) : null).OfType<ClassDeclaration>()
+            .Select(c => new RefType(c.Name, moduleOf[c])).Where(r => read.Contains((r.Module, r.Name)) && !cases.Any(t => t is RefType x && (x.Module, x.Name) == (r.Module, r.Name)))
+            .DistinctBy(r => (r.Module, r.Name)).ToList();
+        return added.Count == 0 ? p : p with { WriteType = new UnionType([.. write is UnionType u ? u.Types : [write], .. added]) };
     }
 
     /// <summary>

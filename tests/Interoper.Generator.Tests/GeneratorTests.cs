@@ -1503,6 +1503,27 @@ public sealed class GeneratorTests
         Assert.Contains("public LayerReduction(LayerReductionCluster value)", File(result, "LayerReduction.cs"));
     }
 
+    [Fact] // §5, R2: a setter that takes a class's constructor bag, which the getter returns, also takes the class (autocast)
+    public void ASetterOfAConstructorBagAlsoTakesTheClass()
+    {
+        // get basemap(): Basemap | null;  set basemap(value: BasemapProperties | string | null);  new Basemap(properties?: BasemapProperties)
+        var result = Generate($$"""
+            { "kind": "interface", "name": "BasemapProperties", "members": [{ "kind": "property", "name": "title", "optional": true, "type": {{String}} }] },
+            { "kind": "class", "name": "Basemap", "constructors": [{ "params": [{ "name": "properties", "optional": true, "type": { "kind": "ref", "name": "BasemapProperties", "module": "@acme/maps/a.js" } }] }],
+              "members": [{ "kind": "property", "name": "title", "type": {{String}} }] },
+            { "kind": "class", "name": "Map", "members": [{ "kind": "property", "name": "basemap",
+              "type": { "kind": "union", "types": [{ "kind": "ref", "name": "Basemap", "module": "@acme/maps/a.js" }, { "kind": "primitive", "name": "null" }] },
+              "writeType": { "kind": "union", "types": [{ "kind": "ref", "name": "BasemapProperties", "module": "@acme/maps/a.js" }, {{String}}, { "kind": "primitive", "name": "null" }] } }] }
+            """);
+
+        Assert.Empty(result.Diagnostics);
+        Assert.Contains("public void SetBasemap(MapBasemapInput value) =>", File(result, "Map.cs"));
+        var input = File(result, "MapBasemapInput.cs");
+        Assert.Contains("public MapBasemapInput(BasemapProperties value)", input);
+        Assert.Contains("public MapBasemapInput(Basemap value)", input);
+        Assert.Contains("is only written (R2)", input); // an entity case can't be read without a scope
+    }
+
     [Fact] // R28, R6: a property whose type has null through an alias (`Title | undefined`, `type Title = string | null`) sets JS null
     public void AComponentPropertyNullThroughAnAliasIsSetAsNull()
     {

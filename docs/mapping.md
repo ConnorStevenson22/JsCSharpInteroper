@@ -183,6 +183,7 @@ When JS returns a value for a union position, the runtime must pick the case.
 | snapshot / patch | `XSnapshot Snapshot()`, `void Apply(XSnapshot)` | `SnapshotAsync()`, `ApplyAsync(XSnapshot)` |
 | module function | static method on a static class per module, with a leading `JsRealm realm` (or `JsScope scope` when the rules above need one) | same, async |
 
+- A setter whose wider type takes the constructor bag of an entity class the getter returns also takes that class, as libraries that build an instance from the bag (autocasting) do: `get basemap(): Basemap`, `set basemap(v: BasemapProperties | string)` is `SetBasemap(MapBasemapInput)`, whose cases are `BasemapProperties`, `string` and `Basemap`. The union is only written (R2).
 - A method or module function that returns a `Task` takes `CancellationToken cancellationToken = default` last, except after a rest parameter (R22). Cancelling stops the wait, not the JS call, which runs to the end. A result that arrives later is still read, so the caller's scope owns its handles.
 - Live results, events and watches belong to the scope the caller passes ([design §3.2](design.md#32-handles-identity-and-lifetime)). Disposing a returned subscription releases it sooner. Value-like classes are values (R16), so `PointSnapshot Center { get; set; }` needs no scope.
 - Discriminants aren't members of live classes, since the live type already says it.
