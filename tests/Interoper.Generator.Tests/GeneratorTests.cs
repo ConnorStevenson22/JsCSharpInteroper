@@ -315,6 +315,20 @@ public sealed class GeneratorTests
         Assert.Equal("IOP2006 FillKind: \"a_b\" is AB2: AB is taken (R25), and in 2 other enums", Assert.Single(result.Diagnostics).ToString());
     }
 
+    [Theory] // R22: a name that already ends in Async keeps the one suffix
+    [InlineData(Api.Sync)]
+    [InlineData(Api.Async)]
+    public void ANameEndingInAsyncKeepsOneSuffix(Api api)
+    {
+        var result = Generate(api, ("a.js", $$"""
+            { "kind": "class", "name": "Loader", "members": [
+              { "kind": "method", "name": "loadAsync", "signatures": [{ "returns": { "kind": "ref", "name": "Promise", "args": [{{Void}}] } }] }] },
+            { "kind": "function", "name": "createAsync", "signatures": [{ "returns": { "kind": "ref", "name": "Promise", "args": [{{Void}}] } }] }
+            """));
+        Assert.Contains("public global::System.Threading.Tasks.Task LoadAsync(global::System.Threading.CancellationToken cancellationToken = default) =>", File(result, "Loader.cs"));
+        Assert.Contains("public static global::System.Threading.Tasks.Task CreateAsync(global::Interoper.JsRealm realm, global::System.Threading.CancellationToken cancellationToken = default) =>", File(result, "A.cs"));
+    }
+
     [Fact] // R27: generated code names the runtime's and .NET's types with global::, so a type or member of their name hides none
     public void RuntimeAndDotNetTypesAreGloballyQualified()
     {

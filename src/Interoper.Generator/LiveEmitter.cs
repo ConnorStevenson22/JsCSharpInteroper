@@ -492,7 +492,8 @@ internal sealed class LiveEmitter
     }
 
     /// <summary>R26: the name in this mode; async members, and Promise methods in both modes (R8), end in <c>Async</c>.</summary>
-    private string Mode(string name, bool promise = false) => async || promise ? name + "Async" : name;
+    // R22: a JS name that already ends in Async (`loadAsync`) keeps the one suffix.
+    private string Mode(string name, bool promise = false) => (async || promise) && !name.EndsWith("Async", StringComparison.Ordinal) ? name + "Async" : name;
 
     private string Claim(string name, string subject) => Naming.Member(taken, name, subject, diagnostics);
 
