@@ -53,10 +53,10 @@ internal static class MetadataEmitter
                 }
             }
             w.Line();
-            w.Line("/// <summary>The import map's entries for the packages' modules; <paramref name=\"root\"/> holds the packages' folders, as <c>node_modules</c> does (<c>\"/node_modules/\"</c>).</summary>");
+            w.Line("/// <summary>The import map's entries for the packages' modules; <paramref name=\"root\"/> holds the packages' folders, as <c>node_modules</c> does (<c>\"/node_modules/\"</c>), and starts with <c>/</c>, <c>./</c> or <c>../</c>, or is a URL.</summary>");
             using (w.Block("public static global::System.Collections.Generic.IReadOnlyDictionary<string, string> ImportMap(string root)"))
             {
-                w.Line("root = root.EndsWith('/') ? root : root + \"/\";");
+                w.Line("root = global::Interoper.JsImportMap.Root(root);");
                 using (w.Block("return new global::System.Collections.Generic.Dictionary<string, string>", "};"))
                 {
                     foreach (var (specifier, path) in ImportMap(ir))

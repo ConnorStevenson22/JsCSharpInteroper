@@ -73,39 +73,39 @@ public sealed partial class MapView : Emitter
 
     /// <summary>Screen offset (pixels from the center) to map coordinates.</summary>
     /// <remarks>Since: 0.2</remarks>
-    public async global::System.Threading.Tasks.Task<PointSnapshot> ScreenToMapAsync(double x, double y) =>
+    public async global::System.Threading.Tasks.Task<PointSnapshot> ScreenToMapAsync(double x, double y, global::System.Threading.CancellationToken cancellationToken = default) =>
         (await Realm.CallAsync(global::Interoper.JsOp.Call(Handle, "screenToMap", w =>
         {
             global::Interoper.JsJson.WriteNumber(w, x);
             global::Interoper.JsJson.WriteNumber(w, y);
-        }, byValue: true), PointSnapshot.Read))!;
+        }, byValue: true), PointSnapshot.Read, cancellationToken))!;
 
     /// <summary>The offset as an <c>[x, y]</c> pair.</summary>
     /// <remarks>
     /// Deprecated: Pass <c>x</c> and <c>y</c>.
     /// See: MapView.flyTo
     /// </remarks>
-    public async global::System.Threading.Tasks.Task<PointSnapshot> ScreenToMapAsync(double[] offset) =>
-        (await Realm.CallAsync(global::Interoper.JsOp.Call(Handle, "screenToMap", w => global::Interoper.JsJson.WriteArray(w, offset, global::Interoper.JsJson.WriteNumber), byValue: true), PointSnapshot.Read))!;
+    public async global::System.Threading.Tasks.Task<PointSnapshot> ScreenToMapAsync(double[] offset, global::System.Threading.CancellationToken cancellationToken = default) =>
+        (await Realm.CallAsync(global::Interoper.JsOp.Call(Handle, "screenToMap", w => global::Interoper.JsJson.WriteArray(w, offset, global::Interoper.JsJson.WriteNumber), byValue: true), PointSnapshot.Read, cancellationToken))!;
 
     /// <summary>
     /// Animates to a shape, a point or a camera.
     /// Resolves when the view has arrived &amp; settled.
     /// </summary>
     /// <remarks>Since: 0.3</remarks>
-    public global::System.Threading.Tasks.Task FlyToAsync(FlyToTarget target, global::Interoper.Opt<FlyToOptions> options = default) =>
+    public global::System.Threading.Tasks.Task FlyToAsync(FlyToTarget target, global::Interoper.Opt<FlyToOptions> options = default, global::System.Threading.CancellationToken cancellationToken = default) =>
         Realm.SendAsync(global::Interoper.JsOp.Call(Handle, "flyTo", w =>
         {
             global::Interoper.JsJson.WriteValue(w, target);
             if (!options.IsUndefined) global::Interoper.JsJson.WriteValue(w, options, FlyToOptions.Write);
-        }));
+        }), cancellationToken);
 
-    public global::System.Threading.Tasks.Task<global::Interoper.Opt<Marker>> MarkerAtAsync(global::Interoper.JsScope scope, double x, double y) =>
+    public global::System.Threading.Tasks.Task<global::Interoper.Opt<Marker>> MarkerAtAsync(global::Interoper.JsScope scope, double x, double y, global::System.Threading.CancellationToken cancellationToken = default) =>
         Realm.CallAsync(global::Interoper.JsOp.Call(Handle, "markerAt", w =>
         {
             global::Interoper.JsJson.WriteNumber(w, x);
             global::Interoper.JsJson.WriteNumber(w, y);
-        }), (ref r) => global::Interoper.JsJson.ReadOpt(ref r, scope.Read<Marker>));
+        }), (ref r) => global::Interoper.JsJson.ReadOpt(ref r, scope.Read<Marker>), cancellationToken);
 
     /// <summary>A click on the map, after the view has handled it.</summary>
     public global::System.Threading.Tasks.Task<global::System.IAsyncDisposable> OnClickAsync(global::Interoper.JsScope scope, global::System.Action<ClickEvent> handler, global::Interoper.EventOptions? options = null) =>

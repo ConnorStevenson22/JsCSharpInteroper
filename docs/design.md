@@ -146,7 +146,7 @@ The generated registry builds the import map for you:
 new ImportMapDefinition(Maps.ImportMap("/node_modules/"), null, null)
 ```
 
-`ImportMap(root)` maps each package to its folder under `root`, plus any export whose JS lives elsewhere (the IR's `file`). It only covers modules the IR lists. If a library's own JS imports other bare specifiers, you need a bundler or a CDN.
+`ImportMap(root)` maps each package to its folder under `root`, plus any export whose JS lives elsewhere (the IR's `file`). `root` must start with `/`, `./` or `../`, or be a URL, since browsers silently drop any other address; `ImportMap` throws `ArgumentException` otherwise. It only covers modules the IR lists. If a library's own JS imports other bare specifiers, you need a bundler or a CDN.
 
 When modules load:
 

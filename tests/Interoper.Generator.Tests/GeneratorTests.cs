@@ -331,7 +331,7 @@ public sealed class GeneratorTests
         Assert.Contains("public global::Interoper.Opt<string> Opt { get; init; }", options);
         var task = File(result, "Task.cs");
         Assert.Contains("public sealed partial class Task : global::Interoper.JsObject", task);
-        Assert.Contains("public global::System.Threading.Tasks.Task RunAsync() =>", task);
+        Assert.Contains("public global::System.Threading.Tasks.Task RunAsync(global::System.Threading.CancellationToken cancellationToken = default) =>", task);
         Assert.All(result.Files.Where(f => f.Path.EndsWith(".cs", StringComparison.Ordinal)), f => Assert.DoesNotContain("using ", f.Text));
     }
 
@@ -601,17 +601,17 @@ public sealed class GeneratorTests
         // Each argument is read with the scope, which owns the handles in it, and a result is written back to JS.
         var (layer, sync) = (File(result, "Layer.cs"), api == Api.Sync);
         Assert.Contains($$"""
-                public {{(sync ? "void Each" : "global::System.Threading.Tasks.Task EachAsync")}}(global::Interoper.JsScope scope, global::System.Action<Marker, double, global::Interoper.Opt<string>> callback) =>
-                    Realm.{{(sync ? "Send" : "SendAsync")}}(global::Interoper.JsOp.Call(Handle, "each", w => global::Interoper.JsJson.WriteCallback(w, scope.Callback(callback, scope.Read<Marker>, global::Interoper.JsJson.ReadNumber, static (ref r1) => global::Interoper.JsJson.ReadOpt(ref r1, global::Interoper.JsJson.ReadString)))));
+                public {{(sync ? "void Each" : "global::System.Threading.Tasks.Task EachAsync")}}(global::Interoper.JsScope scope, global::System.Action<Marker, double, global::Interoper.Opt<string>> callback{{(sync ? "" : ", global::System.Threading.CancellationToken cancellationToken = default")}}) =>
+                    Realm.{{(sync ? "Send" : "SendAsync")}}(global::Interoper.JsOp.Call(Handle, "each", w => global::Interoper.JsJson.WriteCallback(w, scope.Callback(callback, scope.Read<Marker>, global::Interoper.JsJson.ReadNumber, static (ref r1) => global::Interoper.JsJson.ReadOpt(ref r1, global::Interoper.JsJson.ReadString)))){{(sync ? "" : ", cancellationToken")}});
             """, layer);
         // An optional callback whose type has no null is sent as undefined when it's missing, here before a later argument.
         Assert.Contains("if (callback is not null || !delay.IsUndefined) global::Interoper.JsJson.WriteCallback(w, callback is null ? null : scope.Callback(callback), undefined: true);", layer);
-        Assert.Contains($"(global::Interoper.JsScope scope, global::System.Action? callback = default, global::Interoper.Opt<double> delay = default)", layer);
+        Assert.Contains($"(global::Interoper.JsScope scope, global::System.Action? callback = default, global::Interoper.Opt<double> delay = default{(sync ? "" : ", global::System.Threading.CancellationToken cancellationToken = default")})", layer);
         // A callback property is setter-only: JS can't hand the function back.
         Assert.Contains($"public {(sync ? "void SetOnLoad" : "global::System.Threading.Tasks.Task SetOnLoadAsync")}(global::Interoper.JsScope scope, global::System.Action value) =>", layer);
         Assert.DoesNotContain(sync ? " OnLoad " : "GetOnLoadAsync", layer);
         // A module function with a callback takes the scope instead of the realm.
-        Assert.Contains($"public static {(sync ? "void Visit" : "global::System.Threading.Tasks.Task VisitAsync")}(global::Interoper.JsScope scope, global::System.Action<Marker> callback) =>", File(result, "A.cs"));
+        Assert.Contains($"public static {(sync ? "void Visit" : "global::System.Threading.Tasks.Task VisitAsync")}(global::Interoper.JsScope scope, global::System.Action<Marker> callback{(sync ? "" : ", global::System.Threading.CancellationToken cancellationToken = default")}) =>", File(result, "A.cs"));
         Assert.DoesNotContain(result.Files, f => f.Path == "Formatter.cs"); // a callback alias has no C# type
         string[] skipped = ["IOP2007 Layer.many: skipped: uses a callback with more than 4 parameters (R21)"];
         if (sync)
@@ -665,7 +665,7 @@ public sealed class GeneratorTests
         var list = File(result, "List.cs");
         Assert.Contains("public sealed partial class List<T> : global::Interoper.JsObject where T : global::Interoper.JsObject", list);
         Assert.DoesNotContain("Create", list);
-        Assert.Contains(sync ? "public global::Interoper.Opt<T> First(global::Interoper.JsScope scope) =>" : "public global::System.Threading.Tasks.Task<global::Interoper.Opt<T>> FirstAsync(global::Interoper.JsScope scope) =>", list);
+        Assert.Contains(sync ? "public global::Interoper.Opt<T> First(global::Interoper.JsScope scope) =>" : "public global::System.Threading.Tasks.Task<global::Interoper.Opt<T>> FirstAsync(global::Interoper.JsScope scope, global::System.Threading.CancellationToken cancellationToken = default) =>", list);
         Assert.Contains("(ref r) => global::Interoper.JsJson.ReadOpt(ref r, scope.Read<T>)", list);
         var maps = File(result, "Maps.cs");
         Assert.Contains("public const int ListId = 2;", maps);
@@ -680,7 +680,7 @@ public sealed class GeneratorTests
         Assert.Contains("public static Hit Read(ref global::System.Text.Json.Utf8JsonReader reader, global::Interoper.JsScope scope)", hit);
         Assert.Contains("""case "marker": marker = scope.Read<Marker>(ref reader); break;""", hit);
         Assert.Contains("(ref r) => Hit.Read(ref r, scope)", view);
-        Assert.Contains(sync ? "public static Hit LastHit(global::Interoper.JsScope scope) =>" : "public static async global::System.Threading.Tasks.Task<Hit> LastHitAsync(global::Interoper.JsScope scope) =>", File(result, "A.cs"));
+        Assert.Contains(sync ? "public static Hit LastHit(global::Interoper.JsScope scope) =>" : "public static async global::System.Threading.Tasks.Task<Hit> LastHitAsync(global::Interoper.JsScope scope, global::System.Threading.CancellationToken cancellationToken = default) =>", File(result, "A.cs"));
         Assert.Equal(
         [
             "IOP2007 List.constructor: skipped: its parameter isn't a bag, so there's no Create (R18)",
@@ -779,14 +779,15 @@ public sealed class GeneratorTests
             """));
 
         var (m, sync) = (api == Api.Sync ? "" : "Async", api == Api.Sync);
+        var ct = sync ? ")" : ", global::System.Threading.CancellationToken cancellationToken = default)";
         var tileLayer = File(result, "Layers/TileLayer.cs");
-        Assert.Contains($"public new {(sync ? "TileLayer" : "async global::System.Threading.Tasks.Task<TileLayer>")} Clone{m}(global::Interoper.JsScope scope, double x)", tileLayer); // the same parameters
-        Assert.Contains($"public {(sync ? "double" : "global::System.Threading.Tasks.Task<double>")} Refresh{m}(string x)", tileLayer); // other parameters: an overload
+        Assert.Contains($"public new {(sync ? "TileLayer" : "async global::System.Threading.Tasks.Task<TileLayer>")} Clone{m}(global::Interoper.JsScope scope, double x{ct}", tileLayer); // the same parameters
+        Assert.Contains($"public {(sync ? "double" : "global::System.Threading.Tasks.Task<double>")} Refresh{m}(string x{ct}", tileLayer); // other parameters: an overload
         Assert.Contains(sync ? "public new string Title" : "public new global::System.Threading.Tasks.Task SetTitleAsync(string value)", tileLayer);
         Assert.Contains($"public new {(sync ? "global::System.IDisposable" : "global::System.Threading.Tasks.Task<global::System.IAsyncDisposable>")} WatchTitle{m}(global::Interoper.JsScope scope, global::System.Action<string> handler)", tileLayer);
         // Through every emitted base, whatever its namespace.
         var view = File(result, "Views/View.cs");
-        Assert.Contains($"public new {(sync ? "double" : "global::System.Threading.Tasks.Task<double>")} Refresh{m}(string x)", view);
+        Assert.Contains($"public new {(sync ? "double" : "global::System.Threading.Tasks.Task<double>")} Refresh{m}(string x{ct}", view);
         Assert.Contains($"public new {(sync ? "ViewSnapshot" : "async global::System.Threading.Tasks.Task<ViewSnapshot>")} Snapshot{m}()", view);
         Assert.Contains($"public {(sync ? "void" : "global::System.Threading.Tasks.Task")} Apply{m}(ViewSnapshot patch)", view); // another snapshot type
         Assert.DoesNotContain("public new", File(result, "Layers/Layer.cs"));
@@ -803,7 +804,7 @@ public sealed class GeneratorTests
 
         Assert.Contains("public sealed partial class TileLayer : global::Interoper.JsObject", File(result, "Layers/TileLayer.cs"));
         Assert.Contains("""1: { module: "@acme/maps/layers/TileLayer.js", export: "default", name: "acme.layers.TileLayer", members: [] },""", File(result, "maps.meta.js"));
-        Assert.Contains("""realm.CallAsync(global::Interoper.JsOp.Call(Module, "default"), global::Interoper.JsJson.ReadNumber);""", File(result, "Area.cs"));
+        Assert.Contains("""realm.CallAsync(global::Interoper.JsOp.Call(Module, "default"), global::Interoper.JsJson.ReadNumber, cancellationToken);""", File(result, "Area.cs"));
     }
 
     [Fact] // R16, R18, R26: a member a subclass redeclares is in its snapshot once; with another type it's new
@@ -1272,11 +1273,11 @@ public sealed class GeneratorTests
         var registry = File(Generator.Generate(Fixture.WithWidgetsIr, Fixture.Profile, new(api, "Acme.Maps")), "DemoMaps.cs");
 
         // demo-maps' `./*.js` mirrors its files; demo-widgets' root, `./legend` and `./components/*` map into dist/.
-        // The root gets its trailing slash when it has none.
+        // The runtime checks the root and gives it its trailing slash when it has none.
         Assert.Contains("""
                 public static global::System.Collections.Generic.IReadOnlyDictionary<string, string> ImportMap(string root)
                 {
-                    root = root.EndsWith('/') ? root : root + "/";
+                    root = global::Interoper.JsImportMap.Root(root);
                     return new global::System.Collections.Generic.Dictionary<string, string>
                     {
                         ["@acme/demo-maps/"] = root + "@acme/demo-maps/",

@@ -11,8 +11,8 @@ public closed partial class Shape : Observable
     public async global::System.Threading.Tasks.Task<Bounds> GetBoundsAsync() =>
         (await Realm.CallAsync(global::Interoper.JsOp.Get(Handle, "bounds"), Bounds.Read))!;
 
-    public async global::System.Threading.Tasks.Task<Shape> CloneAsync(global::Interoper.JsScope scope) =>
-        (await Realm.CallAsync(global::Interoper.JsOp.Call(Handle, "clone"), scope.Read<Shape>))!;
+    public async global::System.Threading.Tasks.Task<Shape> CloneAsync(global::Interoper.JsScope scope, global::System.Threading.CancellationToken cancellationToken = default) =>
+        (await Realm.CallAsync(global::Interoper.JsOp.Call(Handle, "clone"), scope.Read<Shape>, cancellationToken))!;
 
     public global::System.Threading.Tasks.Task<global::System.IAsyncDisposable> WatchBoundsAsync(global::Interoper.JsScope scope, global::System.Action<Bounds> handler) =>
         scope.SubscribeAsync(Handle, "watch", "bounds", Bounds.Read, handler, null, null);

@@ -29,16 +29,11 @@ public readonly struct Opt<T> : IUnion, IEquatable<Opt<T>> where T : notnull
     public bool IsUndefined => _tag == 0;
     public bool IsNull => _tag == 1;
 
+    /// <summary>The value, if there is one. Undefined has no overload of its own, so <c>TryGetValue(out var v)</c> compiles; use <see cref="IsUndefined"/>.</summary>
     public bool TryGetValue([MaybeNullWhen(false)] out T value)
     {
         value = _value;
         return _tag == 2;
-    }
-
-    public bool TryGetValue(out Undefined value)
-    {
-        value = Undefined.Value;
-        return _tag == 0;
     }
 
     public bool Equals(Opt<T> other) => _tag == other._tag && EqualityComparer<T>.Default.Equals(_value, other._value);

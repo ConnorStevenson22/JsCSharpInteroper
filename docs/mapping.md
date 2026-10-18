@@ -47,7 +47,7 @@ Cases outside the selection:
 
 A union that is only written (a parameter, or a setter's wider type) may have cases that need a scope to read: an entity, or a scoped record (R17). It may also have a DOM element case (R13), or cases R19 can't tell apart. Its `ReadValue` throws. The same union in a read position (a getter, a result, a record member) skips that member (IOP2007). A union struct isn't generic, so no case can name a type parameter.
 
-**R3. Non-union types in optional or nullable positions use `Opt<T>`.** It has the same three states and conversions (`Opt<double> z = 5; z = null; z = default;`). Required, non-null positions stay plain (`double`).
+**R3. Non-union types in optional or nullable positions use `Opt<T>`.** It has the same three states and conversions (`Opt<double> z = 5; z = null; z = default;`). Required, non-null positions stay plain (`double`). Read it with a pattern (`z is double d`, `z is Undefined`) or `TryGetValue(out var d)`, which has no `Undefined` overload so `var` works.
 
 **R4. A union of live classes that covers every concrete subclass of an abstract base maps to the base.** The base is a `closed class` (implicitly abstract), so a switch over the subclasses is exhaustive, also through `Opt<Base>`. A union that covers only some subclasses stays a union.
 
@@ -170,10 +170,10 @@ When JS returns a value for a union position, the runtime must pick the case.
 | read-only property | `T X { get; }` | `Task<T> GetXAsync()` |
 | getter type ≠ setter type | `TGet X { get; }` + `void SetX(TSet value)` | `GetXAsync()`, `SetXAsync(TSet value)` |
 | … setter type can't be mapped | the read-only property (IOP2007 for the setter) | same |
-| method `foo(a): R` | `R Foo(A a)` | `Task<R> FooAsync(A a)` |
+| method `foo(a): R` | `R Foo(A a)` | `Task<R> FooAsync(A a, CancellationToken cancellationToken = default)` |
 | returns an entity or scoped record (R17), or takes a callback (R21) | `R GetX(JsScope scope)` (+ `void SetX(T value)`), `R Foo(JsScope scope, A a)` | `GetXAsync(JsScope scope)`, `FooAsync(JsScope scope, A a)` |
 | callback property (R21) | `void SetX(JsScope scope, Func<A, R>? value)` | `Task SetXAsync(JsScope scope, …)` |
-| method returning `Promise<R>` | `Task<R> FooAsync(A a)` | `Task<R> FooAsync(A a)` |
+| method returning `Promise<R>` | `Task<R> FooAsync(A a, CancellationToken cancellationToken = default)` | same |
 | constructor `new X(props)` | `static X Create(JsScope scope, XSnapshot props)` | `static Task<X> CreateAsync(JsScope scope, XSnapshot props)` |
 | event | `IDisposable OnClick(JsScope scope, Action<ClickEvent> handler, EventOptions? options = null)` | `Task<IAsyncDisposable> OnClickAsync(…same…)` |
 | event without a payload | `IDisposable OnTick(JsScope scope, Action handler, …)` | `Task<IAsyncDisposable> OnTickAsync(…)` |
@@ -183,6 +183,7 @@ When JS returns a value for a union position, the runtime must pick the case.
 | snapshot / patch | `XSnapshot Snapshot()`, `void Apply(XSnapshot)` | `SnapshotAsync()`, `ApplyAsync(XSnapshot)` |
 | module function | static method on a static class per module, with a leading `JsRealm realm` (or `JsScope scope` when the rules above need one) | same, async |
 
+- A method or module function that returns a `Task` takes `CancellationToken cancellationToken = default` last, except after a rest parameter (R22). Cancelling stops the wait, not the JS call, which runs to the end. A result that arrives later is still read, so the caller's scope owns its handles.
 - Live results, events and watches belong to the scope the caller passes ([design §3.2](design.md#32-handles-identity-and-lifetime)). Disposing a returned subscription releases it sooner. Value-like classes are values (R16), so `PointSnapshot Center { get; set; }` needs no scope.
 - Discriminants aren't members of live classes, since the live type already says it.
 - Static members and exported variables (`export const`) aren't mapped yet (IOP2007).

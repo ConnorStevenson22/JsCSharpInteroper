@@ -253,8 +253,9 @@ internal sealed class LiveEmitter
     /// <summary>
     /// A method per overload (R23): a live class's (<paramref name="self"/>), or a module's static one, which takes the
     /// realm. Either takes the caller's scope first instead when it returns a live object or takes a callback (§5, R21);
-    /// one with a callback whose result JS uses is skipped in async mode (IOP2005). <paramref name="export"/> is the name
-    /// JS calls, when it isn't <paramref name="js"/>: a module's default export.
+    /// one with a callback whose result JS uses is skipped in async mode (IOP2005). One that returns a <c>Task</c> takes a
+    /// <c>CancellationToken</c> last, unless it has a rest parameter (R22). <paramref name="export"/> is the name JS
+    /// calls, when it isn't <paramref name="js"/>: a module's default export.
     /// </summary>
     /// <param name="module">For a module's function, the expression naming the module JS imports it from.</param>
     private void Calls(string owner, string js, IReadOnlyList<Signature> signatures, string? self, string? export = null, string module = "Module")
@@ -272,11 +273,13 @@ internal sealed class LiveEmitter
             var name = Mode(Naming.Pascal(js), promise);
             name = names.TryGetValue(name, out var claimed) ? claimed : names[name] = Claim(name, $"{owner}.{js}");
             var scoped = result?.Type.Scoped == true || callbacks.Count > 0;
+            var cancellable = (async || promise) && signature.Params is not [.., { Rest: true }];
             var op = $"global::Interoper.JsOp.Call({(self is null ? module : "Handle")}, {Syntax.Literal(export ?? js)}{args}{ByValue(returns)})";
-            var (type, body) = Run(self is not null ? "Realm" : scoped ? "scope.Realm" : "realm", op, result, async || promise);
+            var (type, body) = Run(self is not null ? "Realm" : scoped ? "scope.Realm" : "realm", op, result, async || promise, cancellable);
             var (first, firstType) = scoped ? ("global::Interoper.JsScope scope", "global::Interoper.JsScope") : self is null ? ("global::Interoper.JsRealm realm", "global::Interoper.JsRealm") : (null, null);
-            var hides = Declare(name, firstType is null ? keys : keys.Prepend(firstType));
-            Expression($"public {(self is null ? "static " : "")}{hides}{type} {name}({Join(first, parameters)})", body, signature.Doc);
+            var hides = Declare(name, (firstType is null ? keys : keys.Prepend(firstType)).Concat(cancellable ? [CancellationToken] : []));
+            var all = Join(first, string.Join(", ", new[] { parameters, cancellable ? $"{CancellationToken} cancellationToken = default" : "" }.Where(p => p.Length > 0)));
+            Expression($"public {(self is null ? "static " : "")}{hides}{type} {name}({all})", body, signature.Doc);
         }
     }
 
@@ -354,7 +357,7 @@ internal sealed class LiveEmitter
     /// </summary>
     private (string Parameters, string Args, IEnumerable<string> Keys, List<CsType> Callbacks) Parameters(Signature signature, string owner, string? self)
     {
-        string[] used = signature.Params is [.., { Rest: true }] ? ["scope", "realm", "w", "r", "item"] : ["scope", "realm", "w", "r"];
+        string[] used = signature.Params is [.., { Rest: true }] ? ["scope", "realm", "w", "r", "item"] : ["scope", "realm", "w", "r", "cancellationToken"];
         var values = signature.Params.Select(p => (p.Optional, Spread: p.Rest, Value: Slot(p.Type, Naming.OwnedType(owner, p.Name), self, p.Optional),
             Local: Syntax.Local(Naming.Pascal(p.Name), used))).ToList();
         var parameters = values.Select(p => $"{(p.Spread ? "params " : "")}{p.Value.Name} {p.Local}{(p.Optional ? " = default" : "")}");
@@ -402,20 +405,24 @@ internal sealed class LiveEmitter
         }
     }
 
+    private const string CancellationToken = "global::System.Threading.CancellationToken";
+
     /// <summary>
     /// The return type and body of a member that sends <paramref name="op"/> through <paramref name="realm"/>: it
-    /// reads <paramref name="result"/>, or nothing, and returns a <c>Task</c> when <paramref name="task"/> is set.
+    /// reads <paramref name="result"/>, or nothing, and returns a <c>Task</c> when <paramref name="task"/> is set, which
+    /// passes the member's <c>cancellationToken</c> when it's <paramref name="cancellable"/>.
     /// </summary>
-    private (string Type, string Body) Run(string realm, string op, Value? result, bool task)
+    private static (string Type, string Body) Run(string realm, string op, Value? result, bool task, bool cancellable = false)
     {
+        var token = cancellable ? ", cancellationToken" : "";
         if (result is null)
         {
-            return task ? ("global::System.Threading.Tasks.Task", $"{realm}.SendAsync({op})") : ("void", $"{realm}.Send({op})");
+            return task ? ("global::System.Threading.Tasks.Task", $"{realm}.SendAsync({op}{token})") : ("void", $"{realm}.Send({op})");
         }
         var bang = result.MaybeNull ? "!" : "";
         return !task ? (result.Name, $"{realm}.Call({op}, {result.Reader}){bang}")
-            : result.MaybeNull ? ($"async global::System.Threading.Tasks.Task<{result.Name}>", $"(await {realm}.CallAsync({op}, {result.Reader}))!")
-            : ($"global::System.Threading.Tasks.Task<{result.Name}>", $"{realm}.CallAsync({op}, {result.Reader})");
+            : result.MaybeNull ? ($"async global::System.Threading.Tasks.Task<{result.Name}>", $"(await {realm}.CallAsync({op}, {result.Reader}{token}))!")
+            : ($"global::System.Threading.Tasks.Task<{result.Name}>", $"{realm}.CallAsync({op}, {result.Reader}{token})");
     }
 
     /// <summary>An expression-bodied member, after its docs (R29): on one line if it fits, otherwise its body on the next.</summary>

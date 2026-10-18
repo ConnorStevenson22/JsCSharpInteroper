@@ -20,12 +20,12 @@ public sealed partial class Pin : Marker
         Realm.SendAsync(global::Interoper.JsOp.Set(Handle, "meta", w => global::Interoper.JsJson.WriteValue(w, value, global::Interoper.JsAny.Write)));
 
     /// <summary>Moves the position and emits <c>drag</c>.</summary>
-    public global::System.Threading.Tasks.Task DragByAsync(double dx, double dy) =>
+    public global::System.Threading.Tasks.Task DragByAsync(double dx, double dy, global::System.Threading.CancellationToken cancellationToken = default) =>
         Realm.SendAsync(global::Interoper.JsOp.Call(Handle, "dragBy", w =>
         {
             global::Interoper.JsJson.WriteNumber(w, dx);
             global::Interoper.JsJson.WriteNumber(w, dy);
-        }));
+        }), cancellationToken);
 
     public global::System.Threading.Tasks.Task<global::System.IAsyncDisposable> OnDragAsync(global::Interoper.JsScope scope, global::System.Action<PinDragEvent> handler, global::Interoper.EventOptions? options = null) =>
         scope.SubscribeAsync(Handle, "on", "drag", PinDragEvent.Read, handler, options, ["dx", "dy"]);

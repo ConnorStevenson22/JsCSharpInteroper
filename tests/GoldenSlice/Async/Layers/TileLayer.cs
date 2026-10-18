@@ -28,12 +28,12 @@ public sealed partial class TileLayer : Layer
         (await Realm.CallAsync(global::Interoper.JsOp.Get(Handle, "emphasized"), (ref r) => global::Interoper.JsJson.ReadArray(ref r, scope.Read<global::GoldenSlice.Async.Marker>)))!;
 
     /// <summary>Highlights one marker or several: <c>OneOrMany&lt;Marker&gt;</c> is <c>Marker | Marker[]</c> (§2).</summary>
-    public global::System.Threading.Tasks.Task EmphasizeAsync(TileLayerEmphasizeMarkers markers) =>
-        Realm.SendAsync(global::Interoper.JsOp.Call(Handle, "emphasize", w => global::Interoper.JsJson.WriteValue(w, markers)));
+    public global::System.Threading.Tasks.Task EmphasizeAsync(TileLayerEmphasizeMarkers markers, global::System.Threading.CancellationToken cancellationToken = default) =>
+        Realm.SendAsync(global::Interoper.JsOp.Call(Handle, "emphasize", w => global::Interoper.JsJson.WriteValue(w, markers)), cancellationToken);
 
     /// <summary>Redeclared with the subclass's type.</summary>
-    public new async global::System.Threading.Tasks.Task<TileLayer> CloneAsync(global::Interoper.JsScope scope) =>
-        (await Realm.CallAsync(global::Interoper.JsOp.Call(Handle, "clone"), scope.Read<TileLayer>))!;
+    public new async global::System.Threading.Tasks.Task<TileLayer> CloneAsync(global::Interoper.JsScope scope, global::System.Threading.CancellationToken cancellationToken = default) =>
+        (await Realm.CallAsync(global::Interoper.JsOp.Call(Handle, "clone"), scope.Read<TileLayer>, cancellationToken))!;
 
     public global::System.Threading.Tasks.Task<global::System.IAsyncDisposable> WatchUrlAsync(global::Interoper.JsScope scope, global::System.Action<string> handler) =>
         scope.SubscribeAsync(Handle, "watch", "url", global::Interoper.JsJson.ReadString, handler, null, null);

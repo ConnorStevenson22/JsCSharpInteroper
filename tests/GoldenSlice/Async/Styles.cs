@@ -7,6 +7,6 @@ public static partial class Styles
 {
     private const string Module = "@acme/demo-maps/styles.js";
 
-    public static async global::System.Threading.Tasks.Task<Rgba> ToRgbaAsync(global::Interoper.JsRealm realm, ColorInput color) =>
-        (await realm.CallAsync(global::Interoper.JsOp.Call(Module, "toRgba", w => global::Interoper.JsJson.WriteValue(w, color)), Rgba.Read))!;
+    public static async global::System.Threading.Tasks.Task<Rgba> ToRgbaAsync(global::Interoper.JsRealm realm, ColorInput color, global::System.Threading.CancellationToken cancellationToken = default) =>
+        (await realm.CallAsync(global::Interoper.JsOp.Call(Module, "toRgba", w => global::Interoper.JsJson.WriteValue(w, color)), Rgba.Read, cancellationToken))!;
 }
