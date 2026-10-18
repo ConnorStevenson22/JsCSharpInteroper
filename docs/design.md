@@ -200,7 +200,7 @@ All three share one version, set in `Directory.Build.props`. The runtime's publi
 
 - It needs Node.js on `PATH`. Packages are found as Node finds them, from the working directory up. The first one is the IR's package and must match the profile.
 - Unchanged files aren't rewritten. `<out>/.interoper/files.txt` lists what the last run wrote, so the next run can delete stale generated files. Nothing else in `--out` is touched, so hand-written partials are safe.
-- The IR is cached in `<out>/.interoper/ir.json`. Its key covers the tool version, TypeScript version, package and dependency versions, and the one profile field the extractor reads. Other profile changes only regenerate. Delete `.interoper` after editing a package in place without a version bump.
+- The IR is cached in `<out>/.interoper/ir.json`. Its key covers the tool version, TypeScript version, package and dependency versions, and the one profile field the extractor reads. Other profile changes only regenerate. A package linked from outside `node_modules` (`file:`) adds a hash of its `package.json` and `.d.ts` files, so editing its typings re-extracts. Delete `.interoper` after editing any other package in place without a version bump.
 - The report goes to `<out>/interoper-report.txt`: one line per diagnostic plus a count per code.
 - Exit codes: 0 done, 1 when `--warnings-as-errors` is set and there are diagnostics (files are still written), 2 for usage, setup or I/O errors.
 

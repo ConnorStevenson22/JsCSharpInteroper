@@ -325,6 +325,25 @@ public sealed class CliTests(SeededConsumer seeded) : IClassFixture<SeededConsum
     }
 
     [Fact]
+    public void EditedTypingsOfAPackageLinkedFromOutsideNodeModulesReExtract()
+    {
+        using var consumer = new Consumer();
+        var source = Path.Combine(consumer.Directory, "src", "demo-maps");
+        Directory.CreateDirectory(Path.GetDirectoryName(source)!);
+        Directory.Move(consumer.Package, source);
+        Directory.CreateSymbolicLink(consumer.Package, source);
+        var (exitCode, error) = consumer.Run(Consumer.Generate("Out"));
+        Assert.True(exitCode == 0, error);
+        Assert.Matches("\npackage @acme/demo-maps@0.0.0\ntypings @acme/demo-maps [0-9a-f]{64}\n", File.ReadAllText(Path.Combine(consumer.Directory, "Out", ".interoper", "ir.key")));
+        Assert.Equal(0, consumer.Run(Consumer.Generate("Out"), NoNode).ExitCode);
+
+        File.AppendAllText(Path.Combine(source, "layers", "Layer.d.ts"), "\nexport declare const added: number;\n");
+        (exitCode, error) = consumer.Run(Consumer.Generate("Out"), NoNode);
+        Assert.Equal(2, exitCode);
+        Assert.Contains("IR: extracting @acme/demo-maps@0.0.0", error, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void AFileSystemErrorExitsWith2()
     {
         var outDir = seeded.OutWithCache("Unreadable");

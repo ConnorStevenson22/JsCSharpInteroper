@@ -1,5 +1,7 @@
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Security.Cryptography;
+using System.Text;
 using Interoper.Generator;
 using Interoper.Generator.Ir;
 
@@ -12,7 +14,8 @@ internal sealed class CliException(string message) : Exception(message);
 /// The IR cache (design §5): <c>&lt;out&gt;/.interoper/ir.json</c>, reused while <c>ir.key</c> matches. The key is plain
 /// text, one input per line: the tool's version, TypeScript's, each listed package's name and version, the profile's
 /// event-map property (the only profile field the extractor reads, ir.md), and the version of each package the listed
-/// ones depend on (<c>dependencies</c> and <c>peerDependencies</c>).
+/// ones depend on (<c>dependencies</c> and <c>peerDependencies</c>). A listed package linked from a folder outside
+/// <c>node_modules</c> (<c>npm install file:...</c>) also gets a hash of its typings, since it changes without a new version.
 /// </summary>
 internal sealed class IrCache(string outDirectory)
 {
@@ -122,6 +125,7 @@ internal sealed record ExtractionInputs(string ToolVersion, InstalledPackage Typ
             $"typescript {typeScript.Version}",
         };
         lines.AddRange(packages.Select(p => $"package {p}"));
+        lines.AddRange(packages.Where(p => IsLinkedSource(p.Directory)).Select(p => $"typings {p.Name} {TypingsHash(RealPath(p.Directory))}"));
         lines.Add($"events.mapProperty {eventMapProperty}".TrimEnd());
         var listed = packages.Select(p => p.Name).ToHashSet(StringComparer.Ordinal);
         var dependencies = packages
@@ -130,6 +134,29 @@ internal sealed record ExtractionInputs(string ToolVersion, InstalledPackage Typ
             .Order(StringComparer.Ordinal);
         lines.AddRange(dependencies);
         return string.Join('\n', lines) + "\n";
+    }
+
+    private static bool IsLinkedSource(string directory)
+    {
+        var real = RealPath(directory);
+        return real != directory && !real.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar).Contains("node_modules");
+    }
+
+    /// <summary>A SHA-256 of the folder's <c>package.json</c> and <c>.d.ts</c> files, each as its relative path then its bytes.</summary>
+    private static string TypingsHash(string directory)
+    {
+        var files = Directory.EnumerateFiles(directory, "*.d.ts", SearchOption.AllDirectories)
+            .Select(f => Path.GetRelativePath(directory, f).Replace('\\', '/'))
+            .Where(f => !f.Split('/').Contains("node_modules"))
+            .Append("package.json")
+            .Order(StringComparer.Ordinal);
+        using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+        foreach (var file in files)
+        {
+            hash.AppendData(Encoding.UTF8.GetBytes(file + "\n"));
+            hash.AppendData(File.ReadAllBytes(Path.Combine(directory, file)));
+        }
+        return Convert.ToHexStringLower(hash.GetHashAndReset());
     }
 
     private static string RealPath(string directory) =>
