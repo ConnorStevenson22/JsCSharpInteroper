@@ -276,13 +276,21 @@ internal sealed class FakeMapView : FakeEmitter
                 return Task.FromResult<object?>(Undefined.Value);
             case "screenToMap":
                 return ScreenToMap(args);
-            case "markerAt": // the first marker within 10 pixels of the screen offset, or null
-                var point = ScreenToMap(args);
-                var tolerance = 10 / Math.Pow(2, (double)Get("zoom")!);
-                return Task.FromResult(markers.Items.Cast<FakeMarker>().FirstOrDefault(m => Distance((FakePoint)m.Get("position")!, point) <= tolerance) as object);
+            case "markerAt":
+                return Task.FromResult(Nearest(args));
+            case "markersAt":
+                return ((List<object?>)args[0]!).Select(offset => Nearest([offset])).ToList();
             default:
                 return base.Call(name, args);
         }
+    }
+
+    // The first marker within 10 pixels of the screen offset, or null.
+    private object? Nearest(object?[] args)
+    {
+        var point = ScreenToMap(args);
+        var tolerance = 10 / Math.Pow(2, (double)Get("zoom")!);
+        return markers.Items.Cast<FakeMarker>().FirstOrDefault(m => Distance((FakePoint)m.Get("position")!, point) <= tolerance);
     }
 
     // An offset from the center, or an [x, y] pair, in pixels; one pixel is 2^-zoom map units.
@@ -318,7 +326,7 @@ internal sealed class FakeMapView : FakeEmitter
     private static double Distance(FakePoint a, FakePoint b) =>
         Math.Sqrt(Math.Pow((double)a.Get("x")! - (double)b.Get("x")!, 2) + Math.Pow((double)a.Get("y")! - (double)b.Get("y")!, 2));
 
-    private static FakePoint Midpoint(Dictionary<string, object?> b) => new(new()
+    public static FakePoint Midpoint(Dictionary<string, object?> b) => new(new()
     {
         ["x"] = ((double)b["minX"]! + (double)b["maxX"]!) / 2,
         ["y"] = ((double)b["minY"]! + (double)b["maxY"]!) / 2,
@@ -496,6 +504,9 @@ internal sealed class FakeMeasure : InMemoryObject
         "distance" => Distance(args[0]!, args[1]!),
         "perimeter" => args.Select((point, i) => Distance(point!, args[(i + 1) % args.Length]!)).Sum(), // the closed path through `...points`
         "describe" => args[0] is FakeShape shape ? shape.Get("type") : $"marker {((InMemoryObject)args[0]!).Get("displayLabel")}",
+        // `markers.map((marker) => marker && distance(origin, marker.position))`; centers keeps null and undefined the same way
+        "distances" => ((List<object?>)args[1]!).Select(m => m is InMemoryObject marker ? Distance(args[0]!, marker.Get("position")!) : m).ToList(),
+        "centers" => ((List<object?>)args[0]!).Select(s => s is FakeShape shape ? FakeMapView.Midpoint((Dictionary<string, object?>)shape.Get("bounds")!) : s).ToList(),
         _ => base.Call(name, args),
     };
 

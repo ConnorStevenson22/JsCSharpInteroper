@@ -49,6 +49,8 @@ A union that is only written (a parameter, or a setter's wider type) may have ca
 
 **R3. Non-union types in optional or nullable positions use `Opt<T>`.** It has the same three states and conversions (`Opt<double> z = 5; z = null; z = default;`). Required, non-null positions stay plain (`double`). Read it with a pattern (`z is double d`, `z is Undefined`) or `TryGetValue(out var d)`, which has no `Undefined` overload so `var` works.
 
+An array or tuple element that can be null or undefined is `Opt<T>` too: `(Marker | null)[]` is `Opt<Marker>[]`, and `Array<number | undefined>` is `Opt<double>[]`. An element that maps to a union struct stays that struct (R2). Entity elements are read with a scope (R17). Undefined elements are `{"$u":1}` on the wire.
+
 **R4. A union of live classes that covers every concrete subclass of an abstract base maps to the base.** The base is a `closed class` (implicitly abstract), so a switch over the subclasses is exhaustive, also through `Opt<Base>`. A union that covers only some subclasses stays a union.
 
 **R5. Collapse after mapping, then de-duplicate.** `number[]` and `[number, number, number]` both map to `double[]`, so they become one case.
@@ -61,7 +63,7 @@ A union that is only written (a parameter, or a setter's wider type) may have ca
 |---|---|---|
 | `number` | `double` | **R7.** Always `double` |
 | `string`, `boolean` | `string`, `bool` | |
-| `T[]`, `readonly T[]`, `Array<T>` | `T[]` | |
+| `T[]`, `readonly T[]`, `Array<T>` | `T[]` | A nullable element is `Opt<T>[]` (R3) |
 | homogeneous numeric tuple | `double[]` | R5 |
 | `Promise<T>` | `Task<T>` | **R8.** In both modes |
 | `void` (return) | `void` (sync), `Task` (async) | |

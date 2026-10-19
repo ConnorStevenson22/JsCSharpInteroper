@@ -3,7 +3,7 @@ import { MapView, type FlyToTarget } from "../MapView.js";
 import { Marker } from "../Marker.js";
 import { Point, type Shape } from "../geometry.js";
 import TileLayer from "../layers/TileLayer.js";
-import { describe as describeTarget, perimeter } from "../measure.js";
+import { centers, describe as describeTarget, distances, perimeter } from "../measure.js";
 import { Pin } from "../pins.js";
 import * as a from "../ops/a.js";
 import * as b from "../ops/b.js";
@@ -52,6 +52,11 @@ pin.dragBy(1, 2);
 pin.meta = { anything: true };
 describeTarget(pin) satisfies string;
 describeTarget(position) satisfies string;
+
+// Arrays with nullable elements.
+distances(position, [marker, null]) satisfies (number | null)[];
+centers([position, null, undefined]) satisfies (Point | null | undefined)[];
+view.markersAt([[0, 0]]) satisfies (Marker | null)[];
 
 // Sibling modules' Options are different types.
 a.execute(1, { scale: 2 });

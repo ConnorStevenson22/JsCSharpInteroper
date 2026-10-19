@@ -24,4 +24,16 @@ public static partial class Measure
     /// <summary>The shape's <c>type</c>, or "marker" and its label.</summary>
     public static async global::System.Threading.Tasks.Task<string> DescribeAsync(global::Interoper.JsRealm realm, Measurable target, global::System.Threading.CancellationToken cancellationToken = default) =>
         (await realm.CallAsync(global::Interoper.JsOp.Call(Module, "describe", w => global::Interoper.JsJson.WriteValue(w, target)), global::Interoper.JsJson.ReadString, cancellationToken))!;
+
+    /// <summary>The distance from <c>origin</c> to each marker's position, or <c>null</c> for a gap in the list.</summary>
+    public static async global::System.Threading.Tasks.Task<global::Interoper.Opt<double>[]> DistancesAsync(global::Interoper.JsRealm realm, PointSnapshot origin, global::Interoper.Opt<Marker>[] markers, global::System.Threading.CancellationToken cancellationToken = default) =>
+        (await realm.CallAsync(global::Interoper.JsOp.Call(Module, "distances", w =>
+        {
+            PointSnapshot.Write(w, origin);
+            global::Interoper.JsJson.WriteArray(w, markers, static (w1, v1) => global::Interoper.JsJson.WriteValue(w1, v1, Marker.Write));
+        }), static (ref r) => global::Interoper.JsJson.ReadArray(ref r, static (ref r1) => global::Interoper.JsJson.ReadOpt(ref r1, global::Interoper.JsJson.ReadNumber)), cancellationToken))!;
+
+    /// <summary>Each shape's bounds center; <c>null</c> and <c>undefined</c> elements stay as they are.</summary>
+    public static async global::System.Threading.Tasks.Task<global::Interoper.Opt<PointSnapshot>[]> CentersAsync(global::Interoper.JsRealm realm, global::Interoper.Opt<ShapeSnapshot>[] shapes, global::System.Threading.CancellationToken cancellationToken = default) =>
+        (await realm.CallAsync(global::Interoper.JsOp.Call(Module, "centers", w => global::Interoper.JsJson.WriteArray(w, shapes, static (w1, v1) => global::Interoper.JsJson.WriteValue(w1, v1, ShapeSnapshot.Write)), byValue: true), static (ref r) => global::Interoper.JsJson.ReadArray(ref r, static (ref r1) => global::Interoper.JsJson.ReadOpt(ref r1, PointSnapshot.Read)), cancellationToken))!;
 }

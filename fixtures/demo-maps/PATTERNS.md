@@ -36,6 +36,7 @@ node --test "fixtures/demo-maps/test/*.test.mjs"
 | Open-ended literal union | R10 | `Cursor` = known values `\| (string & {})` (`MapView`) |
 | Number-literal union | §2 | `ClickEvent.button` (`MapView`) |
 | Homogeneous numeric tuples | R5 | `Line.path`, `Polygon.vertices`, `CenterAndZoom.center` |
+| Arrays with `null` or `undefined` elements | R3, R17 | `distances(origin, markers: (Marker \| null)[])` returns `(number \| null)[]`, `centers(shapes: Array<Shape \| null \| undefined>)` (`measure`); `MapView.markersAt` returns `(Marker \| null)[]` |
 | `null \| undefined` positions | R2, R3 | `MapView.title?: string \| null`, `MapView.cursor?`, `MapView.selected: Marker \| null`, `Marker.label`, `Marker.labelFormatter`, `Style` colors, `Collection.at` |
 | DOM element type | R13 | `MapView.container: HTMLElement \| string \| null` (setter-only, a union only written), `MapViewOptions.container` (a record only written) |
 | `Partial<Pick<…>>` constructor bags | R12, R18 | `Point`, `Line`, `Polygon` constructors; `MapViewOptions`; `MarkerOptions` (also extends with a wider `position`) |

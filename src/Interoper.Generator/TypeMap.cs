@@ -436,9 +436,9 @@ internal sealed class TypeMap
         RefType r when IsElement(r) => CsType.DomElement, // R13
         TypeParameterType t => CsType.TypeParameter(t.Name),
         FunctionType f => Callback(f, owner),
-        ArrayType a => CsType.Array(Map(a.Element, owner)),
+        ArrayType a => CsType.Array(Element(a.Element, owner)),
         TupleType { Required: null, Rest: false, Elements.Count: > 0 } t
-            when t.Elements.Select(e => Map(e, owner).FullName).Distinct().Count() == 1 => CsType.Array(Map(t.Elements[0], owner)), // R5
+            when t.Elements.Select(e => Element(e, owner).FullName).Distinct().Count() == 1 => CsType.Array(Element(t.Elements[0], owner)), // R5
         UnionType u when Union(owner, u) is { } union => Own(union),
         UnionType u when Kept(u) is [var single] => Map(single, owner), // R2: the one case left in the selection
         ObjectType o => CsType.Record(Name(Inline(o, owner)), scoped: IsScoped(Bag(o))), // R11
@@ -462,6 +462,19 @@ internal sealed class TypeMap
         var mapped = type is ThisType && self is not null ? self : Map(type, owner);
         return (mapped, nullable || Flatten(type).Any(t => IsNullish(t) || t is PrimitiveType { Name: "any" or "unknown" }));
     }
+
+    /// <summary>
+    /// An array or tuple element: <c>Opt&lt;T&gt;</c> when it can be null or undefined (R3), unless it's a union, which has
+    /// those states itself (R2).
+    /// </summary>
+    private CsType Element(IrType type, TypeName owner)
+    {
+        var mapped = Slot(type, owner).Type;
+        return IsNullable(type) && !mapped.IsUnion ? CsType.Opt(mapped) : mapped;
+    }
+
+    /// <summary>Whether a type has null or undefined in it, also through a union alias (R6).</summary>
+    private bool IsNullable(IrType type) => Flatten(type).Any(IsNullish);
 
     /// <summary>
     /// R21: a callback, an <c>Action</c> or a <c>Func</c>; an anonymous type in it is named after its owner and the
@@ -1067,7 +1080,12 @@ internal sealed class TypeMap
         ArrayType a => MapProblem(a.Element, written),
         TupleType { Required: null, Rest: false, Elements.Count: > 0 } t => t.Elements.Select(e => MapProblem(e, written)).FirstOrDefault(p => p is not null)
             ?? (NameOf(t, full: true) is null ? new("a tuple of different types") : null), // R5
-        UnionType u => Values(u).Count < 2 ? new("a nullable array or tuple element") : UnionProblem(u, null, written),
+        UnionType u => Values(u) switch // an array or tuple element's, which may be Opt<T> (R3)
+        {
+            [] => new("only `null` and `undefined`"),
+            [var single] => MapProblem(single, written),
+            _ => UnionProblem(u, null, written),
+        },
         FunctionType => new("a callback that isn't a parameter (R21)"),
         PrimitiveType p => new($"`{p.Name}` here"),
         LiteralType => new("a literal here"),
@@ -1326,11 +1344,17 @@ internal sealed class TypeMap
             { } d => Spell(Name(d), full),
             null => null,
         },
-        ArrayType a => NameOf(a.Element, full) is { } element ? element + "[]" : null,
+        ArrayType a => ElementName(a.Element, full) is { } element ? element + "[]" : null,
         TupleType { Required: null, Rest: false, Elements.Count: > 0 } t =>
-            t.Elements.Select(e => NameOf(e, full)).Distinct().ToList() is [{ } element] ? element + "[]" : null,
+            t.Elements.Select(e => ElementName(e, full)).Distinct().ToList() is [{ } element] ? element + "[]" : null,
         _ => null,
     };
+
+    /// <summary>An array or tuple element's, as <see cref="Element"/> maps it: <c>Opt&lt;T&gt;</c> when it's nullable; null for a nullable union.</summary>
+    private string? ElementName(IrType type, bool full) =>
+        !IsNullable(type) ? NameOf(type, full)
+        : Values(type) is [var single] && NameOf(single, full) is { } name ? (full ? $"global::Interoper.Opt<{name}>" : $"Opt<{name}>")
+        : null;
 
     private static string Spell(TypeName name, bool full) => full ? name.FullName : name.Name;
 

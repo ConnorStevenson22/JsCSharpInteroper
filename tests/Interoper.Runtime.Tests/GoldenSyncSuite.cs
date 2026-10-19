@@ -44,6 +44,7 @@ public static class GoldenSyncSuite
         ("a subscription with remove() instead of dispose(), delivered then released (R24)", InScope(RemoveSubscription)),
         ("any is JsAny: data, or a handle the scope owns (§2)", InScope(Any)),
         ("a union with an entity case is a parameter's (R2, R17)", InScope(WrittenUnion)),
+        ("arrays with null and undefined elements: entities, records and numbers (R3, R17)", InScope(NullableElements)),
         ("same-named types of sibling modules (R27)", InScope(SiblingModules)),
         ("a custom element drives its live view, and its class is found by its tag (§5, R22, R28)", InScope(CustomElement)),
     ];
@@ -477,6 +478,19 @@ public static class GoldenSyncSuite
         Equal("polygon", Measure.Describe(scope.Realm, new PolygonSnapshot { Vertices = new double[][] { [0, 0], [1, 0], [0, 1] } }));
         Equal("marker m", Measure.Describe(scope.Realm, Marker.Create(scope, new MarkerSnapshot { Label = "m" })));
         Equal("marker p", Measure.Describe(scope.Realm, Pin.Create(scope, new PinSnapshot { Label = "p" }))); // a subclass of the case
+    }
+
+    private static void NullableElements(JsScope scope)
+    {
+        var marker = Marker.Create(scope, new MarkerSnapshot { Position = new PointSnapshot { X = 100, Y = -50 } });
+        var view = MapView.Create(scope, new MapViewSnapshot { Zoom = 0 });
+        view.GetMarkers(scope).Add(marker);
+        Expect(view.MarkersAt(scope, new double[][] { [0, 0], [100, 50] }) is [{ IsNull: true }, var found] && found.TryGetValue(out Marker? at) && ReferenceEquals(at, marker),
+            "null where no marker is, then the marker (R17)");
+        Equal("5, null", string.Join(", ", Measure.Distances(scope.Realm, new PointSnapshot { X = 97, Y = -46 }, [marker, null])));
+        var centers = Measure.Centers(scope.Realm, [new LineSnapshot { Path = new double[][] { [0, 0], [4, 2] } }, null, Undefined.Value]); // undefined is {"$u":1} both ways
+        Expect(centers is [_, { IsNull: true }, { IsUndefined: true }], "null and undefined to stay as they are");
+        Equal<Opt<PointSnapshot>>(new PointSnapshot { X = 2, Y = 1 }, centers[0]);
     }
 
     private static void CustomElement(JsScope scope)
