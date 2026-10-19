@@ -231,12 +231,12 @@ public sealed class PartialSelectionCompileTests
               { "specifier": "@acme/maps/layers/mixins/Refreshable.js", "declarations": [
                 { "kind": "interface", "name": "RefreshEvent", "members": [{ "kind": "property", "name": "dataChanged", "type": { "kind": "primitive", "name": "boolean" } }] },
                 { "kind": "class", "name": "Refreshable", "abstract": true, "members": [{{Members.Replace("\"inherited\": true, ", "", StringComparison.Ordinal)}}], "events": [{{Event}}] }] },
-              { "specifier": "@acme/maps/layers/FeatureLayer.js", "declarations": [
-                { "kind": "class", "name": "FeatureLayer", "extends": {{Layer}}, "mixins": [{{Refreshable}}], "members": [{{Members}}], "events": [{{Event}}] }] },
-              { "specifier": "@acme/maps/layers/WmsLayer.js", "declarations": [
+              { "specifier": "@acme/maps/layers/VectorLayer.js", "declarations": [
+                { "kind": "class", "name": "VectorLayer", "extends": {{Layer}}, "mixins": [{{Refreshable}}], "members": [{{Members}}], "events": [{{Event}}] }] },
+              { "specifier": "@acme/maps/layers/ImageLayer.js", "declarations": [
                 { "kind": "class", "name": "Maps", "extends": {{Layer}}, "mixins": [{{Refreshable}}], "members": [{{Members}}], "events": [{{Event}}] }] }] }
             """);
-        var profile = new Generator.Profile { Package = "@acme/maps", Include = ["@acme/maps/layers/FeatureLayer.js"], Events = new(Subscribe: "on") };
+        var profile = new Generator.Profile { Package = "@acme/maps", Include = ["@acme/maps/layers/VectorLayer.js"], Events = new(Subscribe: "on") };
         var result = Generator.Generator.Generate(ir, profile, new(api, "Acme.Maps"));
         Assert.Contains("private sealed class Maps2(", Assert.Single(result.Files, f => f.Path == "Maps.cs").Text); // the registry's name is taken
         Compile(result);

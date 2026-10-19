@@ -1497,7 +1497,7 @@ public sealed class GeneratorTests
     [Fact] // §5: a mixin is an interface each class with it implements; a class outside the selection that adds one is a variant
     public void AMixinIsAnInterfaceAndAnUnselectedClassWithItAVariant()
     {
-        var result = Generate(new Profile { Package = "@acme/maps", Include = ["@acme/maps/layers/Layer.js", "@acme/maps/layers/FeatureLayer.js"], Events = new(Subscribe: "on") },
+        var result = Generate(new Profile { Package = "@acme/maps", Include = ["@acme/maps/layers/Layer.js", "@acme/maps/layers/VectorLayer.js"], Events = new(Subscribe: "on") },
             Api.Async, Mixins);
 
         var refreshable = File(result, "Layers/Mixins/IRefreshable.cs");
@@ -1505,77 +1505,77 @@ public sealed class GeneratorTests
         Assert.Contains("public global::System.Threading.Tasks.Task RefreshAsync(global::System.Threading.CancellationToken cancellationToken = default) =>", refreshable);
         Assert.Contains("public global::System.Threading.Tasks.Task<global::System.IAsyncDisposable> OnRefreshAsync(global::Interoper.JsScope scope, global::System.Action<RefreshEvent> handler", refreshable);
         Assert.DoesNotContain("Copy", refreshable); // `this` is a live class's
-        Assert.Contains("public sealed partial class FeatureLayer : Layer, global::Acme.Maps.Layers.Mixins.IRefreshable", File(result, "Layers/FeatureLayer.cs"));
+        Assert.Contains("public sealed partial class VectorLayer : Layer, global::Acme.Maps.Layers.Mixins.IRefreshable", File(result, "Layers/VectorLayer.cs"));
         Assert.Contains("public partial class Layer : global::Interoper.JsObject", File(result, "Layers/Layer.cs")); // a variant derives from it
         Assert.DoesNotContain(result.Files, f => f.Path.Contains("Refreshable.cs", StringComparison.Ordinal) && !f.Path.EndsWith("IRefreshable.cs", StringComparison.Ordinal));
 
-        // TileLayer adds no mixin, so JS reads it as Layer; WmsLayer adds Refreshable, and Internal adds nothing to WmsLayer.
+        // TileLayer adds no mixin, so JS reads it as Layer; ImageLayer adds Refreshable, and Internal adds nothing to ImageLayer.
         var registry = File(result, "Maps.cs");
-        Assert.Contains(".Add(3, static (realm, handle) => new WmsLayer(realm, handle));", registry);
-        Assert.Contains("private sealed class WmsLayer(global::Interoper.JsRealm realm, int handle) : global::Acme.Maps.Layers.Layer(realm, handle), global::Acme.Maps.Layers.Mixins.IRefreshable;", registry);
+        Assert.Contains(".Add(3, static (realm, handle) => new ImageLayer(realm, handle));", registry);
+        Assert.Contains("private sealed class ImageLayer(global::Interoper.JsRealm realm, int handle) : global::Acme.Maps.Layers.Layer(realm, handle), global::Acme.Maps.Layers.Mixins.IRefreshable;", registry);
         Assert.DoesNotContain("TileLayer", registry);
         Assert.DoesNotContain("Internal", registry);
         var meta = File(result, "maps.meta.js");
-        Assert.Contains("""    3: { name: "layers.WmsLayer", of: 1 },""", meta);
+        Assert.Contains("""    3: { name: "layers.ImageLayer", of: 1 },""", meta);
         Assert.DoesNotContain("Refreshable", meta);
     }
 
     [Fact] // R2: a union drops a platform type it can't map (MouseEvent), as it does a class outside the selection
     public void AUnionDropsAPlatformTypeCase()
     {
-        // toMap(screen: ScreenPoint | MouseEvent): number;  hit(at: ScreenPoint | number[] | MouseEvent): void
+        // toWorld(screen: ScreenPoint | MouseEvent): number;  pick(at: ScreenPoint | number[] | MouseEvent): void
         var result = Generate($$"""
             { "kind": "interface", "name": "ScreenPoint", "members": [{{X}}] },
             { "kind": "class", "name": "View", "members": [
-              { "kind": "method", "name": "toMap", "signatures": [{ "params": [{ "name": "screen", "type": { "kind": "union", "types": [
+              { "kind": "method", "name": "toWorld", "signatures": [{ "params": [{ "name": "screen", "type": { "kind": "union", "types": [
                 { "kind": "ref", "name": "ScreenPoint", "module": "@acme/maps/a.js" }, { "kind": "ref", "name": "MouseEvent" }] } }], "returns": {{Number}} }] },
-              { "kind": "method", "name": "hit", "signatures": [{ "params": [{ "name": "at", "type": { "kind": "union", "types": [
+              { "kind": "method", "name": "pick", "signatures": [{ "params": [{ "name": "at", "type": { "kind": "union", "types": [
                 { "kind": "ref", "name": "ScreenPoint", "module": "@acme/maps/a.js" }, { "kind": "array", "element": {{Number}} }, { "kind": "ref", "name": "MouseEvent" }] } }], "returns": {{Void}} }] }] }
             """);
 
         Assert.Equal([
-            "IOP2007 ViewHitAt: case `MouseEvent` dropped: a platform type (R2)",
-            "IOP2007 ViewToMapScreen: case `MouseEvent` dropped: a platform type (R2)",
+            "IOP2007 ViewPickAt: case `MouseEvent` dropped: a platform type (R2)",
+            "IOP2007 ViewToWorldScreen: case `MouseEvent` dropped: a platform type (R2)",
         ], result.Diagnostics.Select(d => d.ToString()).Order(StringComparer.Ordinal));
-        Assert.Contains("public double ToMap(ScreenPoint screen) =>", File(result, "View.cs"));
-        Assert.Contains("public void Hit(ViewHitAt at) =>", File(result, "View.cs"));
-        Assert.DoesNotContain("MouseEvent", File(result, "ViewHitAt.cs"));
+        Assert.Contains("public double ToWorld(ScreenPoint screen) =>", File(result, "View.cs"));
+        Assert.Contains("public void Pick(ViewPickAt at) =>", File(result, "View.cs"));
+        Assert.DoesNotContain("MouseEvent", File(result, "ViewPickAt.cs"));
     }
 
     [Fact] // R19 step 2: a nullable union that holds one union is told apart by that union's discriminant
     public void ANullableUnionOfAUnionReadsItsDiscriminant()
     {
-        // reduction?: ((Cluster & { type: "cluster" }) | (Bins & { type: "binning" })) | null, the intersections resolved.
+        // grouping?: ((Heat & { type: "heat" }) | (Grid & { type: "grid" })) | null, the intersections resolved.
         static string Tagged(string tag, string member) =>
             $$"""{ "kind": "object", "members": [{ "kind": "property", "name": "type", "type": { "kind": "literal", "value": "{{tag}}" } }, { "kind": "property", "name": "{{member}}", "type": { "kind": "primitive", "name": "number" } }] }""";
         var result = Generate($$"""
-            { "kind": "class", "name": "Layer", "members": [{ "kind": "property", "name": "reduction", "optional": true, "type": { "kind": "union", "types": [
-              { "kind": "union", "types": [{{Tagged("cluster", "radius")}}, {{Tagged("binning", "radius")}}], "discriminant": "type" }, { "kind": "primitive", "name": "null" }] } }] }
+            { "kind": "class", "name": "Layer", "members": [{ "kind": "property", "name": "grouping", "optional": true, "type": { "kind": "union", "types": [
+              { "kind": "union", "types": [{{Tagged("heat", "radius")}}, {{Tagged("grid", "radius")}}], "discriminant": "type" }, { "kind": "primitive", "name": "null" }] } }] }
             """);
 
         Assert.Empty(result.Diagnostics);
-        Assert.Contains("global::Interoper.JsJson.PeekString(reader, \"type\"u8) switch", File(result, "LayerReduction.cs"));
-        Assert.Contains("public LayerReduction(LayerReductionCluster value)", File(result, "LayerReduction.cs"));
+        Assert.Contains("global::Interoper.JsJson.PeekString(reader, \"type\"u8) switch", File(result, "LayerGrouping.cs"));
+        Assert.Contains("public LayerGrouping(LayerGroupingHeat value)", File(result, "LayerGrouping.cs"));
     }
 
     [Fact] // §5, R2: a setter that takes a class's constructor bag, which the getter returns, also takes the class (autocast)
     public void ASetterOfAConstructorBagAlsoTakesTheClass()
     {
-        // get basemap(): Basemap | null;  set basemap(value: BasemapProperties | string | null);  new Basemap(properties?: BasemapProperties)
+        // get theme(): Theme | null;  set theme(value: ThemeOptions | string | null);  new Theme(properties?: ThemeOptions)
         var result = Generate($$"""
-            { "kind": "interface", "name": "BasemapProperties", "members": [{ "kind": "property", "name": "title", "optional": true, "type": {{String}} }] },
-            { "kind": "class", "name": "Basemap", "constructors": [{ "params": [{ "name": "properties", "optional": true, "type": { "kind": "ref", "name": "BasemapProperties", "module": "@acme/maps/a.js" } }] }],
+            { "kind": "interface", "name": "ThemeOptions", "members": [{ "kind": "property", "name": "title", "optional": true, "type": {{String}} }] },
+            { "kind": "class", "name": "Theme", "constructors": [{ "params": [{ "name": "properties", "optional": true, "type": { "kind": "ref", "name": "ThemeOptions", "module": "@acme/maps/a.js" } }] }],
               "members": [{ "kind": "property", "name": "title", "type": {{String}} }] },
-            { "kind": "class", "name": "Map", "members": [{ "kind": "property", "name": "basemap",
-              "type": { "kind": "union", "types": [{ "kind": "ref", "name": "Basemap", "module": "@acme/maps/a.js" }, { "kind": "primitive", "name": "null" }] },
-              "writeType": { "kind": "union", "types": [{ "kind": "ref", "name": "BasemapProperties", "module": "@acme/maps/a.js" }, {{String}}, { "kind": "primitive", "name": "null" }] } }] }
+            { "kind": "class", "name": "View", "members": [{ "kind": "property", "name": "theme",
+              "type": { "kind": "union", "types": [{ "kind": "ref", "name": "Theme", "module": "@acme/maps/a.js" }, { "kind": "primitive", "name": "null" }] },
+              "writeType": { "kind": "union", "types": [{ "kind": "ref", "name": "ThemeOptions", "module": "@acme/maps/a.js" }, {{String}}, { "kind": "primitive", "name": "null" }] } }] }
             """);
 
         Assert.Empty(result.Diagnostics);
-        Assert.Contains("public void SetBasemap(MapBasemapInput value) =>", File(result, "Map.cs"));
-        var input = File(result, "MapBasemapInput.cs");
-        Assert.Contains("public MapBasemapInput(BasemapProperties value)", input);
-        Assert.Contains("public MapBasemapInput(Basemap value)", input);
+        Assert.Contains("public void SetTheme(ViewThemeInput value) =>", File(result, "View.cs"));
+        var input = File(result, "ViewThemeInput.cs");
+        Assert.Contains("public ViewThemeInput(ThemeOptions value)", input);
+        Assert.Contains("public ViewThemeInput(Theme value)", input);
         Assert.Contains("is only written (R2)", input); // an entity case can't be read without a scope
     }
 
@@ -1783,8 +1783,8 @@ public sealed class GeneratorTests
     }
 
     /// <summary>
-    /// §5: <c>Refreshable</c>, a mixin with a property, a method, a <c>this</c> method and an event; <c>FeatureLayer</c>
-    /// and <c>WmsLayer</c> have it on top of <c>Layer</c>, which <c>Layer.parent</c> names, and <c>TileLayer</c> doesn't.
+    /// §5: <c>Refreshable</c>, a mixin with a property, a method, a <c>this</c> method and an event; <c>VectorLayer</c>
+    /// and <c>ImageLayer</c> have it on top of <c>Layer</c>, which <c>Layer.parent</c> names, and <c>TileLayer</c> doesn't.
     /// </summary>
     internal static readonly (string Path, string Declarations)[] Mixins =
     [
@@ -1800,9 +1800,9 @@ public sealed class GeneratorTests
               { "kind": "method", "name": "copy", "signatures": [{ "returns": { "kind": "this" } }] }],
               "events": [{ "name": "refresh", "type": { "kind": "ref", "name": "RefreshEvent", "module": "@acme/maps/layers/mixins/Refreshable.js" } }] }
             """),
-        ("layers/FeatureLayer.js", MixedIn("FeatureLayer", "Layer")),
-        ("layers/WmsLayer.js", MixedIn("WmsLayer", "Layer")),
-        ("layers/support/Internal.js", """{ "kind": "class", "name": "Internal", "extends": { "kind": "ref", "name": "WmsLayer", "module": "@acme/maps/layers/WmsLayer.js" } }"""),
+        ("layers/VectorLayer.js", MixedIn("VectorLayer", "Layer")),
+        ("layers/ImageLayer.js", MixedIn("ImageLayer", "Layer")),
+        ("layers/extra/Internal.js", """{ "kind": "class", "name": "Internal", "extends": { "kind": "ref", "name": "ImageLayer", "module": "@acme/maps/layers/ImageLayer.js" } }"""),
         ("layers/TileLayer.js", """{ "kind": "class", "name": "TileLayer", "extends": { "kind": "ref", "name": "Layer", "module": "@acme/maps/layers/Layer.js" } }"""),
     ];
 

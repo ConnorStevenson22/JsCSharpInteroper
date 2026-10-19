@@ -71,12 +71,12 @@ test("R19: a union of intersections with a literal gets its discriminant", (t) =
   const dir = tempDir(t);
   fs.writeFileSync(path.join(dir, "package.json"), JSON.stringify({ name: "@acme/extra", version: "1.0.0" }));
   fs.writeFileSync(path.join(dir, "index.d.ts"), `
-    export interface Cluster { radius: number }
-    export interface Bins { size: number }
-    export type Reduction = (Cluster & { type: "cluster" }) | (Bins & { type: "binning" });`);
-  const [{ declarations: [, , reduction] }] = extract(dir).modules;
-  assert.equal(reduction.type.discriminant, "type");
-  assert.deepEqual(reduction.type.types.map((c) => c.kind), ["object", "object"]); // R11: resolved
+    export interface Heat { radius: number }
+    export interface Grid { size: number }
+    export type Grouping = (Heat & { type: "heat" }) | (Grid & { type: "grid" });`);
+  const [{ declarations: [, , grouping] }] = extract(dir).modules;
+  assert.equal(grouping.type.discriminant, "type");
+  assert.deepEqual(grouping.type.types.map((c) => c.kind), ["object", "object"]); // R11: resolved
 });
 
 test("R6: unions keep written order and named members", () => {
@@ -310,7 +310,7 @@ test("a member keyed by a symbol is left out, own or picked", (t) => {
 test("a member named like a type-only marker is left out", (t) => {
   const dir = tempDir(t);
   fs.writeFileSync(path.join(dir, "package.json"), JSON.stringify({ name: "@acme/extra", version: "1.0.0" }));
-  fs.writeFileSync(path.join(dir, "index.d.ts"), `export declare class Swatch { color: string; "@setterTypes": { color?: string | null }; }`);
+  fs.writeFileSync(path.join(dir, "index.d.ts"), `export declare class Swatch { color: string; "@types": { color?: string | null }; }`);
   const [{ declarations }] = extract(dir).modules;
   assert.deepEqual(declarations.map((d) => [d.name, d.members.map((m) => m.name)]), [["Swatch", ["color"]]]);
 });

@@ -96,7 +96,7 @@ A member is one of:
 
 `writeType` is the setter's type when an accessor pair's types differ ([mapping §5](mapping.md#5-members)).
 
-Members declared by a named base are listed on that base only, so follow `extends`. Members of an anonymous base or a mapped type are listed with `inherited`. Platform members (the DOM's), symbol-keyed members (`[Symbol.iterator]()`) and members whose name starts with `@` (type-only markers such as `"@setterTypes"`, which no object has) are left out.
+Members declared by a named base are listed on that base only, so follow `extends`. Members of an anonymous base or a mapped type are listed with `inherited`. Platform members (the DOM's), symbol-keyed members (`[Symbol.iterator]()`) and members whose name starts with `@` (type-only markers such as `"@types"`, which no object has) are left out.
 
 A mixin's base is an intersection, as in `class Pin extends PinBase` where `PinBase: typeof Marker & typeof Draggable`. Its `extends` is the first part that is a named, exported class, wherever it sits in the intersection. Here that's `Marker`. The other parts' members are listed with `inherited`. The other parts that are named, exported classes are its `mixins`, in order: `Draggable` isn't exported, so `Pin` has none, and `TileLayer` (`typeof Layer & typeof Refreshable`) has `Refreshable`.
 

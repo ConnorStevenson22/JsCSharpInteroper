@@ -21,7 +21,7 @@ public sealed record SelectedElement(string Module, Element Element, ClassDeclar
 
 /// <summary>
 /// §5: a class outside the selection whose objects have mixins its nearest emitted ancestor doesn't (an unselected
-/// <c>WMSLayer</c> under <c>Layer</c>). It gets a class id, so JS reads its objects as an anonymous subclass of
+/// <c>ImageLayer</c> under <c>Layer</c>). It gets a class id, so JS reads its objects as an anonymous subclass of
 /// <see cref="Base"/> that implements <see cref="Mixins"/>' interfaces. Both are as selected.
 /// </summary>
 public sealed record SelectedVariant(string Module, ClassDeclaration Class, ClassDeclaration Base, IReadOnlyList<ClassDeclaration> Mixins);
@@ -429,8 +429,8 @@ public sealed class Selection
         Cases(type).Where(t => !IsNullish(t)).ToList() is [RefType { Module: not null } r] && Find(r) is (InterfaceDeclaration or AliasDeclaration { Type: ObjectType }) and var bag ? bag : null;
 
     /// <summary>
-    /// §5: a setter whose wider type takes a class's constructor bag (<c>set basemap(v: BasemapProperties | string)</c>
-    /// next to <c>get basemap(): Basemap</c>) also takes that class, which the getter returns, as libraries that build an
+    /// §5: a setter whose wider type takes a class's constructor bag (<c>set theme(v: ThemeOptions | string)</c>
+    /// next to <c>get theme(): Theme</c>) also takes that class, which the getter returns, as libraries that build an
     /// instance from the bag (autocasting) do.
     /// </summary>
     private PropertyMember Autocast(PropertyMember p)
