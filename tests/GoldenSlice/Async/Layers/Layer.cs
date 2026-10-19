@@ -19,8 +19,8 @@ public partial class Layer : global::GoldenSlice.Async.Observable
     public global::System.Threading.Tasks.Task SetVisibleAsync(bool value) => Realm.SetAsync(Handle, "visible", value);
 
     /// <summary>A copy, of the same class.</summary>
-    public async global::System.Threading.Tasks.Task<Layer> CloneAsync(global::Interoper.JsScope scope) =>
-        (await Realm.CallAsync(global::Interoper.JsOp.Call(Handle, "clone"), scope.Read<Layer>))!;
+    public async global::System.Threading.Tasks.Task<Layer> CloneAsync(global::Interoper.JsScope scope, global::System.Threading.CancellationToken cancellationToken = default) =>
+        (await Realm.CallAsync(global::Interoper.JsOp.Call(Handle, "clone"), scope.Read<Layer>, cancellationToken))!;
 
     public global::System.Threading.Tasks.Task<global::System.IAsyncDisposable> WatchTitleAsync(global::Interoper.JsScope scope, global::System.Action<global::Interoper.Opt<string>> handler) =>
         scope.SubscribeAsync(Handle, "watch", "title", static (ref r) => global::Interoper.JsJson.ReadOpt(ref r, global::Interoper.JsJson.ReadString), handler, null, null);

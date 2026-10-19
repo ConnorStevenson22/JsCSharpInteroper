@@ -3,7 +3,8 @@
 
 namespace GoldenSlice.Sync;
 
-public sealed partial record MarkerOptions
+[global::System.Text.Json.Serialization.JsonConverter(typeof(global::Interoper.JsRecordConverter<MarkerOptions>))]
+public sealed partial record MarkerOptions : global::Interoper.IJsRecord<MarkerOptions>
 {
     public MarkerOptionsPosition Position { get; init; }
     public global::Interoper.Opt<string> Label { get; init; }

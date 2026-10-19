@@ -73,8 +73,9 @@ export function extract(packageDirs, { eventMap } = {}) {
    * class: a mixin's base `typeof Marker & typeof Draggable` is `Marker`, in either order, and so is TypeScript's own
    * `{ new (...args: any[]): {...} } & typeof Marker`. The mixin's members are listed as inherited.
    */
-  const namedBase = (type) =>
-    isNamed(type) ? type : type.isIntersection() ? type.types.find((t) => isNamed(t) && t.symbol.flags & F.Class && isExported(t.symbol)) : undefined;
+  const namedBase = (type) => (isNamed(type) ? type : exportedClasses(type)[0]);
+  /** An intersection base's named, exported classes: its named base, then its mixins (`Draggable`, when exported). */
+  const exportedClasses = (type) => (type.isIntersection() ? type.types.filter((t) => isNamed(t) && t.symbol.flags & F.Class && isExported(t.symbol)) : []);
   /** Whether its module exports a symbol, under any name. */
   const isExported = (sym) => sym.declarations?.length > 0 && exportsOf(sym.declarations[0].getSourceFile()).has(sym);
 
@@ -180,7 +181,8 @@ export function extract(packageDirs, { eventMap } = {}) {
     const type = checker.getDeclaredTypeOfSymbol(sym);
     const statics = checker.getTypeOfSymbol(sym);
     const decl = sym.declarations.find(ts.isClassLike);
-    const [superclass] = checker.getBaseTypes(type).map((b) => namedBase(b) ?? b);
+    const [baseType] = checker.getBaseTypes(type);
+    const superclass = baseType && (namedBase(baseType) ?? baseType);
     const mapProp = eventMap && type.getProperty(eventMap);
     const implemented = decl?.heritageClauses?.find((h) => h.token === ts.SyntaxKind.ImplementsKeyword)?.types ?? [];
     return compact({
@@ -189,6 +191,7 @@ export function extract(packageDirs, { eventMap } = {}) {
       abstract: hasModifier(decl, ts.ModifierFlags.Abstract),
       typeParameters: typeParams(type.typeParameters),
       extends: superclass && typeRef(superclass),
+      mixins: baseType && !isNamed(baseType) ? exportedClasses(baseType).slice(1).map((t) => typeRef(t)) : undefined,
       implements: implemented.map((n) => typeRef(checker.getTypeFromTypeNode(n), n)),
       constructors: signatures(statics, ts.SignatureKind.Construct),
       members: [...members(type), ...members(statics, true)],
@@ -210,7 +213,7 @@ export function extract(packageDirs, { eventMap } = {}) {
   /**
    * Checker-resolved members. Those a named base declares stay with that base (follow `extends`). Members of an
    * anonymous base, a mixin or a mapped type are kept, as inherited, unless the platform declares them (DOM members aren't bound).
-   * A member keyed by a symbol is left out.
+   * A member keyed by a symbol, or named like a type-only marker (`@types`), is left out.
    */
   function members(type, isStatic = false) {
     const owners = type.symbol?.declarations ?? [];
@@ -219,6 +222,7 @@ export function extract(packageDirs, { eventMap } = {}) {
       const decls = p.declarations ?? []; // none for a mapped type's synthetic keys (Record<"x" | "y", T>)
       if (p.name === eventMap || p.name === "prototype" || (decls.length && decls.every(isPlatform))) return [];
       if (String(p.escapedName).startsWith("__@")) return []; // keyed by a symbol ([Symbol.iterator]), which has no name to bind
+      if (p.name.startsWith("@")) return []; // a type-only marker ("@types"), which no object has
       const inherited = decls.length > 0 && !decls.some((d) => owners.includes(d.parent));
       return inherited && (isStatic || bases.some((b) => b.getProperty(p.name))) ? [] : [member(p, inherited, isStatic)];
     });
@@ -348,7 +352,8 @@ export function extract(packageDirs, { eventMap } = {}) {
     if (bools.length === 2) parts = parts.filter((p) => p !== bools[1]).map((p) => (p === bools[0] ? [checker.getBooleanType()] : p));
     if (parts.length === 1) return typeRef(parts[0][0], parts[0][1]);
     const records = parts.map(([t]) => t).filter((t) => !(t.flags & (T.Null | T.Undefined)));
-    const tagged = records.length > 1 && records.every((t) => t.flags & T.Object && !checker.isArrayLikeType(t) && !t.getCallSignatures().length);
+    // Object types, and intersections of them (`Props & { type: "heat" }`), which TypeScript doesn't flag as objects.
+    const tagged = records.length > 1 && records.every((t) => t.flags & (T.Object | T.Intersection) && !checker.isArrayLikeType(t) && !t.getCallSignatures().length);
     return compact({
       kind: "union",
       types: parts.map(([t, n]) => typeRef(t, n)),

@@ -3,8 +3,16 @@
 
 namespace GoldenSlice.Sync;
 
-public sealed partial record EmitterSnapshot
+[global::System.Text.Json.Serialization.JsonConverter(typeof(global::Interoper.JsRecordConverter<EmitterSnapshot>))]
+public sealed partial record EmitterSnapshot : global::Interoper.IJsRecord<EmitterSnapshot>
 {
+    public static void Write(global::System.Text.Json.Utf8JsonWriter writer, EmitterSnapshot value)
+    {
+        writer.WriteStartObject();
+        WriteMembers(writer, value);
+        writer.WriteEndObject();
+    }
+
     public static void WriteMembers(global::System.Text.Json.Utf8JsonWriter writer, EmitterSnapshot value)
     {
     }

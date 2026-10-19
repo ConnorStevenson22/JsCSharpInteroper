@@ -3,8 +3,8 @@
 
 namespace GoldenSlice.Async.Layers;
 
-/// <summary>The module's default export, as many libraries' one-class modules have.</summary>
-public sealed partial class TileLayer : Layer
+/// <summary>The module's default export, as many libraries' one-class modules have. It has the <c>Refreshable</c> mixin.</summary>
+public sealed partial class TileLayer : Layer, IRefreshable
 {
     internal TileLayer(global::Interoper.JsRealm realm, int handle) : base(realm, handle) { }
 
@@ -27,13 +27,30 @@ public sealed partial class TileLayer : Layer
     public async global::System.Threading.Tasks.Task<global::GoldenSlice.Async.Marker[]> GetEmphasizedAsync(global::Interoper.JsScope scope) =>
         (await Realm.CallAsync(global::Interoper.JsOp.Get(Handle, "emphasized"), (ref r) => global::Interoper.JsJson.ReadArray(ref r, scope.Read<global::GoldenSlice.Async.Marker>)))!;
 
+    public global::System.Threading.Tasks.Task<double> GetRefreshIntervalAsync() =>
+        Realm.GetNumberAsync(Handle, "refreshInterval");
+
+    public global::System.Threading.Tasks.Task SetRefreshIntervalAsync(double value) =>
+        Realm.SetAsync(Handle, "refreshInterval", value);
+
+    public global::System.Threading.Tasks.Task<double> GetRefreshCountAsync() =>
+        Realm.GetNumberAsync(Handle, "refreshCount");
+
     /// <summary>Highlights one marker or several: <c>OneOrMany&lt;Marker&gt;</c> is <c>Marker | Marker[]</c> (§2).</summary>
-    public global::System.Threading.Tasks.Task EmphasizeAsync(TileLayerEmphasizeMarkers markers) =>
-        Realm.SendAsync(global::Interoper.JsOp.Call(Handle, "emphasize", w => global::Interoper.JsJson.WriteValue(w, markers)));
+    public global::System.Threading.Tasks.Task EmphasizeAsync(TileLayerEmphasizeMarkers markers, global::System.Threading.CancellationToken cancellationToken = default) =>
+        Realm.SendAsync(global::Interoper.JsOp.Call(Handle, "emphasize", w => global::Interoper.JsJson.WriteValue(w, markers)), cancellationToken);
 
     /// <summary>Redeclared with the subclass's type.</summary>
-    public new async global::System.Threading.Tasks.Task<TileLayer> CloneAsync(global::Interoper.JsScope scope) =>
-        (await Realm.CallAsync(global::Interoper.JsOp.Call(Handle, "clone"), scope.Read<TileLayer>))!;
+    public new async global::System.Threading.Tasks.Task<TileLayer> CloneAsync(global::Interoper.JsScope scope, global::System.Threading.CancellationToken cancellationToken = default) =>
+        (await Realm.CallAsync(global::Interoper.JsOp.Call(Handle, "clone"), scope.Read<TileLayer>, cancellationToken))!;
+
+    /// <summary>Fetches the layer's data again.</summary>
+    public global::System.Threading.Tasks.Task RefreshAsync(global::System.Threading.CancellationToken cancellationToken = default) =>
+        Realm.SendAsync(global::Interoper.JsOp.Call(Handle, "refresh"), cancellationToken);
+
+    /// <summary>A copy, of the same class: <c>this</c> is the class's, so the interface leaves it out.</summary>
+    public async global::System.Threading.Tasks.Task<TileLayer> SiblingAsync(global::Interoper.JsScope scope, global::System.Threading.CancellationToken cancellationToken = default) =>
+        (await Realm.CallAsync(global::Interoper.JsOp.Call(Handle, "sibling"), scope.Read<TileLayer>, cancellationToken))!;
 
     public global::System.Threading.Tasks.Task<global::System.IAsyncDisposable> WatchUrlAsync(global::Interoper.JsScope scope, global::System.Action<string> handler) =>
         scope.SubscribeAsync(Handle, "watch", "url", global::Interoper.JsJson.ReadString, handler, null, null);
@@ -52,6 +69,18 @@ public sealed partial class TileLayer : Layer
 
     public global::System.Collections.Generic.IAsyncEnumerable<global::GoldenSlice.Async.Marker[]> WatchEmphasizedStreamAsync(global::Interoper.JsScope scope, global::System.Threading.CancellationToken cancellationToken = default) =>
         scope.StreamAsync(Handle, "watch", "emphasized", (ref r) => global::Interoper.JsJson.ReadArray(ref r, scope.Read<global::GoldenSlice.Async.Marker>), null, null, cancellationToken);
+
+    public global::System.Threading.Tasks.Task<global::System.IAsyncDisposable> WatchRefreshIntervalAsync(global::Interoper.JsScope scope, global::System.Action<double> handler) =>
+        scope.SubscribeAsync(Handle, "watch", "refreshInterval", global::Interoper.JsJson.ReadNumber, handler, null, null);
+
+    public global::System.Collections.Generic.IAsyncEnumerable<double> WatchRefreshIntervalStreamAsync(global::Interoper.JsScope scope, global::System.Threading.CancellationToken cancellationToken = default) =>
+        scope.StreamAsync(Handle, "watch", "refreshInterval", global::Interoper.JsJson.ReadNumber, null, null, cancellationToken);
+
+    public global::System.Threading.Tasks.Task<global::System.IAsyncDisposable> WatchRefreshCountAsync(global::Interoper.JsScope scope, global::System.Action<double> handler) =>
+        scope.SubscribeAsync(Handle, "watch", "refreshCount", global::Interoper.JsJson.ReadNumber, handler, null, null);
+
+    public global::System.Collections.Generic.IAsyncEnumerable<double> WatchRefreshCountStreamAsync(global::Interoper.JsScope scope, global::System.Threading.CancellationToken cancellationToken = default) =>
+        scope.StreamAsync(Handle, "watch", "refreshCount", global::Interoper.JsJson.ReadNumber, null, null, cancellationToken);
 
     public new async global::System.Threading.Tasks.Task<TileLayerSnapshot> SnapshotAsync() =>
         (await Realm.CallAsync(global::Interoper.JsOp.Snapshot(Handle), TileLayerSnapshot.Read))!;

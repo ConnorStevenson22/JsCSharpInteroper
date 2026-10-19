@@ -87,14 +87,33 @@ public sealed class JsRealm(Func<Task<IJsTransport>> start, JsClassRegistry clas
     // Generated code sends ops that return nothing through SendAsync and SetAsync, which a batch queues, and
     // everything else through CallAsync and the Get*Async fast paths, which send the queue first (design §3.3).
 
-    /// <summary>Runs an op that returns nothing (a write or a void call); inside a batch it is queued.</summary>
-    public Task SendAsync(string opJson) => batch.Value?.TryAdd(opJson) == true ? Task.CompletedTask : CheckAsync(opJson);
+    /// <summary>
+    /// Runs an op that returns nothing (a write or a void call); inside a batch it is queued. <paramref name="cancellationToken"/>
+    /// stops the wait, not the JS work, which can't be stopped from .NET.
+    /// </summary>
+    public Task SendAsync(string opJson, CancellationToken cancellationToken = default) =>
+        cancellationToken.IsCancellationRequested ? Task.FromCanceled(cancellationToken)
+        : batch.Value?.TryAdd(opJson) == true ? Task.CompletedTask
+        : CheckAsync(opJson).WaitAsync(cancellationToken);
 
-    /// <summary>Runs an op and reads its result (<c>default</c> for undefined), after any queued ops.</summary>
-    public async Task<T?> CallAsync<T>(string opJson, JsonRead<T> read)
+    /// <summary>
+    /// Runs an op and reads its result (<c>default</c> for undefined), after any queued ops. <paramref name="cancellationToken"/>
+    /// stops the wait, not the JS work; a result that arrives after it is still read, so the reader's scope owns its handles.
+    /// </summary>
+    public async Task<T?> CallAsync<T>(string opJson, JsonRead<T> read, CancellationToken cancellationToken = default)
     {
-        await FlushAsync();
-        return JsEnvelope.Read(await InvokeAsync(opJson), read);
+        cancellationToken.ThrowIfCancellationRequested();
+        await FlushAsync().WaitAsync(cancellationToken);
+        var invoked = InvokeAsync(opJson);
+        try
+        {
+            return JsEnvelope.Read(await invoked.WaitAsync(cancellationToken), read);
+        }
+        catch (OperationCanceledException) when (!invoked.IsCompleted)
+        {
+            _ = invoked.ContinueWith(late => JsEnvelope.Read(late.Result, read), CancellationToken.None, TaskContinuationOptions.OnlyOnRanToCompletion, TaskScheduler.Default);
+            throw;
+        }
     }
 
     public Task<double> GetNumberAsync(int handle, string name) =>

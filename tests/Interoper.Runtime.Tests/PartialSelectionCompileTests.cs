@@ -206,6 +206,42 @@ public sealed class PartialSelectionCompileTests
         Compile(result);
     }
 
+    /// <summary>
+    /// §5: a mixin's interface, the classes that implement it, and a variant, a private subclass of an emitted class that
+    /// implements it too, compile; the interface's default members and the class's own ones agree.
+    /// </summary>
+    [Theory]
+    [InlineData(Api.Sync)]
+    [InlineData(Api.Async)]
+    public void AMixinsInterfaceAndAVariantCompile(Api api)
+    {
+        const string Number = """{ "kind": "primitive", "name": "number" }""";
+        const string Void = """{ "kind": "primitive", "name": "void" }""";
+        const string Refreshable = """{ "kind": "ref", "name": "Refreshable", "module": "@acme/maps/layers/mixins/Refreshable.js" }""";
+        const string Event = """{ "name": "refresh", "type": { "kind": "ref", "name": "RefreshEvent", "module": "@acme/maps/layers/mixins/Refreshable.js" } }""";
+        const string Members = $$"""
+            { "kind": "property", "name": "refreshInterval", "inherited": true, "type": {{Number}} },
+            { "kind": "method", "name": "refresh", "inherited": true, "signatures": [{ "returns": {{Void}} }] },
+            { "kind": "method", "name": "copy", "inherited": true, "signatures": [{ "returns": { "kind": "this" } }] }
+            """;
+        const string Layer = """{ "kind": "ref", "name": "Layer", "module": "@acme/maps/layers/Layer.js" }""";
+        var ir = IrDocument.Parse($$"""
+            { "version": 1, "package": { "name": "@acme/maps", "version": "1" }, "modules": [
+              { "specifier": "@acme/maps/layers/Layer.js", "declarations": [{ "kind": "class", "name": "Layer", "members": [{ "kind": "property", "name": "parent", "type": {{Layer}} }] }] },
+              { "specifier": "@acme/maps/layers/mixins/Refreshable.js", "declarations": [
+                { "kind": "interface", "name": "RefreshEvent", "members": [{ "kind": "property", "name": "dataChanged", "type": { "kind": "primitive", "name": "boolean" } }] },
+                { "kind": "class", "name": "Refreshable", "abstract": true, "members": [{{Members.Replace("\"inherited\": true, ", "", StringComparison.Ordinal)}}], "events": [{{Event}}] }] },
+              { "specifier": "@acme/maps/layers/VectorLayer.js", "declarations": [
+                { "kind": "class", "name": "VectorLayer", "extends": {{Layer}}, "mixins": [{{Refreshable}}], "members": [{{Members}}], "events": [{{Event}}] }] },
+              { "specifier": "@acme/maps/layers/ImageLayer.js", "declarations": [
+                { "kind": "class", "name": "Maps", "extends": {{Layer}}, "mixins": [{{Refreshable}}], "members": [{{Members}}], "events": [{{Event}}] }] }] }
+            """);
+        var profile = new Generator.Profile { Package = "@acme/maps", Include = ["@acme/maps/layers/VectorLayer.js"], Events = new(Subscribe: "on") };
+        var result = Generator.Generator.Generate(ir, profile, new(api, "Acme.Maps"));
+        Assert.Contains("private sealed class Maps2(", Assert.Single(result.Files, f => f.Path == "Maps.cs").Text); // the registry's name is taken
+        Compile(result);
+    }
+
     private static void Compile(GeneratorResult result)
     {
         var trees = result.Files.Where(f => f.Path.EndsWith(".cs", StringComparison.Ordinal))

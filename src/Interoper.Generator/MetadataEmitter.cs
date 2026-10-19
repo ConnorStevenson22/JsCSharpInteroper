@@ -22,8 +22,12 @@ internal static class MetadataEmitter
     /// declarations are the modules that re-export them; one that can't be imported has none. Then the import map's
     /// entries, the same in both modes.
     /// </summary>
-    public static string Registry(IrDocument ir, TypeMap types, GeneratorOptions options, IReadOnlyList<Selected> classes, IEnumerable<Selected> functions,
-        IEnumerable<SelectedElement> elements)
+    /// <remarks>
+    /// §5: a variant's class id follows the classes', with no constant: the registry makes it a private subclass of its
+    /// base that implements its mixins' interfaces.
+    /// </remarks>
+    public static string Registry(IrDocument ir, TypeMap types, GeneratorOptions options, IReadOnlyList<Selected> classes, IReadOnlyList<SelectedVariant> variants,
+        IEnumerable<Selected> functions, IEnumerable<SelectedElement> elements)
     {
         var w = CodeWriter.CSharp(options.Namespace);
         using (w.Block($"public static partial class {types.Registry}"))
@@ -38,6 +42,9 @@ internal static class MetadataEmitter
             }
             var calls = classes.Select(s => (ClassDeclaration)s.Declaration).Where(c => !types.IsClosed(c) && c.TypeParameters.Count == 0)
                 .Select(c => $".Add({types.ClassIdName(c)}, static (realm, handle) => new {types.Name(c).In(options.Namespace)}(realm, handle))").ToList();
+            var taken = new HashSet<string>(classes.Select(s => types.ClassIdName((ClassDeclaration)s.Declaration))) { types.Registry, "Classes", "ImportMap" };
+            var nested = variants.Select(v => (Variant: v, Name: Naming.Unique(taken, Naming.Type(v.Class.Name)))).ToList();
+            calls.AddRange(nested.Select((v, i) => $".Add({classes.Count + i + 1}, static (realm, handle) => new {v.Name}(realm, handle))"));
             var modules = classes.Select(s => s.Declaration).Concat(functions.Select(s => s.Declaration)).Concat(elements.Select(e => e.Class))
                 .Select(types.Import).OfType<(string Module, string Export)>().Select(i => i.Module).Distinct().ToList();
             if (options.Api == Api.Sync && modules.Count > 0)
@@ -53,10 +60,10 @@ internal static class MetadataEmitter
                 }
             }
             w.Line();
-            w.Line("/// <summary>The import map's entries for the packages' modules; <paramref name=\"root\"/> holds the packages' folders, as <c>node_modules</c> does (<c>\"/node_modules/\"</c>).</summary>");
+            w.Line("/// <summary>The import map's entries for the packages' modules; <paramref name=\"root\"/> holds the packages' folders, as <c>node_modules</c> does (<c>\"/node_modules/\"</c>), and starts with <c>/</c>, <c>./</c> or <c>../</c>, or is a URL.</summary>");
             using (w.Block("public static global::System.Collections.Generic.IReadOnlyDictionary<string, string> ImportMap(string root)"))
             {
-                w.Line("root = root.EndsWith('/') ? root : root + \"/\";");
+                w.Line("root = global::Interoper.JsImportMap.Root(root);");
                 using (w.Block("return new global::System.Collections.Generic.Dictionary<string, string>", "};"))
                 {
                     foreach (var (specifier, path) in ImportMap(ir))
@@ -64,6 +71,12 @@ internal static class MetadataEmitter
                         w.Line($"[{Syntax.Literal(specifier)}] = root + {Syntax.Literal(path)},");
                     }
                 }
+            }
+            foreach (var (v, name) in nested)
+            {
+                var interfaces = string.Concat(v.Mixins.Select(m => ", " + types.MixinName(m).In(options.Namespace)));
+                w.Line();
+                w.Line($"private sealed class {name}(global::Interoper.JsRealm realm, int handle) : {types.Name(v.Base).In(options.Namespace)}(realm, handle){interfaces};");
             }
         }
         return w.ToString();
@@ -88,13 +101,18 @@ internal static class MetadataEmitter
         string.Join('/', specifier.Split('/').Take(specifier.StartsWith('@') ? 2 : 1));
 
     /// <summary>
-    /// Per class id: the module and export that construct it, its runtime class name (with the profile's prefix when
-    /// it's the first package's), a custom element's tag (R28), whether it's value-like (R16), and its snapshot members
-    /// (R18), a value-like one's with its constants. Then the components' custom events, each with its detail's default
-    /// projection (R24, R28).
+    /// Per class id: the module and export that construct it (an omitted export is <c>default</c>), its runtime class name
+    /// (with the profile's prefix when it's the first package's), or a custom element's tag instead (R28), since JS finds
+    /// an element by its tag, whether it's value-like (R16), and its snapshot members (R18), a value-like one's with its
+    /// constants, when it has any. Then the components' custom events, each with its detail's default projection (R24, R28).
     /// </summary>
-    public static string Module(IrDocument ir, Profile profile, TypeMap types, IReadOnlyList<Selected> classes, IReadOnlyList<SelectedElement> elements)
+    /// <remarks>§5: a variant's entry is its runtime class name and the class id whose entry it shares (<c>of</c>).</remarks>
+    public static string Module(IrDocument ir, Profile profile, TypeMap types, IReadOnlyList<Selected> classes, IReadOnlyList<SelectedVariant> variants,
+        IReadOnlyList<SelectedElement> elements)
     {
+        // The profile is the first package's, and so is its prefix: another package's classes have none.
+        string Named(string module, string name) =>
+            (types.PackageOf(module) == ir.Package.Name ? profile.RuntimeClassPrefix : "") + RuntimeName(types.PackageOf(module), module, name);
         var lines = new List<string> { Bindings.Header, "export default {" };
         if (profile.RuntimeClassProperty is { } property)
         {
@@ -105,14 +123,32 @@ internal static class MetadataEmitter
         {
             var c = (ClassDeclaration)s.Declaration;
             var members = string.Join(", ", types.WireMembers(c).Select(m => Syntax.Literal(m.Name)));
-            // The profile is the first package's, and so is its prefix: another package's classes have none.
-            var package = types.PackageOf(s.Module);
-            var name = (package == ir.Package.Name ? profile.RuntimeClassPrefix : "") + RuntimeName(package, s.Module, c.Name);
             var tag = elements.FirstOrDefault(e => e.Class.Name == c.Name && e.Module == s.Module)?.Element.Tag;
+            List<string> fields = [];
             // Design §3.5: a class that can't be imported has neither, so it isn't constructed or imported for $c.
-            var import = types.Import(c) is { } i ? $"module: {Syntax.Literal(i.Module)}, export: {Syntax.Literal(i.Export)}, " : "";
-            lines.Add($"    {id}: {{ {import}" +
-                $"name: {Syntax.Literal(name)}, {(tag is null ? "" : $"tag: {Syntax.Literal(tag)}, ")}{(types.IsValueLike(c) ? "value: true, " : "")}members: [{members}] }},");
+            if (types.Import(c) is { } i)
+            {
+                fields.Add($"module: {Syntax.Literal(i.Module)}");
+                if (i.Export != "default")
+                {
+                    fields.Add($"export: {Syntax.Literal(i.Export)}");
+                }
+            }
+            fields.Add(tag is null ? $"name: {Syntax.Literal(Named(s.Module, c.Name))}" : $"tag: {Syntax.Literal(tag)}");
+            if (types.IsValueLike(c))
+            {
+                fields.Add("value: true");
+            }
+            if (members.Length > 0)
+            {
+                fields.Add($"members: [{members}]");
+            }
+            lines.Add($"    {id}: {{ {string.Join(", ", fields)} }},");
+        }
+        foreach (var (v, id) in variants.Select((v, i) => (v, classes.Count + i + 1)))
+        {
+            var of = classes.Select((s, i) => (s, i + 1)).First(x => x.s.Declaration == v.Base).Item2;
+            lines.Add($"    {id}: {{ name: {Syntax.Literal(Named(v.Module, v.Class.Name))}, of: {of} }},");
         }
         lines.Add("  },");
         // One registration per event name, so elements that share a name share its fields: all of theirs, or the whole

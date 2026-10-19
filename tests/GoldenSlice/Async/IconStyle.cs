@@ -3,7 +3,8 @@
 
 namespace GoldenSlice.Async;
 
-public sealed partial record IconStyle
+[global::System.Text.Json.Serialization.JsonConverter(typeof(global::Interoper.JsRecordConverter<IconStyle>))]
+public sealed partial record IconStyle : global::Interoper.IJsRecord<IconStyle>
 {
     public required IconName Name { get; init; }
     public ColorInput Color { get; init; }

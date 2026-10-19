@@ -92,19 +92,19 @@ public sealed partial class MapView : Emitter
     /// Resolves when the view has arrived &amp; settled.
     /// </summary>
     /// <remarks>Since: 0.3</remarks>
-    public global::System.Threading.Tasks.Task FlyToAsync(FlyToTarget target, global::Interoper.Opt<FlyToOptions> options = default) =>
+    public global::System.Threading.Tasks.Task FlyToAsync(FlyToTarget target, global::Interoper.Opt<FlyToOptions> options = default, global::System.Threading.CancellationToken cancellationToken = default) =>
         Realm.SendAsync(global::Interoper.JsOp.Call(Handle, "flyTo", w =>
         {
             global::Interoper.JsJson.WriteValue(w, target);
             if (!options.IsUndefined) global::Interoper.JsJson.WriteValue(w, options, FlyToOptions.Write);
-        }));
+        }), cancellationToken);
 
-    public global::System.Threading.Tasks.Task<global::Interoper.Opt<Marker>> MarkerAtAsync(global::Interoper.JsScope scope, double x, double y) =>
+    public global::System.Threading.Tasks.Task<global::Interoper.Opt<Marker>> MarkerAtAsync(global::Interoper.JsScope scope, double x, double y, global::System.Threading.CancellationToken cancellationToken = default) =>
         Realm.CallAsync(global::Interoper.JsOp.Call(Handle, "markerAt", w =>
         {
             global::Interoper.JsJson.WriteNumber(w, x);
             global::Interoper.JsJson.WriteNumber(w, y);
-        }), (ref r) => global::Interoper.JsJson.ReadOpt(ref r, scope.Read<Marker>));
+        }), (ref r) => global::Interoper.JsJson.ReadOpt(ref r, scope.Read<Marker>), cancellationToken);
 
     /// <summary>A click on the map, after the view has handled it.</summary>
     public global::System.IDisposable OnClick(global::Interoper.JsScope scope, global::System.Action<ClickEvent> handler, global::Interoper.EventOptions? options = null) =>

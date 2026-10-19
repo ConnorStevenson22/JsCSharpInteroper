@@ -39,6 +39,26 @@ public sealed class RealmTests
     }
 
     [Fact]
+    public async Task ACancelledCallStopsWaitingWhileJsFinishesIt() // §5
+    {
+        var scope = new JsScope(await StartedRealm());
+        var view = await MapView.CreateAsync(scope, new());
+        var held = new TaskCompletionSource();
+        transport.Hold = held.Task;
+        using var cancel = new CancellationTokenSource();
+        var flying = view.FlyToAsync(new double[] { 3, 4 }, cancellationToken: cancel.Token);
+        await cancel.CancelAsync();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => flying);
+
+        transport.Hold = null;
+        held.SetResult();
+        Assert.Equal(new PointSnapshot { X = 3, Y = 4 }, await view.GetCenterAsync()); // JS still flew
+        var sent = transport.Ops.Count;
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => view.ScreenToMapAsync(1, 2, cancel.Token));
+        Assert.Equal(sent, transport.Ops.Count); // a token already cancelled sends nothing
+    }
+
+    [Fact]
     public async Task DisposalReleasesEveryHandleInOneOpAndEveryCallback() // R21, R24
     {
         var realm = await StartedRealm();

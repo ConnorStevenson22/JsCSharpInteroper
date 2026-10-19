@@ -1,9 +1,14 @@
 import { OneOrMany } from "../core.js";
 import { Marker } from "../Marker.js";
 import { Layer } from "./Layer.js";
+import { Refreshable } from "./Refreshable.js";
 
-/** The module's default export, as many libraries' one-class modules have. */
-export default class TileLayer extends Layer {
+// Compiled typings write a mixin's base as a constant; `export {}` keeps it private.
+export {};
+declare const TileLayerBase: typeof Layer & typeof Refreshable;
+
+/** The module's default export, as many libraries' one-class modules have. It has the `Refreshable` mixin. */
+export default class TileLayer extends TileLayerBase {
   constructor(options?: Partial<Pick<TileLayer, "url" | "title" | "visible">>);
   /** The URL template of the tiles. */
   url: string;

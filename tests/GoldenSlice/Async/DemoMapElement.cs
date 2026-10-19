@@ -36,13 +36,13 @@ public sealed partial class DemoMapElement : global::Interoper.JsObject
         Realm.SendAsync(global::Interoper.JsOp.Set(Handle, "center", w => PointSnapshot.Write(w, value)));
 
     /// <summary>Clicks the map at an offset from its center, in pixels.</summary>
-    public global::System.Threading.Tasks.Task ClickAtAsync(double x, double y, global::Interoper.Opt<DemoMapElementClickAtButton> button = default) =>
+    public global::System.Threading.Tasks.Task ClickAtAsync(double x, double y, global::Interoper.Opt<DemoMapElementClickAtButton> button = default, global::System.Threading.CancellationToken cancellationToken = default) =>
         Realm.SendAsync(global::Interoper.JsOp.Call(Handle, "clickAt", w =>
         {
             global::Interoper.JsJson.WriteNumber(w, x);
             global::Interoper.JsJson.WriteNumber(w, y);
             if (!button.IsUndefined) global::Interoper.JsJson.WriteValue(w, button, static (w1, v1) => global::Interoper.JsJson.WriteNumber(w1, (int)v1));
-        }));
+        }), cancellationToken);
 
     public async global::System.Threading.Tasks.Task<DemoMapElementSnapshot> SnapshotAsync() =>
         (await Realm.CallAsync(global::Interoper.JsOp.Snapshot(Handle), DemoMapElementSnapshot.Read))!;

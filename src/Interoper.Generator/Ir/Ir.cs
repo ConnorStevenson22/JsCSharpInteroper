@@ -70,6 +70,8 @@ public sealed record ClassDeclaration : Declaration
     public bool Abstract { get; init; }
     public IReadOnlyList<TypeParameter> TypeParameters { get; init; } = [];
     public IrType? Extends { get; init; }
+    /// <summary>A mixin base's other exported classes (ir.md): each is an interface the live class implements (§5).</summary>
+    public IReadOnlyList<IrType> Mixins { get; init; } = [];
     public IReadOnlyList<IrType> Implements { get; init; } = [];
     public IReadOnlyList<Signature> Constructors { get; init; } = [];
     public IReadOnlyList<Member> Members { get; init; } = [];

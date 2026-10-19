@@ -79,6 +79,17 @@ internal sealed class LiveEmitter
         return e.File();
     }
 
+    /// <summary>
+    /// §5: a mixin's interface, <c>I</c> and its name, with its properties, methods and events as default members, so
+    /// that any live class with the mixin has them, a variant's too.
+    /// </summary>
+    public static string Mixin(TypeMap types, Profile profile, GeneratorOptions options, ICollection<Diagnostic> diagnostics, ClassDeclaration m)
+    {
+        var e = new LiveEmitter(types, profile, options, diagnostics, types.Namespace(m));
+        e.MixinBody(m);
+        return e.File();
+    }
+
     /// <summary>A module's functions, as a static class named after its file, in the module's namespace (§5, R27).</summary>
     public static string Module(TypeMap types, Profile profile, GeneratorOptions options, ICollection<Diagnostic> diagnostics,
         string name, string specifier, IEnumerable<FunctionDeclaration> functions)
@@ -110,7 +121,8 @@ internal sealed class LiveEmitter
         // Mapping §2: a generic class's type parameters are entities.
         var constraints = string.Concat(c.TypeParameters.Select(t => $" where {t.Name} : global::Interoper.JsObject"));
         XmlDoc.Write(w, c.Doc);
-        using (w.Block($"public {modifier}partial class {self.Name} : {types.LiveBaseName(c, ns)}{constraints}"))
+        var mixins = string.Concat(types.Mixins(c).Select(m => ", " + types.MixinName(m).In(ns)));
+        using (w.Block($"public {modifier}partial class {self.Name} : {types.LiveBaseName(c, ns)}{mixins}{constraints}"))
         {
             Separate();
             w.Line($"internal {name}(global::Interoper.JsRealm realm, int handle) : base(realm, handle) {{ }}");
@@ -120,18 +132,7 @@ internal sealed class LiveEmitter
                 var create = Claim(Mode("Create"), c.Name);
                 Expression($"public static {Declare(create, ["global::Interoper.JsScope", snapshotKey])}{type} {create}(global::Interoper.JsScope scope, {snapshot} props)", body, c.Constructors.FirstOrDefault()?.Doc);
             }
-            foreach (var p in c.Members.OfType<PropertyMember>().Where(p => p.Type is not LiteralType)) // R20: a constant is no property
-            {
-                Property(name, p);
-            }
-            foreach (var m in c.Members.OfType<MethodMember>())
-            {
-                Calls(name, m.Name, m.Signatures, name);
-            }
-            foreach (var e in c.Events)
-            {
-                Subscription(name, "On" + Naming.Pascal(e.Name), profile.Events!.Subscribe!, e.Name, e.Type, $"{name}.on:{e.Name}", optional: false, isEvent: true, e.Doc);
-            }
+            Members(name, c);
             // §5; a callback or a DOM element can't be read back (R21, R13).
             foreach (var p in types.HasWatches(c) ? c.Members.OfType<PropertyMember>().Where(p => p.Type is not LiteralType && !types.IsCallback(p) && !types.IsElement(p)) : [])
             {
@@ -141,6 +142,39 @@ internal sealed class LiveEmitter
             Expression($"public {Declare(Mode("Snapshot"), [])}{snapshotType} {Mode("Snapshot")}()", read);
             var (applyType, apply) = Run("Realm", $"global::Interoper.JsOp.Apply(Handle, w => {snapshot}.WriteMembers(w, patch))", null, async);
             Expression($"public {Declare(Mode("Apply"), [snapshotKey])}{applyType} {Mode("Apply")}({snapshot} patch)", apply);
+        }
+    }
+
+    private void MixinBody(ClassDeclaration m)
+    {
+        var name = types.Name(m).Name;
+        self = types.Self(m);
+        taken.UnionWith([types.MixinName(m).Name, "Realm", "Handle"]);
+        if (!async)
+        {
+            Hide(m);
+        }
+        XmlDoc.Write(w, m.Doc);
+        using (w.Block($"public partial interface {types.MixinName(m).Name} : global::Interoper.IJsObject"))
+        {
+            Members(name, m);
+        }
+    }
+
+    /// <summary>A class's or a mixin's properties, methods and events (R24).</summary>
+    private void Members(string name, ClassDeclaration c)
+    {
+        foreach (var p in c.Members.OfType<PropertyMember>().Where(p => p.Type is not LiteralType)) // R20: a constant is no property
+        {
+            Property(name, p);
+        }
+        foreach (var m in c.Members.OfType<MethodMember>())
+        {
+            Calls(name, m.Name, m.Signatures, name);
+        }
+        foreach (var e in c.Events)
+        {
+            Subscription(name, "On" + Naming.Pascal(e.Name), profile.Events!.Subscribe!, e.Name, e.Type, $"{name}.on:{e.Name}", optional: false, isEvent: true, e.Doc);
         }
     }
 
@@ -253,8 +287,9 @@ internal sealed class LiveEmitter
     /// <summary>
     /// A method per overload (R23): a live class's (<paramref name="self"/>), or a module's static one, which takes the
     /// realm. Either takes the caller's scope first instead when it returns a live object or takes a callback (§5, R21);
-    /// one with a callback whose result JS uses is skipped in async mode (IOP2005). <paramref name="export"/> is the name
-    /// JS calls, when it isn't <paramref name="js"/>: a module's default export.
+    /// one with a callback whose result JS uses is skipped in async mode (IOP2005). One that returns a <c>Task</c> takes a
+    /// <c>CancellationToken</c> last, unless it has a rest parameter (R22). <paramref name="export"/> is the name JS
+    /// calls, when it isn't <paramref name="js"/>: a module's default export.
     /// </summary>
     /// <param name="module">For a module's function, the expression naming the module JS imports it from.</param>
     private void Calls(string owner, string js, IReadOnlyList<Signature> signatures, string? self, string? export = null, string module = "Module")
@@ -272,11 +307,13 @@ internal sealed class LiveEmitter
             var name = Mode(Naming.Pascal(js), promise);
             name = names.TryGetValue(name, out var claimed) ? claimed : names[name] = Claim(name, $"{owner}.{js}");
             var scoped = result?.Type.Scoped == true || callbacks.Count > 0;
+            var cancellable = (async || promise) && signature.Params is not [.., { Rest: true }];
             var op = $"global::Interoper.JsOp.Call({(self is null ? module : "Handle")}, {Syntax.Literal(export ?? js)}{args}{ByValue(returns)})";
-            var (type, body) = Run(self is not null ? "Realm" : scoped ? "scope.Realm" : "realm", op, result, async || promise);
+            var (type, body) = Run(self is not null ? "Realm" : scoped ? "scope.Realm" : "realm", op, result, async || promise, cancellable);
             var (first, firstType) = scoped ? ("global::Interoper.JsScope scope", "global::Interoper.JsScope") : self is null ? ("global::Interoper.JsRealm realm", "global::Interoper.JsRealm") : (null, null);
-            var hides = Declare(name, firstType is null ? keys : keys.Prepend(firstType));
-            Expression($"public {(self is null ? "static " : "")}{hides}{type} {name}({Join(first, parameters)})", body, signature.Doc);
+            var hides = Declare(name, (firstType is null ? keys : keys.Prepend(firstType)).Concat(cancellable ? [CancellationToken] : []));
+            var all = Join(first, string.Join(", ", new[] { parameters, cancellable ? $"{CancellationToken} cancellationToken = default" : "" }.Where(p => p.Length > 0)));
+            Expression($"public {(self is null ? "static " : "")}{hides}{type} {name}({all})", body, signature.Doc);
         }
     }
 
@@ -354,7 +391,7 @@ internal sealed class LiveEmitter
     /// </summary>
     private (string Parameters, string Args, IEnumerable<string> Keys, List<CsType> Callbacks) Parameters(Signature signature, string owner, string? self)
     {
-        string[] used = signature.Params is [.., { Rest: true }] ? ["scope", "realm", "w", "r", "item"] : ["scope", "realm", "w", "r"];
+        string[] used = signature.Params is [.., { Rest: true }] ? ["scope", "realm", "w", "r", "item"] : ["scope", "realm", "w", "r", "cancellationToken"];
         var values = signature.Params.Select(p => (p.Optional, Spread: p.Rest, Value: Slot(p.Type, Naming.OwnedType(owner, p.Name), self, p.Optional),
             Local: Syntax.Local(Naming.Pascal(p.Name), used))).ToList();
         var parameters = values.Select(p => $"{(p.Spread ? "params " : "")}{p.Value.Name} {p.Local}{(p.Optional ? " = default" : "")}");
@@ -402,20 +439,24 @@ internal sealed class LiveEmitter
         }
     }
 
+    private const string CancellationToken = "global::System.Threading.CancellationToken";
+
     /// <summary>
     /// The return type and body of a member that sends <paramref name="op"/> through <paramref name="realm"/>: it
-    /// reads <paramref name="result"/>, or nothing, and returns a <c>Task</c> when <paramref name="task"/> is set.
+    /// reads <paramref name="result"/>, or nothing, and returns a <c>Task</c> when <paramref name="task"/> is set, which
+    /// passes the member's <c>cancellationToken</c> when it's <paramref name="cancellable"/>.
     /// </summary>
-    private (string Type, string Body) Run(string realm, string op, Value? result, bool task)
+    private static (string Type, string Body) Run(string realm, string op, Value? result, bool task, bool cancellable = false)
     {
+        var token = cancellable ? ", cancellationToken" : "";
         if (result is null)
         {
-            return task ? ("global::System.Threading.Tasks.Task", $"{realm}.SendAsync({op})") : ("void", $"{realm}.Send({op})");
+            return task ? ("global::System.Threading.Tasks.Task", $"{realm}.SendAsync({op}{token})") : ("void", $"{realm}.Send({op})");
         }
         var bang = result.MaybeNull ? "!" : "";
         return !task ? (result.Name, $"{realm}.Call({op}, {result.Reader}){bang}")
-            : result.MaybeNull ? ($"async global::System.Threading.Tasks.Task<{result.Name}>", $"(await {realm}.CallAsync({op}, {result.Reader}))!")
-            : ($"global::System.Threading.Tasks.Task<{result.Name}>", $"{realm}.CallAsync({op}, {result.Reader})");
+            : result.MaybeNull ? ($"async global::System.Threading.Tasks.Task<{result.Name}>", $"(await {realm}.CallAsync({op}, {result.Reader}{token}))!")
+            : ($"global::System.Threading.Tasks.Task<{result.Name}>", $"{realm}.CallAsync({op}, {result.Reader}{token})");
     }
 
     /// <summary>An expression-bodied member, after its docs (R29): on one line if it fits, otherwise its body on the next.</summary>
@@ -451,7 +492,8 @@ internal sealed class LiveEmitter
     }
 
     /// <summary>R26: the name in this mode; async members, and Promise methods in both modes (R8), end in <c>Async</c>.</summary>
-    private string Mode(string name, bool promise = false) => async || promise ? name + "Async" : name;
+    // R22: a JS name that already ends in Async (`loadAsync`) keeps the one suffix.
+    private string Mode(string name, bool promise = false) => (async || promise) && !name.EndsWith("Async", StringComparison.Ordinal) ? name + "Async" : name;
 
     private string Claim(string name, string subject) => Naming.Member(taken, name, subject, diagnostics);
 

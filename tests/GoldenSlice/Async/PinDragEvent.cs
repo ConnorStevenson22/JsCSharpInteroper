@@ -3,7 +3,8 @@
 
 namespace GoldenSlice.Async;
 
-public sealed partial record PinDragEvent
+[global::System.Text.Json.Serialization.JsonConverter(typeof(global::Interoper.JsRecordConverter<PinDragEvent>))]
+public sealed partial record PinDragEvent : global::Interoper.IJsRecord<PinDragEvent>
 {
     public required double Dx { get; init; }
     public required double Dy { get; init; }

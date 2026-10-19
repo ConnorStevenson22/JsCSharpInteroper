@@ -45,6 +45,7 @@ public static class GoldenAsyncSuite
         ("handles in a callback's arguments that nothing reads are released with its scope (R21)", InScope(UnreadArgumentsAreReleased)),
         ("Diff: arrays, unions and nested snapshots, then Apply (R18)", InScope(DiffThenApply)),
         ("a mixin keeps its class's base: a Pin is a Marker (R4, R19)", InScope(Mixin)),
+        ("an exported mixin is an interface: a TileLayer is an IRefreshable (§5)", InScope(MixinInterface)),
         ("a subscription with remove() instead of dispose(), delivered then released (R24)", InScope(RemoveSubscription)),
         ("any is JsAny: data, or a handle the scope owns (§2)", InScope(Any)),
         ("a union with an entity case is a parameter's (R2, R17)", InScope(WrittenUnion)),
@@ -413,12 +414,21 @@ public static class GoldenAsyncSuite
     private static async Task DefaultExport(JsScope scope)
     {
         var tile = await TileLayer.CreateAsync(scope, new TileLayerSnapshot { Url = "u", Title = "Streets" });
-        Equal(new TileLayerSnapshot { Url = "u", Title = "Streets", Visible = true }, await tile.SnapshotAsync());
+        Equal(new TileLayerSnapshot { Url = "u", RefreshInterval = 0, Title = "Streets", Visible = true }, await tile.SnapshotAsync());
         TileLayer copy = await tile.CloneAsync(scope); // TileLayer's clone hides Layer's
         Expect(!ReferenceEquals(copy, tile), "a clone to be another object");
-        Equal(new TileLayerSnapshot { Url = "u", Title = "Streets", Visible = true }, await copy.SnapshotAsync());
+        Equal(new TileLayerSnapshot { Url = "u", RefreshInterval = 0, Title = "Streets", Visible = true }, await copy.SnapshotAsync());
         Layer layer = tile;
         Expect(await layer.CloneAsync(scope) is TileLayer, "a Layer's clone to be a TileLayer");
+    }
+
+    private static async Task MixinInterface(JsScope scope)
+    {
+        IRefreshable refreshable = await TileLayer.CreateAsync(scope, new TileLayerSnapshot());
+        await refreshable.SetRefreshIntervalAsync(30);
+        await refreshable.RefreshAsync();
+        Equal(30.0, await refreshable.GetRefreshIntervalAsync());
+        Equal(1.0, await refreshable.GetRefreshCountAsync());
     }
 
     private static async Task RestParameter(JsScope scope)
@@ -434,7 +444,7 @@ public static class GoldenAsyncSuite
         Expect(tile is Layer and Observable, "a TileLayer to be a Layer and an Observable");
         await tile.SetTitleAsync(null);
         await tile.SetVisibleAsync(false);
-        Equal(new TileLayerSnapshot { Url = "", Title = null, Visible = false }, await tile.SnapshotAsync());
+        Equal(new TileLayerSnapshot { Url = "", RefreshInterval = 0, Title = null, Visible = false }, await tile.SnapshotAsync());
     }
 
     private static async Task Collections(JsScope scope)

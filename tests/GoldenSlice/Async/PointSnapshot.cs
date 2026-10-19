@@ -3,7 +3,8 @@
 
 namespace GoldenSlice.Async;
 
-public sealed partial record PointSnapshot : ShapeSnapshot
+[global::System.Text.Json.Serialization.JsonConverter(typeof(global::Interoper.JsRecordConverter<PointSnapshot>))]
+public sealed partial record PointSnapshot : ShapeSnapshot, global::Interoper.IJsRecord<PointSnapshot>
 {
     public global::Interoper.Opt<double> X { get; init; }
     public global::Interoper.Opt<double> Y { get; init; }

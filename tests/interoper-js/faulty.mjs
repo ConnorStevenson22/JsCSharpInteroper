@@ -45,3 +45,16 @@ export const guardedMarker = () => new GuardedMarker();
 // A proxy whose prototype chain never ends, each prototype a new proxy: the class-id walk gives up.
 const endless = () => new Proxy({}, { getPrototypeOf: endless });
 export const endlessChain = () => endless();
+
+// A plain class, as an app's own module has: no runtime class name, so its constructor identifies it (R19 step 1).
+// demo-maps.meta.mjs registers it; its subclass is one the typings don't have.
+export class Plain {}
+class InternalPlain extends Plain {}
+export const plain = () => new Plain();
+export const internalPlain = () => new InternalPlain();
+
+// A subclass the selection leaves out that adds a mixin: the metadata gives it a variant entry (`of`, mapping §5).
+class GlowMarker extends Marker {
+  static className = "GlowMarker";
+}
+export const glowMarker = () => new GlowMarker();

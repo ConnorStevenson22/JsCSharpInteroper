@@ -26,7 +26,7 @@ export function sink(id, argsJson) {
 
 await interoper.start(metadata, sink);
 // Entity classes load on first use; sync mode loads them up front.
-const classModules = new Set(Object.values(demoMaps.classes).map((c) => c.module));
+const classModules = new Set(Object.values(demoMaps.classes).flatMap((c) => c.module ?? []));
 value(await sendAsync({ op: "load", modules: [...classModules] }));
 
 // One op through the sync seam ([JSImport]).

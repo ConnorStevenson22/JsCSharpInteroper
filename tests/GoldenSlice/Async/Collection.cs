@@ -9,25 +9,25 @@ public sealed partial class Collection<T> : Emitter where T : global::Interoper.
 
     public global::System.Threading.Tasks.Task<double> GetLengthAsync() => Realm.GetNumberAsync(Handle, "length");
 
-    public global::System.Threading.Tasks.Task<global::Interoper.Opt<T>> AtAsync(global::Interoper.JsScope scope, double index) =>
-        Realm.CallAsync(global::Interoper.JsOp.Call(Handle, "at", w => global::Interoper.JsJson.WriteNumber(w, index)), (ref r) => global::Interoper.JsJson.ReadOpt(ref r, scope.Read<T>));
+    public global::System.Threading.Tasks.Task<global::Interoper.Opt<T>> AtAsync(global::Interoper.JsScope scope, double index, global::System.Threading.CancellationToken cancellationToken = default) =>
+        Realm.CallAsync(global::Interoper.JsOp.Call(Handle, "at", w => global::Interoper.JsJson.WriteNumber(w, index)), (ref r) => global::Interoper.JsJson.ReadOpt(ref r, scope.Read<T>), cancellationToken);
 
-    public global::System.Threading.Tasks.Task AddAsync(T item) =>
-        Realm.SendAsync(global::Interoper.JsOp.Call(Handle, "add", w => global::Interoper.JsObject.Write(w, item)));
+    public global::System.Threading.Tasks.Task AddAsync(T item, global::System.Threading.CancellationToken cancellationToken = default) =>
+        Realm.SendAsync(global::Interoper.JsOp.Call(Handle, "add", w => global::Interoper.JsObject.Write(w, item)), cancellationToken);
 
     /// <summary>Returns whether the item was found.</summary>
-    public global::System.Threading.Tasks.Task<bool> RemoveAsync(T item) =>
-        Realm.CallAsync(global::Interoper.JsOp.Call(Handle, "remove", w => global::Interoper.JsObject.Write(w, item)), global::Interoper.JsJson.ReadBoolean);
+    public global::System.Threading.Tasks.Task<bool> RemoveAsync(T item, global::System.Threading.CancellationToken cancellationToken = default) =>
+        Realm.CallAsync(global::Interoper.JsOp.Call(Handle, "remove", w => global::Interoper.JsObject.Write(w, item)), global::Interoper.JsJson.ReadBoolean, cancellationToken);
 
     /// <summary>
     /// Calls <c>callback</c> for each item, in order; its result is ignored. Like <c>Array.prototype.forEach</c>, it also passes
     /// the collection, which the type leaves out.
     /// </summary>
-    public global::System.Threading.Tasks.Task ForEachAsync(global::Interoper.JsScope scope, global::System.Action<T, double> callback) =>
-        Realm.SendAsync(global::Interoper.JsOp.Call(Handle, "forEach", w => global::Interoper.JsJson.WriteCallback(w, scope.Callback(callback, scope.Read<T>, global::Interoper.JsJson.ReadNumber))));
+    public global::System.Threading.Tasks.Task ForEachAsync(global::Interoper.JsScope scope, global::System.Action<T, double> callback, global::System.Threading.CancellationToken cancellationToken = default) =>
+        Realm.SendAsync(global::Interoper.JsOp.Call(Handle, "forEach", w => global::Interoper.JsJson.WriteCallback(w, scope.Callback(callback, scope.Read<T>, global::Interoper.JsJson.ReadNumber))), cancellationToken);
 
-    public async global::System.Threading.Tasks.Task<T[]> ToArrayAsync(global::Interoper.JsScope scope) =>
-        (await Realm.CallAsync(global::Interoper.JsOp.Call(Handle, "toArray"), (ref r) => global::Interoper.JsJson.ReadArray(ref r, scope.Read<T>)))!;
+    public async global::System.Threading.Tasks.Task<T[]> ToArrayAsync(global::Interoper.JsScope scope, global::System.Threading.CancellationToken cancellationToken = default) =>
+        (await Realm.CallAsync(global::Interoper.JsOp.Call(Handle, "toArray"), (ref r) => global::Interoper.JsJson.ReadArray(ref r, scope.Read<T>), cancellationToken))!;
 
     public global::System.Threading.Tasks.Task<global::System.IAsyncDisposable> OnChangeAsync(global::Interoper.JsScope scope, global::System.Action<CollectionChangeEvent<T>> handler, global::Interoper.EventOptions? options = null) =>
         scope.SubscribeAsync(Handle, "on", "change", (ref r) => CollectionChangeEvent<T>.Read(ref r, scope), handler, options, ["added", "removed"]);

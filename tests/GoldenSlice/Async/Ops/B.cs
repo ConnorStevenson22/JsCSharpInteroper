@@ -8,10 +8,10 @@ public static partial class B
     private const string Module = "@acme/demo-maps/ops/b.js";
 
     /// <summary><c>x + options.offset</c> (0 by default).</summary>
-    public static global::System.Threading.Tasks.Task<double> ExecuteAsync(global::Interoper.JsRealm realm, double x, global::Interoper.Opt<BOptions> options = default) =>
+    public static global::System.Threading.Tasks.Task<double> ExecuteAsync(global::Interoper.JsRealm realm, double x, global::Interoper.Opt<BOptions> options = default, global::System.Threading.CancellationToken cancellationToken = default) =>
         realm.CallAsync(global::Interoper.JsOp.Call(Module, "execute", w =>
         {
             global::Interoper.JsJson.WriteNumber(w, x);
             if (!options.IsUndefined) global::Interoper.JsJson.WriteValue(w, options, BOptions.Write);
-        }), global::Interoper.JsJson.ReadNumber);
+        }), global::Interoper.JsJson.ReadNumber, cancellationToken);
 }

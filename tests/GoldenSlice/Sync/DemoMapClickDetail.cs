@@ -3,7 +3,8 @@
 
 namespace GoldenSlice.Sync;
 
-public sealed partial record DemoMapClickDetail
+[global::System.Text.Json.Serialization.JsonConverter(typeof(global::Interoper.JsRecordConverter<DemoMapClickDetail>))]
+public sealed partial record DemoMapClickDetail : global::Interoper.IJsRecord<DemoMapClickDetail>
 {
     public required double X { get; init; }
     public required double Y { get; init; }

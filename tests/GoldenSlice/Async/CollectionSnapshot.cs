@@ -3,8 +3,16 @@
 
 namespace GoldenSlice.Async;
 
-public sealed partial record CollectionSnapshot
+[global::System.Text.Json.Serialization.JsonConverter(typeof(global::Interoper.JsRecordConverter<CollectionSnapshot>))]
+public sealed partial record CollectionSnapshot : global::Interoper.IJsRecord<CollectionSnapshot>
 {
+    public static void Write(global::System.Text.Json.Utf8JsonWriter writer, CollectionSnapshot value)
+    {
+        writer.WriteStartObject();
+        WriteMembers(writer, value);
+        writer.WriteEndObject();
+    }
+
     public static void WriteMembers(global::System.Text.Json.Utf8JsonWriter writer, CollectionSnapshot value)
     {
     }

@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { Layer } from "../layers/Layer.js";
+import { Refreshable } from "../layers/Refreshable.js";
 import TileLayer from "../layers/TileLayer.js";
 import { MapView } from "../MapView.js";
 import { Marker } from "../Marker.js";
@@ -42,4 +43,16 @@ test("a tile size is one or one per zoom level, and emphasize takes one marker o
   assert.deepEqual(tile.emphasized, [a]);
   tile.emphasize([a, b]);
   assert.deepEqual(tile.emphasized, [a, b]);
+});
+
+test("TileLayer has the Refreshable mixin: refresh counts, and the interval is kept", () => {
+  const tile = new TileLayer();
+  assert.ok(tile instanceof Layer);
+  assert.equal(tile.refreshInterval, 0);
+  tile.refreshInterval = 30;
+  tile.refresh();
+  tile.refresh();
+  assert.deepEqual([tile.refreshInterval, tile.refreshCount], [30, 2]);
+  assert.ok(tile.sibling() instanceof TileLayer);
+  assert.equal(typeof Refreshable, "function"); // a mixin function, not a class JS constructs
 });

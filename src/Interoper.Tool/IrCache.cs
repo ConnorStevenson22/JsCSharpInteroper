@@ -1,5 +1,7 @@
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Security.Cryptography;
+using System.Text;
 using Interoper.Generator;
 using Interoper.Generator.Ir;
 
@@ -10,9 +12,10 @@ internal sealed class CliException(string message) : Exception(message);
 
 /// <summary>
 /// The IR cache (design §5): <c>&lt;out&gt;/.interoper/ir.json</c>, reused while <c>ir.key</c> matches. The key is plain
-/// text, one input per line: the tool's version, TypeScript's, each listed package's name and version, the profile's
+/// text, one input per line: the tool's version, a hash of its extractor (which changes between builds of one version), TypeScript's, each listed package's name and version, the profile's
 /// event-map property (the only profile field the extractor reads, ir.md), and the version of each package the listed
-/// ones depend on (<c>dependencies</c> and <c>peerDependencies</c>).
+/// ones depend on (<c>dependencies</c> and <c>peerDependencies</c>). A listed package linked from a folder outside
+/// <c>node_modules</c> (<c>npm install file:...</c>) also gets a hash of its typings, since it changes without a new version.
 /// </summary>
 internal sealed class IrCache(string outDirectory)
 {
@@ -106,22 +109,24 @@ internal sealed class IrCache(string outDirectory)
 }
 
 /// <summary>What an extraction depends on, for the cache key.</summary>
-internal sealed record ExtractionInputs(string ToolVersion, InstalledPackage TypeScript, IReadOnlyList<InstalledPackage> Packages, string? EventMapProperty)
+internal sealed record ExtractionInputs(string ToolVersion, string ExtractorDirectory, InstalledPackage TypeScript, IReadOnlyList<InstalledPackage> Packages, string? EventMapProperty)
 {
     /// <summary>
     /// The key: one input per line. The packages the listed ones depend on are found as Node finds them from each
     /// listed package's folder; one that isn't installed is <c>?</c>.
     /// </summary>
-    public string Key { get; } = KeyOf(ToolVersion, TypeScript, Packages, EventMapProperty);
+    public string Key { get; } = KeyOf(ToolVersion, ExtractorDirectory, TypeScript, Packages, EventMapProperty);
 
-    private static string KeyOf(string toolVersion, InstalledPackage typeScript, IReadOnlyList<InstalledPackage> packages, string? eventMapProperty)
+    private static string KeyOf(string toolVersion, string extractorDirectory, InstalledPackage typeScript, IReadOnlyList<InstalledPackage> packages, string? eventMapProperty)
     {
         var lines = new List<string>
         {
             $"interoper {toolVersion}",
+            $"extractor {FilesHash(extractorDirectory, "*.mjs")}",
             $"typescript {typeScript.Version}",
         };
         lines.AddRange(packages.Select(p => $"package {p}"));
+        lines.AddRange(packages.Where(p => IsLinkedSource(p.Directory)).Select(p => $"typings {p.Name} {FilesHash(RealPath(p.Directory), "*.d.ts", "package.json")}"));
         lines.Add($"events.mapProperty {eventMapProperty}".TrimEnd());
         var listed = packages.Select(p => p.Name).ToHashSet(StringComparer.Ordinal);
         var dependencies = packages
@@ -130,6 +135,32 @@ internal sealed record ExtractionInputs(string ToolVersion, InstalledPackage Typ
             .Order(StringComparer.Ordinal);
         lines.AddRange(dependencies);
         return string.Join('\n', lines) + "\n";
+    }
+
+    private static bool IsLinkedSource(string directory)
+    {
+        var real = RealPath(directory);
+        return real != directory && !real.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar).Contains("node_modules");
+    }
+
+    /// <summary>
+    /// A SHA-256 of the folder's files that match <paramref name="pattern"/> (outside <c>node_modules</c>) and of
+    /// <paramref name="more"/>, each as its relative path then its bytes.
+    /// </summary>
+    private static string FilesHash(string directory, string pattern, params string[] more)
+    {
+        var files = Directory.EnumerateFiles(directory, pattern, SearchOption.AllDirectories)
+            .Select(f => Path.GetRelativePath(directory, f).Replace('\\', '/'))
+            .Where(f => !f.Split('/').Contains("node_modules"))
+            .Concat(more)
+            .Order(StringComparer.Ordinal);
+        using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+        foreach (var file in files)
+        {
+            hash.AppendData(Encoding.UTF8.GetBytes(file + "\n"));
+            hash.AppendData(File.ReadAllBytes(Path.Combine(directory, file)));
+        }
+        return Convert.ToHexStringLower(hash.GetHashAndReset());
     }
 
     private static string RealPath(string directory) =>

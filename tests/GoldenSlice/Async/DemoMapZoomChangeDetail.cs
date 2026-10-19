@@ -3,7 +3,8 @@
 
 namespace GoldenSlice.Async;
 
-public sealed partial record DemoMapZoomChangeDetail
+[global::System.Text.Json.Serialization.JsonConverter(typeof(global::Interoper.JsRecordConverter<DemoMapZoomChangeDetail>))]
+public sealed partial record DemoMapZoomChangeDetail : global::Interoper.IJsRecord<DemoMapZoomChangeDetail>
 {
     public required double Zoom { get; init; }
 

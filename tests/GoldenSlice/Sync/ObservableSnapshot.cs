@@ -3,8 +3,16 @@
 
 namespace GoldenSlice.Sync;
 
-public sealed partial record ObservableSnapshot
+[global::System.Text.Json.Serialization.JsonConverter(typeof(global::Interoper.JsRecordConverter<ObservableSnapshot>))]
+public sealed partial record ObservableSnapshot : global::Interoper.IJsRecord<ObservableSnapshot>
 {
+    public static void Write(global::System.Text.Json.Utf8JsonWriter writer, ObservableSnapshot value)
+    {
+        writer.WriteStartObject();
+        WriteMembers(writer, value);
+        writer.WriteEndObject();
+    }
+
     public static void WriteMembers(global::System.Text.Json.Utf8JsonWriter writer, ObservableSnapshot value)
     {
     }

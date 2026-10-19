@@ -3,7 +3,8 @@
 
 namespace GoldenSlice.Sync;
 
-public sealed partial record FlyToOptions
+[global::System.Text.Json.Serialization.JsonConverter(typeof(global::Interoper.JsRecordConverter<FlyToOptions>))]
+public sealed partial record FlyToOptions : global::Interoper.IJsRecord<FlyToOptions>
 {
     /// <summary>Milliseconds.</summary>
     /// <remarks>Default: 0</remarks>

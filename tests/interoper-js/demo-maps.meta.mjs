@@ -2,7 +2,7 @@
 // specifiers, and the members these tests use beyond what the golden slice binds, with ids of their own.
 const at = (file) => new URL(`../../fixtures/demo-maps/${file}`, import.meta.url).href;
 
-export const ids = { Shape: 1, Point: 2, Line: 3, Polygon: 4, MapView: 5, Marker: 6, Collection: 7, Pin: 8 };
+export const ids = { Shape: 1, Point: 2, Line: 3, Polygon: 4, MapView: 5, Marker: 6, Collection: 7, Pin: 8, Plain: 9, GlowMarker: 10, TileLayer: 11 };
 export const modules = { measure: at("measure.js"), styles: at("styles.js") };
 
 export default {
@@ -19,5 +19,8 @@ export default {
     [ids.Marker]: { module: at("Marker.js"), export: "Marker", name: "Marker", members: ["position", "label", "style"] },
     [ids.Collection]: { module: at("core.js"), export: "Collection", name: "core.Collection", members: ["length"] },
     [ids.Pin]: { module: at("pins.js"), export: "Pin", name: "pins.Pin", members: ["position", "label", "style"] },
+    [ids.GlowMarker]: { name: "GlowMarker", of: ids.Marker },
+    [ids.Plain]: { module: new URL("./faulty.mjs", import.meta.url).href, export: "Plain", name: "Plain" },
+    [ids.TileLayer]: { module: at("layers/TileLayer.js"), name: "layers.TileLayer", members: ["url"] },
   },
 };

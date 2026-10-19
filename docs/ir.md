@@ -80,7 +80,7 @@ Every declaration has `kind`, `name` and an optional `doc`. A function's docs ar
 
 | `kind` | Fields |
 |---|---|
-| `class` | `abstract`, `typeParameters`, `extends` (one type), `implements`, `constructors` (signatures), `members`, `events` |
+| `class` | `abstract`, `typeParameters`, `extends` (one type), `mixins` (named classes), `implements`, `constructors` (signatures), `members`, `events` |
 | `interface` | `typeParameters`, `extends` (named bases), `members`, `indexSignatures`, `callSignatures`, `constructSignatures` |
 | `alias` | `typeParameters`, `type` (resolved: `Partial<Pick<…>>` becomes an `object`, R12) |
 | `enum` | `members`: `{ name, value, doc }` |
@@ -96,9 +96,9 @@ A member is one of:
 
 `writeType` is the setter's type when an accessor pair's types differ ([mapping §5](mapping.md#5-members)).
 
-Members declared by a named base are listed on that base only, so follow `extends`. Members of an anonymous base or a mapped type are listed with `inherited`. Platform members (the DOM's) and symbol-keyed members (`[Symbol.iterator]()`) are left out.
+Members declared by a named base are listed on that base only, so follow `extends`. Members of an anonymous base or a mapped type are listed with `inherited`. Platform members (the DOM's), symbol-keyed members (`[Symbol.iterator]()`) and members whose name starts with `@` (type-only markers such as `"@types"`, which no object has) are left out.
 
-A mixin's base is an intersection, as in `class Pin extends PinBase` where `PinBase: typeof Marker & typeof Draggable`. Its `extends` is the first part that is a named, exported class, wherever it sits in the intersection. Here that's `Marker`. The other parts' members are listed with `inherited`.
+A mixin's base is an intersection, as in `class Pin extends PinBase` where `PinBase: typeof Marker & typeof Draggable`. Its `extends` is the first part that is a named, exported class, wherever it sits in the intersection. Here that's `Marker`. The other parts' members are listed with `inherited`. The other parts that are named, exported classes are its `mixins`, in order: `Draggable` isn't exported, so `Pin` has none, and `TileLayer` (`typeof Layer & typeof Refreshable`) has `Refreshable`.
 
 ### Other fields
 
@@ -143,5 +143,5 @@ These are the custom elements from the listed packages' Custom Elements Manifest
 | `unresolved` | `text` (the checker's spelling). The generator skips it (R12) | `keyof this`, `this["$events"][K]` |
 
 - A union keeps named members as written. `FlyToTarget` is `Shape | [number, number] | Camera`, not the checker's flattened list. The generator flattens it (R6). `boolean` is a `primitive`, never `true | false`.
-- A `discriminant` is the first property that every non-nullish member declares with a distinct literal type.
+- A `discriminant` is the first property that every non-nullish member declares with a distinct literal type. A member may be an object type or an intersection of them.
 - Aliases declared by a package, including a dependency, are `ref`s. Platform aliases such as `Partial` are resolved in place.

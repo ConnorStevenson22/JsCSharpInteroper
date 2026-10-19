@@ -3,7 +3,8 @@
 
 namespace GoldenSlice.Async;
 
-public closed partial record ShapeSnapshot
+[global::System.Text.Json.Serialization.JsonConverter(typeof(global::Interoper.JsRecordConverter<ShapeSnapshot>))]
+public closed partial record ShapeSnapshot : global::Interoper.IJsRecord<ShapeSnapshot>
 {
     public static void Write(global::System.Text.Json.Utf8JsonWriter writer, ShapeSnapshot value)
     {

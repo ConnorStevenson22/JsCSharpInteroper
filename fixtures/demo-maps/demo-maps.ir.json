@@ -2208,6 +2208,90 @@
       ]
     },
     {
+      "specifier": "@acme/demo-maps/layers/Refreshable.js",
+      "declarations": [
+        {
+          "kind": "class",
+          "name": "Refreshable",
+          "doc": {
+            "summary": "A mixin's class, exported: each class that has it implements its interface (§5)."
+          },
+          "abstract": true,
+          "constructors": [
+            {
+              "params": [
+                {
+                  "name": "args",
+                  "type": {
+                    "kind": "array",
+                    "element": {
+                      "kind": "primitive",
+                      "name": "any"
+                    }
+                  },
+                  "rest": true
+                }
+              ]
+            }
+          ],
+          "members": [
+            {
+              "kind": "property",
+              "name": "refreshInterval",
+              "doc": {
+                "summary": "Seconds between refreshes; 0 for never."
+              },
+              "type": {
+                "kind": "primitive",
+                "name": "number"
+              }
+            },
+            {
+              "kind": "property",
+              "name": "refreshCount",
+              "doc": {
+                "summary": "How many times the layer has refreshed."
+              },
+              "readonly": true,
+              "type": {
+                "kind": "primitive",
+                "name": "number"
+              }
+            },
+            {
+              "kind": "method",
+              "name": "refresh",
+              "signatures": [
+                {
+                  "returns": {
+                    "kind": "primitive",
+                    "name": "void"
+                  },
+                  "doc": {
+                    "summary": "Fetches the layer's data again."
+                  }
+                }
+              ]
+            },
+            {
+              "kind": "method",
+              "name": "sibling",
+              "signatures": [
+                {
+                  "returns": {
+                    "kind": "this"
+                  },
+                  "doc": {
+                    "summary": "A copy, of the same class: `this` is the class's, so the interface leaves it out."
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
       "specifier": "@acme/demo-maps/layers/TileLayer.js",
       "declarations": [
         {
@@ -2215,13 +2299,20 @@
           "name": "TileLayer",
           "export": "default",
           "doc": {
-            "summary": "The module's default export, as many libraries' one-class modules have."
+            "summary": "The module's default export, as many libraries' one-class modules have. It has the `Refreshable` mixin."
           },
           "extends": {
             "kind": "ref",
             "name": "Layer",
             "module": "@acme/demo-maps/layers/Layer.js"
           },
+          "mixins": [
+            {
+              "kind": "ref",
+              "name": "Refreshable",
+              "module": "@acme/demo-maps/layers/Refreshable.js"
+            }
+          ],
           "constructors": [
             {
               "params": [
@@ -2370,6 +2461,56 @@
                   },
                   "doc": {
                     "summary": "Redeclared with the subclass's type."
+                  }
+                }
+              ]
+            },
+            {
+              "kind": "property",
+              "name": "refreshInterval",
+              "inherited": true,
+              "type": {
+                "kind": "primitive",
+                "name": "number"
+              }
+            },
+            {
+              "kind": "property",
+              "name": "refreshCount",
+              "inherited": true,
+              "readonly": true,
+              "type": {
+                "kind": "primitive",
+                "name": "number"
+              }
+            },
+            {
+              "kind": "method",
+              "name": "refresh",
+              "inherited": true,
+              "signatures": [
+                {
+                  "returns": {
+                    "kind": "primitive",
+                    "name": "void"
+                  },
+                  "doc": {
+                    "summary": "Fetches the layer's data again."
+                  }
+                }
+              ]
+            },
+            {
+              "kind": "method",
+              "name": "sibling",
+              "inherited": true,
+              "signatures": [
+                {
+                  "returns": {
+                    "kind": "this"
+                  },
+                  "doc": {
+                    "summary": "A copy, of the same class: `this` is the class's, so the interface leaves it out."
                   }
                 }
               ]

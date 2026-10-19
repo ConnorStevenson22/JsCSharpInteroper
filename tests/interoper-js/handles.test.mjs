@@ -52,6 +52,31 @@ test("an object of a class the metadata doesn't know is its nearest registered a
   release(fast, guarded, source, endless);
 });
 
+test("a variant has its own class id and its base's entry (§5)", async () => {
+  const glow = value(await sendAsync({ op: "call", module: faulty, name: "glowMarker" }));
+  assert.equal(glow.$t, ids.GlowMarker);
+  set(glow, "label", "lit");
+  assert.deepEqual(Object.keys(value(send({ op: "snapshot", h: glow.$h }))), ["position", "label", "style"]); // Marker's members
+  release(glow);
+});
+
+test("an object of a plain class with no runtime class name is found by its constructor (R19 step 1)", async () => {
+  const plain = value(await sendAsync({ op: "call", module: faulty, name: "plain" }));
+  assert.equal(plain.$t, ids.Plain);
+  const internal = value(await sendAsync({ op: "call", module: faulty, name: "internalPlain" }));
+  assert.equal(internal.$t, ids.Plain);
+  release(plain, internal);
+});
+
+test("an entry's export is default and its members none when left out (design §2)", async () => {
+  const layer = create(ids.TileLayer, { url: "tiles" });
+  assert.equal(layer.$t, ids.TileLayer);
+  assert.deepEqual(value(send({ op: "snapshot", h: layer.$h })), { url: "tiles" });
+  const plain = value(await sendAsync({ op: "call", module: faulty, name: "plain" }));
+  assert.deepEqual(value(send({ op: "snapshot", h: plain.$h })), {});
+  release(layer, plain);
+});
+
 test("call returns handles, or value-like instances by value with byValue (R16)", () => {
   const view = create(ids.MapView, { zoom: 0 });
   const point = call(view, "screenToMap", 3, 4);

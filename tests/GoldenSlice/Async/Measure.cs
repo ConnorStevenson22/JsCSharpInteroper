@@ -7,12 +7,12 @@ public static partial class Measure
 {
     private const string Module = "@acme/demo-maps/measure.js";
 
-    public static global::System.Threading.Tasks.Task<double> DistanceAsync(global::Interoper.JsRealm realm, PointSnapshot a, PointSnapshot b) =>
+    public static global::System.Threading.Tasks.Task<double> DistanceAsync(global::Interoper.JsRealm realm, PointSnapshot a, PointSnapshot b, global::System.Threading.CancellationToken cancellationToken = default) =>
         realm.CallAsync(global::Interoper.JsOp.Call(Module, "distance", w =>
         {
             PointSnapshot.Write(w, a);
             PointSnapshot.Write(w, b);
-        }), global::Interoper.JsJson.ReadNumber);
+        }), global::Interoper.JsJson.ReadNumber, cancellationToken);
 
     /// <summary>The length of the closed path through the points: the last joins the first.</summary>
     public static global::System.Threading.Tasks.Task<double> PerimeterAsync(global::Interoper.JsRealm realm, params PointSnapshot[] points) =>
@@ -22,6 +22,6 @@ public static partial class Measure
         }), global::Interoper.JsJson.ReadNumber);
 
     /// <summary>The shape's <c>type</c>, or "marker" and its label.</summary>
-    public static async global::System.Threading.Tasks.Task<string> DescribeAsync(global::Interoper.JsRealm realm, Measurable target) =>
-        (await realm.CallAsync(global::Interoper.JsOp.Call(Module, "describe", w => global::Interoper.JsJson.WriteValue(w, target)), global::Interoper.JsJson.ReadString))!;
+    public static async global::System.Threading.Tasks.Task<string> DescribeAsync(global::Interoper.JsRealm realm, Measurable target, global::System.Threading.CancellationToken cancellationToken = default) =>
+        (await realm.CallAsync(global::Interoper.JsOp.Call(Module, "describe", w => global::Interoper.JsJson.WriteValue(w, target)), global::Interoper.JsJson.ReadString, cancellationToken))!;
 }

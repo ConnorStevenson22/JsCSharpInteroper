@@ -3,7 +3,8 @@
 
 namespace GoldenSlice.Sync;
 
-public sealed partial record PolygonSnapshot : ShapeSnapshot
+[global::System.Text.Json.Serialization.JsonConverter(typeof(global::Interoper.JsRecordConverter<PolygonSnapshot>))]
+public sealed partial record PolygonSnapshot : ShapeSnapshot, global::Interoper.IJsRecord<PolygonSnapshot>
 {
     /// <summary>The closing edge from the last vertex back to the first is implied.</summary>
     public global::Interoper.Opt<double[][]> Vertices { get; init; }

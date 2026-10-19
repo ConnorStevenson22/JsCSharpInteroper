@@ -4,7 +4,8 @@
 namespace GoldenSlice.Sync.Ops;
 
 /// <summary>Sibling modules <c>ops/a</c> and <c>ops/b</c> each export an <c>Options</c> and an <c>execute</c> (R27).</summary>
-public sealed partial record Options
+[global::System.Text.Json.Serialization.JsonConverter(typeof(global::Interoper.JsRecordConverter<Options>))]
+public sealed partial record Options : global::Interoper.IJsRecord<Options>
 {
     public global::Interoper.Opt<double> Scale { get; init; }
 

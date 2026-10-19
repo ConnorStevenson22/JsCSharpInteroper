@@ -10,8 +10,9 @@ namespace Interoper.Generator;
 /// <param name="Inherited">Declared by the base snapshot record (R16).</param>
 /// <param name="Hides">Redeclares a base snapshot record's member with another type, so it's <c>new</c> (R18, R26).</param>
 /// <param name="Doc">The property's docs (R29).</param>
+/// <param name="WriteOnly">A union that is only written (R2, R17): <c>Read</c> leaves it undefined.</param>
 internal sealed record Field(string JsName, string Name, CsType? Type, bool Required, bool Opt = false, JsonElement? Constant = null, bool Inherited = false,
-    bool Hides = false, Doc? Doc = null)
+    bool Hides = false, Doc? Doc = null, bool WriteOnly = false)
 {
     public string TypeName => Opt ? $"global::Interoper.Opt<{Type!.Name}>" : Type!.Name;
 }
@@ -83,6 +84,8 @@ internal sealed class TypeMap
     /// <summary>R27: the names of the anonymous unions and enums mapped so far, ignoring case.</summary>
     private readonly HashSet<TypeName> unionNames = new(TypeName.IgnoreCase);
     private readonly HashSet<ClassDeclaration> watchable = new(ReferenceEqualityComparer.Instance);
+    /// <summary>§5: the mixins that are interfaces, and the emitted classes a variant derives from.</summary>
+    private readonly HashSet<ClassDeclaration> mixins = new(ReferenceEqualityComparer.Instance), variantBases = new(ReferenceEqualityComparer.Instance);
     private readonly Dictionary<Declaration, bool> scoped = new(ReferenceEqualityComparer.Instance);
     private readonly HashSet<Declaration> scoping = new(ReferenceEqualityComparer.Instance);
     private readonly Dictionary<PropertyMember, Unmappable?> dropped = new(ReferenceEqualityComparer.Instance);
@@ -101,8 +104,9 @@ internal sealed class TypeMap
     /// live classes to emit. <paramref name="ns"/> is the root namespace (R27).
     /// </summary>
     /// <param name="payloads">The event payloads (R24), whose required members are dropped like optional ones (<see cref="DroppedProblem"/>).</param>
+    /// <param name="selection">The selection's mixins and variants (§5), once it has them.</param>
     public TypeMap(IrDocument ir, Profile profile, IEnumerable<Selected> selected, ICollection<Diagnostic> diagnostics, string ns,
-        IEnumerable<InterfaceDeclaration>? payloads = null)
+        IEnumerable<InterfaceDeclaration>? payloads = null, Selection? selection = null)
     {
         payloadMembers.UnionWith((payloads ?? []).SelectMany(i => i.Members.OfType<PropertyMember>()));
         foreach (var module in ir.Modules)
@@ -132,6 +136,13 @@ internal sealed class TypeMap
                 classes.Add(c);
             }
         }
+        foreach (var m in selection?.Mixins ?? [])
+        {
+            declarations[(m.Module, m.Declaration.Name)] = m.Declaration;
+            moduleOf[m.Declaration] = m.Module;
+            mixins.Add((ClassDeclaration)m.Declaration);
+        }
+        variantBases.UnionWith((selection?.Variants ?? []).Select(v => v.Base));
         valueClasses = [.. profile.ValueClasses];
         this.diagnostics = diagnostics;
         (package, root) = (ir.Package.Name, ns);
@@ -386,7 +397,14 @@ internal sealed class TypeMap
     public IReadOnlyList<ClassDeclaration> ConcreteSubclasses(ClassDeclaration c) =>
         [.. classes.Where(sub => !sub.Abstract && Bases(sub).Contains(c))];
 
-    public bool HasSubclasses(ClassDeclaration c) => classes.Any(sub => LiveBase(sub) == c);
+    public bool HasSubclasses(ClassDeclaration c) => variantBases.Contains(c) || classes.Any(sub => LiveBase(sub) == c);
+
+    /// <summary>§5: a class's mixins that are interfaces.</summary>
+    public IReadOnlyList<ClassDeclaration> Mixins(ClassDeclaration c) =>
+        [.. c.Mixins.OfType<RefType>().Select(Find).OfType<ClassDeclaration>().Where(mixins.Contains)];
+
+    /// <summary>§5: a mixin's interface, <c>I</c> and its name, in its namespace.</summary>
+    public TypeName MixinName(ClassDeclaration m) => Name(m) with { Name = "I" + Name(m).Name };
 
     private IEnumerable<ClassDeclaration> Bases(ClassDeclaration c)
     {
@@ -521,7 +539,7 @@ internal sealed class TypeMap
         var flat = Kept(type);
         foreach (var dropped in all.Except(flat).OfType<RefType>())
         {
-            diagnostics.Add(new(Diagnostic.NotSupported, name.Name, $"case `{dropped.Name}` dropped: a class outside the selection (R2)"));
+            diagnostics.Add(new(Diagnostic.NotSupported, name.Name, $"case `{dropped.Name}` dropped: {(dropped.Module is null ? "a platform type" : "a class outside the selection")} (R2)"));
         }
         // R6: flattened literal unions may share values ("a" | "b" and "b" | "c"), which are one member.
         var literals = flat.OfType<LiteralType>().Select(l => l.Value).DistinctBy(v => v.GetRawText()).ToList();
@@ -531,8 +549,7 @@ internal sealed class TypeMap
                 EnumMembers(name.Name, literals, literals.Select(v => v.GetString()!)), literals.Count > MaxEnumMembers || flat.Any(IsOpenString))
             : flat.All(t => t is LiteralType { Value.ValueKind: JsonValueKind.Number }) ? new EnumType(name,
                 EnumMembers(name.Name, literals, literals.Select(v => v.GetRawText())), Extensible: false)
-            : new UnionStruct(name, Cases(name, all, flat, type is UnionType d ? d.Discriminant : null),
-                type is UnionType u && u.Types.Count(t => !IsNullish(t)) == all.Count ? u.Discriminant : null,
+            : new UnionStruct(name, Cases(name, all, flat, DiscriminantOf(type, all.Count)), DiscriminantOf(type, all.Count),
                 WrittenOnly(type, all, flat), Dropped: flat.Count < all.Count);
         unions[name] = result;
         if (result is not null)
@@ -683,8 +700,19 @@ internal sealed class TypeMap
     /// <summary>A union's members after R6, without null and undefined.</summary>
     private List<IrType> Values(IrType type) => [.. Flatten(type).Where(t => !IsNullish(t))];
 
-    /// <summary>R2: a union's members after R6 that it keeps: without null, undefined and the classes outside the selection.</summary>
-    private List<IrType> Kept(IrType type) => [.. Values(type).Where(t => !IsUnselected(t))];
+    /// <summary>
+    /// R19 step 2: the extractor's discriminant of a union of <paramref name="count"/> members after R6, also of the one
+    /// union a nullable union holds (<c>(A | B) | null</c>); null when R6 flattened another union into it.
+    /// </summary>
+    private static string? DiscriminantOf(IrType type, int count) => type switch
+    {
+        UnionType u when u.Types.Count(t => !IsNullish(t)) == count => u.Discriminant,
+        UnionType u when u.Types.Where(t => !IsNullish(t)).ToList() is [UnionType inner] => DiscriminantOf(inner, count),
+        _ => null,
+    };
+
+    /// <summary>R2: a union's members after R6 that it keeps: without null, undefined, the classes outside the selection and platform types.</summary>
+    private List<IrType> Kept(IrType type) => [.. Values(type).Where(t => !IsDropped(t))];
 
     /// <summary>R10: <c>string &amp; {}</c>, which keeps a literal union open-ended.</summary>
     private static bool IsOpenString(IrType type) =>
@@ -707,11 +735,19 @@ internal sealed class TypeMap
     private bool Unreadable(IrType type) => IsElement(type) ||
         type is RefType { Module: not null } r && Find(r) is { } d && HoldsElement(d) || type is ObjectType o && HoldsElement(Bag(o));
 
-    /// <summary>A class outside the selection, or an alias of one: a union drops it as a case (R2).</summary>
-    internal bool IsUnselected(IrType type) => type is RefType { Module: not null } r && Find(r) switch
+    /// <summary>
+    /// A case a union drops (R2): a class outside the selection, or an alias of one, or a platform type that isn't mapped
+    /// (<c>MouseEvent</c>; a DOM element is, R13).
+    /// </summary>
+    internal bool IsDropped(IrType type) => type switch
     {
-        ClassDeclaration c => !classes.Contains(c),
-        AliasDeclaration { Type: not (ObjectType or UnionType) } a => IsUnselected(a.Type),
+        RefType { Module: null } r => !IsElement(r),
+        RefType r => Find(r) switch
+        {
+            ClassDeclaration c => !classes.Contains(c),
+            AliasDeclaration { Type: not (ObjectType or UnionType) } a => IsDropped(a.Type),
+            _ => false,
+        },
         _ => false,
     };
 
@@ -791,7 +827,7 @@ internal sealed class TypeMap
             }
             var (mapped, nullable) = Slot(p.Type, type.Owned(p.Name));
             var name = Naming.Member(taken, Naming.Pascal(p.Name), $"{type.Name}.{p.Name}", diagnostics);
-            result.Add(new(p.Name, name, mapped, Required: !p.Optional, Opt: (nullable || p.Optional) && !mapped.IsUnion, Doc: p.Doc));
+            result.Add(new(p.Name, name, mapped, Required: !p.Optional, Opt: (nullable || p.Optional) && !mapped.IsUnion, Doc: p.Doc, WriteOnly: IsWrittenMember(p)));
         }
         return result;
     }
@@ -855,7 +891,7 @@ internal sealed class TypeMap
         PrimitiveType { Name: "any" or "unknown" or "object" } => true, // a JsAny, whose handles the scope owns
         RefType { Module: not null } r => Find(r) switch
         {
-            ClassDeclaration c => !IsValueLike(c),
+            ClassDeclaration c => classes.Contains(c) && !IsValueLike(c), // one outside the selection is dropped (R2)
             AliasDeclaration { Type: not ObjectType } a => UsesEntity(a.Type),
             { } d => IsScoped(d),
             null => false,
@@ -885,7 +921,7 @@ internal sealed class TypeMap
         {
             return false;
         }
-        var result = RecordMembers(declaration).Any(p => p.Type is not LiteralType && UsesEntity(p.Type));
+        var result = RecordMembers(declaration).Any(p => p.Type is not LiteralType && !IsWrittenMember(p) && UsesEntity(p.Type));
         scoping.Remove(declaration);
         if (result || scoping.Count == 0) // "not scoped" inside a recursion may only mean the record further up isn't known yet
         {
@@ -1137,7 +1173,7 @@ internal sealed class TypeMap
     /// <summary>R19 without mapping: the discriminant is a string on every case, or the cases' JSON or required members tell them apart.</summary>
     private Unmappable? Classification(IrType type, int count, List<(string? Name, string? FullName, JsonKind Json, Declaration? Declaration)> cases, string label, string ambiguous)
     {
-        if (type is UnionType u && u.Types.Count(t => !IsNullish(t)) == count && u.Discriminant is { } discriminant) // as Union() reads it
+        if (DiscriminantOf(type, count) is { } discriminant) // as Union() reads it
         {
             return cases.All(c => c.Declaration is { } d && StringConstants(d).Contains(discriminant)) ? null
                 : new($"{label}, whose discriminant `{discriminant}` isn't a string on every case (R19)");
@@ -1178,10 +1214,17 @@ internal sealed class TypeMap
 
     /// <summary>
     /// Why a data record's member can't be mapped: a constant can (R20), and so can a DOM element, or a union with one,
-    /// which is written (R13).
+    /// which is written (R13), and a union only written (<see cref="IsWrittenMember"/>).
     /// </summary>
     private Unmappable? MemberProblem(PropertyMember p) =>
-        p.Static || p.Type is LiteralType ? null : Problem(p.Type, ElementOf(p.Type) ? Position.Parameter : Position.Data);
+        p.Static || p.Type is LiteralType ? null : Problem(p.Type, ElementOf(p.Type) || IsWrittenMember(p) ? Position.Parameter : Position.Data);
+
+    /// <summary>
+    /// R2, R17: a data record's member typed with a union that has a case needing a scope to be read (an entity, or a
+    /// scoped record), which a union reader has none of. It's written, and <c>Read</c> leaves it undefined; the record
+    /// isn't scoped for it. An event payload's is dropped instead, since a payload is only read (R24).
+    /// </summary>
+    private bool IsWrittenMember(PropertyMember p) => !payloadMembers.Contains(p) && Kept(p.Type) is { Count: > 1 } cases && cases.Any(UsesEntity);
 
     /// <summary>
     /// R15: why a data record drops an optional member (or an event payload's, R24), or null. Selection drops it (with what it can't reach, too), and

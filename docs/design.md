@@ -26,7 +26,7 @@ Interoper turns a JavaScript library's TypeScript typings into C# bindings for B
 | Module functions | Stateless library functions over records. One call, no handles. |
 | Components | One plain C# class per custom element in the library's Custom Elements Manifest (R28). |
 | Custom events | `{Package}Events.cs`, the `[EventHandler]` attributes for the manifest's events (R28). |
-| JS metadata | One module, `{package}.meta.js`. For each class id it lists the module and export that construct it, its runtime class name, whether it is value-like, and its snapshot members. There is no per-member generated JS. |
+| JS metadata | One module, `{package}.meta.js`. For each class id it lists the module and export that construct it (`default` when left out), its runtime class name (a custom element's tag instead, since JS finds an element by its tag), whether it is value-like, and its snapshot members (none when left out). A variant (a class outside the selection that adds a mixin, [mapping §5](mapping.md#5-members)) lists only its runtime class name and `of`, the class whose entry it shares. There is no per-member generated JS. |
 
 Class ids start at 1 (0 means unknown): value-like classes first, then entities, each in IR order. A runtime class name is the declaring module's path within its package, dotted, plus the class name unless the file is named after it: `geometry.Point`, `MapView`, `layers.TileLayer`. The profile can add a prefix (`runtimeClassPrefix`).
 
@@ -123,7 +123,7 @@ Structured data is UTF-8 JSON. Undefined members are left out. Special values:
 | `batch` | `ops` (only ops that return nothing) | none, or a `BatchError` listing failed ops |
 
 - Results send class instances as handles. With `byValue`, and always in callback arguments and snapshots, value-like instances go as `$c` data. Plain objects and arrays are copied.
-- A handle's `$t` is the class id of the object's runtime class name (R19). For a DOM element it is the class whose `tag` is the element's `localName`. When the metadata doesn't know the name, JS walks up the prototype chain to the nearest class it knows, so an object of an undeclared subclass gets its nearest declared ancestor. `$t` is 0 when no ancestor is known.
+- A handle's `$t` is the class id of the object's runtime class name (R19). For a DOM element it is the class whose `tag` is the element's `localName`. A class with no runtime class name (a plain class, as an app's own module has) is known by its constructor once its module is loaded. When the metadata doesn't know the object's class, JS walks up the prototype chain to the nearest class it knows, so an object of an undeclared subclass gets its nearest declared ancestor. `$t` is 0 when no ancestor is known.
 - Every handle that reaches .NET is owned by .NET and must be released.
 - `subscribe` options wrap the listener in JS, so they apply in time even on Server (R24).
 - A result that can't be encoded (a `BigInt`, a cycle) becomes an error envelope.
@@ -146,7 +146,7 @@ The generated registry builds the import map for you:
 new ImportMapDefinition(Maps.ImportMap("/node_modules/"), null, null)
 ```
 
-`ImportMap(root)` maps each package to its folder under `root`, plus any export whose JS lives elsewhere (the IR's `file`). It only covers modules the IR lists. If a library's own JS imports other bare specifiers, you need a bundler or a CDN.
+`ImportMap(root)` maps each package to its folder under `root`, plus any export whose JS lives elsewhere (the IR's `file`). `root` must start with `/`, `./` or `../`, or be a URL, since browsers silently drop any other address; `ImportMap` throws `ArgumentException` otherwise. It only covers modules the IR lists. If a library's own JS imports other bare specifiers, you need a bundler or a CDN.
 
 When modules load:
 
@@ -200,7 +200,7 @@ All three share one version, set in `Directory.Build.props`. The runtime's publi
 
 - It needs Node.js on `PATH`. Packages are found as Node finds them, from the working directory up. The first one is the IR's package and must match the profile.
 - Unchanged files aren't rewritten. `<out>/.interoper/files.txt` lists what the last run wrote, so the next run can delete stale generated files. Nothing else in `--out` is touched, so hand-written partials are safe.
-- The IR is cached in `<out>/.interoper/ir.json`. Its key covers the tool version, TypeScript version, package and dependency versions, and the one profile field the extractor reads. Other profile changes only regenerate. Delete `.interoper` after editing a package in place without a version bump.
+- The IR is cached in `<out>/.interoper/ir.json`. Its key covers the tool version, a hash of the extractor, TypeScript version, package and dependency versions, and the one profile field the extractor reads. Other profile changes only regenerate. A package linked from outside `node_modules` (`file:`) adds a hash of its `package.json` and `.d.ts` files, so editing its typings re-extracts. Delete `.interoper` after editing any other package in place without a version bump.
 - The report goes to `<out>/interoper-report.txt`: one line per diagnostic plus a count per code.
 - Exit codes: 0 done, 1 when `--warnings-as-errors` is set and there are diagnostics (files are still written), 2 for usage, setup or I/O errors.
 

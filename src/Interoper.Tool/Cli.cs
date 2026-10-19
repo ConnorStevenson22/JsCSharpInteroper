@@ -93,7 +93,7 @@ public static partial class Cli
 
         var outDir = Path.GetFullPath(Path.Combine(cwd, args.Out));
         var cache = new IrCache(outDir);
-        var inputs = new ExtractionInputs(Version, typeScript, packages, profile.Events?.MapProperty);
+        var inputs = new ExtractionInputs(Version, env.ExtractorDirectory, typeScript, packages, profile.Events?.MapProperty);
         var ir = cache.TryLoad(inputs);
         if (ir is not null)
         {

@@ -76,6 +76,16 @@ public class ValueModelTests
         Assert.Equal("no size", Size(null));
     }
 
+    [Fact] // R3
+    public void Opt_TryGetValue_infers_its_type_and_is_patterns_read_it()
+    {
+        Opt<double> size = 12;
+        Assert.True(size.TryGetValue(out var value) && value == 12);
+        Assert.False(((Opt<double>)default).TryGetValue(out _));
+        Assert.True(size is double d && d == 12);
+        Assert.True(default(Opt<double>) is Undefined);
+    }
+
     [Fact] // R2, R3, R20
     public void Wire_format_omits_undefined_and_keeps_null()
     {
