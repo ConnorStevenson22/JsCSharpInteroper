@@ -705,6 +705,55 @@
                   }
                 }
               ]
+            },
+            {
+              "kind": "method",
+              "name": "markersAt",
+              "signatures": [
+                {
+                  "params": [
+                    {
+                      "name": "offsets",
+                      "type": {
+                        "kind": "array",
+                        "element": {
+                          "kind": "tuple",
+                          "elements": [
+                            {
+                              "kind": "primitive",
+                              "name": "number"
+                            },
+                            {
+                              "kind": "primitive",
+                              "name": "number"
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  ],
+                  "returns": {
+                    "kind": "array",
+                    "element": {
+                      "kind": "union",
+                      "types": [
+                        {
+                          "kind": "ref",
+                          "name": "Marker",
+                          "module": "@acme/demo-maps/Marker.js"
+                        },
+                        {
+                          "kind": "primitive",
+                          "name": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "doc": {
+                    "summary": "The marker at each `[x, y]` screen offset, or `null` where there is none."
+                  }
+                }
+              ]
             }
           ],
           "events": [
@@ -2629,6 +2678,121 @@
               },
               "doc": {
                 "summary": "The shape's `type`, or \"marker\" and its label."
+              }
+            }
+          ]
+        },
+        {
+          "kind": "function",
+          "name": "distances",
+          "signatures": [
+            {
+              "params": [
+                {
+                  "name": "origin",
+                  "type": {
+                    "kind": "ref",
+                    "name": "Point",
+                    "module": "@acme/demo-maps/geometry.js"
+                  }
+                },
+                {
+                  "name": "markers",
+                  "type": {
+                    "kind": "array",
+                    "element": {
+                      "kind": "union",
+                      "types": [
+                        {
+                          "kind": "ref",
+                          "name": "Marker",
+                          "module": "@acme/demo-maps/Marker.js"
+                        },
+                        {
+                          "kind": "primitive",
+                          "name": "null"
+                        }
+                      ]
+                    }
+                  }
+                }
+              ],
+              "returns": {
+                "kind": "array",
+                "element": {
+                  "kind": "union",
+                  "types": [
+                    {
+                      "kind": "primitive",
+                      "name": "number"
+                    },
+                    {
+                      "kind": "primitive",
+                      "name": "null"
+                    }
+                  ]
+                }
+              },
+              "doc": {
+                "summary": "The distance from `origin` to each marker's position, or `null` for a gap in the list."
+              }
+            }
+          ]
+        },
+        {
+          "kind": "function",
+          "name": "centers",
+          "signatures": [
+            {
+              "params": [
+                {
+                  "name": "shapes",
+                  "type": {
+                    "kind": "array",
+                    "element": {
+                      "kind": "union",
+                      "types": [
+                        {
+                          "kind": "primitive",
+                          "name": "undefined"
+                        },
+                        {
+                          "kind": "primitive",
+                          "name": "null"
+                        },
+                        {
+                          "kind": "ref",
+                          "name": "Shape",
+                          "module": "@acme/demo-maps/geometry.js"
+                        }
+                      ]
+                    }
+                  }
+                }
+              ],
+              "returns": {
+                "kind": "array",
+                "element": {
+                  "kind": "union",
+                  "types": [
+                    {
+                      "kind": "ref",
+                      "name": "Point",
+                      "module": "@acme/demo-maps/geometry.js"
+                    },
+                    {
+                      "kind": "primitive",
+                      "name": "null"
+                    },
+                    {
+                      "kind": "primitive",
+                      "name": "undefined"
+                    }
+                  ]
+                }
+              },
+              "doc": {
+                "summary": "Each shape's bounds center; `null` and `undefined` elements stay as they are."
               }
             }
           ]

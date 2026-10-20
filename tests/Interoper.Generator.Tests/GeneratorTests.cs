@@ -79,6 +79,28 @@ public sealed class GeneratorTests
         Assert.Contains("public required global::Interoper.Opt<string> Name { get; init; }", File(result, "Tag.cs"));
     }
 
+    [Fact] // R2, R3, R17: a nullable array element is Opt<T>, or a union, which has the bottom case itself
+    public void NullableElementsAreOptOrTheirUnion()
+    {
+        var result = Generate("""
+            { "kind": "alias", "name": "Name", "type": { "kind": "union", "types": [{ "kind": "primitive", "name": "string" }, { "kind": "primitive", "name": "null" }] } },
+            { "kind": "class", "name": "Layer" },
+            { "kind": "interface", "name": "Tag", "members": [
+              { "kind": "property", "name": "names", "type": { "kind": "array", "element": { "kind": "ref", "name": "Name", "module": "@acme/maps/a.js" } } },
+              { "kind": "property", "name": "layers", "type": { "kind": "array", "element": { "kind": "union", "types": [
+                { "kind": "ref", "name": "Layer", "module": "@acme/maps/a.js" }, { "kind": "primitive", "name": "null" }, { "kind": "primitive", "name": "undefined" }] } } },
+              { "kind": "property", "name": "keys", "type": { "kind": "array", "element": { "kind": "union", "types": [
+                { "kind": "primitive", "name": "string" }, { "kind": "array", "element": { "kind": "primitive", "name": "string" } }, { "kind": "primitive", "name": "null" }] } } }] }
+            """);
+        Assert.Empty(result.Diagnostics);
+        var tag = File(result, "Tag.cs");
+        Assert.Contains("public required global::Interoper.Opt<string>[] Names { get; init; }", tag);
+        Assert.Contains("public required global::Interoper.Opt<Layer>[] Layers { get; init; }", tag);
+        Assert.Contains("public required TagKeys[] Keys { get; init; }", tag);
+        Assert.Contains("global::Interoper.JsJson.ReadArray(ref reader, (ref r) => global::Interoper.JsJson.ReadOpt(ref r, scope.Read<Layer>))", tag);
+        Assert.Contains("global::Interoper.JsJson.WriteArray(writer, value.Layers, static (w, v) => global::Interoper.JsJson.WriteValue(w, v, Layer.Write))", tag);
+    }
+
     [Theory] // design §2, §3.5, R4, R19 step 1, R27
     [InlineData(Api.Sync)]
     [InlineData(Api.Async)]

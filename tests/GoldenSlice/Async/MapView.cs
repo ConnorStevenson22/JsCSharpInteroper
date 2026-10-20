@@ -107,6 +107,10 @@ public sealed partial class MapView : Emitter
             global::Interoper.JsJson.WriteNumber(w, y);
         }), (ref r) => global::Interoper.JsJson.ReadOpt(ref r, scope.Read<Marker>), cancellationToken);
 
+    /// <summary>The marker at each <c>[x, y]</c> screen offset, or <c>null</c> where there is none.</summary>
+    public async global::System.Threading.Tasks.Task<global::Interoper.Opt<Marker>[]> MarkersAtAsync(global::Interoper.JsScope scope, double[][] offsets, global::System.Threading.CancellationToken cancellationToken = default) =>
+        (await Realm.CallAsync(global::Interoper.JsOp.Call(Handle, "markersAt", w => global::Interoper.JsJson.WriteArray(w, offsets, static (w1, v1) => global::Interoper.JsJson.WriteArray(w1, v1, global::Interoper.JsJson.WriteNumber))), (ref r) => global::Interoper.JsJson.ReadArray(ref r, (ref r1) => global::Interoper.JsJson.ReadOpt(ref r1, scope.Read<Marker>)), cancellationToken))!;
+
     /// <summary>A click on the map, after the view has handled it.</summary>
     public global::System.Threading.Tasks.Task<global::System.IAsyncDisposable> OnClickAsync(global::Interoper.JsScope scope, global::System.Action<ClickEvent> handler, global::Interoper.EventOptions? options = null) =>
         scope.SubscribeAsync(Handle, "on", "click", ClickEvent.Read, handler, options, ["type", "x", "y", "button", "mapPoint"]);

@@ -19,14 +19,14 @@ public sealed class SelectionTests
             "geometry.js: ShapeType, Bounds, Shape, Point, Line, Polygon",
             "layers/Layer.js: Layer",
             "layers/TileLayer.js: TileLayer",
-            "measure.js: distance, perimeter, Measurable, describe",
+            "measure.js: distance, perimeter, Measurable, describe, distances, centers",
             "ops/a.js: Options, execute",
             "ops/b.js: Options, execute",
             "pins.js: PinDragEvent, PinEvents, Pin",
             "styles.js: Rgba, ColorInput, IconName, FillStyle, StrokeStyle, IconStyle, Style, toRgba",
         ], Modules(selection));
 
-        Assert.Equal(["center", "zoom", "rotation", "basemap", "cursor", "title", "container", "selected", "markers", "layers", "screenToMap", "flyTo", "markerAt"],
+        Assert.Equal(["center", "zoom", "rotation", "basemap", "cursor", "title", "container", "selected", "markers", "layers", "screenToMap", "flyTo", "markerAt", "markersAt"],
             Members(selection, "MapView")); // R13: the DOM container too
         Assert.Equal(["position", "label", "style", "labelFormatter", "displayLabel"], Members(selection, "Marker")); // R21: no LabelFormatter type
         Assert.Equal(["length", "at", "add", "remove", "find", "forEach", "toArray"], Members(selection, "Collection")); // §2: a generic live class
@@ -56,7 +56,7 @@ public sealed class SelectionTests
     public void AStarMatchesAnyCharactersSlashesIncluded()
     {
         Assert.Equal(Modules(Selection.Select(Fixture.Ir, Fixture.Profile)), Modules(Select("@acme/*")));
-        Assert.Equal(["core.js: Observable", "geometry.js: ShapeType, Bounds, Shape, Point, Line, Polygon", "measure.js: distance, perimeter, Measurable, describe"],
+        Assert.Equal(["core.js: Observable", "geometry.js: ShapeType, Bounds, Shape, Point, Line, Polygon", "measure.js: distance, perimeter, Measurable, describe, centers"],
             Modules(Select("*/measure.js", "*/geometry.js")));
         Assert.Equal(["core.js: Observable", "layers/Layer.js: Layer", "layers/TileLayer.js: TileLayer"], Modules(Select("@acme/demo-maps/layers/*")));
     }
@@ -78,6 +78,7 @@ public sealed class SelectionTests
             "IOP2007 MapView.layers: skipped: uses class `Collection` outside the selection",
             "IOP2007 MapView.screenToMap: skipped: uses class `Point` outside the selection", // once for its two overloads
             "IOP2007 MapView.markerAt: skipped: uses class `Marker` outside the selection",
+            "IOP2007 MapView.markersAt: skipped: uses class `Marker` outside the selection",
             "IOP2007 Emitter.emit: skipped: uses type parameter `K`",
         ], selection.Diagnostics.Select(d => d.ToString()));
     }
@@ -178,9 +179,12 @@ public sealed class SelectionTests
     [InlineData( // R2, R3: a member of nothing but null and undefined
         """{ "kind": "interface", "name": "T", "members": [{ "kind": "property", "name": "x", "type": { "kind": "union", "types": [{ "kind": "primitive", "name": "null" }, { "kind": "primitive", "name": "undefined" }] } }] }""",
         "IOP2007", "only `null` and `undefined`")]
-    [InlineData( // R2, R3: arrays have no Opt elements
-        """{ "kind": "interface", "name": "T", "members": [{ "kind": "property", "name": "xs", "type": { "kind": "array", "element": { "kind": "union", "types": [{ "kind": "primitive", "name": "string" }, { "kind": "primitive", "name": "null" }] } } }] }""",
-        "IOP2007", "a nullable array or tuple element")]
+    [InlineData( // R3, R5: an Opt<string> element and a string element are two C# types
+        """{ "kind": "interface", "name": "T", "members": [{ "kind": "property", "name": "pair", "type": { "kind": "tuple", "elements": [{ "kind": "union", "types": [{ "kind": "primitive", "name": "string" }, { "kind": "primitive", "name": "null" }] }, { "kind": "primitive", "name": "string" }] } }] }""",
+        "IOP2007", "a tuple of different types")]
+    [InlineData( // R2, R3: an element of nothing but null and undefined
+        """{ "kind": "interface", "name": "T", "members": [{ "kind": "property", "name": "xs", "type": { "kind": "array", "element": { "kind": "union", "types": [{ "kind": "primitive", "name": "null" }, { "kind": "primitive", "name": "undefined" }] } } }] }""",
+        "IOP2007", "only `null` and `undefined`")]
     [InlineData( // R5: a tuple is an array of one C# type
         """{ "kind": "interface", "name": "T", "members": [{ "kind": "property", "name": "pair", "type": { "kind": "tuple", "elements": [{ "kind": "primitive", "name": "string" }, { "kind": "primitive", "name": "number" }] } }] }""",
         "IOP2007", "a tuple of different types")]
@@ -221,6 +225,9 @@ public sealed class SelectionTests
         """)]
     [InlineData("""{ "kind": "interface", "name": "T", "members": [{ "kind": "property", "name": "x", "optional": true, "type": { "kind": "union", "types": [{ "kind": "primitive", "name": "string" }, { "kind": "primitive", "name": "null" }] } }] }""")] // R3
     [InlineData("""{ "kind": "interface", "name": "T", "members": [{ "kind": "property", "name": "pair", "type": { "kind": "tuple", "elements": [{ "kind": "primitive", "name": "number" }, { "kind": "primitive", "name": "number" }] } }] }""")] // R5
+    [InlineData("""{ "kind": "interface", "name": "T", "members": [{ "kind": "property", "name": "xs", "type": { "kind": "array", "element": { "kind": "union", "types": [{ "kind": "primitive", "name": "string" }, { "kind": "primitive", "name": "null" }] } } }] }""")] // R3: Opt<string>[]
+    [InlineData( // R3, R5: Opt<double>[]
+        """{ "kind": "interface", "name": "T", "members": [{ "kind": "property", "name": "pair", "type": { "kind": "tuple", "elements": [{ "kind": "union", "types": [{ "kind": "primitive", "name": "number" }, { "kind": "primitive", "name": "undefined" }] }, { "kind": "union", "types": [{ "kind": "primitive", "name": "number" }, { "kind": "primitive", "name": "null" }] }] } }] }""")]
     [InlineData( // R17: an entity in a data record, which is then read with a scope
         """
         { "kind": "interface", "name": "T", "members": [{ "kind": "property", "name": "layer", "type": { "kind": "ref", "name": "Layer", "module": "@acme/maps/a.js" } }] },
