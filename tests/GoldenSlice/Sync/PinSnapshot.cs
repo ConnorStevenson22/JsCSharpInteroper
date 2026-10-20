@@ -10,6 +10,8 @@ public sealed partial record PinSnapshot : global::Interoper.IJsRecord<PinSnapsh
     public global::Interoper.Opt<PointSnapshot> Position { get; init; }
     public global::Interoper.Opt<string> Label { get; init; }
     public Style Style { get; init; }
+    /// <summary>The same tagged intersection as <c>TileLayer.glow</c>, in another module.</summary>
+    public global::Interoper.Opt<GlowOptionsGlow> Glow { get; init; }
 
     public static void Write(global::System.Text.Json.Utf8JsonWriter writer, PinSnapshot value)
     {
@@ -23,6 +25,7 @@ public sealed partial record PinSnapshot : global::Interoper.IJsRecord<PinSnapsh
         global::Interoper.JsJson.WriteProperty(writer, "position"u8, value.Position, PointSnapshot.Write);
         global::Interoper.JsJson.WriteProperty(writer, "label"u8, value.Label, global::Interoper.JsJson.WriteString);
         global::Interoper.JsJson.WriteProperty(writer, "style"u8, value.Style);
+        global::Interoper.JsJson.WriteProperty(writer, "glow"u8, value.Glow, GlowOptionsGlow.Write);
     }
 
     public static PinSnapshot Read(ref global::System.Text.Json.Utf8JsonReader reader)
@@ -30,6 +33,7 @@ public sealed partial record PinSnapshot : global::Interoper.IJsRecord<PinSnapsh
         global::Interoper.Opt<PointSnapshot> position = default;
         global::Interoper.Opt<string> label = default;
         Style style = default;
+        global::Interoper.Opt<GlowOptionsGlow> glow = default;
         while (reader.Read() && reader.TokenType == global::System.Text.Json.JsonTokenType.PropertyName)
         {
             var property = reader.GetString();
@@ -39,10 +43,11 @@ public sealed partial record PinSnapshot : global::Interoper.IJsRecord<PinSnapsh
                 case "position": position = global::Interoper.JsJson.ReadOpt(ref reader, PointSnapshot.Read); break;
                 case "label": label = global::Interoper.JsJson.ReadOpt(ref reader, global::Interoper.JsJson.ReadString); break;
                 case "style": style = global::Interoper.JsJson.ReadUnion<Style>(ref reader); break;
+                case "glow": glow = global::Interoper.JsJson.ReadOpt(ref reader, GlowOptionsGlow.Read); break;
                 default: reader.Skip(); break;
             }
         }
-        return new PinSnapshot { Position = position, Label = label, Style = style };
+        return new PinSnapshot { Position = position, Label = label, Style = style, Glow = glow };
     }
 
     public static PinSnapshot Diff(PinSnapshot before, PinSnapshot after) => new()
@@ -50,5 +55,6 @@ public sealed partial record PinSnapshot : global::Interoper.IJsRecord<PinSnapsh
         Position = after.Position.IsUndefined || global::Interoper.JsDiff.Same(before.Position, after.Position) ? default : after.Position,
         Label = after.Label.IsUndefined || global::Interoper.JsDiff.Same(before.Label, after.Label) ? default : after.Label,
         Style = after.Style.IsUndefined || global::Interoper.JsDiff.Same(before.Style, after.Style) ? default : after.Style,
+        Glow = after.Glow.IsUndefined || global::Interoper.JsDiff.Same(before.Glow, after.Glow) ? default : after.Glow,
     };
 }

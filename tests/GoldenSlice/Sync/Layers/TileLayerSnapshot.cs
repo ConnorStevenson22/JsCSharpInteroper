@@ -8,6 +8,8 @@ public sealed partial record TileLayerSnapshot : global::Interoper.IJsRecord<Til
 {
     /// <summary>The URL template of the tiles.</summary>
     public global::Interoper.Opt<string> Url { get; init; }
+    /// <summary>The same tagged intersection as <c>Marker.glow</c>.</summary>
+    public global::Interoper.Opt<global::GoldenSlice.Sync.GlowOptionsGlow> Glow { get; init; }
     public global::Interoper.Opt<double> RefreshInterval { get; init; }
     public global::Interoper.Opt<string> Title { get; init; }
     public global::Interoper.Opt<bool> Visible { get; init; }
@@ -22,6 +24,7 @@ public sealed partial record TileLayerSnapshot : global::Interoper.IJsRecord<Til
     public static void WriteMembers(global::System.Text.Json.Utf8JsonWriter writer, TileLayerSnapshot value)
     {
         global::Interoper.JsJson.WriteProperty(writer, "url"u8, value.Url, global::Interoper.JsJson.WriteString);
+        global::Interoper.JsJson.WriteProperty(writer, "glow"u8, value.Glow, global::GoldenSlice.Sync.GlowOptionsGlow.Write);
         global::Interoper.JsJson.WriteProperty(writer, "refreshInterval"u8, value.RefreshInterval, global::Interoper.JsJson.WriteNumber);
         global::Interoper.JsJson.WriteProperty(writer, "title"u8, value.Title, global::Interoper.JsJson.WriteString);
         global::Interoper.JsJson.WriteProperty(writer, "visible"u8, value.Visible, global::Interoper.JsJson.WriteBoolean);
@@ -30,6 +33,7 @@ public sealed partial record TileLayerSnapshot : global::Interoper.IJsRecord<Til
     public static TileLayerSnapshot Read(ref global::System.Text.Json.Utf8JsonReader reader)
     {
         global::Interoper.Opt<string> url = default;
+        global::Interoper.Opt<global::GoldenSlice.Sync.GlowOptionsGlow> glow = default;
         global::Interoper.Opt<double> refreshInterval = default;
         global::Interoper.Opt<string> title = default;
         global::Interoper.Opt<bool> visible = default;
@@ -40,18 +44,20 @@ public sealed partial record TileLayerSnapshot : global::Interoper.IJsRecord<Til
             switch (property)
             {
                 case "url": url = global::Interoper.JsJson.ReadOpt(ref reader, global::Interoper.JsJson.ReadString); break;
+                case "glow": glow = global::Interoper.JsJson.ReadOpt(ref reader, global::GoldenSlice.Sync.GlowOptionsGlow.Read); break;
                 case "refreshInterval": refreshInterval = global::Interoper.JsJson.ReadOpt(ref reader, global::Interoper.JsJson.ReadNumber); break;
                 case "title": title = global::Interoper.JsJson.ReadOpt(ref reader, global::Interoper.JsJson.ReadString); break;
                 case "visible": visible = global::Interoper.JsJson.ReadOpt(ref reader, global::Interoper.JsJson.ReadBoolean); break;
                 default: reader.Skip(); break;
             }
         }
-        return new TileLayerSnapshot { Url = url, RefreshInterval = refreshInterval, Title = title, Visible = visible };
+        return new TileLayerSnapshot { Url = url, Glow = glow, RefreshInterval = refreshInterval, Title = title, Visible = visible };
     }
 
     public static TileLayerSnapshot Diff(TileLayerSnapshot before, TileLayerSnapshot after) => new()
     {
         Url = after.Url.IsUndefined || global::Interoper.JsDiff.Same(before.Url, after.Url) ? default : after.Url,
+        Glow = after.Glow.IsUndefined || global::Interoper.JsDiff.Same(before.Glow, after.Glow) ? default : after.Glow,
         RefreshInterval = after.RefreshInterval.IsUndefined || global::Interoper.JsDiff.Same(before.RefreshInterval, after.RefreshInterval) ? default : after.RefreshInterval,
         Title = after.Title.IsUndefined || global::Interoper.JsDiff.Same(before.Title, after.Title) ? default : after.Title,
         Visible = after.Visible.IsUndefined || global::Interoper.JsDiff.Same(before.Visible, after.Visible) ? default : after.Visible,

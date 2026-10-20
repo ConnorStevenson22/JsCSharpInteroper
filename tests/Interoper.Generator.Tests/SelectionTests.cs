@@ -23,12 +23,12 @@ public sealed class SelectionTests
             "ops/a.js: Options, execute",
             "ops/b.js: Options, execute",
             "pins.js: PinDragEvent, PinEvents, Pin",
-            "styles.js: Rgba, ColorInput, IconName, FillStyle, StrokeStyle, IconStyle, Style, toRgba",
+            "styles.js: Rgba, ColorInput, IconName, FillStyle, StrokeStyle, IconStyle, GlowOptions, Style, toRgba",
         ], Modules(selection));
 
         Assert.Equal(["center", "zoom", "rotation", "basemap", "cursor", "title", "container", "selected", "markers", "layers", "screenToMap", "flyTo", "markerAt"],
             Members(selection, "MapView")); // R13: the DOM container too
-        Assert.Equal(["position", "label", "style", "labelFormatter", "displayLabel"], Members(selection, "Marker")); // R21: no LabelFormatter type
+        Assert.Equal(["position", "label", "style", "glow", "labelFormatter", "displayLabel"], Members(selection, "Marker")); // R21: no LabelFormatter type
         Assert.Equal(["length", "at", "add", "remove", "find", "forEach", "toArray"], Members(selection, "Collection")); // §2: a generic live class
         Assert.Equal(["change"], Class(selection, "Collection").Events.Select(e => e.Name));
         Assert.Equal(["click"], Class(selection, "MapView").Events.Select(e => e.Name));
@@ -58,7 +58,7 @@ public sealed class SelectionTests
         Assert.Equal(Modules(Selection.Select(Fixture.Ir, Fixture.Profile)), Modules(Select("@acme/*")));
         Assert.Equal(["core.js: Observable", "geometry.js: ShapeType, Bounds, Shape, Point, Line, Polygon", "measure.js: distance, perimeter, Measurable, describe"],
             Modules(Select("*/measure.js", "*/geometry.js")));
-        Assert.Equal(["core.js: Observable", "layers/Layer.js: Layer", "layers/TileLayer.js: TileLayer"], Modules(Select("@acme/demo-maps/layers/*")));
+        Assert.Equal(["core.js: Observable", "layers/Layer.js: Layer", "layers/TileLayer.js: TileLayer", "styles.js: Rgba, ColorInput"], Modules(Select("@acme/demo-maps/layers/*")));
     }
 
     [Fact]

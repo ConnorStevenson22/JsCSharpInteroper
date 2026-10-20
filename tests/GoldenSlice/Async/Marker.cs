@@ -30,6 +30,14 @@ public partial class Marker : Observable
     public global::System.Threading.Tasks.Task SetStyleAsync(Style value) =>
         Realm.SendAsync(global::Interoper.JsOp.Set(Handle, "style", w => global::Interoper.JsJson.WriteValue(w, value)));
 
+    /// <summary>The same tagged intersection as <c>TileLayer.glow</c>, in another module.</summary>
+    public global::System.Threading.Tasks.Task<global::Interoper.Opt<GlowOptionsGlow>> GetGlowAsync() =>
+        Realm.CallAsync(global::Interoper.JsOp.Get(Handle, "glow"), static (ref r) => global::Interoper.JsJson.ReadOpt(ref r, GlowOptionsGlow.Read));
+
+    /// <summary>The same tagged intersection as <c>TileLayer.glow</c>, in another module.</summary>
+    public global::System.Threading.Tasks.Task SetGlowAsync(global::Interoper.Opt<GlowOptionsGlow> value) =>
+        Realm.SendAsync(global::Interoper.JsOp.Set(Handle, "glow", w => global::Interoper.JsJson.WriteValue(w, value, GlowOptionsGlow.Write)));
+
     /// <summary><c>labelFormatter(this)</c> if set, otherwise <c>label</c>, otherwise "".</summary>
     public global::System.Threading.Tasks.Task<string> GetDisplayLabelAsync() =>
         Realm.GetStringAsync(Handle, "displayLabel");
@@ -51,6 +59,12 @@ public partial class Marker : Observable
 
     public global::System.Collections.Generic.IAsyncEnumerable<Style> WatchStyleStreamAsync(global::Interoper.JsScope scope, global::System.Threading.CancellationToken cancellationToken = default) =>
         scope.StreamAsync(Handle, "watch", "style", global::Interoper.JsJson.ReadUnion<Style>, null, null, cancellationToken);
+
+    public global::System.Threading.Tasks.Task<global::System.IAsyncDisposable> WatchGlowAsync(global::Interoper.JsScope scope, global::System.Action<global::Interoper.Opt<GlowOptionsGlow>> handler) =>
+        scope.SubscribeAsync(Handle, "watch", "glow", static (ref r) => global::Interoper.JsJson.ReadOpt(ref r, GlowOptionsGlow.Read), handler, null, null);
+
+    public global::System.Collections.Generic.IAsyncEnumerable<global::Interoper.Opt<GlowOptionsGlow>> WatchGlowStreamAsync(global::Interoper.JsScope scope, global::System.Threading.CancellationToken cancellationToken = default) =>
+        scope.StreamAsync(Handle, "watch", "glow", static (ref r) => global::Interoper.JsJson.ReadOpt(ref r, GlowOptionsGlow.Read), null, null, cancellationToken);
 
     public global::System.Threading.Tasks.Task<global::System.IAsyncDisposable> WatchDisplayLabelAsync(global::Interoper.JsScope scope, global::System.Action<string> handler) =>
         scope.SubscribeAsync(Handle, "watch", "displayLabel", global::Interoper.JsJson.ReadString, handler, null, null);

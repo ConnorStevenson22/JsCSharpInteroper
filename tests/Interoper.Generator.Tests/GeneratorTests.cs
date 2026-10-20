@@ -302,17 +302,21 @@ public sealed class GeneratorTests
             Assert.Single(result.Diagnostics).ToString());
     }
 
-    [Fact] // R25: a rename is reported once, however many owners repeat the anonymous union that has it
+    [Fact] // R25, R11: a rename is reported once, for the first enum that has it; an anonymous union repeated at owners is one enum
     public void AnEnumMemberRenameIsReportedOnce()
     {
         const string Kind = """{ "kind": "union", "types": [{ "kind": "literal", "value": "a-b" }, { "kind": "literal", "value": "a_b" }] }""";
+        const string Wider = """{ "kind": "union", "types": [{ "kind": "literal", "value": "a-b" }, { "kind": "literal", "value": "a_b" }, { "kind": "literal", "value": "c" }] }""";
         var result = Generate($$"""
-            { "kind": "interface", "name": "Fill", "members": [{ "kind": "property", "name": "kind", "type": {{Kind}} }] },
             { "kind": "interface", "name": "Stroke", "members": [{ "kind": "property", "name": "kind", "type": {{Kind}} }] },
-            { "kind": "interface", "name": "Icon", "members": [{ "kind": "property", "name": "kind", "type": {{Kind}} }] }
+            { "kind": "interface", "name": "Fill", "members": [{ "kind": "property", "name": "kind", "type": {{Kind}} }] },
+            { "kind": "interface", "name": "Icon", "members": [{ "kind": "property", "name": "kind", "type": {{Wider}} }] }
             """);
-        Assert.Contains("    AB,\n    AB2,\n", File(result, "StrokeKind.cs"));
-        Assert.Equal("IOP2006 FillKind: \"a_b\" is AB2: AB is taken (R25), and in 2 other enums", Assert.Single(result.Diagnostics).ToString());
+        Assert.Contains("    AB,\n    AB2,\n", File(result, "FillKind.cs"));
+        Assert.Contains("public required FillKind Kind { get; init; }", File(result, "Stroke.cs"));
+        Assert.Contains("    AB,\n    AB2,\n    C,\n", File(result, "IconKind.cs"));
+        Assert.DoesNotContain(result.Files, f => f.Path == "StrokeKind.cs");
+        Assert.Equal("IOP2006 FillKind: \"a_b\" is AB2: AB is taken (R25), and in 1 other enum", Assert.Single(result.Diagnostics).ToString());
     }
 
     [Theory] // R22: a name that already ends in Async keeps the one suffix
@@ -724,12 +728,12 @@ public sealed class GeneratorTests
 
         var view = File(result, "View.cs");
         // OneOrMany<Marker> is Marker | Marker[], an anonymous union only written (R2: it has entity cases); so are an
-        // alias of it and a use that takes the default.
+        // alias of it and a use that takes the default. They're one union, named after its shortest owner (R11).
         Assert.Contains("public Marker GetMarker(global::Interoper.JsScope scope) =>", view);
-        Assert.Contains("public void SetMarker(ViewMarkerInput value) =>", view);
-        Assert.Contains("public ViewMarkerInput(Marker[] value) : this(value, 3) { }", File(result, "ViewMarkerInput.cs"));
+        Assert.Contains("public void SetMarker(ViewPinInput value) =>", view);
+        Assert.Contains("public void SetFlag(ViewPinInput value) =>", view);
         Assert.Contains("public ViewPinInput(Marker[] value) : this(value, 3) { }", File(result, "ViewPinInput.cs"));
-        Assert.Contains("public ViewFlagInput(Marker[] value) : this(value, 3) { }", File(result, "ViewFlagInput.cs"));
+        Assert.DoesNotContain(result.Files, f => f.Path is "ViewMarkerInput.cs" or "ViewFlagInput.cs");
         // OneOrMany<number> has a value-type case (R2), and LabelList doesn't resolve: the getters stay.
         Assert.Contains("public double Size\n", view.Replace(" =>", "\n"));
         Assert.DoesNotContain("SetSize", view);
@@ -1381,16 +1385,15 @@ public sealed class GeneratorTests
             "IOP2007 Feature.each(cb)(e).bag: skipped: uses `IterableIterator` (in `Bag`)",
         ], result.Diagnostics.Select(d => d.ToString()));
         var feature = File(result, "Feature.cs");
-        Assert.Contains("public void Each(global::Interoper.JsScope scope, global::System.Action<FeatureEachCbE> cb) =>", feature);
+        Assert.Contains("public void Each(global::Interoper.JsScope scope, global::System.Action<VisitE> cb) =>", feature); // the same record once its member is dropped (R11)
         Assert.Contains("public void Visit(global::Interoper.JsScope scope, global::System.Action<VisitE> cb) =>", feature); // the alias's record, once
         Assert.Contains("public void Revisit(global::Interoper.JsScope scope, global::System.Action<VisitE> cb) =>", feature);
         Assert.DoesNotContain(result.Files, f => f.Path.StartsWith("FeatureVisit", StringComparison.Ordinal) || f.Path.StartsWith("FeatureRevisit", StringComparison.Ordinal));
-        foreach (var record in new[] { File(result, "FeatureEachCbE.cs"), File(result, "VisitE.cs") })
-        {
-            Assert.Contains("public required double X { get; init; }", record);
-            Assert.DoesNotContain("Legs", record);
-            Assert.DoesNotContain("Bag", record);
-        }
+        var visit = File(result, "VisitE.cs");
+        Assert.Contains("public required double X { get; init; }", visit);
+        Assert.DoesNotContain("Legs", visit);
+        Assert.DoesNotContain("Bag", visit);
+        Assert.DoesNotContain(result.Files, f => f.Path == "FeatureEachCbE.cs");
         Assert.DoesNotContain("Bag.cs", result.Files.Select(f => f.Path));
     }
 
@@ -1419,9 +1422,11 @@ public sealed class GeneratorTests
             "IOP2007 Pin.rack: skipped: uses generic `Mark` (in `Mark`) (in `Rack`)",
         ], result.Diagnostics.Select(d => d.ToString()));
         Assert.DoesNotContain(result.Files, f => f.Path.StartsWith("Rack", StringComparison.Ordinal));
-        Assert.Contains("public required double N { get; init; }", File(result, "SpotA.cs"));
-        Assert.DoesNotContain("Rack", File(result, "SpotA.cs"));
+        // Spot's flattened cases and Pin's are one record each (R11), named after the shorter owner.
+        Assert.Contains("public required double N { get; init; }", File(result, "PinA.cs"));
         Assert.DoesNotContain("Rack", File(result, "PinA.cs"));
+        Assert.DoesNotContain(result.Files, f => f.Path is "SpotA.cs" or "SpotB.cs");
+        Assert.Contains("public Spot(PinA value)", File(result, "Spot.cs"));
         Assert.Contains("public Spot Spot", File(result, "Feature.cs"));
     }
 
@@ -1459,7 +1464,7 @@ public sealed class GeneratorTests
         Assert.Contains("public required double X { get; init; }", File(result, "FeatureSize.cs"));
     }
 
-    [Fact] // R11, R27, R2: an inline record a union narrows to keeps its owner's name, as does a union alias's
+    [Fact] // R11, R27, R2: an inline record a union narrows to keeps its owner's name, as does a union alias's; the same record at both is one
     public void ANarrowedInlineRecordKeepsItsName()
     {
         var result = Generate(new Profile { Package = "@acme/maps", Include = ["@acme/maps/a.js"] }, Api.Sync, ("a.js", $$"""
@@ -1473,10 +1478,10 @@ public sealed class GeneratorTests
             "IOP2007 FeatureMark: case `Layer` dropped: a class outside the selection (R2)",
             "IOP2007 Owner: case `Layer` dropped: a class outside the selection (R2)",
         ], result.Diagnostics.Select(d => d.ToString()).Order(StringComparer.Ordinal)); // no IOP2006
-        Assert.Contains("public FeatureMark Mark", File(result, "Feature.cs"));
+        Assert.Contains("public Owner Mark", File(result, "Feature.cs"));
         Assert.Contains("public Owner Owner", File(result, "Feature.cs"));
-        Assert.Contains("public required double X { get; init; }", File(result, "FeatureMark.cs"));
         Assert.Contains("public required double X { get; init; }", File(result, "Owner.cs"));
+        Assert.DoesNotContain(result.Files, f => f.Path == "FeatureMark.cs");
     }
 
     [Fact] // R2, R17: a class outside the selection is no entity, so a member that only it would make scoped is read, or skipped
@@ -1631,6 +1636,76 @@ public sealed class GeneratorTests
         Assert.Contains("public FeatureDrawShape(FeatureDrawShapePoint value)", File(result, "FeatureDrawShape.cs"));
         Assert.Contains("public FeatureDrawMark(FeatureDrawMarkCase2 value)", File(result, "FeatureDrawMark.cs"));
         Assert.Contains("public FeatureDrawMark(FeatureDrawMarkCase3 value)", File(result, "FeatureDrawMark.cs"));
+    }
+
+    [Fact] // R11, R27: structurally identical anonymous types are one type, named after their shortest owner, in its namespace
+    public void IdenticalAnonymousTypesAreOne()
+    {
+        static string Property(string name, string type, bool optional = false, string doc = "") =>
+            $$"""{ "kind": "property", "name": "{{name}}", {{(optional ? "\"optional\": true, " : "")}}{{doc}}"type": {{type}} }""";
+        static string Literals(params string[] values) => $$"""{ "kind": "union", "types": [{{string.Join(", ", values.Select(v => $$"""{ "kind": "literal", "value": "{{v}}" }"""))}}] }""";
+        static string Object(params string[] members) => $$"""{ "kind": "object", "members": [{{string.Join(", ", members)}}] }""";
+        var pad = Object(Property("top", Number), Property("left", Number));
+        var result = Generate(Api.Sync,
+            ("views/MapView.js", $$"""
+                { "kind": "class", "name": "MapView", "members": [
+                  {{Property("padding", Object(Property("top", Number), Property("left", Number, doc: "\"doc\": { \"summary\": \"Pixels.\" }, ")))}},
+                  {{Property("margin", Object(Property("top", Number), Property("left", Number, optional: true)))}},
+                  {{Property("edge", Object(Property("top", Number), Property("left", Number), Property("side", """{ "kind": "literal", "value": "x" }""")))}},
+                  {{Property("fit", Literals("cover", "contain"))}},
+                  {{Property("align", Literals("cover", "fill"))}},
+                  {{Property("fill", $$"""{ "kind": "union", "types": [{{String}}, {{pad}}] }""")}}] }
+                """),
+            ("a.js", $$"""
+                { "kind": "class", "name": "Box", "members": [
+                  {{Property("pad", pad)}},
+                  {{Property("edge", Object(Property("top", Number), Property("left", Number), Property("side", """{ "kind": "literal", "value": "x" }""", optional: true)))}},
+                  {{Property("fit", Literals("cover", "contain"))}},
+                  {{Property("background", $$"""{ "kind": "union", "types": [{{String}}, {{pad}}] }""")}}] }
+                """));
+
+        Assert.Empty(result.Diagnostics); // sharing a type isn't a rename
+        var view = File(result, "Views/MapView.cs");
+        // Docs don't change the wire or the API, so they don't keep two records apart.
+        Assert.Contains("public global::Acme.Maps.BoxPad Padding", view);
+        Assert.Contains("public global::Acme.Maps.BoxFit Fit", view);
+        Assert.Contains("public BoxPad Pad", File(result, "Box.cs"));
+        Assert.Contains("public global::Acme.Maps.BoxEdge Edge", view); // a constant is always written (R20), optional or not
+        // A union and its inline case, which has a shorter owner of its own.
+        Assert.Contains("public MapViewFill Fill", view);
+        Assert.Contains("public global::Acme.Maps.Views.MapViewFill Background", File(result, "Box.cs"));
+        Assert.Contains("public MapViewFill(global::Acme.Maps.BoxPad value)", File(result, "Views/MapViewFill.cs"));
+        // An optional member and a literal make other types, and so does a constant (BoxEdge).
+        Assert.Contains("public MapViewMargin Margin", view);
+        Assert.Contains("public MapViewAlign Align", view);
+        Assert.Equal(
+            ["Box.cs", "BoxEdge.cs", "BoxFit.cs", "BoxPad.cs", "Views/MapView.cs", "Views/MapViewAlign.cs", "Views/MapViewFill.cs", "Views/MapViewMargin.cs"],
+            result.Files.Select(f => f.Path).Where(p => p.EndsWith(".cs", StringComparison.Ordinal) && !p.Contains("Snapshot", StringComparison.Ordinal) && p != "Maps.cs").Order(StringComparer.Ordinal));
+    }
+
+    [Theory] // R11, R27: an intersection of a named type and string constants is named after both, in the type's namespace if it has emitted types
+    [InlineData(false, "Styles/PropsGlow.cs")]
+    [InlineData(true, "Views/PropsGlow.cs")]
+    public void ATaggedIntersectionIsNamedAfterItsNamedPart(bool withoutStyles, string path)
+    {
+        // glow: Props & { kind: "glow" }, resolved (ir.md), at two owners.
+        var glow = $$"""
+            { "kind": "object", "bases": [{ "kind": "ref", "name": "Props", "module": "@acme/maps/styles/Props.js" }], "members": [
+              { "kind": "property", "name": "blur", "optional": true, "inherited": true, "type": {{Number}} },
+              { "kind": "property", "name": "kind", "inherited": true, "type": { "kind": "literal", "value": "glow" } }] }
+            """;
+        var profile = new Profile { Package = "@acme/maps", Include = withoutStyles ? ["@acme/maps/views/*"] : null };
+        var result = Generate(profile, Api.Sync,
+            ("styles/Props.js", $$"""{ "kind": "interface", "name": "Props", "members": [{ "kind": "property", "name": "blur", "optional": true, "type": {{Number}} }] }"""),
+            ("views/MapView.js", $$"""{ "kind": "class", "name": "MapView", "members": [{ "kind": "property", "name": "glow", "type": {{glow}} }] }"""),
+            ("views/Marker.js", $$"""{ "kind": "class", "name": "Marker", "members": [{ "kind": "property", "name": "halo", "type": {{glow}} }] }"""));
+
+        Assert.Empty(result.Diagnostics);
+        Assert.Contains("""writer.WriteString("kind"u8, "glow"u8);""", File(result, path));
+        var type = withoutStyles ? "PropsGlow" : "global::Acme.Maps.Styles.PropsGlow";
+        Assert.Contains($"public {type} Glow", File(result, "Views/MapView.cs"));
+        Assert.Contains($"public {type} Halo", File(result, "Views/Marker.cs"));
+        Assert.DoesNotContain(result.Files, f => f.Path.Contains("MapViewGlow", StringComparison.Ordinal) || f.Path.Contains("MarkerHalo", StringComparison.Ordinal));
     }
 
     [Fact] // R24, R11: an inline payload is projected to its record's members, as a named one is

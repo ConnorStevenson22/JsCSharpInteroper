@@ -653,7 +653,7 @@ public static class GoldenAsyncSuite
         await using (await view.OnClickAsync(scope, click => { clicks.Add(click); if (clicks.Count == 2) both.TrySetResult(); }))
         {
             await element.ClickAtAsync(8, 0); // the button is optional
-            await element.ClickAtAsync(0, 0, DemoMapElementClickAtButton._2);
+            await element.ClickAtAsync(0, 0, ClickEventButton._2);
             await both.Task.WaitAsync(Timeout);
         }
         Equal("1 _0, 0 _2", string.Join(", ", clicks.Select(c => $"{c.MapPoint.X} {c.Button}")));

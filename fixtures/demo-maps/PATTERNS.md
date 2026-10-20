@@ -29,6 +29,7 @@ node --test "fixtures/demo-maps/test/*.test.mjs"
 | Untagged union | R2, R19 (step 3) | `Camera` = `Bounds \| CenterAndZoom` (`MapView`) |
 | Mixed union (live object, tuple, nested union) | R2, R5, R6, R19 | `FlyToTarget` = `Shape \| [number, number] \| Camera` (`MapView`) |
 | Mixed union (primitive, array, object) | R2, R19 (step 4) | `ColorInput` = `string \| number[] \| Rgba` (`styles`) |
+| Anonymous types repeated at several owners | R11, R27 | `GlowOptions & { kind: "glow" }` at `Marker.glow` and `TileLayer.glow` (`layers/`) is one `GlowOptionsGlow` (`styles`); `MarkerPositionInput` (`Marker.position`'s setter, `MarkerOptions.position`), `MapViewContainer` (`MapView.container`, `MapViewOptions.container`), `ClickEventButton` (`ClickEvent.button`, `DemoMapElement.clickAt`'s `button`) |
 | Union with an entity case, only written | R2, R17 | `Measurable` = `Point \| Polygon \| Marker`, the parameter of `describe` (`measure`) |
 | `any` | §2, IOP2001 | `Pin.meta` (`pins`) |
 | String-literal union | R9, R25 | `Basemap` (`MapView`), including `"3d-relief"` |
