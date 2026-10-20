@@ -13,7 +13,8 @@ What the generator emits for each TypeScript construct. Rules are numbered (R1�
 - Each case has `TryGetValue(out T)`. The struct also has `HasValue`, `IsUndefined` and `IsNull`.
 - The struct implements the runtime's `IJsUnion<TSelf>`, with static `WriteValue`/`ReadValue`. The runtime's `JsJson` helpers handle undefined and null for every union and `Opt<T>`.
 - The nullable bottom case makes the compiler demand a `null` arm. A switch that misses `Undefined` warns CS8509, and one that misses `null` warns CS8655 ([design §8](design.md#8-constraints)).
-- A `number`, `boolean` or enum case next to other types (`number | string`, `number | number[]`) isn't mapped yet (IOP2007), since the struct keeps its cases in one reference field. Literal unions are enums, not structs (R9, R10).
+- Reference cases share one field. A `number`, `boolean` or enum case (`number | string`, `number | number[]`) is kept in a `double` field of its own, and an extensible enum (R10) or DOM element (R13) case as its string, so no case is boxed. Only `Value` boxes.
+- The string literals of a union with other types are one enum case: the alias's enum when they are exactly a literal-union alias's (`LengthUnit` in `unit?: LengthUnit | number`, emitted even though R6 flattens it), else an anonymous one named after the union (`StrokeStyleDashLiteral` in `dash?: "solid" | "dotted" | number[]`). A number or boolean literal next to other types isn't mapped yet (IOP2007). A union of literals only is an enum, not a struct (R9, R10).
 
 ```csharp
 // type ColorInput = string | number[] | RGBA;   used as  color?: ColorInput | null
@@ -49,6 +50,8 @@ A union that is only written (a parameter, or a setter's wider type) may have ca
 
 **R3. Non-union types in optional or nullable positions use `Opt<T>`.** It has the same three states and conversions (`Opt<double> z = 5; z = null; z = default;`). Required, non-null positions stay plain (`double`). Read it with a pattern (`z is double d`, `z is Undefined`) or `TryGetValue(out var d)`, which has no `Undefined` overload so `var` works.
 
+An array or tuple element that can be null or undefined is `Opt<T>` too: `(Marker | null)[]` is `Opt<Marker>[]`, and `Array<number | undefined>` is `Opt<double>[]`. An element that maps to a union struct stays that struct (R2). Entity elements are read with a scope (R17). Undefined elements are `{"$u":1}` on the wire.
+
 **R4. A union of live classes that covers every concrete subclass of an abstract base maps to the base.** The base is a `closed class` (implicitly abstract), so a switch over the subclasses is exhaustive, also through `Opt<Base>`. A union that covers only some subclasses stays a union.
 
 **R5. Collapse after mapping, then de-duplicate.** `number[]` and `[number, number, number]` both map to `double[]`, so they become one case.
@@ -61,7 +64,7 @@ A union that is only written (a parameter, or a setter's wider type) may have ca
 |---|---|---|
 | `number` | `double` | **R7.** Always `double` |
 | `string`, `boolean` | `string`, `bool` | |
-| `T[]`, `readonly T[]`, `Array<T>` | `T[]` | |
+| `T[]`, `readonly T[]`, `Array<T>` | `T[]` | A nullable element is `Opt<T>[]` (R3) |
 | homogeneous numeric tuple | `double[]` | R5 |
 | `Promise<T>` | `Task<T>` | **R8.** In both modes |
 | `void` (return) | `void` (sync), `Task` (async) | |
@@ -75,7 +78,7 @@ A union that is only written (a parameter, or a setter's wider type) may have ca
 | value-like class (per profile) | live class plus `XSnapshot` record | §3 |
 | interface with only data members | data record with the same name | §3 |
 | interface with methods | live class with the same name | R15 |
-| inline object type, including an intersection of data bags | data record named after its owner | **R11** |
+| inline object type, including an intersection of data bags | data record named after its owner, one per structure | **R11** |
 | class extending a mixin's base (`PinBase: typeof Marker & typeof Draggable`) | derives from the named class (`Pin : Marker`), with the mixin's members as its own, and implements each exported mixin's interface (§5) | [ir.md](ir.md#declarations) |
 | generic `T` | generic over entities (`where T : JsObject`), or its constraint | See Generics below |
 | `this` (return type) | the declaring type | |
@@ -92,6 +95,8 @@ A union that is only written (a parameter, or a setter's wider type) may have ca
 
 - In a union, each inline case is named after the union and its tag value. The tag is the discriminant (R19), or else a member every inline case has with its own string literal. So `(PolyProps & { type: "poly" }) | (DotProps & { type: "dot" })` on the setter of `Feature.shape` gives `FeatureShapeInputPoly` and `FeatureShapeInputDot`.
 - Without a tag, a case is named by its position in the union as written (`FeatureShapeCase2`), with IOP2006. `null` and `undefined` don't count toward the position.
+- An intersection of one named type with string constants is named after the type and the constants' values, whatever its owner: `GlowOptions & { kind: "glow" }` is `GlowOptionsGlow`. It is in the type's namespace if that namespace has emitted types, and otherwise in its owner's. The IR's `bases` names the type ([ir.md](ir.md#types)).
+- Structurally identical anonymous records, unions and enums are one type, which every use names: the same members in the same order, with the same types, optionality and constants. Docs don't count, and neither does whether a constant is optional, since it is always written (R20). The type takes the shortest of the names its owners would give it, in that owner's namespace; a tie goes to the name, then the namespace, in ordinal order. `Marker.position`'s setter and `MarkerOptions.position` share `MarkerPositionInput`. Sharing isn't reported.
 - Members it can't map follow R15: an optional one is left out (IOP2007), a required one skips the record and its users. This holds wherever the record appears, including callback arguments and results. For a callback alias, the record keeps the alias's name (`VisitE`).
 - An inline type with a method, a call signature or a type parameter of an enclosing generic type isn't data. It is skipped (IOP2007).
 - If the name is taken (by a declaration, snapshot, registry, module class, other anonymous type or component), it gets a numeric suffix (`FeatureSize2`) and IOP2006.
@@ -130,7 +135,7 @@ The profile's `valueClasses` marks classes as value-like (R16). Getting this wro
 - a live class (`Point`), used when you hold a handle: what `Create` returns, and `this`-typed results;
 - a snapshot record (`PointSnapshot`), used everywhere else the type is named: properties, arguments, results, other snapshots, event payloads, constructor bags and module functions.
 
-Sent to JS, a value-like snapshot arrives as an instance. The writer adds its class id (`$c`, [design §3.4](design.md#34-protocol)) and the runtime calls `new Point(bag)`. The bag keeps constants such as the discriminant (R20). Plain data records stay plain objects. The snapshots of an abstract value-like base form a `closed record` hierarchy (`ShapeSnapshot`), read by the discriminant.
+Sent to JS, a value-like snapshot arrives as an instance. The writer adds its class id (`$c`, [design §3.4](design.md#34-protocol)) and the runtime calls `new Point(bag)`. JS sends one back with its class id too, which tells a union's value-like cases apart (R19 step 3). The bag keeps constants such as the discriminant (R20). Plain data records stay plain objects. The snapshots of an abstract value-like base form a `closed record` hierarchy (`ShapeSnapshot`), read by the discriminant.
 
 **R17. Snapshot depth.** Snapshots hold data members only. Value-like members are copied deeply as their snapshots. Entity members are left out, since reading one needs a scope; use the scoped getter (`GetSelected(scope)`).
 
@@ -148,6 +153,19 @@ Every snapshot record has `Write` (the whole object, with its constants; a value
 
 System.Text.Json: every snapshot record, and every data record that reads without a scope (not scoped, R17; no DOM member, R13; not generic), implements `IJsRecord<T>` and has `[JsonConverter(typeof(JsRecordConverter<T>))]`. So app types that hold them serialize in their wire format, with no reflection over the record. A value-like snapshot keeps its `$c`, which `Read` ignores.
 
+Chosen members: every snapshot record with members other than constants has a nested static class `Members` with one `JsMembers<XSnapshot>` per member (`LayerSnapshot.Members.Visible`), combined with `|`. They name members without strings:
+
+- `SnapshotAsync(members)` reads only those members, in one round trip. The rest are undefined, so the result works with `Diff` and `ApplyAsync`.
+- A class with the profile's watch method also has `WatchAsync(scope, members, handler)`, one subscription for all of them. After each JS turn in which any changed, the handler gets one partial snapshot of those members as they are then, so a burst is one message ([design §3.4](design.md#34-protocol)). `Diff` against the previous one gives the patch. Async mode adds `WatchStreamAsync`.
+- They are overloads, not `new` (R26), so a `Layer` reference to a `FeatureLayer` reads and watches `Layer` members.
+- A closed base's members also name its discriminant, which its `Read` needs (R19 step 2).
+- A member named `Members` renames the class `JsMembers` (IOP2006).
+
+```csharp
+var settings = await layer.SnapshotAsync(LayerSnapshot.Members.Visible | LayerSnapshot.Members.Opacity);
+await using var watch = await layer.WatchAsync(scope, LayerSnapshot.Members.Visible | LayerSnapshot.Members.Opacity, now => settings = now);
+```
+
 `Diff`: every snapshot record except a closed base has `static XSnapshot Diff(XSnapshot before, XSnapshot after)`, which returns the patch from `before` to `after`.
 
 - A member is in the patch when `after` defines it and it differs from `before`.
@@ -161,9 +179,9 @@ When JS returns a value for a union position, the runtime must pick the case.
 **R19. Classification order:**
 
 1. **Handle with a class id** (`{"$h": 12, "$t": 7}`). The generated registry maps the id to the most-derived live type, and the case is the one that type converts to. An object whose class isn't in the metadata (undeclared, or outside the selection) gets the id of its nearest known ancestor: the runtime walks up the prototype chain, reading at each level the class-name property, or else the prototype's own `constructor` when it is a loaded module's export. So a plain class with no class-name property, as an app's own module has, is still known. A variant (§5) is known too, so an unselected class that adds a mixin reads as its nearest emitted ancestor with the mixin's interface. With none, the id is 0, and reading it as an entity throws, unless a live interface is declared there (R15): then it's that interface ([design §3.2](design.md#32-handles-identity-and-lifetime)).
-2. **Object with a discriminant.** The extractor finds a property every member declares with a distinct literal type (`type: "point"`), intersections (`Props & { type: "heat" }`) included. The generator switches on its value. A nullable union that holds one union (`(A | B) | null`) uses that union's.
-3. **Object without a discriminant.** If the sets of *required* member names separate the cases, the generator emits a structural check. Otherwise the union is ambiguous and is skipped (IOP2003). Optional members don't count, because typings make most of them optional.
-4. **Primitives** by JSON token kind. Two cases with the same kind (`string` and a string enum) are told apart by value where possible, otherwise IOP2003.
+2. **Object with a discriminant.** The extractor finds a property every member declares with a distinct literal type (`type: "point"`), intersections (`Props & { type: "heat" }`) included. It looks at the members as the checker flattens them: nested unions (`((A | B) | C) | null`) and union aliases (`OpenShape | Polygon`) are part of the union, and a member written twice counts once. The generator switches on its value.
+3. **Object without a discriminant.** A value-like case (R16) is told apart by its class id: its instances always arrive as `$c` data. The id is its class's or a subclass's, unless that subclass is a case too or nearer to another case, so `Point | Shape` reads a point as `PointSnapshot` and a line as `ShapeSnapshot`. For the other object cases, if the sets of *required* member names separate them, the generator emits a structural check. Otherwise the union is ambiguous and is skipped (IOP2003), naming the case that has no member of its own (an inline case by its position, `case 2`). Optional members don't count, because typings make most of them optional.
+4. **Primitives** by JSON token kind: a string or string enum is a JSON string, a `number` or number enum a JSON number, a `boolean` `true` or `false`. Two cases with the same kind (`number` and a number enum) are ambiguous (IOP2003).
 
 **R20. Writing** serializes the active case. A member typed with a single literal (`type: "point"`) is a constant. It isn't a C# property, but it is always written, so JS receives `{ "type": "point", … }`.
 
@@ -186,6 +204,8 @@ When JS returns a value for a union position, the runtime must pick the case.
 | property watch (classes with the profile's watch method, own or inherited) | `IDisposable WatchZoom(JsScope scope, Action<double>)` | `Task<IAsyncDisposable> WatchZoomAsync(…)` |
 | property watch stream | none | `IAsyncEnumerable<double> WatchZoomStreamAsync(JsScope scope, CancellationToken cancellationToken = default)` |
 | snapshot / patch | `XSnapshot Snapshot()`, `void Apply(XSnapshot)` | `SnapshotAsync()`, `ApplyAsync(XSnapshot)` |
+| snapshot of some members (R18) | `XSnapshot Snapshot(JsMembers<XSnapshot> members)` | `SnapshotAsync(members)` |
+| watch of some members (R18; classes with the profile's watch method) | `IDisposable Watch(JsScope scope, JsMembers<XSnapshot> members, Action<XSnapshot> handler)` | `Task<IAsyncDisposable> WatchAsync(…)`, `IAsyncEnumerable<XSnapshot> WatchStreamAsync(JsScope scope, JsMembers<XSnapshot> members, CancellationToken cancellationToken = default)` |
 | module function | static method on a static class per module, with a leading `JsRealm realm` (or `JsScope scope` when the rules above need one) | same, async |
 
 - A setter whose wider type takes the constructor bag of an entity class the getter returns also takes that class, as libraries that build an instance from the bag (autocasting) do: `get theme(): Theme`, `set theme(v: ThemeOptions | string)` is `SetTheme(ViewThemeInput)`, whose cases are `ThemeOptions`, `string` and `Theme`. The union is only written (R2).
@@ -247,7 +267,7 @@ So `"--"` is `MinusMinus`. The empty string is `Empty`. Duplicates get a numeric
 - References. Generated code names types in its own namespace plainly and all others with `global::`. Runtime and .NET types are always qualified and generated files have no usings, so a generated name like `Opt` or `Task` hides nothing. A record reader qualifies a type that one of its members is named after.
 - Sibling modules. When modules in one folder export the same name (`ops/a.js` and `ops/b.js` each export `Options`), the first in IR order keeps it and later ones get their module's name as a prefix (`BOptions`). Names that differ only in case count as the same.
 - Case. Two generated paths that differ only in case clash, since Windows and macOS ignore case. A file and a folder that differ only in case don't.
-- Anonymous types are named after their owner: `Feature.shape` gives `FeatureShape`, its setter's wider type `FeatureShapeInput`, a method result `FeatureMoveTo`, a parameter `FeatureMoveToTarget`, an event payload `FeatureClick`.
+- Anonymous types are named after their owner: `Feature.shape` gives `FeatureShape`, its setter's wider type `FeatureShapeInput`, a method result `FeatureMoveTo`, a parameter `FeatureMoveToTarget`, an event payload `FeatureClick`. Identical ones share the shortest of those names, and a tagged intersection takes its named part's (R11). An anonymous union or enum whose name a declaration or another type has takes a numeric suffix, like an inline record (R11): `Dock.breakpoint: DockBreakpoint | boolean` is `DockBreakpoint2`.
 - The registry is named after the package without scope (`Maps`), or the next free name (`Widgets2`) if a namespace has it.
 - A namespace with the full name of a declared type (`Marker` next to a `marker/` folder) takes the next free name (`Acme.Maps.Marker2`), so the type keeps its name.
 - Clashes. When two generated types would share a path, the registry keeps its name, and a module's static class takes the next free one (`Measure2`). Any other later type is skipped, and so is a type with a namespace's full name. A skipped type's users are not removed, so they won't compile.
@@ -287,6 +307,6 @@ The generator never throws for a shape it can't map. It skips the shape along wi
 | IOP2003 | Skipped: an ambiguous union (R19) and its users |
 | IOP2004 | Not reported yet: overloads merged after mapping (R23) |
 | IOP2005 | Skipped in async mode: a callback whose result JS uses synchronously (R21) |
-| IOP2006 | A name changed or a type skipped to avoid a collision (R11, R25–R28) |
+| IOP2006 | A name changed or a type skipped to avoid a collision (R11, R18, R25–R28) |
 | IOP2007 | Skipped: something the generator can't map yet, or that uses it. Includes classes and union cases outside the selection (R2), dropped record members (R11, R15), iterator methods, and declarations that can't be imported because no public module re-exports them ([design §3.5](design.md#35-module-loading)) |
 | IOP3001 | Analyzer, Info: two or more consecutive awaited writes to live objects outside `await using (scope.BeginBatch())`. Each is a round trip on Server ([design §3.3](design.md#33-batching-async-mode)). Raise it with `dotnet_diagnostic.IOP3001.severity = warning` |

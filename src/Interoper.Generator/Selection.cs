@@ -733,15 +733,15 @@ public sealed class Selection
         {
             AddDataType(declaration);
         }
-        foreach (var child in Children(type))
+        // R6: a union alias inside a union is flattened into it, so it's emitted only where it's used on its own, or as the
+        // union's enum case (R2).
+        var union = type is UnionType u && u.Types.Count(t => !IsNullish(t)) > 1;
+        if (union && types.LiteralAlias(type) is { } literals)
         {
-            // R6: a union alias inside a union is flattened into it, so it's emitted only where it's used on its own.
-            if (type is UnionType u && u.Types.Count(t => !IsNullish(t)) > 1 &&
-                FlattenedAlias(child, Find) is { } inner)
-            {
-                Collect(inner);
-                continue;
-            }
+            AddDataType(literals);
+        }
+        foreach (var child in union ? Cases(type) : Children(type))
+        {
             Collect(child);
         }
     }

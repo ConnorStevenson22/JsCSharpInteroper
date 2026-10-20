@@ -24,6 +24,7 @@ public static class GoldenSyncSuite
         ("overloads (R23)", InScope(Overloads)),
         ("Promise of an optional entity (R8, R3)", InScope(PromiseOfAnEntity)),
         ("module function over a union (R2, §5)", InScope(UnionModuleFunction)),
+        ("number, string-enum and literal cases next to other types, read by their JSON token (R2, R19)", InScope(ValueTypeCases)),
         ("a watch on every property, delivered then released (§5)", InScope(Watches)),
         ("base classes are live classes (R19)", InScope(Bases)),
         ("a factory's plain object is its declared live interface, owned by the caller's scope (R15, R19)", InScope(LiveInterfaces)),
@@ -45,8 +46,10 @@ public static class GoldenSyncSuite
         ("a subscription with remove() instead of dispose(), delivered then released (R24)", InScope(RemoveSubscription)),
         ("any is JsAny: data, or a handle the scope owns (§2)", InScope(Any)),
         ("a union with an entity case is a parameter's (R2, R17)", InScope(WrittenUnion)),
+        ("arrays with null and undefined elements: entities, records and numbers (R3, R17)", InScope(NullableElements)),
         ("same-named types of sibling modules (R27)", InScope(SiblingModules)),
         ("a custom element drives its live view, and its class is found by its tag (§5, R22, R28)", InScope(CustomElement)),
+        ("a watch of chosen members: one call per burst, with their snapshot, also through a base type (R18)", InScope(MemberWatch)),
     ];
 
     private static void CreateSnapshotApply(JsScope scope)
@@ -209,6 +212,32 @@ public static class GoldenSyncSuite
         Equal(new Rgba { R = 1, G = 2, B = 3, A = 1 }, Styles.ToRgba(scope.Realm, new Rgba { R = 1, G = 2, B = 3 }));
     }
 
+    private static void ValueTypeCases(JsScope scope)
+    {
+        var marker = Marker.Create(scope, new MarkerSnapshot());
+        foreach (var size in new IconStyleSize[] { 12, "2em" })
+        {
+            marker.Style = new IconStyle { Name = IconName.Pin1, Size = size };
+            Equal<Style>(new IconStyle { Name = IconName.Pin1, Size = size }, marker.Style);
+        }
+        marker.Style = new StrokeStyle { Dash = StrokeStyleDashLiteral.Dotted };
+        Expect(marker.Style.TryGetValue(out StrokeStyle? dotted) && dotted.Dash.TryGetValue(out StrokeStyleDashLiteral dash) && dash == StrokeStyleDashLiteral.Dotted,
+            "a dotted stroke");
+        marker.Style = new StrokeStyle { Dash = new double[] { 4, 2 } };
+        Expect(marker.Style.TryGetValue(out StrokeStyle? dashed) && dashed.Dash.TryGetValue(out double[]? lengths) && lengths.SequenceEqual([4.0, 2]), "a dashed stroke");
+
+        var tile = TileLayer.Create(scope, new TileLayerSnapshot());
+        tile.SetTileSize(512);
+        Equal(512.0, tile.TileSize);
+        tile.SetTileSize(new double[] { 128, 256 });
+        Equal(128.0, tile.TileSize);
+
+        var (a, b) = (new PointSnapshot { X = 0, Y = 0 }, new PointSnapshot { X = 3000, Y = 4000 });
+        Equal(5000.0, Measure.Distance(scope.Realm, a, b));
+        Equal(5.0, Measure.Distance(scope.Realm, a, b, LengthUnit.Kilometers));
+        Equal(10.0, Measure.Distance(scope.Realm, a, b, 500));
+    }
+
     private static async Task Watches(JsScope scope)
     {
         var view = MapView.Create(scope, new MapViewSnapshot());
@@ -275,10 +304,10 @@ public static class GoldenSyncSuite
     private static void DefaultExport(JsScope scope)
     {
         var tile = TileLayer.Create(scope, new TileLayerSnapshot { Url = "u", Title = "Streets" });
-        Equal(new TileLayerSnapshot { Url = "u", RefreshInterval = 0, Title = "Streets", Visible = true }, tile.Snapshot());
+        Equal(new TileLayerSnapshot { Url = "u", TileSize = 256, RefreshInterval = 0, Title = "Streets", Visible = true }, tile.Snapshot());
         TileLayer copy = tile.Clone(scope); // TileLayer's clone hides Layer's
         Expect(!ReferenceEquals(copy, tile), "a clone to be another object");
-        Equal(new TileLayerSnapshot { Url = "u", RefreshInterval = 0, Title = "Streets", Visible = true }, copy.Snapshot());
+        Equal(new TileLayerSnapshot { Url = "u", TileSize = 256, RefreshInterval = 0, Title = "Streets", Visible = true }, copy.Snapshot());
         Layer layer = tile;
         Expect(layer.Clone(scope) is TileLayer { Url: "u" }, "a Layer's clone to be a TileLayer");
     }
@@ -305,7 +334,7 @@ public static class GoldenSyncSuite
         Expect(tile is Layer and Observable, "a TileLayer to be a Layer and an Observable");
         tile.Title = null;
         tile.Visible = false;
-        Equal(new TileLayerSnapshot { Url = "", RefreshInterval = 0, Title = null, Visible = false }, tile.Snapshot());
+        Equal(new TileLayerSnapshot { Url = "", TileSize = 256, RefreshInterval = 0, Title = null, Visible = false }, tile.Snapshot());
     }
 
     private static void Collections(JsScope scope)
@@ -502,6 +531,19 @@ public static class GoldenSyncSuite
         Equal("marker p", Measure.Describe(scope.Realm, Pin.Create(scope, new PinSnapshot { Label = "p" }))); // a subclass of the case
     }
 
+    private static void NullableElements(JsScope scope)
+    {
+        var marker = Marker.Create(scope, new MarkerSnapshot { Position = new PointSnapshot { X = 100, Y = -50 } });
+        var view = MapView.Create(scope, new MapViewSnapshot { Zoom = 0 });
+        view.GetMarkers(scope).Add(marker);
+        Expect(view.MarkersAt(scope, new double[][] { [0, 0], [100, 50] }) is [{ IsNull: true }, var found] && found.TryGetValue(out Marker? at) && ReferenceEquals(at, marker),
+            "null where no marker is, then the marker (R17)");
+        Equal("5, null", string.Join(", ", Measure.Distances(scope.Realm, new PointSnapshot { X = 97, Y = -46 }, [marker, null])));
+        var centers = Measure.Centers(scope.Realm, [new LineSnapshot { Path = new double[][] { [0, 0], [4, 2] } }, null, Undefined.Value]); // undefined is {"$u":1} both ways
+        Expect(centers is [_, { IsNull: true }, { IsUndefined: true }], "null and undefined to stay as they are");
+        Equal<Opt<PointSnapshot>>(new PointSnapshot { X = 2, Y = 1 }, centers[0]);
+    }
+
     private static void CustomElement(JsScope scope)
     {
         // A custom element's constructor takes no bag. In the browser its class id comes from its tag, since its
@@ -516,7 +558,7 @@ public static class GoldenSyncSuite
         using (view.OnClick(scope, clicks.Add)) // sync mode: delivered before ClickAt returns
         {
             element.ClickAt(8, 0); // the button is optional
-            element.ClickAt(0, 0, DemoMapElementClickAtButton._2);
+            element.ClickAt(0, 0, ClickEventButton._2);
         }
         Equal("1 _0, 0 _2", string.Join(", ", clicks.Select(c => $"{c.MapPoint.X} {c.Button}")));
     }
@@ -531,6 +573,26 @@ public static class GoldenSyncSuite
     // --- Helpers ---
 
     // Each case has its own scope; once it is disposed, the census and the callbacks are back to their baseline.
+    // In the browser JS calls back once .NET yields, which the await does.
+    private static async Task MemberWatch(JsScope scope)
+    {
+        var view = MapView.Create(scope, new MapViewSnapshot { Zoom = 5, Rotation = 90 });
+        var baseline = await Count(scope.Realm);
+        var seen = new List<MapViewSnapshot>();
+        var called = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using (view.Watch(scope, MapViewSnapshot.Members.Zoom | MapViewSnapshot.Members.Rotation, changed => { seen.Add(changed); called.TrySetResult(); }))
+        {
+            view.Reset(); // the library changes both in one call
+            await called.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        }
+        Equal(baseline, await Count(scope.Realm));
+        view.Zoom = 7;
+        Equal(new MapViewSnapshot { Zoom = 1, Rotation = 0 }, seen.Single());
+
+        Layer layer = TileLayer.Create(scope, new TileLayerSnapshot { Url = "u" });
+        Equal(new LayerSnapshot { Visible = true }, layer.Snapshot(LayerSnapshot.Members.Visible));
+    }
+
     private static Func<JsRealm, Task> InScope(Action<JsScope> body) => InScope(scope =>
     {
         body(scope);

@@ -184,12 +184,13 @@ const ops = {
   get: (op) => withTarget(op, (o) => toWire(o[op.name], op.byValue, op.live)),
   set: (op) => withTarget(op, (o) => { o[op.name] = op.value; }),
   call: (op) => withTarget(op, (o) => then(o[op.name](...(op.args ?? [])), (r) => toWire(r, op.byValue, op.live))),
-  snapshot: (op) => toData(target(op.h)),
+  snapshot: (op) => toData(target(op.h), op.members),
   apply: (op) => { const o = target(op.h); for (const [k, v] of Object.entries(op.value)) o[k] = v; },
   subscribe: (op) => {
-    const listener = op.options ? withOptions(op.callback, op.options) : op.callback;
-    const subscription = target(op.h)[op.method](op.name, listener);
-    if (!disposerOf(subscription)) throw new InteroperError(`${op.method} returned no dispose() or remove()`);
+    const o = target(op.h);
+    const subscription = op.names
+      ? watchMembers(o, op.method, op.names, op.callback)
+      : subscribeTo(o, op.method, op.name, op.options ? withOptions(op.callback, op.options) : op.callback);
     // An object .NET already holds is not a subscription; releasing it must not dispose it.
     if (ids.has(subscription)) throw new InteroperError(`${op.method} returned an object that already has a handle`);
     const id = handleOf(subscription);
@@ -219,6 +220,42 @@ function withOptions(callback, o) {
     if (o.stopPropagation) event?.stopPropagation?.();
     return callback(o.fields ? pick(event, o.fields) : event, ...rest);
   };
+}
+
+function subscribeTo(object, method, name, listener) {
+  const subscription = object[method](name, listener);
+  if (!disposerOf(subscription)) throw new InteroperError(`${method} returned no dispose() or remove()`);
+  return subscription;
+}
+
+// R18: one listener per member, and one call to .NET per turn in which any changed, with the members' snapshot as it
+// is then. A microtask ends the turn: it runs once the code that made the changes returns (a batch op, the library's
+// own method, or on WebAssembly every sync call until .NET yields), so a burst is one message, and it waits for no
+// timer, which would add latency and is throttled in background tabs.
+function watchMembers(object, method, names, callback) {
+  const subscriptions = [];
+  let queued = false;
+  let live = true;
+  const flush = () => {
+    queued = false;
+    if (live) callback(toData(object, names));
+  };
+  const changed = () => {
+    if (queued) return;
+    queued = true;
+    queueMicrotask(flush);
+  };
+  const dispose = () => {
+    live = false;
+    disposeAll(subscriptions.splice(0));
+  };
+  try {
+    for (const name of names) subscriptions.push(subscribeTo(object, method, name, changed));
+  } catch (e) {
+    try { dispose(); } catch { /* the failed subscribe is the error to report */ }
+    throw e;
+  }
+  return { dispose };
 }
 
 // The named top-level members of an object, so nothing else crosses the wire; any other value, an array included, as
@@ -261,15 +298,23 @@ function runBatch(list) {
 
 // Releases every id, even when a subscription's dispose() (or remove()) throws; then reports what failed.
 function releaseAll(list) {
-  const errors = [];
+  const ended = [];
   for (const id of list) {
     const object = handles.get(id);
     if (object === undefined) continue;
     handles.delete(id);
     ids.delete(object);
-    if (!subscriptions.delete(id)) continue;
+    if (subscriptions.delete(id)) ended.push(object);
+  }
+  disposeAll(ended);
+}
+
+// Ends every subscription, even when one's dispose() (or remove()) throws; then reports what failed.
+function disposeAll(list) {
+  const errors = [];
+  for (const subscription of list) {
     try {
-      disposerOf(object).call(object);
+      disposerOf(subscription).call(subscription);
     } catch (e) {
       errors.push(e);
     }
@@ -415,12 +460,13 @@ function wireItem(value) {
   return value === undefined ? UNDEFINED : value;
 }
 
-// The snapshot members of an object, with value-like members copied deeply and entities as handles (R17).
-function toData(object) {
+// The snapshot members of an object, or the named ones, with value-like members copied deeply and entities as handles
+// (R17, R18).
+function toData(object, names) {
   const classId = classIdOf(object);
   const entry = classEntry(classId);
   const out = entry.value ? { $c: classId } : {};
-  for (const name of entry.members) {
+  for (const name of names ?? entry.members) {
     const v = object[name];
     if (v !== undefined) out[name] = toWire(v, true);
   }

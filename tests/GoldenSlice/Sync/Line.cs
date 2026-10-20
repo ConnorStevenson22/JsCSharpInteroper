@@ -23,4 +23,9 @@ public sealed partial class Line : Shape
 
     public void Apply(LineSnapshot patch) =>
         Realm.Send(global::Interoper.JsOp.Apply(Handle, w => LineSnapshot.WriteMembers(w, patch)));
+
+    public LineSnapshot Snapshot(global::Interoper.JsMembers<LineSnapshot> members) => Realm.Snapshot(Handle, members);
+
+    public global::System.IDisposable Watch(global::Interoper.JsScope scope, global::Interoper.JsMembers<LineSnapshot> members, global::System.Action<LineSnapshot> handler) =>
+        scope.Subscribe(Handle, "watch", members, handler);
 }

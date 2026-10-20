@@ -31,8 +31,17 @@ public static class Generator
         // interface with methods is a live class.
         ir = LiveInterfaces.Convert(Instantiation.Instantiate(Instantiation.Erase(ir, profile.Collections)));
         var selection = Selection.Select(ir, profile);
+        // R11, R27: a census run names each anonymous type after each of its owners; the one whose output counts emits each
+        // structure once, with the shortest of those names.
+        var census = new Dictionary<string, TypeName>();
+        Generate(ir, profile, options, selection, census, share: false);
+        return Generate(ir, profile, options, selection, census, share: true);
+    }
+
+    private static GeneratorResult Generate(IrDocument ir, Profile profile, GeneratorOptions options, Selection selection, Dictionary<string, TypeName> census, bool share)
+    {
         var diagnostics = selection.Diagnostics.ToList();
-        var types = new TypeMap(ir, profile, selection.Declarations, diagnostics, options.Namespace, selection.Payloads, selection);
+        var types = new TypeMap(ir, profile, selection.Declarations, diagnostics, options.Namespace, selection.Payloads, selection, census, share);
         var root = options.Namespace;
         var files = new List<GeneratedFile>();
         // R27: the registry keeps its path. A later type whose path is taken, or whose name is a namespace's, is skipped with
@@ -74,7 +83,7 @@ public static class Generator
                     Add(types.Name(c), LiveEmitter.Class(types, profile, options, diagnostics, declared, c));
                     if (!c.Interface)
                     {
-                        Add(types.Snapshot(c), RecordEmitter.Snapshot(types, c));
+                        Add(types.Snapshot(c), RecordEmitter.Snapshot(types, c, diagnostics));
                     }
                     break;
             }

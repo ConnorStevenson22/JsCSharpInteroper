@@ -43,4 +43,10 @@ public sealed partial record PolygonSnapshot : ShapeSnapshot, global::Interoper.
     {
         Vertices = after.Vertices.IsUndefined || global::Interoper.JsDiff.Same(before.Vertices, after.Vertices) ? default : after.Vertices,
     };
+
+    public static class Members
+    {
+        /// <summary>The closing edge from the last vertex back to the first is implied.</summary>
+        public static global::Interoper.JsMembers<PolygonSnapshot> Vertices => new("vertices");
+    }
 }

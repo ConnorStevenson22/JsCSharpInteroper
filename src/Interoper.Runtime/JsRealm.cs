@@ -71,6 +71,9 @@ public sealed class JsRealm(Func<Task<IJsTransport>> start, JsClassRegistry clas
     /// <summary>Runs an op and reads its result (<c>default</c> for undefined).</summary>
     public T? Call<T>(string opJson, JsonRead<T> read) => JsEnvelope.Read(SyncTransport.Invoke(opJson), read);
 
+    /// <summary>A snapshot of some members (R18); the others are undefined.</summary>
+    public T Snapshot<T>(int handle, JsMembers<T> members) where T : class, IJsRecord<T> => Call(JsOp.Snapshot(handle, members), T.Read)!;
+
     public double GetNumber(int handle, string name) => SyncTransport.GetNumber(handle, name);
 
     public string GetString(int handle, string name) => SyncTransport.GetString(handle, name);
@@ -115,6 +118,10 @@ public sealed class JsRealm(Func<Task<IJsTransport>> start, JsClassRegistry clas
             throw;
         }
     }
+
+    /// <summary>A snapshot of some members (R18), after any queued ops; the others are undefined.</summary>
+    public async Task<T> SnapshotAsync<T>(int handle, JsMembers<T> members) where T : class, IJsRecord<T> =>
+        (await CallAsync(JsOp.Snapshot(handle, members), T.Read))!;
 
     public Task<double> GetNumberAsync(int handle, string name) =>
         batch.Value is null ? Trip().GetNumberAsync(handle, name) : AfterFlush(() => Trip().GetNumberAsync(handle, name));

@@ -24,4 +24,10 @@ public sealed partial class Polygon : Shape
 
     public void Apply(PolygonSnapshot patch) =>
         Realm.Send(global::Interoper.JsOp.Apply(Handle, w => PolygonSnapshot.WriteMembers(w, patch)));
+
+    public PolygonSnapshot Snapshot(global::Interoper.JsMembers<PolygonSnapshot> members) =>
+        Realm.Snapshot(Handle, members);
+
+    public global::System.IDisposable Watch(global::Interoper.JsScope scope, global::Interoper.JsMembers<PolygonSnapshot> members, global::System.Action<PolygonSnapshot> handler) =>
+        scope.Subscribe(Handle, "watch", members, handler);
 }

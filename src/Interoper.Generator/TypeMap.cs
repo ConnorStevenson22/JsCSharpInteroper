@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Text.Json;
+using System.Text.Json.Serialization.Metadata;
 using Interoper.Generator.Ir;
 
 namespace Interoper.Generator;
@@ -32,8 +33,8 @@ internal sealed record EnumType(TypeName Type, IReadOnlyList<(string Name, JsonE
 
 /// <summary>
 /// A generated union struct (R2). <see cref="Discriminant"/> is the property its object cases are told apart by (R19
-/// step 2). A <see cref="WrittenOnly"/> one is a parameter's that has an entity case or a DOM element case, or that
-/// dropped a case and can't tell the others apart: it's never read, so R19 doesn't apply. One that
+/// step 2). A <see cref="WrittenOnly"/> one is a parameter's that can't be read: it has an entity case or a DOM element
+/// case, or can't tell its cases apart; it's never read, so R19 doesn't apply. One that
 /// <see cref="Dropped"/> a case outside the selection reads the others, and fails on a handle, which is how JS sends a
 /// class outside the selection.
 /// </summary>
@@ -77,12 +78,23 @@ internal sealed class TypeMap
     private readonly List<DataType> owned = [];
     /// <summary>R11: each inline object type's record (unnamed until it's mapped), and the names of those mapped, in order.</summary>
     private readonly Dictionary<ObjectType, AliasDeclaration> bags = new(ReferenceEqualityComparer.Instance);
+    /// <summary>
+    /// R11, R27: for each anonymous type's structure (<see cref="Key"/>), the shortest name its owners give it, which a
+    /// census run collects and a sharing run (<see cref="share"/>) names it by; the first of each structure met, whose
+    /// record the others share.
+    /// </summary>
+    private readonly Dictionary<string, TypeName>? census;
+    private readonly bool share;
+    private readonly Dictionary<string, ObjectType> shared = [];
+    private readonly Dictionary<IrType, string> keys = new(ReferenceEqualityComparer.Instance);
     private readonly Dictionary<Declaration, TypeName> inline = new(ReferenceEqualityComparer.Instance);
     private readonly List<Declaration> records = [];
     /// <summary>R27: the names an inline record can't take (<see cref="Taken"/>), ignoring case, as files' paths may.</summary>
     private readonly HashSet<TypeName> taken = new(TypeName.IgnoreCase);
     /// <summary>R27: the names of the anonymous unions and enums mapped so far, ignoring case.</summary>
     private readonly HashSet<TypeName> unionNames = new(TypeName.IgnoreCase);
+    /// <summary>R27: the names anonymous unions and enums have, which an inline record narrowed from one may have taken too (R2).</summary>
+    private readonly HashSet<TypeName> anonymous = [];
     private readonly HashSet<ClassDeclaration> watchable = new(ReferenceEqualityComparer.Instance);
     /// <summary>§5: the mixins that are interfaces, and the emitted classes a variant derives from.</summary>
     private readonly HashSet<ClassDeclaration> mixins = new(ReferenceEqualityComparer.Instance), variantBases = new(ReferenceEqualityComparer.Instance);
@@ -105,9 +117,11 @@ internal sealed class TypeMap
     /// </summary>
     /// <param name="payloads">The event payloads (R24), whose required members are dropped like optional ones (<see cref="DroppedProblem"/>).</param>
     /// <param name="selection">The selection's mixins and variants (§5), once it has them.</param>
+    /// <param name="census">R11, R27: the anonymous types' names, collected by a run without <paramref name="share"/>, and used by one with it.</param>
     public TypeMap(IrDocument ir, Profile profile, IEnumerable<Selected> selected, ICollection<Diagnostic> diagnostics, string ns,
-        IEnumerable<InterfaceDeclaration>? payloads = null, Selection? selection = null)
+        IEnumerable<InterfaceDeclaration>? payloads = null, Selection? selection = null, Dictionary<string, TypeName>? census = null, bool share = false)
     {
+        (this.census, this.share) = (census, share);
         payloadMembers.UnionWith((payloads ?? []).SelectMany(i => i.Members.OfType<PropertyMember>()));
         foreach (var module in ir.Modules)
         {
@@ -336,6 +350,9 @@ internal sealed class TypeMap
     /// <summary>R16: the snapshots of an abstract value-like class form a closed hierarchy.</summary>
     public bool IsClosed(ClassDeclaration c) => c.Abstract && IsValueLike(c);
 
+    /// <summary>R18: whether the class's snapshot has members other than constants, so it has a <c>Members</c> class.</summary>
+    public bool HasSnapshotMembers(ClassDeclaration c) => Fields(c).Any(f => f.Constant is null);
+
     /// <summary>The emitted live classes, in IR order.</summary>
     public IReadOnlyList<ClassDeclaration> Classes => classes;
 
@@ -414,6 +431,13 @@ internal sealed class TypeMap
         }
     }
 
+    /// <summary>
+    /// R19 step 3: the value-like classes whose class id (<c>$c</c>) reads as the union case <paramref name="case"/>: the
+    /// emitted ones it is the nearest of <paramref name="cases"/> to, itself or a base.
+    /// </summary>
+    public IEnumerable<ClassDeclaration> ClassIds(ClassDeclaration @case, IEnumerable<ClassDeclaration> cases) =>
+        classes.Where(k => IsValueLike(k) && Ancestors(k).FirstOrDefault(cases.Contains) == @case);
+
     /// <summary>The string constant every concrete subclass of a closed base declares: <c>type</c> (R19 step 2).</summary>
     public string Discriminant(ClassDeclaration c) => DiscriminantOrNull(c) ?? throw Unreachable(c.Name);
 
@@ -436,10 +460,10 @@ internal sealed class TypeMap
         RefType r when IsElement(r) => CsType.DomElement, // R13
         TypeParameterType t => CsType.TypeParameter(t.Name),
         FunctionType f => Callback(f, owner),
-        ArrayType a => CsType.Array(Map(a.Element, owner)),
+        ArrayType a => CsType.Array(Element(a.Element, owner)),
         TupleType { Required: null, Rest: false, Elements.Count: > 0 } t
-            when t.Elements.Select(e => Map(e, owner).FullName).Distinct().Count() == 1 => CsType.Array(Map(t.Elements[0], owner)), // R5
-        UnionType u when Union(owner, u) is { } union => Own(union),
+            when t.Elements.Select(e => Element(e, owner).FullName).Distinct().Count() == 1 => CsType.Array(Element(t.Elements[0], owner)), // R5
+        UnionType u when Union(Anonymous(Owner(u, owner), union: Kept(u).Count > 1), u) is { } union => Own(union),
         UnionType u when Kept(u) is [var single] => Map(single, owner), // R2: the one case left in the selection
         ObjectType o => CsType.Record(Name(Inline(o, owner)), scoped: IsScoped(Bag(o))), // R11
         _ => throw Unreachable(owner.Name),
@@ -462,6 +486,19 @@ internal sealed class TypeMap
         var mapped = type is ThisType && self is not null ? self : Map(type, owner);
         return (mapped, nullable || Flatten(type).Any(t => IsNullish(t) || t is PrimitiveType { Name: "any" or "unknown" }));
     }
+
+    /// <summary>
+    /// An array or tuple element: <c>Opt&lt;T&gt;</c> when it can be null or undefined (R3), unless it's a union, which has
+    /// those states itself (R2).
+    /// </summary>
+    private CsType Element(IrType type, TypeName owner)
+    {
+        var mapped = Slot(type, owner).Type;
+        return IsNullable(type) && !mapped.IsUnion ? CsType.Opt(mapped) : mapped;
+    }
+
+    /// <summary>Whether a type has null or undefined in it, also through a union alias (R6).</summary>
+    private bool IsNullable(IrType type) => Flatten(type).Any(IsNullish);
 
     /// <summary>
     /// R21: a callback, an <c>Action</c> or a <c>Func</c>; an anonymous type in it is named after its owner and the
@@ -567,16 +604,11 @@ internal sealed class TypeMap
         {
             diagnostics.Add(new(Diagnostic.NotSupported, name.Name, $"case `{dropped.Name}` dropped: {(dropped.Module is null ? "a platform type" : "a class outside the selection")} (R2)"));
         }
-        // R6: flattened literal unions may share values ("a" | "b" and "b" | "c"), which are one member.
-        var literals = flat.OfType<LiteralType>().Select(l => l.Value).DistinctBy(v => v.GetRawText()).ToList();
         DataType? result =
             flat.Count < 2 ? null
-            : flat.All(t => t is LiteralType { Value.ValueKind: JsonValueKind.String } || IsOpenString(t)) ? new EnumType(name,
-                EnumMembers(name.Name, literals, literals.Select(v => v.GetString()!)), literals.Count > MaxEnumMembers || flat.Any(IsOpenString))
-            : flat.All(t => t is LiteralType { Value.ValueKind: JsonValueKind.Number }) ? new EnumType(name,
-                EnumMembers(name.Name, literals, literals.Select(v => v.GetRawText())), Extensible: false)
-            : new UnionStruct(name, Cases(name, all, flat, DiscriminantOf(type, all.Count)), DiscriminantOf(type, all.Count),
-                WrittenOnly(type, all, flat), Dropped: flat.Count < all.Count);
+            : flat.All(IsStringLiteral) || flat.All(IsNumberLiteral) ? LiteralEnum(name, flat)
+            : new UnionStruct(name, Cases(name, type, all, flat, DiscriminantOf(type)), DiscriminantOf(type),
+                WrittenOnly(type), Dropped: flat.Count < all.Count);
         unions[name] = result;
         if (result is not null)
         {
@@ -584,6 +616,60 @@ internal sealed class TypeMap
         }
         return result;
     }
+
+    /// <summary>
+    /// R9, R10: the enum of string or number literals. R6: flattened literal unions may share values ("a" | "b" and
+    /// "b" | "c"), which are one member.
+    /// </summary>
+    private EnumType LiteralEnum(TypeName name, List<IrType> flat)
+    {
+        var literals = flat.OfType<LiteralType>().Select(l => l.Value).DistinctBy(v => v.GetRawText()).ToList();
+        return flat.All(IsStringLiteral)
+            ? new(name, EnumMembers(name.Name, literals, literals.Select(v => v.GetString()!)), literals.Count > MaxEnumMembers || flat.Any(IsOpenString))
+            : new(name, EnumMembers(name.Name, literals, literals.Select(v => v.GetRawText())), Extensible: false);
+    }
+
+    /// <summary>
+    /// R2: the one enum case of a union's string literals next to other types: the literal-union alias's enum when they
+    /// are exactly its literals (<c>LengthUnit</c> in <c>LengthUnit | number</c>), or else one named after the union
+    /// (<c>{Union}Literal</c>, R27).
+    /// </summary>
+    private CsType LiteralCase(TypeName name, IrType type, List<IrType> flat)
+    {
+        if (LiteralAlias(type) is { } alias)
+        {
+            return Named(alias, [], name);
+        }
+        var owner = Anonymous(name with { Name = name.Name + "Literal" });
+        if (!unions.TryGetValue(owner, out var known))
+        {
+            unions[owner] = known = LiteralEnum(owner, [.. flat.Where(IsStringLiteral)]);
+            unionNames.Add(owner);
+        }
+        return Own(known!);
+    }
+
+    /// <summary>
+    /// R2: the alias of a string-literal union whose literals are exactly those of a union with other types, which is that
+    /// union's enum case; selection emits it.
+    /// </summary>
+    public AliasDeclaration? LiteralAlias(IrType type)
+    {
+        static HashSet<string> Literals(IEnumerable<IrType> types) =>
+            [.. types.Where(IsStringLiteral).Select(t => t is LiteralType l ? l.Value.GetRawText() : "string & {}")];
+        var values = Values(type);
+        var literals = Literals(values);
+        return literals.Count == 0 || values.All(IsStringLiteral) ? null
+            : Aliases(type).FirstOrDefault(a => Values(a.Type) is { Count: > 1 } own && own.All(IsStringLiteral) && Literals(own).SetEquals(literals));
+    }
+
+    /// <summary>R6: the union aliases a union flattens.</summary>
+    private IEnumerable<AliasDeclaration> Aliases(IrType type) => type switch
+    {
+        UnionType u => u.Types.SelectMany(Aliases),
+        RefType r when Selection.FlattenedAlias(r, Find) is { } inner => [(AliasDeclaration)Find(r)!, .. Aliases(inner)],
+        _ => [],
+    };
 
     public EnumType Enum(EnumDeclaration e)
     {
@@ -600,8 +686,8 @@ internal sealed class TypeMap
     }
 
     /// <summary>
-    /// R25: names for the values. A rename is reported once, for the first enum it's met in: an anonymous union that
-    /// many types repeat makes an enum for each.
+    /// R25: names for the values. A rename is reported once, for the first enum it's met in: enums of different values
+    /// may share it.
     /// </summary>
     private List<(string, JsonElement)> EnumMembers(string type, List<JsonElement> values, IEnumerable<string> names)
     {
@@ -633,8 +719,9 @@ internal sealed class TypeMap
     /// (R5: one per C# type). An inline object case's record is named after the union and its tag's value
     /// (<c>FeatureShapePoly</c>, R27): the discriminant's, or else a member every inline case has with a string literal
     /// of its own. Without one it's named by its position in the union (<c>FeatureShapeCase2</c>), reported as IOP2006.
+    /// The string literals are one enum case, where the first of them is (<see cref="LiteralCase"/>).
     /// </summary>
-    private List<UnionCase> Cases(TypeName name, List<IrType> all, List<IrType> types, string? discriminant)
+    private List<UnionCase> Cases(TypeName name, IrType union, List<IrType> all, List<IrType> types, string? discriminant)
     {
         var objects = types.OfType<ObjectType>().ToList();
         var tag = discriminant is not null && objects.All(o => Tag(o, discriminant) is not null) ? discriminant
@@ -644,16 +731,16 @@ internal sealed class TypeMap
         foreach (var type in types)
         {
             var owner = name;
+            var position = (all.FindIndex(t => ReferenceEquals(t, type)) + 1).ToString(System.Globalization.CultureInfo.InvariantCulture);
             if (type is ObjectType o)
             {
-                var position = (all.FindIndex(t => ReferenceEquals(t, o)) + 1).ToString(System.Globalization.CultureInfo.InvariantCulture);
                 owner = name with { Name = name.Name + (tag is not null ? Tag(o, tag) : "Case" + position) };
-                if (tag is null)
-                {
-                    diagnostics.Add(new(Diagnostic.Renamed, name.ToString(), $"its case {position} is {owner.Name}: the inline cases have no string tag (R27)"));
-                }
             }
-            var mapped = Map(type, owner);
+            var mapped = IsStringLiteral(type) ? LiteralCase(name, union, types) : Map(type, owner);
+            if (type is ObjectType && tag is null && mapped.Name.StartsWith(owner.Name, StringComparison.Ordinal)) // not when another owner names it
+            {
+                diagnostics.Add(new(Diagnostic.Renamed, name.ToString(), $"its case {position} is {mapped.Name}: the inline cases have no string tag (R27)"));
+            }
             if (cases.All(c => c.Type.FullName != mapped.FullName))
             {
                 cases.Add(new(mapped, type is RefType r ? Find(r) : type is ObjectType bag ? Bag(bag) : null));
@@ -667,9 +754,13 @@ internal sealed class TypeMap
         o.Members.OfType<PropertyMember>().FirstOrDefault(p => p.Name == member)?.Type is LiteralType { Value.ValueKind: JsonValueKind.String } value &&
         Naming.Pascal(value.Value.GetString()!) is { Length: > 0 } pascal ? pascal : null;
 
-    /// <summary>R11: an inline object type as a record, unnamed: what the mapping checks look at.</summary>
+    /// <summary>
+    /// R11: an inline object type as a record, unnamed: what the mapping checks look at. When sharing, structurally
+    /// identical ones are one record.
+    /// </summary>
     private AliasDeclaration Bag(ObjectType o)
     {
+        o = First(o);
         if (!bags.TryGetValue(o, out var bag))
         {
             bags[o] = bag = new AliasDeclaration { Name = "", Type = o };
@@ -677,8 +768,97 @@ internal sealed class TypeMap
         return bag;
     }
 
+    /// <summary>When sharing, the first object type met with this one's structure; otherwise this one.</summary>
+    private ObjectType First(ObjectType o)
+    {
+        if (!share)
+        {
+            return o;
+        }
+        var key = Key(o);
+        if (!shared.TryGetValue(key, out var first))
+        {
+            shared[key] = first = o;
+        }
+        return first;
+    }
+
     /// <summary>
-    /// R11: an inline object type's record, named after its owner (R27) where it's first mapped. A name that is taken (by
+    /// R11: an anonymous type's structure, which decides what it maps to: its IR without docs, without which members are
+    /// inherited, and without whether a constant is optional, since it's always written (R20).
+    /// </summary>
+    private string Key(IrType type)
+    {
+        if (!keys.TryGetValue(type, out var key))
+        {
+            keys[type] = key = JsonSerializer.Serialize(type, KeyOptions);
+        }
+        return key;
+    }
+
+    private static readonly JsonSerializerOptions KeyOptions = new(Json.Options)
+    {
+        TypeInfoResolver = new DefaultJsonTypeInfoResolver
+        {
+            Modifiers =
+            {
+                info =>
+                {
+                    foreach (var property in info.Properties.Where(p => p.Name is "doc" or "inherited"))
+                    {
+                        property.ShouldSerialize = (_, _) => false;
+                    }
+                    if (info.Type == typeof(PropertyMember) && info.Properties.FirstOrDefault(p => p.Name == "optional") is { } optional)
+                    {
+                        optional.ShouldSerialize = (member, _) => ((PropertyMember)member).Type is not LiteralType;
+                    }
+                },
+            },
+        },
+    };
+
+    /// <summary>
+    /// R11, R27: the name of an anonymous type at <paramref name="owner"/>. A sharing run gives every use the shortest
+    /// name any owner gave the type in the census run, in that owner's namespace; ties go to the first in ordinal order.
+    /// </summary>
+    private TypeName Owner(IrType type, TypeName owner)
+    {
+        if (census is null)
+        {
+            return owner;
+        }
+        var key = Key(type);
+        if (share)
+        {
+            return census.GetValueOrDefault(key) ?? owner;
+        }
+        if (!census.TryGetValue(key, out var known) || (owner.Name.Length, owner.Name, owner.Namespace).CompareTo((known.Name.Length, known.Name, known.Namespace)) < 0)
+        {
+            census[key] = owner;
+        }
+        return owner;
+    }
+
+    /// <summary>
+    /// R11, R27: an intersection of one named type with string constants (<c>Props &amp; { type: "poly" }</c>) is named
+    /// after the type and the constants' values, <c>PropsPoly</c>, whatever its owner: in the type's namespace if it has
+    /// emitted types, otherwise in the owner's.
+    /// </summary>
+    private TypeName Tagged(ObjectType o, TypeName owner)
+    {
+        var tags = o.Members.OfType<PropertyMember>().Select(p => p.Type is LiteralType { Value.ValueKind: JsonValueKind.String } value ? Naming.Pascal(value.Value.GetString()!) : "")
+            .Where(t => t.Length > 0).ToList();
+        if (o.Bases is not [RefType r] || Find(r) is not { } named || tags.Count == 0)
+        {
+            return owner;
+        }
+        var name = Name(named);
+        return new(name.Namespace == root || Namespaces.Contains(name.Namespace) ? name.Namespace : owner.Namespace, name.Name + string.Concat(tags));
+    }
+
+    /// <summary>
+    /// R11: an inline object type's record, named where it's first mapped: after its owner (R27), or its named part
+    /// (<see cref="Tagged"/>), or the shortest name of its structure (<see cref="Owner"/>). A name that is taken (by
     /// an emitted declaration, a snapshot, the registry, a module's functions, an anonymous union or enum, a component,
     /// or another inline record) gets a numeric suffix, reported as IOP2006. Its members are mapped now, so the types they own are met
     /// before it's emitted.
@@ -686,6 +866,7 @@ internal sealed class TypeMap
     private AliasDeclaration Inline(ObjectType o, TypeName owner)
     {
         var bag = Bag(o);
+        owner = Owner(o, Tagged(o, owner));
         if (inline.ContainsKey(bag))
         {
             return bag;
@@ -704,6 +885,24 @@ internal sealed class TypeMap
         records.Add(bag);
         Fields(bag);
         return bag;
+    }
+
+    /// <summary>
+    /// R27: an anonymous union's or enum's name: its owner's, with a numeric suffix where an emitted declaration or another
+    /// type has taken it, reported once as IOP2006 if it is one (<paramref name="union"/>: R2 may narrow it to one case).
+    /// </summary>
+    private TypeName Anonymous(TypeName owner, bool union = true)
+    {
+        var name = owner;
+        for (var n = 2; !anonymous.Contains(name) && taken.Contains(name); n++)
+        {
+            name = owner with { Name = owner.Name + n };
+        }
+        if (anonymous.Add(name) && name != owner && union)
+        {
+            diagnostics.Add(new(Diagnostic.Renamed, owner.ToString(), $"the union is {name.Name}: {owner.Name} is taken (R27)"));
+        }
+        return name;
     }
 
     /// <summary>
@@ -726,16 +925,8 @@ internal sealed class TypeMap
     /// <summary>A union's members after R6, without null and undefined.</summary>
     private List<IrType> Values(IrType type) => [.. Flatten(type).Where(t => !IsNullish(t))];
 
-    /// <summary>
-    /// R19 step 2: the extractor's discriminant of a union of <paramref name="count"/> members after R6, also of the one
-    /// union a nullable union holds (<c>(A | B) | null</c>); null when R6 flattened another union into it.
-    /// </summary>
-    private static string? DiscriminantOf(IrType type, int count) => type switch
-    {
-        UnionType u when u.Types.Count(t => !IsNullish(t)) == count => u.Discriminant,
-        UnionType u when u.Types.Where(t => !IsNullish(t)).ToList() is [UnionType inner] => DiscriminantOf(inner, count),
-        _ => null,
-    };
+    /// <summary>R19 step 2: the extractor's discriminant, of the union's members after R6.</summary>
+    private static string? DiscriminantOf(IrType type) => (type as UnionType)?.Discriminant;
 
     /// <summary>R2: a union's members after R6 that it keeps: without null, undefined, the classes outside the selection and platform types.</summary>
     private List<IrType> Kept(IrType type) => [.. Values(type).Where(t => !IsDropped(t))];
@@ -745,17 +936,22 @@ internal sealed class TypeMap
         type is IntersectionType { Types.Count: 2 } i && i.Types.Contains(new PrimitiveType("string")) &&
         i.Types.Any(t => t is ObjectType { Members.Count: 0, IndexSignatures.Count: 0, CallSignatures.Count: 0, ConstructSignatures.Count: 0 });
 
+    /// <summary>A string literal, or <c>string &amp; {}</c>: what a string enum is made of (R9, R10).</summary>
+    private static bool IsStringLiteral(IrType type) => type is LiteralType { Value.ValueKind: JsonValueKind.String } || IsOpenString(type);
+
+    private static bool IsNumberLiteral(IrType type) => type is LiteralType { Value.ValueKind: JsonValueKind.Number };
+
     private static bool IsNullish(IrType type) => type is PrimitiveType { Name: "null" or "undefined" };
 
     /// <summary>R24: an event payload that is none: <c>void</c>, <c>undefined</c> or <c>null</c>, or a union of them.</summary>
     public static bool IsVoid(IrType type) => type is PrimitiveType { Name: "void" } || IsNullish(type) || type is UnionType u && u.Types.All(IsVoid);
 
     /// <summary>
-    /// R2: a union that has an entity case, which needs a scope to be read, or a case JS can't return (R13), or that dropped a
-    /// case outside the selection and can't tell the others apart (R19): only a parameter's, never read.
+    /// R2: a union that can't be read (R13, R17, R19), which selection lets through only as a parameter's: one with an
+    /// entity case or a case JS can't return, or one that can't tell its cases apart once it dropped a case outside the
+    /// selection, or once selection dropped a record case's member (one that held a DOM element, say).
     /// </summary>
-    private bool WrittenOnly(IrType type, List<IrType> all, List<IrType> flat) =>
-        flat.Any(t => UsesEntity(t) || Unreadable(t)) || flat.Count < all.Count && UnionProblem(type, null, written: false) is not null;
+    private bool WrittenOnly(IrType type) => UnionProblem(type, null, written: false) is not null;
 
     /// <summary>R13: a case JS can't return: a DOM element, or a record that holds one, which has no <c>Read</c>.</summary>
     private bool Unreadable(IrType type) => IsElement(type) ||
@@ -825,7 +1021,7 @@ internal sealed class TypeMap
     public Declaration? RecordOf(IrType type) => type switch
     {
         RefType r when Find(r) is (InterfaceDeclaration { IndexSignatures.Count: 0 } or AliasDeclaration { Type: ObjectType { IndexSignatures.Count: 0 } }) and var d => d,
-        ObjectType { IndexSignatures.Count: 0 } o when bags.TryGetValue(o, out var bag) && inline.ContainsKey(bag) => bag,
+        ObjectType { IndexSignatures.Count: 0 } o when bags.TryGetValue(First(o), out var bag) && inline.ContainsKey(bag) => bag,
         _ => null,
     };
 
@@ -1093,7 +1289,12 @@ internal sealed class TypeMap
         ArrayType a => MapProblem(a.Element, written),
         TupleType { Required: null, Rest: false, Elements.Count: > 0 } t => t.Elements.Select(e => MapProblem(e, written)).FirstOrDefault(p => p is not null)
             ?? (NameOf(t, full: true) is null ? new("a tuple of different types") : null), // R5
-        UnionType u => Values(u).Count < 2 ? new("a nullable array or tuple element") : UnionProblem(u, null, written),
+        UnionType u => Values(u) switch // an array or tuple element's, which may be Opt<T> (R3)
+        {
+            [] => new("only `null` and `undefined`"),
+            [var single] => MapProblem(single, written),
+            _ => UnionProblem(u, null, written),
+        },
         FunctionType => new("a callback that isn't a parameter (R21)"),
         PrimitiveType p => new($"`{p.Name}` here"),
         LiteralType => new("a literal here"),
@@ -1119,8 +1320,8 @@ internal sealed class TypeMap
         type is TypeParameterType || type is RefType { Module: not null } r && Find(r) is ClassDeclaration { Interface: false } c && !IsValueLike(c);
 
     /// <summary>
-    /// What <see cref="Union"/> and the union reader (R19) refuse: a literal next to other types, a value-type case (R2
-    /// keeps unions non-boxing), a non-integer number, a discriminant that isn't a string on every case, or cases it
+    /// What <see cref="Union"/> and the union reader (R19) refuse: a number or boolean literal next to other types (string
+    /// literals are one enum case, R2), a non-integer number, a discriminant that isn't a string on every case, or cases it
     /// can't tell apart, which is IOP2003. Any union drops its cases outside the selection: with one left it's that case,
     /// and with none it can't be mapped. A union that is only
     /// <paramref name="written"/> (a parameter's, R2) may have an entity case, which needs no scope to be written, and a
@@ -1140,20 +1341,25 @@ internal sealed class TypeMap
         {
             return MapProblem(flat[0], written); // R2: the one case left, as Map() narrows to it
         }
-        if (flat.All(t => t is LiteralType { Value.ValueKind: JsonValueKind.String } || IsOpenString(t)))
+        if (flat.All(IsStringLiteral))
         {
             return null; // R9, R10
         }
-        if (flat.All(t => t is LiteralType { Value.ValueKind: JsonValueKind.Number }))
+        if (flat.All(IsNumberLiteral))
         {
             return NonInteger(flat.Select(t => ((LiteralType)t).Value));
         }
-        if (flat.Any(t => t is LiteralType))
+        if (flat.Any(t => t is LiteralType && !IsStringLiteral(t)))
         {
-            return new($"{label} of a literal and other types");
+            return new($"{label} of a number or boolean literal and other types");
         }
-        var cases = new List<(string? Name, string? FullName, JsonKind Json, Declaration? Declaration)>();
-        foreach (var t in flat)
+        var cases = new List<(string Name, string? FullName, JsonKind Json, Declaration? Declaration)>();
+        if (flat.Any(IsStringLiteral)) // R2: one enum case, as Cases() makes it
+        {
+            var alias = LiteralAlias(type) is { } a ? Name(a) : null;
+            cases.Add((alias?.Name ?? "a string literal", alias?.FullName, JsonKind.String, null));
+        }
+        foreach (var t in flat.Where(t => !IsStringLiteral(t)))
         {
             if (t is PrimitiveType { Name: "any" or "unknown" or "object" } any)
             {
@@ -1171,10 +1377,6 @@ internal sealed class TypeMap
             {
                 return problem;
             }
-            if (ValueType(t) is { } valueType)
-            {
-                return new($"{label} with the value-type case {valueType} (R2)");
-            }
             if (Selection.TypeParameterIn(t) is { } parameter)
             {
                 return new($"{label} with a case of the type parameter `{parameter.Name}` (§2)"); // a union struct isn't generic
@@ -1185,7 +1387,8 @@ internal sealed class TypeMap
             }
             if (NameOf(t, full: true) is not { } caseName || cases.All(c => c.FullName != caseName)) // R5, as Cases dedupes
             {
-                cases.Add((NameOf(t), NameOf(t, full: true), JsonOf(t), t is RefType r ? Find(r) : t is ObjectType o ? Bag(o) : null));
+                var position = all.FindIndex(a => ReferenceEquals(a, t)) + 1; // as Cases names an inline case
+                cases.Add((NameOf(t) ?? $"case {position}", NameOf(t, full: true), JsonOf(t), t is RefType r ? Find(r) : t is ObjectType o ? Bag(o) : null));
             }
         }
         if (flat.Any(t => UsesEntity(t) || Unreadable(t)))
@@ -1193,13 +1396,16 @@ internal sealed class TypeMap
             return null; // only written, so R19 doesn't apply
         }
         // R2: a written union that dropped a case and can't tell the others apart is only written, too (WrittenOnly).
-        return Classification(type, all.Count, cases, label, ambiguous) is { } unclassified && !(written && flat.Count < all.Count) ? unclassified : null;
+        return Classification(type, cases, label, ambiguous) is { } unclassified && !(written && flat.Count < all.Count) ? unclassified : null;
     }
 
-    /// <summary>R19 without mapping: the discriminant is a string on every case, or the cases' JSON or required members tell them apart.</summary>
-    private Unmappable? Classification(IrType type, int count, List<(string? Name, string? FullName, JsonKind Json, Declaration? Declaration)> cases, string label, string ambiguous)
+    /// <summary>
+    /// R19 without mapping: the discriminant is a string on every case, or the cases' JSON tells them apart, a value-like
+    /// case's by its class id, and the other object cases' by their required members.
+    /// </summary>
+    private Unmappable? Classification(IrType type, List<(string Name, string? FullName, JsonKind Json, Declaration? Declaration)> cases, string label, string ambiguous)
     {
-        if (DiscriminantOf(type, count) is { } discriminant) // as Union() reads it
+        if (DiscriminantOf(type) is { } discriminant) // as Union() reads it
         {
             return cases.All(c => c.Declaration is { } d && StringConstants(d).Contains(discriminant)) ? null
                 : new($"{label}, whose discriminant `{discriminant}` isn't a string on every case (R19)");
@@ -1207,9 +1413,9 @@ internal sealed class TypeMap
         var objects = cases.Where(c => c.Json == JsonKind.Object).ToList();
         if (cases.Except(objects).GroupBy(c => c.Json).FirstOrDefault(g => g.Count() > 1) is { } same)
         {
-            return new($"{ambiguous}: {string.Join(" and ", same.Select(c => c.Name ?? "an anonymous type"))} are both JSON {same.Key} (R19)",
-                Diagnostic.Ambiguous);
+            return new($"{ambiguous}: {string.Join(" and ", same.Select(c => c.Name))} are both JSON {same.Key} (R19)", Diagnostic.Ambiguous);
         }
+        objects.RemoveAll(c => c.Declaration is ClassDeclaration); // value-like, so it has $c (an entity's union isn't read)
         foreach (var c in objects.Count > 1 ? objects : [])
         {
             var others = objects.Where(o => o != c).Select(o => WireNames(o.Declaration)?.All).ToList();
@@ -1286,23 +1492,17 @@ internal sealed class TypeMap
         [.. RecordMembers(declaration).Where(p => p.Type is LiteralType { Value.ValueKind: JsonValueKind.String }).Select(p => p.Name)];
 
     /// <summary>
-    /// R19 step 3 without mapping: an object case's required wire members (no more than its record has) and the names
-    /// of all its members and its bases' (no fewer); null when it isn't a record.
+    /// R19 step 3 without mapping: a record case's required wire members (no more than its record has) and the names of
+    /// all its members (no fewer); null when it isn't a record.
     /// </summary>
     private (List<string> Required, HashSet<string> All)? WireNames(Declaration? declaration)
     {
-        if (declaration is not (InterfaceDeclaration or AliasDeclaration { Type: ObjectType } or ClassDeclaration))
+        if (declaration is not (InterfaceDeclaration or AliasDeclaration { Type: ObjectType }))
         {
             return null;
         }
         var members = RecordMembers(declaration).ToList();
-        var required = members.Where(p => p.Type is LiteralType || declaration is not ClassDeclaration && !p.Optional).Select(p => p.Name).ToList();
-        if (declaration is ClassDeclaration closed && IsClosed(closed) && DiscriminantOrNull(closed) is { } discriminant)
-        {
-            required.Insert(0, discriminant);
-        }
-        var all = declaration is ClassDeclaration c ? Ancestors(c).SelectMany(RecordMembers) : members;
-        return (required, [.. all.Select(p => p.Name)]);
+        return ([.. members.Where(p => p.Type is LiteralType || !p.Optional).Select(p => p.Name)], [.. members.Select(p => p.Name)]);
     }
 
     /// <summary>A record's members, without the optional ones it drops (R15); a class's data members.</summary>
@@ -1323,20 +1523,6 @@ internal sealed class TypeMap
         }
     }
 
-    /// <summary>The C# type <see cref="Map"/> gives, if it's a value type (R2).</summary>
-    private string? ValueType(IrType type) => type switch
-    {
-        PrimitiveType { Name: "number" } => "double",
-        PrimitiveType { Name: "boolean" } => "bool",
-        RefType { Module: not null } r => Find(r) switch
-        {
-            EnumDeclaration e => Name(e).Name,
-            AliasDeclaration { Type: not ObjectType } a => Values(a.Type) is [var single] ? ValueType(single) : Name(a).Name,
-            _ => null,
-        },
-        _ => null,
-    };
-
     /// <summary>
     /// The name of the C# type <see cref="Map"/> gives, or null for an anonymous one; <paramref name="full"/>: its
     /// <see cref="CsType.FullName"/>, which tells same-named types of two namespaces apart.
@@ -1353,21 +1539,34 @@ internal sealed class TypeMap
             { } d => Spell(Name(d), full),
             null => null,
         },
-        ArrayType a => NameOf(a.Element, full) is { } element ? element + "[]" : null,
+        ArrayType a => ElementName(a.Element, full) is { } element ? element + "[]" : null,
         TupleType { Required: null, Rest: false, Elements.Count: > 0 } t =>
-            t.Elements.Select(e => NameOf(e, full)).Distinct().ToList() is [{ } element] ? element + "[]" : null,
+            t.Elements.Select(e => ElementName(e, full)).Distinct().ToList() is [{ } element] ? element + "[]" : null,
         _ => null,
     };
 
+    /// <summary>An array or tuple element's, as <see cref="Element"/> maps it: <c>Opt&lt;T&gt;</c> when it's nullable; null for a nullable union.</summary>
+    private string? ElementName(IrType type, bool full) =>
+        !IsNullable(type) ? NameOf(type, full)
+        : Values(type) is [var single] && NameOf(single, full) is { } name ? (full ? $"global::Interoper.Opt<{name}>" : $"Opt<{name}>")
+        : null;
+
     private static string Spell(TypeName name, bool full) => full ? name.FullName : name.Name;
 
-    /// <summary>The JSON a union case starts with (R19 step 4), once value types are ruled out.</summary>
+    /// <summary>The JSON a union case starts with (R19 step 4); a string literal is its enum case's.</summary>
     private JsonKind JsonOf(IrType type) => type switch
     {
+        PrimitiveType { Name: "number" } => JsonKind.Number,
+        PrimitiveType { Name: "boolean" } => JsonKind.Boolean,
         PrimitiveType => JsonKind.String,
         ArrayType or TupleType => JsonKind.Array,
-        RefType { Module: not null } r when Find(r) is AliasDeclaration { Type: not ObjectType } a &&
-            Values(a.Type) is [var single] => JsonOf(single),
+        RefType { Module: not null } r => Find(r) switch
+        {
+            EnumDeclaration { Members: [{ Value.ValueKind: JsonValueKind.Number }, ..] } => JsonKind.Number,
+            EnumDeclaration => JsonKind.String,
+            AliasDeclaration { Type: not ObjectType } a when Values(a.Type) is [var single] => JsonOf(single),
+            _ => JsonKind.Object,
+        },
         _ => JsonKind.Object,
     };
 

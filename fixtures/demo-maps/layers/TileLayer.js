@@ -14,6 +14,8 @@ export default class TileLayer extends Refreshable(Layer) {
   // One size, or one per zoom level, of which the getter gives the first.
   get tileSize() { return [this._get("tileSize") ?? 256].flat()[0]; }
   set tileSize(value) { this._set("tileSize", value); }
+  get glow() { return this._get("glow"); }
+  set glow(value) { this._set("glow", value); }
   get emphasized() { return this._get("emphasized") ?? []; }
 
   emphasize(markers) {

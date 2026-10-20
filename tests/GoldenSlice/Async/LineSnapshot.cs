@@ -42,4 +42,9 @@ public sealed partial record LineSnapshot : ShapeSnapshot, global::Interoper.IJs
     {
         Path = after.Path.IsUndefined || global::Interoper.JsDiff.Same(before.Path, after.Path) ? default : after.Path,
     };
+
+    public static class Members
+    {
+        public static global::Interoper.JsMembers<LineSnapshot> Path => new("path");
+    }
 }
