@@ -49,4 +49,7 @@ export interface IconStyle {
 /** Discriminated by `type`. */
 export type Style = FillStyle | StrokeStyle | IconStyle;
 
+/** Names `StrokeStyle` twice, as generated typings can; still discriminated by `type`. */
+export type OutlineStyle = StrokeStyle | IconStyle | StrokeStyle;
+
 export function toRgba(color: ColorInput): Rgba;

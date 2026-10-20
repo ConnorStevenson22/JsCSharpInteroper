@@ -26,6 +26,10 @@ node --test "fixtures/demo-maps/test/*.test.mjs"
 | Properties, read-only properties | §5, R7 | `MapView.zoom`, `MapView.markers` |
 | Getter type ≠ setter type | §5, R27 | `Marker.position`: get `Point`, set `Point \| [number, number]` |
 | Discriminated union | R2, R19 (step 2), R20 | `Style` = `FillStyle \| StrokeStyle \| IconStyle` on `type` (`styles`); `Shape.type` |
+| Discriminated union of a union alias and a class | R6, R19 (step 2) | `AnyShape` = `OpenShape \| Polygon`, where `OpenShape` = `Point \| Line` (`geometry`) |
+| Union that names a member twice | R6, R19 (step 2) | `OutlineStyle` = `StrokeStyle \| IconStyle \| StrokeStyle` (`styles`) |
+| Nested unions of tagged constructor bags | R11, R19 (step 2), R27 | `shapeFrom(options)`: `((Partial<Pick<Point, …>> & { type: "point" }) \| (… & { type: "line" })) \| (… & { type: "polygon" }) \| null` (`measure`) |
+| Value-like cases without a discriminant | R16, R19 (step 3) | `simplify(shape): Point \| Shape`, read by class id: a line is a `ShapeSnapshot` (`measure`); `FlyToTarget`'s `Shape` |
 | Untagged union | R2, R19 (step 3) | `Camera` = `Bounds \| CenterAndZoom` (`MapView`) |
 | Mixed union (live object, tuple, nested union) | R2, R5, R6, R19 | `FlyToTarget` = `Shape \| [number, number] \| Camera` (`MapView`) |
 | Mixed union (primitive, array, object) | R2, R19 (step 4) | `ColorInput` = `string \| number[] \| Rgba` (`styles`) |
@@ -53,7 +57,7 @@ node --test "fixtures/demo-maps/test/*.test.mjs"
 | Property watch | §5 | `Observable.watch(name, callback)` (`core`) |
 | Collection type (generic) | §2 (generic `T`), R17 | `Collection<T>` with a `change` event whose payload holds entities (`core`); `MapView.markers`, and `MapView.layers` of an abstract class |
 | Type parameter with a default | §2 | `Tagged<T = any>`, a generic record (`core`) |
-| Module functions | §5 | `distance`, `perimeter`, `describe` (`measure`); `toRgba` (`styles`); `execute` (`ops/a`, `ops/b`) |
+| Module functions | §5 | `distance`, `perimeter`, `describe`, `simplify`, `shapeFrom` (`measure`); `toRgba` (`styles`); `execute` (`ops/a`, `ops/b`) |
 | Custom element: attributes, properties, events, slots | R28, design §2 | `<demo-map>` (`demo-map`, `custom-elements.json`): attributes `basemap`, `zoom`; properties `view`, `center`; events `demo-map-click`, `demo-map-zoom-change` (`@bind-Zoom`), `demo-map-ready`; default and `toolbar` slots |
 
 The golden slice (`tests/GoldenSlice`) holds the fixture's generated bindings.

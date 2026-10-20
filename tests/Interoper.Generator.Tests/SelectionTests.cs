@@ -16,14 +16,14 @@ public sealed class SelectionTests
             "Marker.js: MarkerOptions, Marker", // R15: without its callback
             "core.js: Observable, Emitter, Tagged, CollectionChangeEvent, CollectionEvents, Collection",
             "demo-map.js: DemoMapClickDetail, DemoMapElement", // R28: not the event map; an inline detail is an inline record (R11)
-            "geometry.js: ShapeType, Bounds, Shape, Point, Line, Polygon",
+            "geometry.js: ShapeType, Bounds, Shape, Point, Line, Polygon, OpenShape, AnyShape",
             "layers/Layer.js: Layer",
             "layers/TileLayer.js: TileLayer",
-            "measure.js: distance, perimeter, Measurable, describe",
+            "measure.js: distance, perimeter, Measurable, describe, simplify, shapeFrom",
             "ops/a.js: Options, execute",
             "ops/b.js: Options, execute",
             "pins.js: PinDragEvent, PinEvents, Pin",
-            "styles.js: Rgba, ColorInput, IconName, FillStyle, StrokeStyle, IconStyle, Style, toRgba",
+            "styles.js: Rgba, ColorInput, IconName, FillStyle, StrokeStyle, IconStyle, Style, OutlineStyle, toRgba",
         ], Modules(selection));
 
         Assert.Equal(["center", "zoom", "rotation", "basemap", "cursor", "title", "container", "selected", "markers", "layers", "screenToMap", "flyTo", "markerAt"],
@@ -48,7 +48,7 @@ public sealed class SelectionTests
     public void AnIncludeGlobSelectsItsModulesAndTheBasesOfTheirClasses()
     {
         var selection = Select("@acme/demo-maps/geometry.js");
-        Assert.Equal(["core.js: Observable", "geometry.js: ShapeType, Bounds, Shape, Point, Line, Polygon"], Modules(selection));
+        Assert.Equal(["core.js: Observable", "geometry.js: ShapeType, Bounds, Shape, Point, Line, Polygon, OpenShape, AnyShape"], Modules(selection));
         Assert.Empty(selection.Diagnostics);
     }
 
@@ -56,7 +56,7 @@ public sealed class SelectionTests
     public void AStarMatchesAnyCharactersSlashesIncluded()
     {
         Assert.Equal(Modules(Selection.Select(Fixture.Ir, Fixture.Profile)), Modules(Select("@acme/*")));
-        Assert.Equal(["core.js: Observable", "geometry.js: ShapeType, Bounds, Shape, Point, Line, Polygon", "measure.js: distance, perimeter, Measurable, describe"],
+        Assert.Equal(["core.js: Observable", "geometry.js: ShapeType, Bounds, Shape, Point, Line, Polygon, OpenShape, AnyShape", "measure.js: distance, perimeter, Measurable, describe, simplify, shapeFrom"],
             Modules(Select("*/measure.js", "*/geometry.js")));
         Assert.Equal(["core.js: Observable", "layers/Layer.js: Layer", "layers/TileLayer.js: TileLayer"], Modules(Select("@acme/demo-maps/layers/*")));
     }
@@ -139,6 +139,13 @@ public sealed class SelectionTests
         { "kind": "interface", "name": "Y", "members": [{ "kind": "property", "name": "b", "type": { "kind": "primitive", "name": "number" } }] }
         """,
         "IOP2003", "the ambiguous union `T`: X has no required member the other cases lack (R19)")]
+    [InlineData( // R19 step 3: an inline case is named by its position
+        """
+        { "kind": "alias", "name": "T", "type": { "kind": "union", "types": [
+          { "kind": "object", "members": [{ "kind": "property", "name": "a", "optional": true, "type": { "kind": "primitive", "name": "number" } }] },
+          { "kind": "object", "members": [{ "kind": "property", "name": "b", "type": { "kind": "primitive", "name": "number" } }] }] } }
+        """,
+        "IOP2003", "the ambiguous union `T`: case 1 has no required member the other cases lack (R19)")]
     [InlineData( // R15: a data record
         """{ "kind": "interface", "name": "T", "indexSignatures": [{ "key": { "kind": "primitive", "name": "string" }, "type": { "kind": "primitive", "name": "number" } }] }""",
         "IOP2007", "an index signature")]

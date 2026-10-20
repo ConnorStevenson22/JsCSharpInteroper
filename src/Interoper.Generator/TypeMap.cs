@@ -32,8 +32,8 @@ internal sealed record EnumType(TypeName Type, IReadOnlyList<(string Name, JsonE
 
 /// <summary>
 /// A generated union struct (R2). <see cref="Discriminant"/> is the property its object cases are told apart by (R19
-/// step 2). A <see cref="WrittenOnly"/> one is a parameter's that has an entity case or a DOM element case, or that
-/// dropped a case and can't tell the others apart: it's never read, so R19 doesn't apply. One that
+/// step 2). A <see cref="WrittenOnly"/> one is a parameter's that can't be read: it has an entity case or a DOM element
+/// case, or can't tell its cases apart; it's never read, so R19 doesn't apply. One that
 /// <see cref="Dropped"/> a case outside the selection reads the others, and fails on a handle, which is how JS sends a
 /// class outside the selection.
 /// </summary>
@@ -414,6 +414,13 @@ internal sealed class TypeMap
         }
     }
 
+    /// <summary>
+    /// R19 step 3: the value-like classes whose class id (<c>$c</c>) reads as the union case <paramref name="case"/>: the
+    /// emitted ones it is the nearest of <paramref name="cases"/> to, itself or a base.
+    /// </summary>
+    public IEnumerable<ClassDeclaration> ClassIds(ClassDeclaration @case, IEnumerable<ClassDeclaration> cases) =>
+        classes.Where(k => IsValueLike(k) && Ancestors(k).FirstOrDefault(cases.Contains) == @case);
+
     /// <summary>The string constant every concrete subclass of a closed base declares: <c>type</c> (R19 step 2).</summary>
     public string Discriminant(ClassDeclaration c) => DiscriminantOrNull(c) ?? throw Unreachable(c.Name);
 
@@ -549,8 +556,8 @@ internal sealed class TypeMap
                 EnumMembers(name.Name, literals, literals.Select(v => v.GetString()!)), literals.Count > MaxEnumMembers || flat.Any(IsOpenString))
             : flat.All(t => t is LiteralType { Value.ValueKind: JsonValueKind.Number }) ? new EnumType(name,
                 EnumMembers(name.Name, literals, literals.Select(v => v.GetRawText())), Extensible: false)
-            : new UnionStruct(name, Cases(name, all, flat, DiscriminantOf(type, all.Count)), DiscriminantOf(type, all.Count),
-                WrittenOnly(type, all, flat), Dropped: flat.Count < all.Count);
+            : new UnionStruct(name, Cases(name, all, flat, DiscriminantOf(type)), DiscriminantOf(type),
+                WrittenOnly(type), Dropped: flat.Count < all.Count);
         unions[name] = result;
         if (result is not null)
         {
@@ -700,16 +707,8 @@ internal sealed class TypeMap
     /// <summary>A union's members after R6, without null and undefined.</summary>
     private List<IrType> Values(IrType type) => [.. Flatten(type).Where(t => !IsNullish(t))];
 
-    /// <summary>
-    /// R19 step 2: the extractor's discriminant of a union of <paramref name="count"/> members after R6, also of the one
-    /// union a nullable union holds (<c>(A | B) | null</c>); null when R6 flattened another union into it.
-    /// </summary>
-    private static string? DiscriminantOf(IrType type, int count) => type switch
-    {
-        UnionType u when u.Types.Count(t => !IsNullish(t)) == count => u.Discriminant,
-        UnionType u when u.Types.Where(t => !IsNullish(t)).ToList() is [UnionType inner] => DiscriminantOf(inner, count),
-        _ => null,
-    };
+    /// <summary>R19 step 2: the extractor's discriminant, of the union's members after R6.</summary>
+    private static string? DiscriminantOf(IrType type) => (type as UnionType)?.Discriminant;
 
     /// <summary>R2: a union's members after R6 that it keeps: without null, undefined, the classes outside the selection and platform types.</summary>
     private List<IrType> Kept(IrType type) => [.. Values(type).Where(t => !IsDropped(t))];
@@ -725,11 +724,11 @@ internal sealed class TypeMap
     public static bool IsVoid(IrType type) => type is PrimitiveType { Name: "void" } || IsNullish(type) || type is UnionType u && u.Types.All(IsVoid);
 
     /// <summary>
-    /// R2: a union that has an entity case, which needs a scope to be read, or a case JS can't return (R13), or that dropped a
-    /// case outside the selection and can't tell the others apart (R19): only a parameter's, never read.
+    /// R2: a union that can't be read (R13, R17, R19), which selection lets through only as a parameter's: one with an
+    /// entity case or a case JS can't return, or one that can't tell its cases apart once it dropped a case outside the
+    /// selection, or once selection dropped a record case's member (one that held a DOM element, say).
     /// </summary>
-    private bool WrittenOnly(IrType type, List<IrType> all, List<IrType> flat) =>
-        flat.Any(t => UsesEntity(t) || Unreadable(t)) || flat.Count < all.Count && UnionProblem(type, null, written: false) is not null;
+    private bool WrittenOnly(IrType type) => UnionProblem(type, null, written: false) is not null;
 
     /// <summary>R13: a case JS can't return: a DOM element, or a record that holds one, which has no <c>Read</c>.</summary>
     private bool Unreadable(IrType type) => IsElement(type) ||
@@ -1126,7 +1125,7 @@ internal sealed class TypeMap
         {
             return new($"{label} of a literal and other types");
         }
-        var cases = new List<(string? Name, string? FullName, JsonKind Json, Declaration? Declaration)>();
+        var cases = new List<(string Name, string? FullName, JsonKind Json, Declaration? Declaration)>();
         foreach (var t in flat)
         {
             if (t is PrimitiveType { Name: "any" or "unknown" or "object" } any)
@@ -1159,7 +1158,8 @@ internal sealed class TypeMap
             }
             if (NameOf(t, full: true) is not { } caseName || cases.All(c => c.FullName != caseName)) // R5, as Cases dedupes
             {
-                cases.Add((NameOf(t), NameOf(t, full: true), JsonOf(t), t is RefType r ? Find(r) : t is ObjectType o ? Bag(o) : null));
+                var position = all.FindIndex(a => ReferenceEquals(a, t)) + 1; // as Cases names an inline case
+                cases.Add((NameOf(t) ?? $"case {position}", NameOf(t, full: true), JsonOf(t), t is RefType r ? Find(r) : t is ObjectType o ? Bag(o) : null));
             }
         }
         if (flat.Any(t => UsesEntity(t) || Unreadable(t)))
@@ -1167,13 +1167,16 @@ internal sealed class TypeMap
             return null; // only written, so R19 doesn't apply
         }
         // R2: a written union that dropped a case and can't tell the others apart is only written, too (WrittenOnly).
-        return Classification(type, all.Count, cases, label, ambiguous) is { } unclassified && !(written && flat.Count < all.Count) ? unclassified : null;
+        return Classification(type, cases, label, ambiguous) is { } unclassified && !(written && flat.Count < all.Count) ? unclassified : null;
     }
 
-    /// <summary>R19 without mapping: the discriminant is a string on every case, or the cases' JSON or required members tell them apart.</summary>
-    private Unmappable? Classification(IrType type, int count, List<(string? Name, string? FullName, JsonKind Json, Declaration? Declaration)> cases, string label, string ambiguous)
+    /// <summary>
+    /// R19 without mapping: the discriminant is a string on every case, or the cases' JSON tells them apart, a value-like
+    /// case's by its class id, and the other object cases' by their required members.
+    /// </summary>
+    private Unmappable? Classification(IrType type, List<(string Name, string? FullName, JsonKind Json, Declaration? Declaration)> cases, string label, string ambiguous)
     {
-        if (DiscriminantOf(type, count) is { } discriminant) // as Union() reads it
+        if (DiscriminantOf(type) is { } discriminant) // as Union() reads it
         {
             return cases.All(c => c.Declaration is { } d && StringConstants(d).Contains(discriminant)) ? null
                 : new($"{label}, whose discriminant `{discriminant}` isn't a string on every case (R19)");
@@ -1181,9 +1184,9 @@ internal sealed class TypeMap
         var objects = cases.Where(c => c.Json == JsonKind.Object).ToList();
         if (cases.Except(objects).GroupBy(c => c.Json).FirstOrDefault(g => g.Count() > 1) is { } same)
         {
-            return new($"{ambiguous}: {string.Join(" and ", same.Select(c => c.Name ?? "an anonymous type"))} are both JSON {same.Key} (R19)",
-                Diagnostic.Ambiguous);
+            return new($"{ambiguous}: {string.Join(" and ", same.Select(c => c.Name))} are both JSON {same.Key} (R19)", Diagnostic.Ambiguous);
         }
+        objects.RemoveAll(c => c.Declaration is ClassDeclaration); // value-like, so it has $c (an entity's union isn't read)
         foreach (var c in objects.Count > 1 ? objects : [])
         {
             var others = objects.Where(o => o != c).Select(o => WireNames(o.Declaration)?.All).ToList();
@@ -1259,23 +1262,17 @@ internal sealed class TypeMap
         [.. RecordMembers(declaration).Where(p => p.Type is LiteralType { Value.ValueKind: JsonValueKind.String }).Select(p => p.Name)];
 
     /// <summary>
-    /// R19 step 3 without mapping: an object case's required wire members (no more than its record has) and the names
-    /// of all its members and its bases' (no fewer); null when it isn't a record.
+    /// R19 step 3 without mapping: a record case's required wire members (no more than its record has) and the names of
+    /// all its members (no fewer); null when it isn't a record.
     /// </summary>
     private (List<string> Required, HashSet<string> All)? WireNames(Declaration? declaration)
     {
-        if (declaration is not (InterfaceDeclaration or AliasDeclaration { Type: ObjectType } or ClassDeclaration))
+        if (declaration is not (InterfaceDeclaration or AliasDeclaration { Type: ObjectType }))
         {
             return null;
         }
         var members = RecordMembers(declaration).ToList();
-        var required = members.Where(p => p.Type is LiteralType || declaration is not ClassDeclaration && !p.Optional).Select(p => p.Name).ToList();
-        if (declaration is ClassDeclaration closed && IsClosed(closed) && DiscriminantOrNull(closed) is { } discriminant)
-        {
-            required.Insert(0, discriminant);
-        }
-        var all = declaration is ClassDeclaration c ? Ancestors(c).SelectMany(RecordMembers) : members;
-        return (required, [.. all.Select(p => p.Name)]);
+        return ([.. members.Where(p => p.Type is LiteralType || !p.Optional).Select(p => p.Name)], [.. members.Select(p => p.Name)]);
     }
 
     /// <summary>A record's members, without the optional ones it drops (R15); a class's data members.</summary>

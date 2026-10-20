@@ -169,8 +169,9 @@ internal static class ValueTypeEmitter
         IsElement(type) ? $"new {type.Name}((string){field}!)" : $"({type.Name}){field}!";
 
     /// <summary>
-    /// R19: by the discriminant (step 2), or by the JSON token (step 4), objects last, told apart by a required member
-    /// (step 3). A union that is only written can't be read, and one that dropped a case fails on it (R2).
+    /// R19: by the discriminant (step 2), or by the JSON token (step 4), objects last: a value-like case by its class id,
+    /// and the others by a required member (step 3). A union that is only written can't be read, and one that dropped a
+    /// case fails on it (R2).
     /// </summary>
     private static void ReadValue(CodeWriter w, TypeMap types, UnionStruct u)
     {
@@ -190,9 +191,12 @@ internal static class ValueTypeEmitter
         }
         var objects = u.Cases.Where(c => c.Type.Json == JsonKind.Object).ToList();
         var others = u.Cases.Except(objects).ToList();
+        // Value-like, since an entity's union isn't read; a lone object case needs no class id.
+        var classes = objects.Count > 1 ? objects.Where(c => c.Declaration is ClassDeclaration).ToList() : [];
+        objects = [.. objects.Except(classes)];
         using (w.Block($"{header} => reader.TokenType switch", "};"))
         {
-            if (u.Dropped && objects.Count > 0)
+            if (u.Dropped && objects.Count + classes.Count > 0)
             {
                 // R2: JS sends an instance of a class outside the selection, a dropped case, as a handle; without an
                 // object case, the last arm throws for it.
@@ -201,6 +205,12 @@ internal static class ValueTypeEmitter
             foreach (var c in others)
             {
                 w.Line($"global::System.Text.Json.JsonTokenType.{(c.Type.Json == JsonKind.String ? "String" : "StartArray")} => {c.Type.ReadCall("reader", 0)},");
+            }
+            foreach (var c in classes)
+            {
+                var ids = types.ClassIds((ClassDeclaration)c.Declaration!, classes.Select(k => (ClassDeclaration)k.Declaration!)).Select(k => types.ClassId(k, u.Type.Namespace));
+                // new: a case may derive from another (Point | Shape), which a switch would otherwise convert it to
+                w.Line($"global::System.Text.Json.JsonTokenType.StartObject when global::Interoper.JsJson.PeekClass(reader) is {string.Join(" or ", ids)} => new {u.Name}({c.Type.ReadCall("reader", 0)}),");
             }
             foreach (var c in objects)
             {
@@ -215,7 +225,7 @@ internal static class ValueTypeEmitter
     private static string Outside(UnionStruct u) => $"throw new global::System.Text.Json.JsonException(\"{u.Name}: a case outside the selection (R2)\")";
 
     /// <summary>
-    /// R19 step 3: the first required member of a case's wire form that no other object case has. Selection skips a
+    /// R19 step 3: the first required member of a case's wire form that no other record case has. Selection skips a
     /// union without one, and one whose other cases share a JSON token (IOP2003).
     /// </summary>
     private static string Distinct(TypeMap types, UnionStruct u, UnionCase c, List<UnionCase> objects)

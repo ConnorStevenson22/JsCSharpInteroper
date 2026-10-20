@@ -24,4 +24,12 @@ public static partial class Measure
     /// <summary>The shape's <c>type</c>, or "marker" and its label.</summary>
     public static string Describe(global::Interoper.JsRealm realm, Measurable target) =>
         realm.Call(global::Interoper.JsOp.Call(Module, "describe", w => global::Interoper.JsJson.WriteValue(w, target)), global::Interoper.JsJson.ReadString)!;
+
+    /// <summary>A shape with one vertex as that point; any other shape as it is. The result has no discriminant, only class ids.</summary>
+    public static MeasureSimplify Simplify(global::Interoper.JsRealm realm, AnyShape shape) =>
+        realm.Call(global::Interoper.JsOp.Call(Module, "simplify", w => global::Interoper.JsJson.WriteValue(w, shape), byValue: true), global::Interoper.JsJson.ReadUnion<MeasureSimplify>);
+
+    /// <summary>A shape from its constructor bag tagged with its <c>type</c>, the unions nested as typings write them.</summary>
+    public static global::Interoper.Opt<ShapeSnapshot> ShapeFrom(global::Interoper.JsRealm realm, MeasureShapeFromOptions options) =>
+        realm.Call(global::Interoper.JsOp.Call(Module, "shapeFrom", w => global::Interoper.JsJson.WriteValue(w, options), byValue: true), static (ref r) => global::Interoper.JsJson.ReadOpt(ref r, ShapeSnapshot.Read));
 }

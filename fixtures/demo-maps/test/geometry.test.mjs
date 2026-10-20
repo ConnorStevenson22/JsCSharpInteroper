@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { Line, Point, Polygon, Shape } from "../geometry.js";
-import { describe, distance, perimeter } from "../measure.js";
+import { describe, distance, perimeter, shapeFrom, simplify } from "../measure.js";
 import { Marker } from "../Marker.js";
 
 test("Shape is abstract; subclasses carry a type discriminant", () => {
@@ -49,4 +49,20 @@ test("describe takes a value-like shape or an entity", () => {
   assert.equal(describe(new Point()), "point");
   assert.equal(describe(new Polygon()), "polygon");
   assert.equal(describe(new Marker({ label: "m" })), "marker m");
+});
+
+test("simplify gives a one-vertex shape as its point, and any other shape as it is", () => {
+  const point = simplify(new Line({ path: [[1, 2]] }));
+  assert.ok(point instanceof Point);
+  assert.deepEqual([point.x, point.y], [1, 2]);
+  const line = new Line({ path: [[0, 0], [1, 1]] });
+  assert.equal(simplify(line), line);
+});
+
+test("shapeFrom builds the class its bag's type names", () => {
+  const polygon = shapeFrom({ type: "polygon", vertices: [[0, 0], [1, 0], [0, 1]] });
+  assert.ok(polygon instanceof Polygon);
+  assert.equal(polygon.vertices.length, 3);
+  assert.equal(shapeFrom({ type: "point", x: 2 }).x, 2);
+  assert.equal(shapeFrom(null), null);
 });

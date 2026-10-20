@@ -31,7 +31,7 @@ test("modules are keyed by specifier, declarations keep source order", () => {
   assert.deepEqual(ir.package, { name: "@acme/demo-maps", version: "0.0.0" });
   assert.deepEqual(ir.modules.map((m) => m.specifier.slice("@acme/demo-maps/".length)), ["MapView.js", "Marker.js", "core.js", "demo-map.js", "geometry.js", "layers/Layer.js", "layers/Refreshable.js", "layers/TileLayer.js", "measure.js", "ops/a.js", "ops/b.js", "pins.js", "styles.js"]);
   assert.deepEqual(ir.modules.find((m) => m.specifier.endsWith("/geometry.js")).declarations.map((d) => `${d.kind} ${d.name}`),
-    ["alias ShapeType", "interface Bounds", "class Shape", "class Point", "class Line", "class Polygon"]);
+    ["alias ShapeType", "interface Bounds", "class Shape", "class Point", "class Line", "class Polygon", "alias OpenShape", "alias AnyShape"]);
 });
 
 test("a default export keeps its declaration's name, and says its export", () => {
@@ -77,6 +77,19 @@ test("R19: a union of intersections with a literal gets its discriminant", (t) =
   const [{ declarations: [, , grouping] }] = extract(dir).modules;
   assert.equal(grouping.type.discriminant, "type");
   assert.deepEqual(grouping.type.types.map((c) => c.kind), ["object", "object"]); // R11: resolved
+});
+
+test("R19: a discriminant is found across nested unions, union aliases and repeated members", () => {
+  assert.deepEqual(decl("geometry", "AnyShape").type, { kind: "union", types: [ref("geometry", "OpenShape"), ref("geometry", "Polygon")], discriminant: "type" });
+  const [{ params: [options] }] = decl("measure", "shapeFrom").signatures; // ((A | B) | C) | null, of intersections
+  assert.equal(options.type.discriminant, "type");
+  assert.deepEqual(options.type.types.map((t) => t.kind), ["union", "primitive"]);
+  assert.deepEqual(decl("styles", "OutlineStyle").type, {
+    kind: "union",
+    types: [ref("styles", "StrokeStyle"), ref("styles", "IconStyle"), ref("styles", "StrokeStyle")],
+    discriminant: "type",
+  });
+  assert.equal(decl("measure", "simplify").signatures[0].returns.discriminant, undefined); // Shape's type isn't one literal
 });
 
 test("R6: unions keep written order and named members", () => {

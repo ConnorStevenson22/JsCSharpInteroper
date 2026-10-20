@@ -1558,6 +1558,53 @@ public sealed class GeneratorTests
         Assert.Contains("public LayerGrouping(LayerGroupingHeat value)", File(result, "LayerGrouping.cs"));
     }
 
+    [Fact] // R16, R19 step 3: value-like cases without a discriminant are told apart by class id, each id going to its nearest case
+    public void ValueLikeCasesAreReadByClassId()
+    {
+        // paint: Fill | Material | Pbr, where Fill is an abstract base of Solid, and Gloss extends Pbr extends Material.
+        static string Sub(string name, string of, string tag = "") => $$"""
+            { "kind": "class", "name": "{{name}}", "extends": { "kind": "ref", "name": "{{of}}", "module": "@acme/maps/a.js" },
+              "members": [{{(tag == "" ? "" : $$"""{ "kind": "property", "name": "type", "readonly": true, "type": { "kind": "literal", "value": "{{tag}}" } }""")}}] }
+            """;
+        static string Ref(string name) => $$"""{ "kind": "ref", "name": "{{name}}", "module": "@acme/maps/a.js" }""";
+        var result = Generate($$"""
+            { "kind": "class", "name": "Fill", "abstract": true, "members": [{ "kind": "property", "name": "opacity", "type": {{Number}} }] },
+            {{Sub("Solid", "Fill", "solid")}},
+            { "kind": "class", "name": "Material", "members": [{ "kind": "property", "name": "opacity", "type": {{Number}} }] },
+            {{Sub("Pbr", "Material")}},
+            {{Sub("Gloss", "Pbr")}},
+            { "kind": "class", "name": "View", "members": [{ "kind": "property", "name": "paint", "type": { "kind": "union", "types": [{{Ref("Fill")}}, {{Ref("Material")}}, {{Ref("Pbr")}}] } }] }
+            """, new Profile { Package = "@acme/maps", ValueClasses = ["Fill", "Solid", "Material", "Pbr", "Gloss"] });
+
+        Assert.Empty(result.Diagnostics);
+        Assert.Contains("""
+                    global::System.Text.Json.JsonTokenType.StartObject when global::Interoper.JsJson.PeekClass(reader) is Maps.FillId or Maps.SolidId => new ViewPaint(FillSnapshot.Read(ref reader)),
+                    global::System.Text.Json.JsonTokenType.StartObject when global::Interoper.JsJson.PeekClass(reader) is Maps.MaterialId => new ViewPaint(MaterialSnapshot.Read(ref reader)),
+                    global::System.Text.Json.JsonTokenType.StartObject when global::Interoper.JsJson.PeekClass(reader) is Maps.PbrId or Maps.GlossId => new ViewPaint(PbrSnapshot.Read(ref reader)),
+                    var token => throw new global::System.Text.Json.JsonException($"ViewPaint: unexpected {token}"),
+            """, File(result, "ViewPaint.cs"));
+    }
+
+    [Fact] // R2, R13, R19: a setter's union that selection let through because a record case held a DOM element, which it then dropped, is only written
+    public void ASetterUnionOfRecordsThatLostADomMemberIsOnlyWritten()
+    {
+        // set material(value: MaterialProps | GlossProps | null), where MaterialProps.texture?: Pixels | HTMLImageElement
+        // and Pixels can't be mapped, so the records drop texture and have no required member of their own.
+        var result = Generate($$"""
+            { "kind": "interface", "name": "Pixels", "indexSignatures": [{ "key": {{String}}, "type": {{Number}} }] },
+            { "kind": "interface", "name": "MaterialProps", "members": [
+              { "kind": "property", "name": "opacity", "optional": true, "type": {{Number}} },
+              { "kind": "property", "name": "texture", "optional": true, "type": { "kind": "union", "types": [{ "kind": "ref", "name": "Pixels", "module": "@acme/maps/a.js" }, { "kind": "ref", "name": "HTMLImageElement" }] } }] },
+            { "kind": "interface", "name": "GlossProps", "extends": [{ "kind": "ref", "name": "MaterialProps", "module": "@acme/maps/a.js" }], "members": [
+              { "kind": "property", "name": "gloss", "optional": true, "type": {{Number}} }] },
+            { "kind": "class", "name": "View", "members": [{ "kind": "property", "name": "material", "type": {{Number}},
+              "writeType": { "kind": "union", "types": [{ "kind": "ref", "name": "MaterialProps", "module": "@acme/maps/a.js" }, { "kind": "ref", "name": "GlossProps", "module": "@acme/maps/a.js" }] } }] }
+            """);
+
+        Assert.Contains("public static ViewMaterialInput ReadValue(ref global::System.Text.Json.Utf8JsonReader reader) => throw new global::System.Text.Json.JsonException(\"ViewMaterialInput is only written (R2)\");",
+            File(result, "ViewMaterialInput.cs"));
+    }
+
     [Fact] // §5, R2: a setter that takes a class's constructor bag, which the getter returns, also takes the class (autocast)
     public void ASetterOfAConstructorBagAlsoTakesTheClass()
     {

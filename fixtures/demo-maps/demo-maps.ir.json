@@ -2140,6 +2140,52 @@
               }
             }
           ]
+        },
+        {
+          "kind": "alias",
+          "name": "OpenShape",
+          "doc": {
+            "summary": "Shapes without an area."
+          },
+          "type": {
+            "kind": "union",
+            "types": [
+              {
+                "kind": "ref",
+                "name": "Point",
+                "module": "@acme/demo-maps/geometry.js"
+              },
+              {
+                "kind": "ref",
+                "name": "Line",
+                "module": "@acme/demo-maps/geometry.js"
+              }
+            ],
+            "discriminant": "type"
+          }
+        },
+        {
+          "kind": "alias",
+          "name": "AnyShape",
+          "doc": {
+            "summary": "A union of a union alias and a class, discriminated by `type` across both."
+          },
+          "type": {
+            "kind": "union",
+            "types": [
+              {
+                "kind": "ref",
+                "name": "OpenShape",
+                "module": "@acme/demo-maps/geometry.js"
+              },
+              {
+                "kind": "ref",
+                "name": "Polygon",
+                "module": "@acme/demo-maps/geometry.js"
+              }
+            ],
+            "discriminant": "type"
+          }
         }
       ]
     },
@@ -2629,6 +2675,200 @@
               },
               "doc": {
                 "summary": "The shape's `type`, or \"marker\" and its label."
+              }
+            }
+          ]
+        },
+        {
+          "kind": "function",
+          "name": "simplify",
+          "signatures": [
+            {
+              "params": [
+                {
+                  "name": "shape",
+                  "type": {
+                    "kind": "ref",
+                    "name": "AnyShape",
+                    "module": "@acme/demo-maps/geometry.js"
+                  }
+                }
+              ],
+              "returns": {
+                "kind": "union",
+                "types": [
+                  {
+                    "kind": "ref",
+                    "name": "Point",
+                    "module": "@acme/demo-maps/geometry.js"
+                  },
+                  {
+                    "kind": "ref",
+                    "name": "Shape",
+                    "module": "@acme/demo-maps/geometry.js"
+                  }
+                ]
+              },
+              "doc": {
+                "summary": "A shape with one vertex as that point; any other shape as it is. The result has no discriminant, only class ids."
+              }
+            }
+          ]
+        },
+        {
+          "kind": "function",
+          "name": "shapeFrom",
+          "signatures": [
+            {
+              "params": [
+                {
+                  "name": "options",
+                  "type": {
+                    "kind": "union",
+                    "types": [
+                      {
+                        "kind": "union",
+                        "types": [
+                          {
+                            "kind": "union",
+                            "types": [
+                              {
+                                "kind": "object",
+                                "members": [
+                                  {
+                                    "kind": "property",
+                                    "name": "x",
+                                    "optional": true,
+                                    "inherited": true,
+                                    "type": {
+                                      "kind": "primitive",
+                                      "name": "number"
+                                    }
+                                  },
+                                  {
+                                    "kind": "property",
+                                    "name": "y",
+                                    "optional": true,
+                                    "inherited": true,
+                                    "type": {
+                                      "kind": "primitive",
+                                      "name": "number"
+                                    }
+                                  },
+                                  {
+                                    "kind": "property",
+                                    "name": "type",
+                                    "inherited": true,
+                                    "type": {
+                                      "kind": "literal",
+                                      "value": "point"
+                                    }
+                                  }
+                                ]
+                              },
+                              {
+                                "kind": "object",
+                                "members": [
+                                  {
+                                    "kind": "property",
+                                    "name": "path",
+                                    "optional": true,
+                                    "inherited": true,
+                                    "type": {
+                                      "kind": "array",
+                                      "element": {
+                                        "kind": "tuple",
+                                        "elements": [
+                                          {
+                                            "kind": "primitive",
+                                            "name": "number"
+                                          },
+                                          {
+                                            "kind": "primitive",
+                                            "name": "number"
+                                          }
+                                        ]
+                                      }
+                                    }
+                                  },
+                                  {
+                                    "kind": "property",
+                                    "name": "type",
+                                    "inherited": true,
+                                    "type": {
+                                      "kind": "literal",
+                                      "value": "line"
+                                    }
+                                  }
+                                ]
+                              }
+                            ],
+                            "discriminant": "type"
+                          },
+                          {
+                            "kind": "object",
+                            "members": [
+                              {
+                                "kind": "property",
+                                "name": "vertices",
+                                "optional": true,
+                                "inherited": true,
+                                "type": {
+                                  "kind": "array",
+                                  "element": {
+                                    "kind": "tuple",
+                                    "elements": [
+                                      {
+                                        "kind": "primitive",
+                                        "name": "number"
+                                      },
+                                      {
+                                        "kind": "primitive",
+                                        "name": "number"
+                                      }
+                                    ]
+                                  }
+                                }
+                              },
+                              {
+                                "kind": "property",
+                                "name": "type",
+                                "inherited": true,
+                                "type": {
+                                  "kind": "literal",
+                                  "value": "polygon"
+                                }
+                              }
+                            ]
+                          }
+                        ],
+                        "discriminant": "type"
+                      },
+                      {
+                        "kind": "primitive",
+                        "name": "null"
+                      }
+                    ],
+                    "discriminant": "type"
+                  }
+                }
+              ],
+              "returns": {
+                "kind": "union",
+                "types": [
+                  {
+                    "kind": "ref",
+                    "name": "Shape",
+                    "module": "@acme/demo-maps/geometry.js"
+                  },
+                  {
+                    "kind": "primitive",
+                    "name": "null"
+                  }
+                ]
+              },
+              "doc": {
+                "summary": "A shape from its constructor bag tagged with its `type`, the unions nested as typings write them."
               }
             }
           ]
@@ -3680,6 +3920,34 @@
               {
                 "kind": "ref",
                 "name": "IconStyle",
+                "module": "@acme/demo-maps/styles.js"
+              }
+            ],
+            "discriminant": "type"
+          }
+        },
+        {
+          "kind": "alias",
+          "name": "OutlineStyle",
+          "doc": {
+            "summary": "Names `StrokeStyle` twice, as generated typings can; still discriminated by `type`."
+          },
+          "type": {
+            "kind": "union",
+            "types": [
+              {
+                "kind": "ref",
+                "name": "StrokeStyle",
+                "module": "@acme/demo-maps/styles.js"
+              },
+              {
+                "kind": "ref",
+                "name": "IconStyle",
+                "module": "@acme/demo-maps/styles.js"
+              },
+              {
+                "kind": "ref",
+                "name": "StrokeStyle",
                 "module": "@acme/demo-maps/styles.js"
               }
             ],
