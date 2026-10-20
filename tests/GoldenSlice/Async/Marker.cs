@@ -30,6 +30,14 @@ public partial class Marker : Observable
     public global::System.Threading.Tasks.Task SetStyleAsync(Style value) =>
         Realm.SendAsync(global::Interoper.JsOp.Set(Handle, "style", w => global::Interoper.JsJson.WriteValue(w, value)));
 
+    /// <summary>The app's own data, untyped; it may hold other markers.</summary>
+    public global::System.Threading.Tasks.Task<global::Interoper.Opt<global::Interoper.JsAny>> GetDataAsync(global::Interoper.JsScope scope) =>
+        Realm.CallAsync(global::Interoper.JsOp.Get(Handle, "data"), (ref r) => global::Interoper.JsJson.ReadOpt(ref r, (ref r1) => global::Interoper.JsAny.Read(ref r1, scope)));
+
+    /// <summary>The app's own data, untyped; it may hold other markers.</summary>
+    public global::System.Threading.Tasks.Task SetDataAsync(global::Interoper.Opt<global::Interoper.JsAny> value) =>
+        Realm.SendAsync(global::Interoper.JsOp.Set(Handle, "data", w => global::Interoper.JsJson.WriteValue(w, value, global::Interoper.JsAny.Write)));
+
     /// <summary><c>labelFormatter(this)</c> if set, otherwise <c>label</c>, otherwise "".</summary>
     public global::System.Threading.Tasks.Task<string> GetDisplayLabelAsync() =>
         Realm.GetStringAsync(Handle, "displayLabel");
@@ -51,6 +59,12 @@ public partial class Marker : Observable
 
     public global::System.Collections.Generic.IAsyncEnumerable<Style> WatchStyleStreamAsync(global::Interoper.JsScope scope, global::System.Threading.CancellationToken cancellationToken = default) =>
         scope.StreamAsync(Handle, "watch", "style", global::Interoper.JsJson.ReadUnion<Style>, null, null, cancellationToken);
+
+    public global::System.Threading.Tasks.Task<global::System.IAsyncDisposable> WatchDataAsync(global::Interoper.JsScope scope, global::System.Action<global::Interoper.Opt<global::Interoper.JsAny>> handler) =>
+        scope.SubscribeAsync(Handle, "watch", "data", (ref r) => global::Interoper.JsJson.ReadOpt(ref r, (ref r1) => global::Interoper.JsAny.Read(ref r1, scope)), handler, null, null);
+
+    public global::System.Collections.Generic.IAsyncEnumerable<global::Interoper.Opt<global::Interoper.JsAny>> WatchDataStreamAsync(global::Interoper.JsScope scope, global::System.Threading.CancellationToken cancellationToken = default) =>
+        scope.StreamAsync(Handle, "watch", "data", (ref r) => global::Interoper.JsJson.ReadOpt(ref r, (ref r1) => global::Interoper.JsAny.Read(ref r1, scope)), null, null, cancellationToken);
 
     public global::System.Threading.Tasks.Task<global::System.IAsyncDisposable> WatchDisplayLabelAsync(global::Interoper.JsScope scope, global::System.Action<string> handler) =>
         scope.SubscribeAsync(Handle, "watch", "displayLabel", global::Interoper.JsJson.ReadString, handler, null, null);

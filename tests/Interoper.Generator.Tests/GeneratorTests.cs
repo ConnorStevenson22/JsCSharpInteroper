@@ -274,7 +274,9 @@ public sealed class GeneratorTests
         {
             Assert.Contains("public global::System.Threading.Tasks.Task<global::Interoper.Opt<global::Interoper.JsAny>> GetDataAsync(global::Interoper.JsScope scope) =>", tag);
         }
-        Assert.DoesNotContain("Data", File(result, "TagSnapshot.cs")); // R17: it may hold a handle
+        var snapshot = File(result, "TagSnapshot.cs"); // R17: as data, which JS sends without handles
+        Assert.Contains("public global::Interoper.Opt<global::Interoper.JsAny> Data { get; init; }", snapshot);
+        Assert.Contains("global::Interoper.JsJson.ReadOpt(ref reader, global::Interoper.JsAny.ReadData)", snapshot);
         Assert.Equal(
         [
             "IOP2001 Tag.data: `any` is JsAny (§2)",
@@ -1617,6 +1619,20 @@ public sealed class GeneratorTests
         // The snapshot is written with $c, so JS builds the Feature (new Feature(bag)); an abstract class's isn't.
         Assert.Contains("writer.WriteNumber(\"$c\"u8, Maps.FeatureId);", File(result, "FeatureSnapshot.cs"));
         Assert.DoesNotContain("$c", File(result, "ShapeSnapshot.cs"));
+    }
+
+    [Fact] // R16, R2: a setter's union widened with the snapshot drops what the getter's does, reported once
+    public void ASettersSnapshotCaseDoesNotRepeatTheGettersDrop()
+    {
+        var result = Generate($$"""
+            { "kind": "class", "name": "Feature" },
+            { "kind": "class", "name": "View", "members": [{ "kind": "property", "name": "target", "type": { "kind": "union", "types": [
+              { "kind": "ref", "name": "Feature", "module": "@acme/maps/a.js" }, { "kind": "ref", "name": "MouseEvent" }] } }] }
+            """);
+
+        Assert.Equal(["IOP2007 ViewTarget: case `MouseEvent` dropped: a platform type (R2)"], result.Diagnostics.Select(d => d.ToString()));
+        Assert.Contains("public void SetTarget(ViewTargetInput value) =>", File(result, "View.cs"));
+        Assert.Contains("public ViewTargetInput(FeatureSnapshot value)", File(result, "ViewTargetInput.cs"));
     }
 
     [Fact] // R28, R6: a property whose type has null through an alias (`Title | undefined`, `type Title = string | null`) sets JS null

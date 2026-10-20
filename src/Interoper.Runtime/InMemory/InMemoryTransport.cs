@@ -391,17 +391,19 @@ public sealed class InMemoryTransport : IJsSyncTransport, IJsTransport
     };
 
     // A value in wire form: Undefined.Value, or a JsonNode (null for JS null). Plain objects and arrays are
-    // copied; other objects become handles, or with byValue, value-like instances become `$c` data.
-    private object? Wire(object? value, bool byValue = false) => value switch
+    // copied; other objects become handles, or with byValue, value-like instances become `$c` data. As data (a
+    // snapshot's members, R17) nothing becomes a handle: such an object is left out, undefined in an array.
+    private object? Wire(object? value, bool byValue = false, bool data = false) => value switch
     {
         null => null,
         Undefined => Undefined.Value,
         double d => JsonValue.Create(d),
         string s => JsonValue.Create(s),
         bool b => JsonValue.Create(b),
-        List<object?> list => new JsonArray([.. list.Select(x => WireItem(Wire(x, byValue)))]),
-        Dictionary<string, object?> bag => WireObject(bag.Select(p => (p.Key, Wire(p.Value, byValue)))),
+        List<object?> list => new JsonArray([.. list.Select(x => WireItem(Wire(x, byValue, data)))]),
+        Dictionary<string, object?> bag => WireObject(bag.Select(p => (p.Key, Wire(p.Value, byValue, data)))),
         InMemoryObject o when byValue && classes.TryGetValue(ClassIdOf(o), out var entry) && entry.Value => ToData(o),
+        InMemoryObject or JsFunction or Task when data => Undefined.Value,
         InMemoryObject o => new JsonObject { ["$h"] = HandleOf(o), ["$t"] = ClassIdOf(o) },
         JsFunction or Task => new JsonObject { ["$h"] = HandleOf(value), ["$t"] = 0 },
         _ => throw new InvalidOperationException($"A {value.GetType()} is not an in-memory JS value; see InMemoryObject."),
@@ -410,11 +412,11 @@ public sealed class InMemoryTransport : IJsSyncTransport, IJsTransport
     // Array items can't be omitted, so undefined is `$u`.
     private static JsonNode? WireItem(object? value) => value is Undefined ? new JsonObject { ["$u"] = 1 } : (JsonNode?)value;
 
-    // The snapshot members of an object, with value-like members copied deeply and entities as handles (R17).
+    // The snapshot members of an object, with value-like members copied deeply and no handles (R17).
     private JsonObject ToData(InMemoryObject value)
     {
         var entry = ClassEntry(ClassIdOf(value));
-        var data = WireObject(entry.Members.Select(name => (name, Wire(value.Get(name), byValue: true))));
+        var data = WireObject(entry.Members.Select(name => (name, Wire(value.Get(name), byValue: true, data: true))));
         if (entry.Value)
         {
             data.Insert(0, "$c", entry.Id);

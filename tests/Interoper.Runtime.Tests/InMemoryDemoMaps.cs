@@ -21,14 +21,14 @@ internal static class InMemoryDemoMaps
         {
             Members = ["center", "zoom", "rotation", "basemap", "cursor", "title"],
         })
-        .Define(new(DemoMaps.MarkerId, "Marker", args => new FakeMarker(Bag(args))) { Members = ["position", "label", "style"] })
+        .Define(new(DemoMaps.MarkerId, "Marker", args => new FakeMarker(Bag(args))) { Members = ["position", "label", "style", "data"] })
         .Define(new(DemoMaps.ObservableId, "core.Observable", _ => new FakeObservable()))
         .Define(new(DemoMaps.EmitterId, "core.Emitter", _ => new FakeEmitter()))
         .Define(new(DemoMaps.CollectionId, "core.Collection", args => new FakeCollection(args.FirstOrDefault() as List<object?> ?? [])))
         .Define(new(DemoMaps.DemoMapElementId, "demo-map.DemoMapElement", _ => new FakeDemoMapElement()) { Members = ["basemap", "zoom", "center"] })
         .Define(new(DemoMaps.LayerId, "layers.Layer", _ => throw new JsException("TypeError", "Layer is abstract", null)) { Members = ["title", "visible"] })
         .Define(new(DemoMaps.TileLayerId, "layers.TileLayer", args => new FakeTileLayer(Bag(args))) { Members = ["url", "refreshInterval", "title", "visible"] })
-        .Define(new(DemoMaps.PinId, "pins.Pin", args => new FakePin(Bag(args))) { Members = ["position", "label", "style"] })
+        .Define(new(DemoMaps.PinId, "pins.Pin", args => new FakePin(Bag(args))) { Members = ["meta", "position", "label", "style", "data"] })
         .DefineModule(TransportContract.Measure, new FakeMeasure())
         .DefineModule("@acme/demo-maps/ops/a.js", new FakeExecute((x, options) => x * (double)options.GetValueOrDefault("scale", 1.0)!))
         .DefineModule("@acme/demo-maps/ops/b.js", new FakeExecute((x, options) => x + (double)options.GetValueOrDefault("offset", 0.0)!))
@@ -350,6 +350,7 @@ internal class FakeMarker : FakeObservable
         Set("label", bag.GetValueOrDefault("label", Undefined.Value));
         Set("style", bag.GetValueOrDefault("style") ?? new Dictionary<string, object?> { ["type"] = "icon", ["name"] = "pin-1" });
         Set("labelFormatter", bag.GetValueOrDefault("labelFormatter", Undefined.Value));
+        Set("data", bag.GetValueOrDefault("data", Undefined.Value));
     }
 
     public override string ClassName => "Marker";

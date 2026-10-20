@@ -28,7 +28,7 @@ public sealed class SelectionTests
 
         Assert.Equal(["center", "zoom", "rotation", "basemap", "cursor", "title", "container", "selected", "markers", "layers", "screenToMap", "flyTo", "markerAt", "edit"],
             Members(selection, "MapView")); // R13: the DOM container too
-        Assert.Equal(["position", "label", "style", "labelFormatter", "displayLabel"], Members(selection, "Marker")); // R21: no LabelFormatter type
+        Assert.Equal(["position", "label", "style", "labelFormatter", "data", "displayLabel"], Members(selection, "Marker")); // R21: no LabelFormatter type
         Assert.Equal(["length", "at", "add", "remove", "find", "forEach", "toArray"], Members(selection, "Collection")); // §2: a generic live class
         Assert.Equal(["change"], Class(selection, "Collection").Events.Select(e => e.Name));
         Assert.Equal(["click"], Class(selection, "MapView").Events.Select(e => e.Name));

@@ -31,7 +31,7 @@ node --test "fixtures/demo-maps/test/*.test.mjs"
 | Mixed union (primitive, array, object) | R2, R19 (step 4) | `ColorInput` = `string \| number[] \| Rgba` (`styles`) |
 | Union with an entity case, only written | R2, R17 | `Measurable` = `Point \| Polygon \| Marker`, the parameter of `describe` (`measure`) |
 | Entity only written takes its snapshot (`$c`) | R16, R18, §5 | `MapView.edit(edits: MarkerEdits)`, a record only written: `add: Marker[] \| Collection<Marker>`, `select: Marker \| null`; the setter `MapView.selected`; `TileLayer.emphasize`; `Measurable` |
-| `any` | §2, IOP2001 | `Pin.meta` (`pins`) |
+| `any` | §2, IOP2001, R17 | `Pin.meta` (`pins`), `Marker.data`: in snapshots as data, without handles |
 | String-literal union | R9, R25 | `Basemap` (`MapView`), including `"3d-relief"` |
 | Literal union with 100+ members | R10, R25 | `IconName`, `"pin-1"` … `"pin-120"` (`styles`) |
 | Open-ended literal union | R10 | `Cursor` = known values `\| (string & {})` (`MapView`) |

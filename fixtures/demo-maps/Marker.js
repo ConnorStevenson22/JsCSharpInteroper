@@ -4,12 +4,13 @@ import { Point } from "./geometry.js";
 export class Marker extends Observable {
   static className = "Marker";
 
-  constructor({ position = new Point(), label, style = { type: "icon", name: "pin-1" }, labelFormatter } = {}) {
+  constructor({ position = new Point(), label, style = { type: "icon", name: "pin-1" }, labelFormatter, data } = {}) {
     super();
     this.position = position;
     this.label = label;
     this.style = style;
     this.labelFormatter = labelFormatter;
+    this.data = data;
   }
 
   // The getter always returns a Point; the setter also takes an [x, y] pair.

@@ -3,12 +3,12 @@
 
 namespace GoldenSlice.Async;
 
-[global::System.Text.Json.Serialization.JsonConverter(typeof(global::Interoper.JsRecordConverter<MarkerOptions>))]
-public sealed partial record MarkerOptions : global::Interoper.IJsRecord<MarkerOptions>
+public sealed partial record MarkerOptions
 {
     public MarkerOptionsPosition Position { get; init; }
     public global::Interoper.Opt<string> Label { get; init; }
     public Style Style { get; init; }
+    public global::Interoper.Opt<global::Interoper.JsAny> Data { get; init; }
 
     public static void Write(global::System.Text.Json.Utf8JsonWriter writer, MarkerOptions value)
     {
@@ -16,14 +16,16 @@ public sealed partial record MarkerOptions : global::Interoper.IJsRecord<MarkerO
         global::Interoper.JsJson.WriteProperty(writer, "position"u8, value.Position);
         global::Interoper.JsJson.WriteProperty(writer, "label"u8, value.Label, global::Interoper.JsJson.WriteString);
         global::Interoper.JsJson.WriteProperty(writer, "style"u8, value.Style);
+        global::Interoper.JsJson.WriteProperty(writer, "data"u8, value.Data, global::Interoper.JsAny.Write);
         writer.WriteEndObject();
     }
 
-    public static MarkerOptions Read(ref global::System.Text.Json.Utf8JsonReader reader)
+    public static MarkerOptions Read(ref global::System.Text.Json.Utf8JsonReader reader, global::Interoper.JsScope scope)
     {
         MarkerOptionsPosition position = default;
         global::Interoper.Opt<string> label = default;
         Style style = default;
+        global::Interoper.Opt<global::Interoper.JsAny> data = default;
         while (reader.Read() && reader.TokenType == global::System.Text.Json.JsonTokenType.PropertyName)
         {
             var property = reader.GetString();
@@ -33,9 +35,10 @@ public sealed partial record MarkerOptions : global::Interoper.IJsRecord<MarkerO
                 case "position": position = global::Interoper.JsJson.ReadUnion<MarkerOptionsPosition>(ref reader); break;
                 case "label": label = global::Interoper.JsJson.ReadOpt(ref reader, global::Interoper.JsJson.ReadString); break;
                 case "style": style = global::Interoper.JsJson.ReadUnion<Style>(ref reader); break;
+                case "data": data = global::Interoper.JsJson.ReadOpt(ref reader, (ref r) => global::Interoper.JsAny.Read(ref r, scope)); break;
                 default: reader.Skip(); break;
             }
         }
-        return new MarkerOptions { Position = position, Label = label, Style = style };
+        return new MarkerOptions { Position = position, Label = label, Style = style, Data = data };
     }
 }

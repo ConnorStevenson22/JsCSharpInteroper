@@ -414,19 +414,23 @@ function callback(id) {
 }
 
 // A JS value in wire form. Plain objects and arrays are copied; other objects become handles, or with
-// byValue, value-like class instances become `$c` data.
-function toWire(value, byValue = false) {
+// byValue, value-like class instances become `$c` data. As data (a snapshot's members, R17) nothing becomes a handle:
+// such an object is left out, undefined in an array.
+function toWire(value, byValue = false, data = false) {
   if (value === null || (typeof value !== "object" && typeof value !== "function")) return value;
-  if (Array.isArray(value)) return Array.from(value, (x) => wireItem(toWire(x, byValue)));
+  if (Array.isArray(value)) return Array.from(value, (x) => wireItem(toWire(x, byValue, data)));
   const proto = Object.getPrototypeOf(value);
   if (proto === Object.prototype || proto === null) {
     const out = {};
-    for (const [k, x] of Object.entries(value)) if (x !== undefined) out[k] = toWire(x, byValue);
+    for (const [k, x] of Object.entries(value)) {
+      const w = toWire(x, byValue, data);
+      if (w !== undefined) out[k] = w;
+    }
     return out;
   }
   const classId = classIdOf(value);
   if (byValue && meta.classes[classId]?.value) return toData(value);
-  return { $h: handleOf(value), $t: classId };
+  return data ? undefined : { $h: handleOf(value), $t: classId };
 }
 
 // Array items can't be omitted, so undefined is `$u`.
@@ -434,14 +438,14 @@ function wireItem(value) {
   return value === undefined ? UNDEFINED : value;
 }
 
-// The snapshot members of an object, with value-like members copied deeply and entities as handles (R17).
+// The snapshot members of an object, with value-like members copied deeply and no handles (R17).
 function toData(object) {
   const classId = classIdOf(object);
   const entry = classEntry(classId);
   const out = entry.value ? { $c: classId } : {};
   for (const name of entry.members) {
-    const v = object[name];
-    if (v !== undefined) out[name] = toWire(v, true);
+    const w = toWire(object[name], true, true);
+    if (w !== undefined) out[name] = w;
   }
   return out;
 }

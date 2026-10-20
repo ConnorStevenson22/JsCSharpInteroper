@@ -10,6 +10,8 @@ public sealed partial record MarkerSnapshot : global::Interoper.IJsRecord<Marker
     public global::Interoper.Opt<PointSnapshot> Position { get; init; }
     public global::Interoper.Opt<string> Label { get; init; }
     public Style Style { get; init; }
+    /// <summary>The app's own data, untyped; it may hold other markers.</summary>
+    public global::Interoper.Opt<global::Interoper.JsAny> Data { get; init; }
 
     public static void Write(global::System.Text.Json.Utf8JsonWriter writer, MarkerSnapshot value)
     {
@@ -24,6 +26,7 @@ public sealed partial record MarkerSnapshot : global::Interoper.IJsRecord<Marker
         global::Interoper.JsJson.WriteProperty(writer, "position"u8, value.Position, PointSnapshot.Write);
         global::Interoper.JsJson.WriteProperty(writer, "label"u8, value.Label, global::Interoper.JsJson.WriteString);
         global::Interoper.JsJson.WriteProperty(writer, "style"u8, value.Style);
+        global::Interoper.JsJson.WriteProperty(writer, "data"u8, value.Data, global::Interoper.JsAny.Write);
     }
 
     public static MarkerSnapshot Read(ref global::System.Text.Json.Utf8JsonReader reader)
@@ -31,6 +34,7 @@ public sealed partial record MarkerSnapshot : global::Interoper.IJsRecord<Marker
         global::Interoper.Opt<PointSnapshot> position = default;
         global::Interoper.Opt<string> label = default;
         Style style = default;
+        global::Interoper.Opt<global::Interoper.JsAny> data = default;
         while (reader.Read() && reader.TokenType == global::System.Text.Json.JsonTokenType.PropertyName)
         {
             var property = reader.GetString();
@@ -40,10 +44,11 @@ public sealed partial record MarkerSnapshot : global::Interoper.IJsRecord<Marker
                 case "position": position = global::Interoper.JsJson.ReadOpt(ref reader, PointSnapshot.Read); break;
                 case "label": label = global::Interoper.JsJson.ReadOpt(ref reader, global::Interoper.JsJson.ReadString); break;
                 case "style": style = global::Interoper.JsJson.ReadUnion<Style>(ref reader); break;
+                case "data": data = global::Interoper.JsJson.ReadOpt(ref reader, global::Interoper.JsAny.ReadData); break;
                 default: reader.Skip(); break;
             }
         }
-        return new MarkerSnapshot { Position = position, Label = label, Style = style };
+        return new MarkerSnapshot { Position = position, Label = label, Style = style, Data = data };
     }
 
     public static MarkerSnapshot Diff(MarkerSnapshot before, MarkerSnapshot after) => new()
@@ -51,5 +56,6 @@ public sealed partial record MarkerSnapshot : global::Interoper.IJsRecord<Marker
         Position = after.Position.IsUndefined || global::Interoper.JsDiff.Same(before.Position, after.Position) ? default : after.Position,
         Label = after.Label.IsUndefined || global::Interoper.JsDiff.Same(before.Label, after.Label) ? default : after.Label,
         Style = after.Style.IsUndefined || global::Interoper.JsDiff.Same(before.Style, after.Style) ? default : after.Style,
+        Data = after.Data.IsUndefined || global::Interoper.JsDiff.Same(before.Data, after.Data) ? default : after.Data,
     };
 }

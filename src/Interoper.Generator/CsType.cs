@@ -103,6 +103,9 @@ internal sealed class CsType
     public static CsType Any { get; } = new("global::Interoper.JsAny", JsonKind.Object, false, "global::Interoper.JsAny.Write", null,
         read: (r, _) => $"global::Interoper.JsAny.Read(ref {r}, scope)", scoped: true);
 
+    /// <summary>A snapshot's <c>any</c> member (R17): a <c>JsAny</c> JS sends with no handles, read with no scope.</summary>
+    public static CsType AnyData { get; } = new("global::Interoper.JsAny", JsonKind.Object, false, "global::Interoper.JsAny.Write", "global::Interoper.JsAny.ReadData");
+
     /// <summary>
     /// A DOM element (R13): Blazor's <c>ElementReference</c>, written as <c>{"$e":id}</c> (in <c>Interoper.Blazor</c>) and
     /// never read.

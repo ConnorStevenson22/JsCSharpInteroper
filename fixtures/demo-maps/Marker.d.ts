@@ -5,7 +5,7 @@ import { Style } from "./styles.js";
 /** Called synchronously; its return value becomes the marker's label. */
 export type LabelFormatter = (marker: Marker) => string;
 
-export interface MarkerOptions extends Partial<Pick<Marker, "label" | "style" | "labelFormatter">> {
+export interface MarkerOptions extends Partial<Pick<Marker, "label" | "style" | "labelFormatter" | "data">> {
   position?: Point | [number, number];
 }
 
@@ -18,6 +18,8 @@ export class Marker extends Observable {
   style: Style;
   /** Overrides `label` when set. */
   labelFormatter?: LabelFormatter | null;
+  /** The app's own data, untyped; it may hold other markers. */
+  data?: any;
   /** `labelFormatter(this)` if set, otherwise `label`, otherwise "". */
   readonly displayLabel: string;
 }

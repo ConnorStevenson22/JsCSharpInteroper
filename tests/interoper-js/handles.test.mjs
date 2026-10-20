@@ -107,7 +107,7 @@ test("modules load on first use through invoke; invokeSync never starts an impor
   assert.deepEqual(send(op), { v: 5 });
 });
 
-test("snapshot reads every member: value-like members by value, entities as handles (R17, R18)", () => {
+test("snapshot reads every member as data: value-like members by value, what would be a handle left out (R17, R18)", () => {
   const view = create(ids.MapView, { zoom: 2, center: { $c: ids.Point, type: "point", x: 1, y: 2 } });
   const markers = get(view, "markers");
   assert.deepEqual(value(send({ op: "snapshot", h: view.$h })), {
@@ -115,12 +115,19 @@ test("snapshot reads every member: value-like members by value, entities as hand
     zoom: 2,
     rotation: 0,
     basemap: "plain",
-    selected: null, // title and cursor are undefined, so they are omitted (R2)
-    markers,
+    selected: null, // title and cursor are undefined, so they are omitted (R2); markers is a Collection
   });
   const line = create(ids.Line, { path: [[0, 1], [2, 3]] });
   assert.deepEqual(value(send({ op: "snapshot", h: line.$h })), { $c: ids.Line, type: "line", path: [[0, 1], [2, 3]] });
   release(view, markers, line);
+});
+
+test("snapshot sends an any member as data, without handles (R17)", () => {
+  const other = create(ids.Marker);
+  const point = { $c: ids.Point, type: "point", x: 1, y: 2 };
+  const marker = create(ids.Marker, { data: { n: 1, other, at: point, list: [other, 2] } });
+  assert.deepEqual(value(send({ op: "snapshot", h: marker.$h })).data, { n: 1, at: point, list: [{ $u: 1 }, 2] });
+  release(marker, other);
 });
 
 test("apply sets the patch's members in order (R18)", () => {

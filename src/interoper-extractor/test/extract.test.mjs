@@ -98,7 +98,7 @@ test("R12, R18: Partial<Pick<…>> constructor bags are resolved by the checker"
   assert.deepEqual(decl("MapView", "MapView").constructors[0].params[0].type, ref("MapView", "MapViewOptions"));
   assert.deepEqual(decl("MapView", "MapViewOptions").type.members.map((m) => m.name), ["center", "zoom", "rotation", "basemap", "cursor", "title", "container"]);
   assert.deepEqual(decl("Marker", "MarkerOptions").members.map((m) => `${m.name}${m.inherited ? " (inherited)" : ""}`),
-    ["position", "label (inherited)", "style (inherited)", "labelFormatter (inherited)"]);
+    ["position", "label (inherited)", "style (inherited)", "labelFormatter (inherited)", "data (inherited)"]);
 });
 
 test("R23: overloads are separate signatures, each with its own JSDoc", () => {

@@ -87,6 +87,13 @@ public class JsJsonTests
         string Create() => transport.Invoke($$"""{"op":"create","t":{{DemoMaps.MarkerId}},"args":[]}""")[5..^1];
     }
 
+    [Fact] // R17: a snapshot's any is data, read with no scope, so it may hold no handle
+    public void A_snapshots_any_is_data_without_handles()
+    {
+        Assert.Equal(JsAny.Parse("""{"a":[1]}"""), Json.Read("""{"a":[1]}""", JsAny.ReadData));
+        Assert.Throws<JsonException>(() => Json.Read("""{"a":[{"$h":1,"$t":6}]}""", JsAny.ReadData));
+    }
+
     [Fact] // R21: a missing callback is JS null, or undefined when its type has no null
     public void A_callback_is_its_id_and_a_missing_one_null_or_undefined()
     {

@@ -42,7 +42,7 @@ public static class GoldenSyncSuite
         ("a mixin keeps its class's base: a Pin is a Marker (R4, R19)", InScope(Mixin)),
         ("an exported mixin is an interface: a TileLayer is an IRefreshable (§5)", InScope(MixinInterface)),
         ("a subscription with remove() instead of dispose(), delivered then released (R24)", InScope(RemoveSubscription)),
-        ("any is JsAny: data, or a handle the scope owns (§2)", InScope(Any)),
+        ("any is JsAny: data, or a handle the scope owns; a snapshot holds it as data (§2, R17)", InScope(Any)),
         ("a union with an entity case is a parameter's (R2, R17)", InScope(WrittenUnion)),
         ("an entity only written takes its snapshot, which JS builds (R16, R18)", InScope(EntityBags)),
         ("same-named types of sibling modules (R27)", InScope(SiblingModules)),
@@ -468,6 +468,14 @@ public static class GoldenSyncSuite
         var marker = Marker.Create(scope, new MarkerSnapshot());
         pin.SetMeta(JsAny.From(marker, JsObject.Write)); // a live object, as its handle
         Expect(pin.GetMeta(scope).TryGetValue(out JsAny? held) && ReferenceEquals(held.Read(scope.Read<Marker>), marker), "the handle to be the same marker");
+
+        // R17: a snapshot holds it as data. JS leaves out what would be a handle, so a snapshot reads with no scope.
+        Expect(pin.Snapshot().Meta.IsUndefined, "the snapshot to leave the marker out");
+        pin.Apply(new PinSnapshot { Meta = JsAny.Parse($$"""{"n":1,"m":{{JsAny.From(marker, JsObject.Write)}}}""") });
+        Expect(pin.Snapshot().Meta.TryGetValue(out JsAny? plain) && plain.Equals(JsAny.Parse("""{"n":1}""")), "the snapshot to keep the data");
+        var data = JsAny.Parse("""{"id":7,"tags":["a"]}""");
+        Expect(Marker.Create(scope, new MarkerSnapshot { Data = data }).Snapshot().Data.TryGetValue(out JsAny? copied) && copied.Equals(data),
+            "data to round-trip through Create and Snapshot");
         pin.SetMeta(null);
         Expect(pin.GetMeta(scope).IsNull, "meta to be null");
     }

@@ -34,6 +34,14 @@ public partial class Marker : Observable
     public void SetLabelFormatter(global::Interoper.JsScope scope, global::System.Func<Marker, string>? value) =>
         Realm.Send(global::Interoper.JsOp.Set(Handle, "labelFormatter", w => global::Interoper.JsJson.WriteCallback(w, value is null ? null : scope.Callback(value, scope.Read<Marker>, global::Interoper.JsJson.WriteString))));
 
+    /// <summary>The app's own data, untyped; it may hold other markers.</summary>
+    public global::Interoper.Opt<global::Interoper.JsAny> GetData(global::Interoper.JsScope scope) =>
+        Realm.Call(global::Interoper.JsOp.Get(Handle, "data"), (ref r) => global::Interoper.JsJson.ReadOpt(ref r, (ref r1) => global::Interoper.JsAny.Read(ref r1, scope)));
+
+    /// <summary>The app's own data, untyped; it may hold other markers.</summary>
+    public void SetData(global::Interoper.Opt<global::Interoper.JsAny> value) =>
+        Realm.Send(global::Interoper.JsOp.Set(Handle, "data", w => global::Interoper.JsJson.WriteValue(w, value, global::Interoper.JsAny.Write)));
+
     /// <summary><c>labelFormatter(this)</c> if set, otherwise <c>label</c>, otherwise "".</summary>
     public string DisplayLabel => Realm.GetString(Handle, "displayLabel");
 
@@ -45,6 +53,9 @@ public partial class Marker : Observable
 
     public global::System.IDisposable WatchStyle(global::Interoper.JsScope scope, global::System.Action<Style> handler) =>
         scope.Subscribe(Handle, "watch", "style", global::Interoper.JsJson.ReadUnion<Style>, handler, null, null);
+
+    public global::System.IDisposable WatchData(global::Interoper.JsScope scope, global::System.Action<global::Interoper.Opt<global::Interoper.JsAny>> handler) =>
+        scope.Subscribe(Handle, "watch", "data", (ref r) => global::Interoper.JsJson.ReadOpt(ref r, (ref r1) => global::Interoper.JsAny.Read(ref r1, scope)), handler, null, null);
 
     public global::System.IDisposable WatchDisplayLabel(global::Interoper.JsScope scope, global::System.Action<string> handler) =>
         scope.Subscribe(Handle, "watch", "displayLabel", global::Interoper.JsJson.ReadString, handler, null, null);

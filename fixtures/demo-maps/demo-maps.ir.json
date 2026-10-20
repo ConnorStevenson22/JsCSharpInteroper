@@ -920,6 +920,16 @@
                   }
                 ]
               }
+            },
+            {
+              "kind": "property",
+              "name": "data",
+              "optional": true,
+              "inherited": true,
+              "type": {
+                "kind": "primitive",
+                "name": "any"
+              }
             }
           ]
         },
@@ -1029,6 +1039,18 @@
                     "name": "null"
                   }
                 ]
+              }
+            },
+            {
+              "kind": "property",
+              "name": "data",
+              "optional": true,
+              "doc": {
+                "summary": "The app's own data, untyped; it may hold other markers."
+              },
+              "type": {
+                "kind": "primitive",
+                "name": "any"
               }
             },
             {

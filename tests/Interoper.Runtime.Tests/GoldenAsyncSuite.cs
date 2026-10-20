@@ -47,7 +47,7 @@ public static class GoldenAsyncSuite
         ("a mixin keeps its class's base: a Pin is a Marker (R4, R19)", InScope(Mixin)),
         ("an exported mixin is an interface: a TileLayer is an IRefreshable (§5)", InScope(MixinInterface)),
         ("a subscription with remove() instead of dispose(), delivered then released (R24)", InScope(RemoveSubscription)),
-        ("any is JsAny: data, or a handle the scope owns (§2)", InScope(Any)),
+        ("any is JsAny: data, or a handle the scope owns; a snapshot holds it as data (§2, R17)", InScope(Any)),
         ("a union with an entity case is a parameter's (R2, R17)", InScope(WrittenUnion)),
         ("an entity only written takes its snapshot, which JS builds; 100 in a batch are one round trip (R16, R18)", InScope(EntityBags)),
         ("same-named types of sibling modules (R27)", InScope(SiblingModules)),
@@ -627,6 +627,19 @@ public static class GoldenAsyncSuite
         await pin.SetMetaAsync(JsAny.From(marker, JsObject.Write)); // a live object, as its handle
         Expect((await pin.GetMetaAsync(scope)).TryGetValue(out JsAny? held) && ReferenceEquals(held.Read(scope.Read<Marker>), marker),
             "the handle to be the same marker");
+
+        // R17: a snapshot holds it as data. JS leaves out what would be a handle, so a snapshot reads with no scope.
+        Expect((await pin.SnapshotAsync()).Meta.IsUndefined, "the snapshot to leave the marker out");
+        await pin.ApplyAsync(new PinSnapshot { Meta = JsAny.Parse($$"""{"n":1,"m":{{JsAny.From(marker, JsObject.Write)}}}""") });
+        Expect((await pin.SnapshotAsync()).Meta.TryGetValue(out JsAny? plain) && plain.Equals(JsAny.Parse("""{"n":1}""")), "the snapshot to keep the data");
+        Expect((await pin.GetMetaAsync(scope)).TryGetValue(out JsAny? whole) && whole.Json.GetProperty("m").TryGetProperty("$h", out _), "the getter to keep the handle");
+        var data = JsAny.Parse("""{"id":7,"tags":["a"]}""");
+        var tagged = await Marker.CreateAsync(scope, new MarkerSnapshot { Data = data });
+        Expect((await tagged.SnapshotAsync()).Data.TryGetValue(out JsAny? copied) && copied.Equals(data), "data to round-trip through Create and Snapshot");
+        var view = await MapView.CreateAsync(scope, new MapViewSnapshot());
+        await view.SetSelectedAsync(new MarkerSnapshot { Data = data }); // a bag JS builds the marker from (R16)
+        Expect(await view.GetSelectedAsync(scope) is Marker built && (await built.SnapshotAsync()).Data.TryGetValue(out JsAny? bagged) && bagged.Equals(data),
+            "a bag's data to reach the marker JS builds");
         await pin.SetMetaAsync(null);
         Expect((await pin.GetMetaAsync(scope)).IsNull, "meta to be null");
     }

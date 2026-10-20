@@ -73,6 +73,7 @@ internal sealed class TypeMap
     private readonly HashSet<string> valueClasses;
     private readonly ICollection<Diagnostic> diagnostics;
     private readonly Dictionary<TypeName, DataType?> unions = [];
+    private readonly Dictionary<TypeName, List<IrType>> droppedCases = [];
     private readonly Dictionary<Declaration, IReadOnlyList<Field>> fields = new(ReferenceEqualityComparer.Instance);
     private readonly List<DataType> owned = [];
     /// <summary>R11: each inline object type's record (unnamed until it's mapped), and the names of those mapped, in order.</summary>
@@ -544,7 +545,15 @@ internal sealed class TypeMap
         var all = Values(type);
         // R2: a union drops its cases outside the selection.
         var flat = Kept(type);
-        foreach (var dropped in all.Except(flat).OfType<RefType>())
+        // A setter's union widened with its entities' snapshots (R16) drops what the getter's reported.
+        var unwidened = all.Where(t => t is not (BagType or ArrayType { Element: BagType })).ToList();
+        var reported = unwidened.Count < all.Count && name.Name.EndsWith("Input", StringComparison.Ordinal)
+            && droppedCases.TryGetValue(name with { Name = name.Name[..^"Input".Length] }, out var getter) && getter.SequenceEqual(unwidened);
+        if (flat.Count < all.Count)
+        {
+            droppedCases[name] = all;
+        }
+        foreach (var dropped in all.Except(flat).OfType<RefType>().Where(_ => !reported))
         {
             diagnostics.Add(new(Diagnostic.NotSupported, name.Name, $"case `{dropped.Name}` dropped: {(dropped.Module is null ? "a platform type" : "a class outside the selection")} (R2)"));
         }
@@ -862,7 +871,7 @@ internal sealed class TypeMap
             }
             else if (IsSnapshotMember(p))
             {
-                var mapped = Slot(p.Type, type.Owned(p.Name)).Type;
+                var mapped = IsAny(p.Type) ? CsType.AnyData : Slot(p.Type, type.Owned(p.Name)).Type;
                 if (inherited < 0)
                 {
                     var name = Naming.Member(taken, Naming.Pascal(p.Name), $"{SnapshotName(c)}.{p.Name}", diagnostics);
@@ -883,10 +892,12 @@ internal sealed class TypeMap
 
     /// <summary>
     /// R18: a writable data member is in the snapshot; R17: one that mentions an entity isn't, nor is a callback (R21) or
-    /// a DOM element (R13), which can't be read.
+    /// a DOM element (R13), which can't be read. One typed <c>any</c> is, read as data: JS leaves out its handles.
     /// </summary>
     private bool IsSnapshotMember(PropertyMember p) =>
-        !p.Static && p.Type is not LiteralType && !p.Readonly && !UsesEntity(p.Type) && CallbackOf(p.Type) is null && !ElementOf(p.Type);
+        !p.Static && p.Type is not LiteralType && !p.Readonly && (IsAny(p.Type) || !UsesEntity(p.Type)) && CallbackOf(p.Type) is null && !ElementOf(p.Type);
+
+    private static bool IsAny(IrType type) => type is PrimitiveType { Name: "any" or "unknown" or "object" };
 
     /// <summary>
     /// Whether a type needs a scope to be read (R17): it mentions an entity class, a type parameter (an entity, mapping

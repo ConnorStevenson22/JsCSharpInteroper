@@ -85,7 +85,7 @@ A union that is only written (a parameter, or a setter's wider type) may have ca
 | `AbortSignal` | not mapped yet | **R14.** IOP2007 |
 | `bigint`, `Date`, heterogeneous tuples, `Record<string, T>` and index signatures, intersections used as mixins, `ArrayBuffer`, typed arrays, other DOM and platform types (`MouseEvent`, `Blob`) | not mapped yet | Skipped with their users (IOP2007); a union drops them as cases (R2) |
 
-`JsAny` holds the value's JSON, untyped. Plain objects and arrays are copies. Other objects are handles owned by the scope that read them, so a `JsAny` is read with a scope (R17) and isn't in snapshots. It is not a union case. Read it as a type with `meta.Read(JsJson.ReadNumber)` or `meta.Read(scope.Read<Marker>)`. Make one with `JsAny.Parse(json)` or `JsAny.From(value, write)`.
+`JsAny` holds the value's JSON, untyped. Plain objects and arrays are copies. Other objects are handles owned by the scope that read them, so a `JsAny` is read with a scope. A snapshot holds one as data, with no handles (R17). It is not a union case. Read it as a type with `meta.Read(JsJson.ReadNumber)` or `meta.Read(scope.Read<Marker>)`. Make one with `JsAny.Parse(json)` or `JsAny.From(value, write)`.
 
 **R11. Inline object types** are data records like named ones (R15), named after their owner (R27): `Feature.size: { w: number }` is `FeatureSize`.
 
@@ -139,6 +139,8 @@ An entity is sent the same way where it is only written. Where a class with `Cre
 A plain `Marker` or `Marker[]` position becomes a union named after its owner (R27), so collection expressions (`[a, b]`) no longer convert to it; write `new[] { a, b }`. A position that already takes the class's constructor bag (§5) gets no snapshot case. Read positions and value-like classes don't change.
 
 **R17. Snapshot depth.** Snapshots hold data members only. Value-like members are copied deeply as their snapshots. Entity members are left out, since reading one needs a scope; use the scoped getter (`GetSelected(scope)`).
+
+A member typed `any`, `unknown` or `object` is in the snapshot as `Opt<JsAny>` (`Marker.data`, `Pin.meta`). It's written as its JSON, so a handle in it is the same JS object (in `Create`, `Apply` and a bag, R16). Read in a snapshot, JS sends it as data: plain objects and arrays are copied, value-like instances are `$c` data, and anything else, which would be a handle, is left out (undefined in an array). So reading a snapshot still needs no scope; the scoped getter (`GetMeta(scope)`) keeps the handles. This is the rule entity members already follow, applied inside the value, and it keeps one snapshot type for reading and writing, which a written-only member would split.
 
 A data record (not a snapshot) may hold entities, directly, in arrays or through a type parameter. Only emitted classes count: a member typed with a class outside the selection is dropped or skipped (R2), so it makes nothing scoped. Such a record is *scoped*: its reader is `Read(ref reader, JsScope scope)`, so whatever returns it takes a scope (§5). Union readers take no scope, so only a write-only union can have an entity or scoped record case (R2).
 
