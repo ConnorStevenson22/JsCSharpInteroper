@@ -49,4 +49,7 @@ public sealed partial class DemoMapElement : global::Interoper.JsObject
 
     public global::System.Threading.Tasks.Task ApplyAsync(DemoMapElementSnapshot patch) =>
         Realm.SendAsync(global::Interoper.JsOp.Apply(Handle, w => DemoMapElementSnapshot.WriteMembers(w, patch)));
+
+    public global::System.Threading.Tasks.Task<DemoMapElementSnapshot> SnapshotAsync(global::Interoper.JsMembers<DemoMapElementSnapshot> members) =>
+        Realm.SnapshotAsync(Handle, members);
 }

@@ -1,3 +1,5 @@
+using GoldenSlice.Async;
+
 namespace Interoper.Runtime.Tests;
 
 /// <summary>The ops generated code writes (design §3.4), as interoper.js reads them.</summary>
@@ -32,6 +34,16 @@ public sealed class JsOpTests
         Assert.Equal(
             """{"op":"subscribe","h":1,"method":"on","name":"click","callback":{"$f":2},"options":{"fields":[]}}""",
             JsOp.Subscribe(1, "on", "click", 2, new EventOptions { Fields = [] }));
+    }
+
+    [Fact] // R18
+    public void MembersAreSentByTheirJsNamesEachOnce()
+    {
+        var members = MapViewSnapshot.Members.Zoom | MapViewSnapshot.Members.Rotation | MapViewSnapshot.Members.Zoom;
+        Assert.Equal(["zoom", "rotation"], members.Names);
+        Assert.Empty(default(JsMembers<MapViewSnapshot>).Names);
+        Assert.Equal("""{"op":"snapshot","h":1,"members":["zoom","rotation"]}""", JsOp.Snapshot(1, members));
+        Assert.Equal("""{"op":"subscribe","h":1,"method":"watch","names":["zoom","rotation"],"callback":{"$f":2}}""", JsOp.Subscribe(1, "watch", members, 2));
     }
 
     [Fact]

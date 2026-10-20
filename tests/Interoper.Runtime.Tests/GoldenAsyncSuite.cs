@@ -51,6 +51,8 @@ public static class GoldenAsyncSuite
         ("a union with an entity case is a parameter's (R2, R17)", InScope(WrittenUnion)),
         ("same-named types of sibling modules (R27)", InScope(SiblingModules)),
         ("a custom element drives its live view, and its class is found by its tag (§5, R22, R28)", InScope(CustomElement)),
+        ("a watch of chosen members: one call per burst, with their snapshot (R18)", InScope(MemberWatch)),
+        ("chosen members read and watched through a base type, and streamed (R18)", InScope(MembersThroughABase)),
     ];
 
     private static async Task CreateSnapshotApply(JsScope scope)
@@ -664,6 +666,65 @@ public static class GoldenAsyncSuite
         Equal(6.0, await Ops.A.ExecuteAsync(scope.Realm, 3, new Ops.Options { Scale = 2 }));
         Equal(5.0, await Ops.B.ExecuteAsync(scope.Realm, 3, new Ops.BOptions { Offset = 2 }));
         Equal(3.0, await Ops.B.ExecuteAsync(scope.Realm, 3));
+    }
+
+    private static async Task MemberWatch(JsScope scope)
+    {
+        var view = await MapView.CreateAsync(scope, new MapViewSnapshot { Zoom = 5, Rotation = 90 });
+        var baseline = await Count(scope.Realm);
+        var seen = new List<MapViewSnapshot>();
+        var (first, second) = (new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously), new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously));
+        await using (await view.WatchAsync(scope, MapViewSnapshot.Members.Zoom | MapViewSnapshot.Members.Rotation, changed =>
+        {
+            lock (seen)
+            {
+                seen.Add(changed);
+                (seen.Count == 1 ? first : second).TrySetResult();
+            }
+        }))
+        {
+            await using (scope.BeginBatch()) // one op: one JS turn
+            {
+                await view.SetZoomAsync(2);
+                await view.SetZoomAsync(3);
+                await view.SetRotationAsync(10);
+                await view.SetTitleAsync("not watched");
+            }
+            await first.Task.WaitAsync(Timeout);
+            await view.ResetAsync(); // the library's own burst
+            await second.Task.WaitAsync(Timeout);
+            await view.SetTitleAsync("still not watched");
+        }
+        Equal(baseline, await Count(scope.Realm)); // every listener released
+        await view.SetZoomAsync(7);
+        await view.GetZoomAsync(); // a round trip after the change: a call back would have come first
+        Equal("3 10, 1 0", string.Join(", ", seen.Select(s => $"{s.Zoom} {s.Rotation}")));
+        Equal(new MapViewSnapshot { Zoom = 1, Rotation = 0 }, seen[1]); // only the watched members
+    }
+
+    private static async Task MembersThroughABase(JsScope scope)
+    {
+        Layer layer = await TileLayer.CreateAsync(scope, new TileLayerSnapshot { Url = "u", Title = "t" });
+        Equal(new LayerSnapshot { Visible = true }, await layer.SnapshotAsync(LayerSnapshot.Members.Visible));
+        Equal(new TileLayerSnapshot { Url = "u", Title = "t" }, await ((TileLayer)layer).SnapshotAsync(TileLayerSnapshot.Members.Url | TileLayerSnapshot.Members.Title));
+
+        var before = new LayerSnapshot { Title = "t", Visible = true };
+        var changed = new TaskCompletionSource<LayerSnapshot>(TaskCreationOptions.RunContinuationsAsynchronously);
+        await using (await layer.WatchAsync(scope, LayerSnapshot.Members.Visible | LayerSnapshot.Members.Title, s => changed.TrySetResult(s)))
+        {
+            await layer.SetVisibleAsync(false);
+            var after = await changed.Task.WaitAsync(Timeout);
+            Equal(new LayerSnapshot { Title = "t", Visible = false }, after);
+            Equal(new LayerSnapshot { Visible = false }, LayerSnapshot.Diff(before, after)); // the patch
+        }
+
+        var showing = WhenSubscribed(scope.Realm, await Count(scope.Realm), () => layer.ApplyAsync(new LayerSnapshot { Title = "v", Visible = true }));
+        await foreach (var shown in layer.WatchStreamAsync(scope, LayerSnapshot.Members.Visible))
+        {
+            Equal(new LayerSnapshot { Visible = true }, shown);
+            break;
+        }
+        await showing;
     }
 
     // --- Helpers ---

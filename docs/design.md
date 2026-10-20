@@ -20,9 +20,9 @@ Interoper turns a JavaScript library's TypeScript typings into C# bindings for B
 | Kind | What it is |
 |---|---|
 | Live objects | A class per JS class, wrapping a handle. The same JS object always maps to the same C# object, and you get the most-derived type (`shape is Polygon`). Created with `Create`/`CreateAsync` and owned by a `JsScope`. |
-| Snapshots | `XSnapshot` records. One call reads every data member. The same record is the constructor input and, partly filled, a patch (R18). |
+| Snapshots | `XSnapshot` records. One call reads every data member, or the ones you name. The same record is the constructor input and, partly filled, a patch (R18). |
 | Value types | Enums, extensible enums, unions and `Opt<T>`, with generated JSON readers and writers. No reflection, so they are trim and AOT safe. |
-| Events and watches | Typed subscriptions per event, with JS-side options (R24). Async mode also gets `IAsyncEnumerable` streams. |
+| Events and watches | Typed subscriptions per event, with JS-side options (R24), a watch per property, and one watch of the members you name (R18). Async mode also gets `IAsyncEnumerable` streams. |
 | Module functions | Stateless library functions over records. One call, no handles. |
 | Components | One plain C# class per custom element in the library's Custom Elements Manifest (R28). |
 | Custom events | `{Package}Events.cs`, the `[EventHandler]` attributes for the manifest's events (R28). |
@@ -114,9 +114,9 @@ Structured data is UTF-8 JSON. Undefined members are left out. Special values:
 | `get` | `h` or `module`, `name`, `byValue?` | value |
 | `set` | `h` or `module`, `name`, `value` | none |
 | `call` | `h` or `module`, `name`, `args`, `byValue?` | value; a Promise is awaited |
-| `snapshot` | `h` | the snapshot members (R17) |
+| `snapshot` | `h`, `members?` | the snapshot members, or only `members` (R17, R18) |
 | `apply` | `h`, `value` (a partial snapshot) | none |
-| `subscribe` | `h`, `method` (`on`, `watch`), `name`, `callback`, `options?` | a subscription handle |
+| `subscribe` | `h`, `method` (`on`, `watch`), `name` or `names`, `callback`, `options?` | a subscription handle |
 | `release` | `ids` | none; unknown ids are ignored |
 | `load` | `modules` | none; imports them |
 | `wrap` | `value` | the value as a result (turns `$e` into a handle) |
@@ -126,6 +126,7 @@ Structured data is UTF-8 JSON. Undefined members are left out. Special values:
 - A handle's `$t` is the class id of the object's runtime class name (R19). For a DOM element it is the class whose `tag` is the element's `localName`. A class with no runtime class name (a plain class, as an app's own module has) is known by its constructor once its module is loaded. When the metadata doesn't know the object's class, JS walks up the prototype chain to the nearest class it knows, so an object of an undeclared subclass gets its nearest declared ancestor. `$t` is 0 when no ancestor is known.
 - Every handle that reaches .NET is owned by .NET and must be released.
 - `subscribe` options wrap the listener in JS, so they apply in time even on Server (R24).
+- `subscribe` with `names` subscribes once per name, and releasing it disposes them all. After each JS turn in which any of them changed, the callback gets one argument: the `snapshot` of those members as they are then (R18). The turn ends at a microtask, so changes made by one op (a `batch`, a library method) are one message, and on WebAssembly so are sync-mode calls until .NET yields. A timer would add latency and is throttled in background tabs. `InMemoryTransport` ends a turn when an op returns or first awaits, and calls back at once for a change outside an op.
 - A result that can't be encoded (a `BigInt`, a cycle) becomes an error envelope.
 
 Entry points:
@@ -224,7 +225,7 @@ Fixtures: `fixtures/demo-maps` is a small JS library we write, with hand-written
 | Partial selections (`PartialSelectionTests`) | Generating each fixture module alone and in pairs never throws, and the result compiles. |
 | Components | The generated `DemoMap` rendered statically, interactively in memory, and in the browser on Server, WebAssembly and static SSR. |
 | CLI (`tests/Interoper.Tool.Tests`) | `generate` with the real extractor: the IR cache, the report, stale files and exit codes. |
-| Latency (`LatencyTests`) | Server with 50 ms added to every message. A batch of 100 writes must be one round trip. |
+| Latency (`LatencyTests`) | Server with 50 ms added to every message. A batch of 100 writes must be one round trip, and a burst of watched changes one message (R18). |
 | Size (`SizeBudgetTests`) | A trimmed WebAssembly publish has only the framework's own trim warnings, and the packages and golden slice stay under a size budget. |
 | Quickstart (`QuickstartTests`) | Runs [quickstart.md](quickstart.md)'s commands against packed packages, then checks both pages in Chromium. |
 

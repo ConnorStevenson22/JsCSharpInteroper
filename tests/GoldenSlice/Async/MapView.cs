@@ -107,6 +107,10 @@ public sealed partial class MapView : Emitter
             global::Interoper.JsJson.WriteNumber(w, y);
         }), (ref r) => global::Interoper.JsJson.ReadOpt(ref r, scope.Read<Marker>), cancellationToken);
 
+    /// <summary>Back to zoom 1 and rotation 0: the library changes several properties in one call.</summary>
+    public global::System.Threading.Tasks.Task ResetAsync(global::System.Threading.CancellationToken cancellationToken = default) =>
+        Realm.SendAsync(global::Interoper.JsOp.Call(Handle, "reset"), cancellationToken);
+
     /// <summary>A click on the map, after the view has handled it.</summary>
     public global::System.Threading.Tasks.Task<global::System.IAsyncDisposable> OnClickAsync(global::Interoper.JsScope scope, global::System.Action<ClickEvent> handler, global::Interoper.EventOptions? options = null) =>
         scope.SubscribeAsync(Handle, "on", "click", ClickEvent.Read, handler, options, ["type", "x", "y", "button", "mapPoint"]);
@@ -174,4 +178,13 @@ public sealed partial class MapView : Emitter
 
     public global::System.Threading.Tasks.Task ApplyAsync(MapViewSnapshot patch) =>
         Realm.SendAsync(global::Interoper.JsOp.Apply(Handle, w => MapViewSnapshot.WriteMembers(w, patch)));
+
+    public global::System.Threading.Tasks.Task<MapViewSnapshot> SnapshotAsync(global::Interoper.JsMembers<MapViewSnapshot> members) =>
+        Realm.SnapshotAsync(Handle, members);
+
+    public global::System.Threading.Tasks.Task<global::System.IAsyncDisposable> WatchAsync(global::Interoper.JsScope scope, global::Interoper.JsMembers<MapViewSnapshot> members, global::System.Action<MapViewSnapshot> handler) =>
+        scope.SubscribeAsync(Handle, "watch", members, handler);
+
+    public global::System.Collections.Generic.IAsyncEnumerable<MapViewSnapshot> WatchStreamAsync(global::Interoper.JsScope scope, global::Interoper.JsMembers<MapViewSnapshot> members, global::System.Threading.CancellationToken cancellationToken = default) =>
+        scope.StreamAsync(Handle, "watch", members, cancellationToken);
 }

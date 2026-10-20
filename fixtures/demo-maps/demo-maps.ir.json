@@ -705,6 +705,21 @@
                   }
                 }
               ]
+            },
+            {
+              "kind": "method",
+              "name": "reset",
+              "signatures": [
+                {
+                  "returns": {
+                    "kind": "primitive",
+                    "name": "void"
+                  },
+                  "doc": {
+                    "summary": "Back to zoom 1 and rotation 0: the library changes several properties in one call."
+                  }
+                }
+              ]
             }
           ],
           "events": [

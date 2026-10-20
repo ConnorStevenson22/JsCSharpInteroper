@@ -35,4 +35,13 @@ public sealed partial class Point : Shape
 
     public global::System.Threading.Tasks.Task ApplyAsync(PointSnapshot patch) =>
         Realm.SendAsync(global::Interoper.JsOp.Apply(Handle, w => PointSnapshot.WriteMembers(w, patch)));
+
+    public global::System.Threading.Tasks.Task<PointSnapshot> SnapshotAsync(global::Interoper.JsMembers<PointSnapshot> members) =>
+        Realm.SnapshotAsync(Handle, members);
+
+    public global::System.Threading.Tasks.Task<global::System.IAsyncDisposable> WatchAsync(global::Interoper.JsScope scope, global::Interoper.JsMembers<PointSnapshot> members, global::System.Action<PointSnapshot> handler) =>
+        scope.SubscribeAsync(Handle, "watch", members, handler);
+
+    public global::System.Collections.Generic.IAsyncEnumerable<PointSnapshot> WatchStreamAsync(global::Interoper.JsScope scope, global::Interoper.JsMembers<PointSnapshot> members, global::System.Threading.CancellationToken cancellationToken = default) =>
+        scope.StreamAsync(Handle, "watch", members, cancellationToken);
 }

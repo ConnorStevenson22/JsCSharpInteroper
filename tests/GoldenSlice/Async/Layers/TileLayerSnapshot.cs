@@ -56,4 +56,13 @@ public sealed partial record TileLayerSnapshot : global::Interoper.IJsRecord<Til
         Title = after.Title.IsUndefined || global::Interoper.JsDiff.Same(before.Title, after.Title) ? default : after.Title,
         Visible = after.Visible.IsUndefined || global::Interoper.JsDiff.Same(before.Visible, after.Visible) ? default : after.Visible,
     };
+
+    public static class Members
+    {
+        /// <summary>The URL template of the tiles.</summary>
+        public static global::Interoper.JsMembers<TileLayerSnapshot> Url => new("url");
+        public static global::Interoper.JsMembers<TileLayerSnapshot> RefreshInterval => new("refreshInterval");
+        public static global::Interoper.JsMembers<TileLayerSnapshot> Title => new("title");
+        public static global::Interoper.JsMembers<TileLayerSnapshot> Visible => new("visible");
+    }
 }

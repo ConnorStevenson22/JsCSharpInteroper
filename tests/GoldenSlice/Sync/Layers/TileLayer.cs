@@ -71,4 +71,10 @@ public sealed partial class TileLayer : Layer, IRefreshable
 
     public void Apply(TileLayerSnapshot patch) =>
         Realm.Send(global::Interoper.JsOp.Apply(Handle, w => TileLayerSnapshot.WriteMembers(w, patch)));
+
+    public TileLayerSnapshot Snapshot(global::Interoper.JsMembers<TileLayerSnapshot> members) =>
+        Realm.Snapshot(Handle, members);
+
+    public global::System.IDisposable Watch(global::Interoper.JsScope scope, global::Interoper.JsMembers<TileLayerSnapshot> members, global::System.Action<TileLayerSnapshot> handler) =>
+        scope.Subscribe(Handle, "watch", members, handler);
 }

@@ -106,6 +106,9 @@ public sealed partial class MapView : Emitter
             global::Interoper.JsJson.WriteNumber(w, y);
         }), (ref r) => global::Interoper.JsJson.ReadOpt(ref r, scope.Read<Marker>), cancellationToken);
 
+    /// <summary>Back to zoom 1 and rotation 0: the library changes several properties in one call.</summary>
+    public void Reset() => Realm.Send(global::Interoper.JsOp.Call(Handle, "reset"));
+
     /// <summary>A click on the map, after the view has handled it.</summary>
     public global::System.IDisposable OnClick(global::Interoper.JsScope scope, global::System.Action<ClickEvent> handler, global::Interoper.EventOptions? options = null) =>
         scope.Subscribe(Handle, "on", "click", ClickEvent.Read, handler, options, ["type", "x", "y", "button", "mapPoint"]);
@@ -141,4 +144,10 @@ public sealed partial class MapView : Emitter
 
     public void Apply(MapViewSnapshot patch) =>
         Realm.Send(global::Interoper.JsOp.Apply(Handle, w => MapViewSnapshot.WriteMembers(w, patch)));
+
+    public MapViewSnapshot Snapshot(global::Interoper.JsMembers<MapViewSnapshot> members) =>
+        Realm.Snapshot(Handle, members);
+
+    public global::System.IDisposable Watch(global::Interoper.JsScope scope, global::Interoper.JsMembers<MapViewSnapshot> members, global::System.Action<MapViewSnapshot> handler) =>
+        scope.Subscribe(Handle, "watch", members, handler);
 }
