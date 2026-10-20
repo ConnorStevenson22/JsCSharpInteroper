@@ -10,9 +10,9 @@ namespace Interoper;
 
 /// <summary>
 /// Owns handles and .NET callbacks (design §3.2, R21); a component owns one, and uses it from its dispatcher.
-/// Disposal releases every handle no other scope owns in one <c>release</c> op, then every callback. One type
-/// serves both modes: <see cref="Dispose"/> sends through the sync seam (WebAssembly only),
-/// <see cref="DisposeAsync"/> through the async seam.
+/// Disposal disposes its child scopes, runs its teardown, then releases every handle no other scope owns in one
+/// <c>release</c> op, then every callback. One type serves both modes: <see cref="Dispose"/> sends through the sync
+/// seam (WebAssembly only), <see cref="DisposeAsync"/> through the async seam.
 /// </summary>
 public sealed class JsScope(JsRealm realm) : IDisposable, IAsyncDisposable
 {
@@ -20,6 +20,9 @@ public sealed class JsScope(JsRealm realm) : IDisposable, IAsyncDisposable
     private readonly List<int> callbacks = [];
     private readonly List<JsBatch> batches = []; // open batches this scope began, flushed before its release
     private readonly List<Action> streams = []; // completes each open stream (StreamAsync)
+    private readonly List<JsScope> children = []; // CreateChild, disposed first
+    private JsScope? parent;
+    private Delegate? teardown; // CreateOwned's Action or CreateOwnedAsync's Func<Task>, run before the release
     private bool disposed;
 
     public JsRealm Realm { get; } = realm;
@@ -139,6 +142,72 @@ public sealed class JsScope(JsRealm realm) : IDisposable, IAsyncDisposable
             batches.Add(batch);
             return batch;
         }
+    }
+
+    /// <summary>
+    /// A scope for objects that go before this one, such as one layer of a map (design §3.2). This scope disposes it
+    /// first, with the same method; disposed alone, it leaves this scope. Its callbacks run on <see cref="Dispatch"/>.
+    /// </summary>
+    public JsScope CreateChild()
+    {
+        lock (gate)
+        {
+            ObjectDisposedException.ThrowIf(disposed, this);
+            var child = new JsScope(Realm) { Dispatch = Dispatch, parent = this };
+            children.Add(child);
+            return child;
+        }
+    }
+
+    /// <summary>
+    /// Makes a value with a new child scope (<see cref="CreateChild"/>), and returns the two as one. Disposing it, or
+    /// this scope, runs <paramref name="teardown"/>, then releases what the child owns. If <paramref name="create"/>
+    /// throws, the child is disposed. Sync mode; see <see cref="CreateOwnedAsync{T}"/>.
+    /// </summary>
+    public JsOwned<T> CreateOwned<T>(Func<JsScope, T> create, Action<T>? teardown = null)
+    {
+        var child = CreateChild();
+        T value;
+        try
+        {
+            value = create(child);
+        }
+        catch
+        {
+            child.Dispose();
+            throw;
+        }
+        return child.Owning(value, teardown is null ? null : () => teardown(value));
+    }
+
+    /// <summary>
+    /// Makes a value with a new child scope, and returns the two as one (async mode); see <see cref="CreateOwned{T}"/>.
+    /// A scope with an async teardown must be disposed with <see cref="DisposeAsync"/>.
+    /// </summary>
+    public async Task<JsOwned<T>> CreateOwnedAsync<T>(Func<JsScope, Task<T>> create, Func<T, Task>? teardown = null)
+    {
+        var child = CreateChild();
+        T value;
+        try
+        {
+            value = await create(child);
+        }
+        catch
+        {
+            await child.DisposeAsync();
+            throw;
+        }
+        return child.Owning(value, teardown is null ? null : () => teardown(value));
+    }
+
+    private JsOwned<T> Owning<T>(T value, Delegate? run)
+    {
+        lock (gate)
+        {
+            ObjectDisposedException.ThrowIf(disposed, this); // the parent went while the value was made
+            teardown = run;
+        }
+        return new(value, this);
     }
 
     internal void EndBatch(JsBatch batch)
@@ -456,35 +525,80 @@ public sealed class JsScope(JsRealm realm) : IDisposable, IAsyncDisposable
     {
         // Before anything is forgotten: without a sync seam this throws, and DisposeAsync still releases everything.
         var sync = Realm.IsStarted ? SyncTransport : null;
+        ThrowUnlessSyncDisposable();
+        if (Take() is not { } taken)
+        {
+            return;
+        }
+        try
+        {
+            // The children and the teardown may use handles this releases. Their errors surface after the release.
+            ExceptionDispatchInfo? failed = null;
+            foreach (var child in taken.Children)
+            {
+                try
+                {
+                    child.Dispose();
+                }
+                catch (Exception e)
+                {
+                    failed ??= ExceptionDispatchInfo.Capture(e);
+                }
+            }
+            try
+            {
+                (taken.Teardown as Action)?.Invoke();
+            }
+            catch (Exception e)
+            {
+                failed ??= ExceptionDispatchInfo.Capture(e);
+            }
+            if (Release() is { } release)
+            {
+                JsEnvelope.Check(sync!.Invoke(release));
+            }
+            failed?.Throw();
+        }
+        finally
+        {
+            ReleaseCallbacks(taken.Callbacks);
+        }
+    }
+
+    // Sync disposal can't send a batch or await a teardown, in this scope or a child.
+    private void ThrowUnlessSyncDisposable()
+    {
+        JsScope[] open;
         lock (gate)
         {
             if (batches.Count > 0)
             {
                 throw new InvalidOperationException("A scope with an open batch must be disposed with DisposeAsync.");
             }
-        }
-        var (release, owned, _) = Take();
-        try
-        {
-            if (release is not null)
+            if (teardown is Func<Task>)
             {
-                JsEnvelope.Check(sync!.Invoke(release));
+                throw new InvalidOperationException("A scope with an async teardown must be disposed with DisposeAsync.");
             }
+            open = [.. children];
         }
-        finally
+        foreach (var child in open)
         {
-            ReleaseCallbacks(owned);
+            child.ThrowUnlessSyncDisposable();
         }
     }
 
     public async ValueTask DisposeAsync()
     {
-        var (release, owned, pending) = Take();
+        if (Take() is not { } taken)
+        {
+            return;
+        }
         try
         {
-            // Queued ops go first: they may use handles this releases. Their errors surface after the release.
+            // Queued ops go first, then the children and the teardown: all may use handles this releases. Their errors
+            // surface after the release.
             ExceptionDispatchInfo? failed = null;
-            foreach (var batch in pending)
+            foreach (var batch in taken.Batches)
             {
                 try
                 {
@@ -495,7 +609,30 @@ public sealed class JsScope(JsRealm realm) : IDisposable, IAsyncDisposable
                     failed ??= ExceptionDispatchInfo.Capture(e);
                 }
             }
-            if (release is not null)
+            foreach (var child in taken.Children)
+            {
+                try
+                {
+                    await child.DisposeAsync();
+                }
+                catch (Exception e)
+                {
+                    failed ??= ExceptionDispatchInfo.Capture(e);
+                }
+            }
+            try
+            {
+                switch (taken.Teardown)
+                {
+                    case Action run: run(); break;
+                    case Func<Task> run: await run(); break;
+                }
+            }
+            catch (Exception e)
+            {
+                failed ??= ExceptionDispatchInfo.Capture(e);
+            }
+            if (Release() is { } release)
             {
                 await Realm.ReleaseAsync(release);
             }
@@ -507,36 +644,51 @@ public sealed class JsScope(JsRealm realm) : IDisposable, IAsyncDisposable
         }
         finally
         {
-            ReleaseCallbacks(owned);
+            ReleaseCallbacks(taken.Callbacks);
         }
     }
 
-    // Marks the scope disposed, completes its open streams, and returns the op that releases its handles (null if none),
-    // its callbacks and its open batches.
-    // A scope that never reached JS (prerendering) has neither, and touches no transport.
-    private (string? Release, int[] Callbacks, JsBatch[] Batches) Take()
+    // Marks the scope disposed, completes its open streams, leaves its parent, and returns its callbacks, open batches,
+    // children (newest first) and teardown; null if it was already disposed.
+    private (int[] Callbacks, JsBatch[] Batches, JsScope[] Children, Delegate? Teardown)? Take()
     {
-        (string?, int[], JsBatch[]) taken;
+        (int[], JsBatch[], JsScope[], Delegate?) taken;
         Action[] open;
         lock (gate)
         {
             if (disposed)
             {
-                return (null, [], []);
+                return null;
             }
             disposed = true;
-            var handles = Realm.Forget(this);
-            int[] owned = [.. callbacks];
+            taken = ([.. callbacks], [.. batches], [.. Enumerable.Reverse(children)], teardown);
             callbacks.Clear();
+            children.Clear();
+            teardown = null;
             open = [.. streams];
             streams.Clear();
-            taken = (handles.Count == 0 ? null : JsOp.Release(handles), owned, [.. batches]);
+        }
+        if (parent is { } p)
+        {
+            lock (p.gate)
+            {
+                p.children.Remove(this);
+            }
         }
         foreach (var complete in open)
         {
             complete(); // what's queued is still read, then the enumeration ends
         }
         return taken;
+    }
+
+    // The op that releases the handles no other scope owns, null if none, once the teardown is done with them. Until
+    // then the scope still owns them, so no other scope can get one of them released under it.
+    // A scope that never reached JS (prerendering) has none, and touches no transport.
+    private string? Release()
+    {
+        var handles = Realm.Forget(this);
+        return handles.Count == 0 ? null : JsOp.Release(handles);
     }
 
     private void ReleaseListener(int listener)

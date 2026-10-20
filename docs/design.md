@@ -72,6 +72,20 @@ Batching, snapshots and module functions matter because every awaited call on Se
 - .NET side: a weak cache per realm, so one id always gives the same C# object. A generated `JsClassRegistry` maps class ids to live types, which derive from `JsObject`. `JsScope.Wrap<T>(handle, classId)` returns the cached object or a new one of the most-derived registered type (R19). An unknown class id throws `JsException`.
 - Scopes: handles belong to a `JsScope`, and each component owns one. `Dispose` or `DisposeAsync` sends one `release` op for the handles no other scope owns, then drops the scope's callbacks. A result that arrives after its scope was disposed is released at once and the call throws `ObjectDisposedException`. On Server, a dropped circuit voids all handles.
 - Live objects hold their realm and handle, not a scope. A call's live results are owned by the scope the caller passes.
+- Child scopes: `scope.CreateChild()` makes a scope that its parent disposes first, with the same method. One disposed alone leaves its parent. It uses the parent's `Dispatch`.
+- Owned values: `scope.CreateOwnedAsync(create, teardown)` (`CreateOwned` in sync mode) runs `create` with a new child scope and returns a `JsOwned<T>`, the value and that scope as one. Disposing it, or its parent, runs `teardown` once, then releases what the child owns. A `create` that throws disposes the child. It suits an object that goes before its parent, such as one layer of a map, or that JS must tear down first (`destroy()`):
+
+  ```csharp
+  var layer = await Scope.CreateOwnedAsync(
+      scope => TileLayer.CreateAsync(scope, new() { Url = url }),
+      layer => layer.DestroyAsync());
+  await layer.Value.WatchLoadedAsync(layer.Scope, OnLoaded);   // released with the layer
+  await view.Map.Layers.AddAsync(layer.Value);
+  // …
+  await layer.DisposeAsync();   // destroy(), then one release; disposing Scope would do both too
+  ```
+
+- Disposal order: open batches' queues, children (newest first), the teardown, the `release`, then callbacks. The scope owns its handles until the release, and a teardown's write inside a batch is sent before it (§3.3). A failed step doesn't stop the rest: the first error is thrown after the release, and a dropped circuit is swallowed. `Dispose` throws `InvalidOperationException` before it forgets anything if the scope or a child has an open batch or an async teardown.
 - `JsScope.Callback` registers a delegate owned by the scope (R21). `JsScope.Subscribe`/`SubscribeAsync` registers an event listener, and `JsScope.StreamAsync` is the async-mode stream (R24).
 - Components: `JsComponentBase` owns the component's `Scope`, disposes it with the component, and starts the realm before the first interactive render, so live calls work from `OnInitializedAsync`. `ElementAsync<T>(reference)` gets a rendered element's live object.
 - Prerendering: there is no JS before a component is interactive, so live calls throw `JsRealmUnavailableException`.

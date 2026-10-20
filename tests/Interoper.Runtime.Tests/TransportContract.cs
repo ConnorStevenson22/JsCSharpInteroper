@@ -88,6 +88,7 @@ public static class TransportContract
         ("batch op: failures listed by index, the rest applied", BatchOp),
         ("BeginBatch: N writes are one round trip, a read flushes first", BeginBatch),
         ("wrap returns its value in wire form (R13, R28)", Wrap),
+        ("owned values: the teardown goes before the release, which sends a batch's queue first", Owned),
     ];
 
     // A component gets its element's handle this way, from {"$e":id}; any value comes back as a result would.
@@ -407,6 +408,47 @@ public static class TransportContract
     // --- Helpers ---
 
     private static readonly JsonRead<JsonNode?> Node = static (ref reader) => JsonNode.Parse(ref reader);
+
+    // design §3.2, §3.3: each marker is owned in a child of the map's scope, and its teardown takes it off the map.
+    private static async Task Owned(Seam seam)
+    {
+        if (seam.AsyncTransport is not { } transport) return;
+        var realm = new JsRealm(() => Task.FromResult(transport), new JsClassRegistry());
+        await realm.StartAsync();
+        var baseline = await seam.Census();
+        var map = new JsScope(realm);
+        async Task<int> Make(JsScope scope, string op)
+        {
+            var h = (int)(await realm.CallAsync(op, Node))!["$h"]!;
+            scope.Own(h);
+            return h;
+        }
+        var view = await Make(map, """{"op":"create","t":5,"args":[{}]}""");
+        var markers = await Make(map, $$"""{"op":"get","h":{{view}},"name":"markers"}""");
+        string Markers(string method, int marker) => $$$"""{"op":"call","h":{{{markers}}},"name":"{{{method}}}","args":[{"$h":{{{marker}}}}]}""";
+        async Task<int> Add(JsScope scope)
+        {
+            var marker = await Make(scope, """{"op":"create","t":6,"args":[{}]}""");
+            await realm.SendAsync(Markers("add", marker));
+            return marker;
+        }
+        Task Remove(int marker) => realm.SendAsync(Markers("remove", marker)); // queued in a batch
+
+        var first = await map.CreateOwnedAsync(Add, Remove);
+        var second = await map.CreateOwnedAsync(Add, Remove);
+        await first.DisposeAsync();
+        Equal((1.0, baseline + 3), (await realm.GetNumberAsync(markers, "length"), await seam.Census()));
+
+        var start = realm.RoundTrips;
+        await using (map.BeginBatch())
+        {
+            await second.DisposeAsync();
+            Equal(start + 2, realm.RoundTrips); // the queued remove, then the release
+        }
+        Equal((0.0, baseline + 2), (await realm.GetNumberAsync(markers, "length"), await seam.Census()));
+        await map.DisposeAsync();
+        Equal(baseline, await seam.Census());
+    }
 
     private static async Task<JsonNode?> Value(Seam seam, string op) => JsEnvelope.Read(await seam.Send(op), Node);
 
