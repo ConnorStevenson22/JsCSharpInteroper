@@ -129,6 +129,15 @@ The profile's `valueClasses` marks classes as value-like (R16). Getting this wro
 
 Sent to JS, a value-like snapshot arrives as an instance. The writer adds its class id (`$c`, [design §3.4](design.md#34-protocol)) and the runtime calls `new Point(bag)`. The bag keeps constants such as the discriminant (R20). Plain data records stay plain objects. The snapshots of an abstract value-like base form a `closed record` hierarchy (`ShapeSnapshot`), read by the discriminant.
 
+An entity is sent the same way where it is only written. Where a class with `Create` that isn't generic (`Marker`) is only written, its snapshot is an extra union case next to it, and an array of snapshots next to an array of it. JS builds each one with `new Marker(bag)` and sends no handle back, so 100 of them in one `MarkerEdits` are one op, and one round trip in a batch. The positions:
+
+- a parameter, except a rest parameter, which stays `params Marker[]` (R22): `emphasize(markers: Marker | Marker[])` takes `MarkerSnapshot` and `MarkerSnapshot[]` too;
+- a setter: `selected: Marker | null` is `SetSelected(MapViewSelectedInput)`, whose cases are `Marker` and `MarkerSnapshot`, while the getter still returns `Marker`;
+- a member of a data record that no read position reaches (a getter, a result, an event payload or detail, a callback's argument, or a record those hold), and of an inline record in a parameter or setter;
+- a union with an entity case anywhere, a union alias's or any record's member, since such a union is never read (R2): `Measurable` and `MarkerEdits.add: Marker[] | Collection<Marker>` take snapshots too.
+
+A plain `Marker` or `Marker[]` position becomes a union named after its owner (R27), so collection expressions (`[a, b]`) no longer convert to it; write `new[] { a, b }`. A position that already takes the class's constructor bag (§5) gets no snapshot case. Read positions and value-like classes don't change.
+
 **R17. Snapshot depth.** Snapshots hold data members only. Value-like members are copied deeply as their snapshots. Entity members are left out, since reading one needs a scope; use the scoped getter (`GetSelected(scope)`).
 
 A data record (not a snapshot) may hold entities, directly, in arrays or through a type parameter. Only emitted classes count: a member typed with a class outside the selection is dropped or skipped (R2), so it makes nothing scoped. Such a record is *scoped*: its reader is `Read(ref reader, JsScope scope)`, so whatever returns it takes a scope (§5). Union readers take no scope, so only a write-only union can have an entity or scoped record case (R2).
@@ -141,7 +150,7 @@ A data record (not a snapshot) may hold entities, directly, in arrays or through
 
 A member a subclass redeclares appears once. Under a closed base (R16) it stays on the base record if its type is unchanged, and is a `new` property on the subclass record if not (R26). In that case the subclass's `WriteMembers` doesn't write the hidden base property.
 
-Every snapshot record has `Write` (the whole object, with its constants; a value-like one's adds `$c`), `WriteMembers` (the bag for `create`, the patch for `apply`) and `Read`.
+Every snapshot record has `Write` (the whole object, with its constants; a value-like one's, and that of an entity class with `Create` that isn't generic, adds `$c`), `WriteMembers` (the bag for `create`, the patch for `apply`) and `Read`.
 
 System.Text.Json: every snapshot record, and every data record that reads without a scope (not scoped, R17; no DOM member, R13; not generic), implements `IJsRecord<T>` and has `[JsonConverter(typeof(JsRecordConverter<T>))]`. So app types that hold them serialize in their wire format, with no reflection over the record. A value-like snapshot keeps its `$c`, which `Read` ignores.
 
@@ -186,6 +195,7 @@ When JS returns a value for a union position, the runtime must pick the case.
 | module function | static method on a static class per module, with a leading `JsRealm realm` (or `JsScope scope` when the rules above need one) | same, async |
 
 - A setter whose wider type takes the constructor bag of an entity class the getter returns also takes that class, as libraries that build an instance from the bag (autocasting) do: `get theme(): Theme`, `set theme(v: ThemeOptions | string)` is `SetTheme(ViewThemeInput)`, whose cases are `ThemeOptions`, `string` and `Theme`. The union is only written (R2).
+- The reverse: where an entity is only written, it also takes the class's snapshot, which JS builds the instance from (R16). Both rules add union cases, so one member serves the instance and the data. Overloads would break `null` arguments and can't serve record members.
 - A method or module function that returns a `Task` takes `CancellationToken cancellationToken = default` last, except after a rest parameter (R22). Cancelling stops the wait, not the JS call, which runs to the end. A result that arrives later is still read, so the caller's scope owns its handles.
 - A name that already ends in `Async` keeps the one suffix: `loadAsync()` is `LoadAsync`.
 - Live results, events and watches belong to the scope the caller passes ([design §3.2](design.md#32-handles-identity-and-lifetime)). Disposing a returned subscription releases it sooner. Value-like classes are values (R16), so `PointSnapshot Center { get; set; }` needs no scope.

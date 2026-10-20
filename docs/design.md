@@ -103,7 +103,7 @@ Structured data is UTF-8 JSON. Undefined members are left out. Special values:
 | Encoding | Meaning |
 |---|---|
 | `{"$h":12,"$t":7}` | a handle and its class id |
-| `{"$c":3, …}` | a value-like class instance (R16), rebuilt in JS with `new Class(rest)` |
+| `{"$c":3, …}` | a class instance built in JS with `new Class(rest)`: a value-like one (R16), or an entity where it's only written. No handle comes back |
 | `{"$f":3}` | a .NET callback (R21) |
 | `{"$e":"<id>"}` | a DOM element by its Blazor `ElementReference` id (R13) |
 | `{"$u":1}` | undefined inside arrays and arguments |
@@ -130,7 +130,7 @@ Structured data is UTF-8 JSON. Undefined members are left out. Special values:
 
 Entry points:
 
-- `invoke(json)` for `IJSRuntime`. It never rejects, and imports modules on first use.
+- `invoke(json)` for `IJSRuntime`, and for the async seam on WebAssembly. It never rejects, and imports modules on first use. Before it parses an op, it imports the modules of the classes its `$c` values name, so an entity's bag can be the first use of its module.
 - `invokeSync(json)` for `[JSImport]`. It never starts async work, so sync mode loads its modules up front.
 - `getValue`/`setValue` are the typed fast paths. `takeError()` returns the last fast-path error, since `[JSImport]` keeps only the message.
 - `start(metadataSpecifier, sink)` loads the metadata module, imports value-like classes' modules and registers custom events with Blazor. `startWithDotNetObject` does the same with a `DotNetObjectReference` as the sink.
@@ -151,6 +151,7 @@ new ImportMapDefinition(Maps.ImportMap("/node_modules/"), null, null)
 When modules load:
 
 - Value-like classes' modules load when the realm starts, so JS can rebuild `$c` values synchronously.
+- An entity's `$c` (R16) can name a module nothing has loaded. `invoke` imports it before parsing the op, which costs no round trip, also inside a batch. Sync mode has it preloaded. A `load` op before each call would cost a round trip, and generated code doesn't know what JS has loaded.
 - A component loads its element's module before wrapping the element (R28). Hand-written custom-element markup needs the app to load the module.
 - Other modules load on first use. Sync mode loads them all up front (`JsClassRegistry.Preload`).
 

@@ -14,6 +14,7 @@ public sealed partial record DemoMapElementSnapshot : global::Interoper.IJsRecor
     public static void Write(global::System.Text.Json.Utf8JsonWriter writer, DemoMapElementSnapshot value)
     {
         writer.WriteStartObject();
+        writer.WriteNumber("$c"u8, DemoMaps.DemoMapElementId);
         WriteMembers(writer, value);
         writer.WriteEndObject();
     }

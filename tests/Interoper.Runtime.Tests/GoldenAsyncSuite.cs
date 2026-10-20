@@ -49,6 +49,7 @@ public static class GoldenAsyncSuite
         ("a subscription with remove() instead of dispose(), delivered then released (R24)", InScope(RemoveSubscription)),
         ("any is JsAny: data, or a handle the scope owns (§2)", InScope(Any)),
         ("a union with an entity case is a parameter's (R2, R17)", InScope(WrittenUnion)),
+        ("an entity only written takes its snapshot, which JS builds; 100 in a batch are one round trip (R16, R18)", InScope(EntityBags)),
         ("same-named types of sibling modules (R27)", InScope(SiblingModules)),
         ("a custom element drives its live view, and its class is found by its tag (§5, R22, R28)", InScope(CustomElement)),
     ];
@@ -636,6 +637,33 @@ public static class GoldenAsyncSuite
         Equal("polygon", await Measure.DescribeAsync(scope.Realm, new PolygonSnapshot { Vertices = new double[][] { [0, 0], [1, 0], [0, 1] } }));
         Equal("marker m", await Measure.DescribeAsync(scope.Realm, await Marker.CreateAsync(scope, new MarkerSnapshot { Label = "m" })));
         Equal("marker p", await Measure.DescribeAsync(scope.Realm, await Pin.CreateAsync(scope, new PinSnapshot { Label = "p" }))); // a subclass of the case
+    }
+
+    private static async Task EntityBags(JsScope scope)
+    {
+        var view = await MapView.CreateAsync(scope, new MapViewSnapshot());
+        var start = scope.Realm.RoundTrips;
+        await using (scope.BeginBatch())
+        {
+            // MarkerEdits is only written, so its markers may be snapshots: JS builds each with new Marker(bag), and sends no handle back.
+            await view.EditAsync(new MarkerEdits { Add = Enumerable.Range(0, 100).Select(i => new MarkerSnapshot { Label = $"{i}" }).ToArray(), Select = new MarkerSnapshot { Label = "s" } });
+            Equal(start, scope.Realm.RoundTrips);
+        }
+        Equal(start + 1, scope.Realm.RoundTrips);
+        var markers = await (await view.GetMarkersAsync(scope)).ToArrayAsync(scope);
+        Equal(100, markers.Length);
+        Equal("99", await markers[99].GetDisplayLabelAsync()); // a Marker, so it has displayLabel
+        Expect((await view.GetSelectedAsync(scope)).TryGetValue(out Marker? selected) && await selected.GetDisplayLabelAsync() == "s", "the selected marker to be built");
+
+        // A setter, a parameter's union and a union alias take one too; an instance still works (§5, R2).
+        await view.SetSelectedAsync(new MarkerSnapshot { Label = "t" });
+        Expect((await view.GetSelectedAsync(scope)).TryGetValue(out Marker? set) && await set.GetDisplayLabelAsync() == "t", "the setter to build a marker");
+        await view.SetSelectedAsync(markers[0]);
+        Expect((await view.GetSelectedAsync(scope)).TryGetValue(out Marker? same) && ReferenceEquals(same, markers[0]), "an instance to stay itself");
+        var tile = await TileLayer.CreateAsync(scope, new TileLayerSnapshot());
+        await tile.EmphasizeAsync(new[] { new MarkerSnapshot { Label = "e" }, new MarkerSnapshot() });
+        Equal("e", await (await tile.GetEmphasizedAsync(scope))[0].GetDisplayLabelAsync());
+        Equal("marker m", await Measure.DescribeAsync(scope.Realm, new MarkerSnapshot { Label = "m" }));
     }
 
     private static async Task CustomElement(JsScope scope)

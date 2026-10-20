@@ -61,8 +61,8 @@ public sealed partial class MapView : Emitter
         Realm.CallAsync(global::Interoper.JsOp.Get(Handle, "selected"), (ref r) => global::Interoper.JsJson.ReadOpt(ref r, scope.Read<Marker>));
 
     /// <summary>The <c>Marker</c> the user picked last, or <c>null</c> when none is.</summary>
-    public global::System.Threading.Tasks.Task SetSelectedAsync(global::Interoper.Opt<Marker> value) =>
-        Realm.SendAsync(global::Interoper.JsOp.Set(Handle, "selected", w => global::Interoper.JsJson.WriteValue(w, value, Marker.Write)));
+    public global::System.Threading.Tasks.Task SetSelectedAsync(MapViewSelectedInput value) =>
+        Realm.SendAsync(global::Interoper.JsOp.Set(Handle, "selected", w => global::Interoper.JsJson.WriteValue(w, value)));
 
     public async global::System.Threading.Tasks.Task<Collection<Marker>> GetMarkersAsync(global::Interoper.JsScope scope) =>
         (await Realm.CallAsync(global::Interoper.JsOp.Get(Handle, "markers"), (ref r) => scope.Read(ref r, static (realm, handle) => new Collection<Marker>(realm, handle))))!;
@@ -106,6 +106,10 @@ public sealed partial class MapView : Emitter
             global::Interoper.JsJson.WriteNumber(w, x);
             global::Interoper.JsJson.WriteNumber(w, y);
         }), (ref r) => global::Interoper.JsJson.ReadOpt(ref r, scope.Read<Marker>), cancellationToken);
+
+    /// <summary>Adds and selects markers, which must be instances.</summary>
+    public global::System.Threading.Tasks.Task EditAsync(MarkerEdits edits, global::System.Threading.CancellationToken cancellationToken = default) =>
+        Realm.SendAsync(global::Interoper.JsOp.Call(Handle, "edit", w => MarkerEdits.Write(w, edits)), cancellationToken);
 
     /// <summary>A click on the map, after the view has handled it.</summary>
     public global::System.Threading.Tasks.Task<global::System.IAsyncDisposable> OnClickAsync(global::Interoper.JsScope scope, global::System.Action<ClickEvent> handler, global::Interoper.EventOptions? options = null) =>

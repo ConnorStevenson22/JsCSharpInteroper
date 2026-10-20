@@ -8,12 +8,13 @@ namespace GoldenSlice.Sync;
 public readonly partial struct Measurable : global::Interoper.IJsUnion<Measurable>, global::System.IEquatable<Measurable>
 {
     private readonly object? _ref;
-    private readonly byte _tag; // 0 = undefined, 1 = null, 2 = PointSnapshot, 3 = PolygonSnapshot, 4 = Marker
+    private readonly byte _tag; // 0 = undefined, 1 = null, 2 = PointSnapshot, 3 = PolygonSnapshot, 4 = Marker, 5 = MarkerSnapshot
 
     private Measurable(object? value, byte tag) => (_ref, _tag) = (value, tag);
     public Measurable(PointSnapshot value) : this(value, 2) { }
     public Measurable(PolygonSnapshot value) : this(value, 3) { }
     public Measurable(Marker value) : this(value, 4) { }
+    public Measurable(MarkerSnapshot value) : this(value, 5) { }
     public Measurable(global::Interoper.Undefined? value) : this(null, value is null ? (byte)1 : (byte)0) { }
 
     public static implicit operator Measurable(global::Interoper.Undefined? value) => new(value);
@@ -47,6 +48,12 @@ public readonly partial struct Measurable : global::Interoper.IJsUnion<Measurabl
         return _tag == 4;
     }
 
+    public bool TryGetValue([global::System.Diagnostics.CodeAnalysis.MaybeNullWhen(false)] out MarkerSnapshot value)
+    {
+        value = _tag == 5 ? (MarkerSnapshot)_ref! : null;
+        return _tag == 5;
+    }
+
     public static void WriteValue(global::System.Text.Json.Utf8JsonWriter writer, Measurable value)
     {
         switch (value._tag)
@@ -54,6 +61,7 @@ public readonly partial struct Measurable : global::Interoper.IJsUnion<Measurabl
             case 2: PointSnapshot.Write(writer, (PointSnapshot)value._ref!); break;
             case 3: PolygonSnapshot.Write(writer, (PolygonSnapshot)value._ref!); break;
             case 4: Marker.Write(writer, (Marker)value._ref!); break;
+            case 5: MarkerSnapshot.Write(writer, (MarkerSnapshot)value._ref!); break;
         }
     }
 

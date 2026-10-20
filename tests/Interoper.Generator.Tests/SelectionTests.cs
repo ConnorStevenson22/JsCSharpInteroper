@@ -12,7 +12,7 @@ public sealed class SelectionTests
 
         Assert.Equal(
         [
-            "MapView.js: Basemap, Cursor, CenterAndZoom, Camera, FlyToTarget, FlyToOptions, ClickEvent, MapViewEvents, MapViewOptions, MapView", // R15: FlyToOptions without its signal
+            "MapView.js: Basemap, Cursor, CenterAndZoom, Camera, FlyToTarget, FlyToOptions, ClickEvent, MapViewEvents, MarkerEdits, MapViewOptions, MapView", // R15: FlyToOptions without its signal
             "Marker.js: MarkerOptions, Marker", // R15: without its callback
             "core.js: Observable, Emitter, Tagged, CollectionChangeEvent, CollectionEvents, Collection",
             "demo-map.js: DemoMapClickDetail, DemoMapElement", // R28: not the event map; an inline detail is an inline record (R11)
@@ -26,7 +26,7 @@ public sealed class SelectionTests
             "styles.js: Rgba, ColorInput, IconName, FillStyle, StrokeStyle, IconStyle, Style, toRgba",
         ], Modules(selection));
 
-        Assert.Equal(["center", "zoom", "rotation", "basemap", "cursor", "title", "container", "selected", "markers", "layers", "screenToMap", "flyTo", "markerAt"],
+        Assert.Equal(["center", "zoom", "rotation", "basemap", "cursor", "title", "container", "selected", "markers", "layers", "screenToMap", "flyTo", "markerAt", "edit"],
             Members(selection, "MapView")); // R13: the DOM container too
         Assert.Equal(["position", "label", "style", "labelFormatter", "displayLabel"], Members(selection, "Marker")); // R21: no LabelFormatter type
         Assert.Equal(["length", "at", "add", "remove", "find", "forEach", "toArray"], Members(selection, "Collection")); // §2: a generic live class
@@ -66,11 +66,13 @@ public sealed class SelectionTests
     {
         var selection = Select("*/MapView.js");
         // R2: flyTo only writes its FlyToTarget, which drops its Shape case; the generator reports that.
-        Assert.Equal(["zoom", "rotation", "basemap", "cursor", "title", "container", "flyTo"], Members(selection, "MapView"));
+        Assert.Equal(["zoom", "rotation", "basemap", "cursor", "title", "container", "flyTo", "edit"], Members(selection, "MapView"));
         Assert.Equal(
         [
             "IOP2007 FlyToOptions.signal: skipped: uses `AbortSignal`", // R15: an optional member is dropped, a required one skips its record
             "IOP2007 ClickEvent.mapPoint: skipped: uses class `Point` outside the selection", // R24: a payload drops a required member too
+            "IOP2007 MarkerEdits.add: skipped: uses class `Marker` outside the selection",
+            "IOP2007 MarkerEdits.select: skipped: uses class `Marker` outside the selection",
             "IOP2007 MapViewOptions.center: skipped: uses class `Point` outside the selection",
             "IOP2007 MapView.center: skipped: uses class `Point` outside the selection",
             "IOP2007 MapView.selected: skipped: uses class `Marker` outside the selection",
@@ -271,8 +273,9 @@ public sealed class SelectionTests
             { "kind": "interface", "name": "X", "members": [{ "kind": "property", "name": "layer", "type": { "kind": "ref", "name": "Layer", "module": "@acme/maps/a.js" } }] },
             { "kind": "class", "name": "Layer" },
             { "kind": "interface", "name": "Holder", "members": [{ "kind": "property", "name": "t", "type": { "kind": "ref", "name": "T", "module": "@acme/maps/a.js" } }] },
-            { "kind": "function", "name": "f", "signatures": [{ "params": [{ "name": "x", "type": { "kind": "ref", "name": "T", "module": "@acme/maps/a.js" } }] }] }
-            """), new Profile { Package = "@acme/maps" }, new(Api.Sync, "Acme.Maps"));
+            { "kind": "function", "name": "f", "signatures": [{ "params": [{ "name": "x", "type": { "kind": "ref", "name": "T", "module": "@acme/maps/a.js" } }] }] },
+            { "kind": "function", "name": "g", "signatures": [{ "returns": { "kind": "ref", "name": "X", "module": "@acme/maps/a.js" } }] }
+            """), new Profile { Package = "@acme/maps" }, new(Api.Sync, "Acme.Maps")); // g reads X, so X stays scoped (R16, R18)
         Assert.Empty(result.Diagnostics);
         var holder = result.Files.Single(f => f.Path == "Holder.cs").Text;
         Assert.Contains("global::Interoper.JsJson.WriteProperty(writer, \"t\"u8, value.T);", holder);

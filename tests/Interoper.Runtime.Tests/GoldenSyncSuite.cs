@@ -44,6 +44,7 @@ public static class GoldenSyncSuite
         ("a subscription with remove() instead of dispose(), delivered then released (R24)", InScope(RemoveSubscription)),
         ("any is JsAny: data, or a handle the scope owns (§2)", InScope(Any)),
         ("a union with an entity case is a parameter's (R2, R17)", InScope(WrittenUnion)),
+        ("an entity only written takes its snapshot, which JS builds (R16, R18)", InScope(EntityBags)),
         ("same-named types of sibling modules (R27)", InScope(SiblingModules)),
         ("a custom element drives its live view, and its class is found by its tag (§5, R22, R28)", InScope(CustomElement)),
     ];
@@ -477,6 +478,23 @@ public static class GoldenSyncSuite
         Equal("polygon", Measure.Describe(scope.Realm, new PolygonSnapshot { Vertices = new double[][] { [0, 0], [1, 0], [0, 1] } }));
         Equal("marker m", Measure.Describe(scope.Realm, Marker.Create(scope, new MarkerSnapshot { Label = "m" })));
         Equal("marker p", Measure.Describe(scope.Realm, Pin.Create(scope, new PinSnapshot { Label = "p" }))); // a subclass of the case
+    }
+
+    private static void EntityBags(JsScope scope)
+    {
+        // MarkerEdits is only written, so its markers may be snapshots: JS builds each with new Marker(bag), and sends no handle back.
+        var view = MapView.Create(scope, new MapViewSnapshot());
+        view.Edit(new MarkerEdits { Add = new[] { new MarkerSnapshot { Label = "a" }, new MarkerSnapshot { Label = "b" } }, Select = new MarkerSnapshot { Label = "s" } });
+        Equal("a b", string.Join(" ", view.GetMarkers(scope).ToArray(scope).Select(m => m.DisplayLabel)));
+        Expect(view.GetSelected(scope).TryGetValue(out Marker? selected) && selected.DisplayLabel == "s", "the selected marker to be built");
+
+        // A setter, a parameter's union and a union alias take one too (§5, R2).
+        view.SetSelected(new MarkerSnapshot { Label = "t" });
+        Expect(view.GetSelected(scope).TryGetValue(out Marker? set) && set.DisplayLabel == "t", "the setter to build a marker");
+        var tile = TileLayer.Create(scope, new TileLayerSnapshot());
+        tile.Emphasize(new MarkerSnapshot { Label = "e" });
+        Equal("e", tile.GetEmphasized(scope)[0].DisplayLabel);
+        Equal("marker m", Measure.Describe(scope.Realm, new MarkerSnapshot { Label = "m" }));
     }
 
     private static void CustomElement(JsScope scope)

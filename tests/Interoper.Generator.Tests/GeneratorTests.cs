@@ -1141,13 +1141,14 @@ public sealed class GeneratorTests
             { "specifier": "@acme/widgets/themes/dark.js", "package": "@acme/widgets", "declarations": [{ "kind": "interface", "name": "Theme" }] }
             """);
 
-        Assert.Equal(["MapView.cs", "MapViewSnapshot.cs", "Widgets/Legend.cs", "Widgets/LegendSnapshot.cs", "Widgets/Themes/Theme.cs", "Widgets/Widgets.cs", "Maps.cs", "maps.meta.js"],
-            result.Files.Select(f => f.Path));
+        // R16, R18: the setter and the parameter also take a MapViewSnapshot, so they're unions named after their owners (R27).
+        Assert.Equal(["MapView.cs", "MapViewSnapshot.cs", "Widgets/Legend.cs", "Widgets/LegendSnapshot.cs", "Widgets/Themes/Theme.cs", "Widgets/Widgets.cs", "Maps.cs", "maps.meta.js",
+            "Widgets/LegendViewInput.cs", "Widgets/WidgetsLegendForView.cs"], result.Files.Select(f => f.Path));
         var legend = File(result, "Widgets/Legend.cs");
         Assert.Contains("namespace Acme.Maps.Widgets;", legend);
         Assert.Contains("public global::Acme.Maps.MapView GetView(global::Interoper.JsScope scope) =>", legend);
         Assert.Contains("global::Interoper.JsOp.Create(global::Acme.Maps.Maps.LegendId, ", legend);
-        Assert.Contains("public static Legend LegendFor(global::Interoper.JsScope scope, global::Acme.Maps.MapView view) =>", File(result, "Widgets/Widgets.cs"));
+        Assert.Contains("public static Legend LegendFor(global::Interoper.JsScope scope, WidgetsLegendForView view) =>", File(result, "Widgets/Widgets.cs"));
         Assert.Contains("namespace Acme.Maps.Widgets.Themes;", File(result, "Widgets/Themes/Theme.cs"));
         // The package's root export is named by the declaration alone.
         Assert.Contains("""2: { module: "@acme/widgets", export: "Legend", name: "Legend" },""", File(result, "maps.meta.js"));
@@ -1577,6 +1578,45 @@ public sealed class GeneratorTests
         Assert.Contains("public ViewThemeInput(ThemeOptions value)", input);
         Assert.Contains("public ViewThemeInput(Theme value)", input);
         Assert.Contains("is only written (R2)", input); // an entity case can't be read without a scope
+        Assert.DoesNotContain("ThemeSnapshot", input); // R16, R18: it takes the constructor bag already
+    }
+
+    [Fact] // R16, R18, §5: where an entity is only written, its snapshot stands for it too, as more union cases; JS builds it from $c
+    public void AnEntityOnlyWrittenAlsoTakesItsSnapshot()
+    {
+        const string Feature = """{ "kind": "ref", "name": "Feature", "module": "@acme/maps/a.js" }""";
+        const string Features = $$"""{ "kind": "array", "element": {{Feature}} }""";
+        const string Shape = """{ "kind": "ref", "name": "Shape", "module": "@acme/maps/a.js" }""";
+        // Edits is only a parameter's, Result only a result's; Shape is abstract, Point value-like.
+        var result = Generate($$"""
+            { "kind": "class", "name": "Feature", "members": [{ "kind": "property", "name": "label", "type": {{String}} }] },
+            { "kind": "class", "name": "Shape", "abstract": true },
+            { "kind": "class", "name": "Point", "members": [{ "kind": "property", "name": "x", "type": {{Number}} }] },
+            { "kind": "interface", "name": "Edits", "members": [{ "kind": "property", "name": "add", "optional": true, "type": {{Features}} }] },
+            { "kind": "interface", "name": "Result", "members": [{ "kind": "property", "name": "added", "type": {{Features}} }] },
+            { "kind": "class", "name": "Layer", "members": [
+              { "kind": "property", "name": "focus", "type": {{Feature}} },
+              { "kind": "method", "name": "edit", "signatures": [{ "params": [{ "name": "edits", "type": { "kind": "ref", "name": "Edits", "module": "@acme/maps/a.js" } },
+                { "name": "rest", "rest": true, "type": {{Features}} }], "returns": { "kind": "ref", "name": "Result", "module": "@acme/maps/a.js" } }] },
+              { "kind": "method", "name": "add", "signatures": [{ "params": [{ "name": "feature", "type": {{Feature}} }, { "name": "shape", "type": {{Shape}} },
+                { "name": "at", "type": { "kind": "ref", "name": "Point", "module": "@acme/maps/a.js" } }], "returns": {{Void}} }] }] }
+            """, new Profile { Package = "@acme/maps", ValueClasses = ["Point"] });
+
+        Assert.Empty(result.Diagnostics);
+        var layer = File(result, "Layer.cs");
+        Assert.Contains("public Feature GetFocus(global::Interoper.JsScope scope) =>", layer); // a getter is read: unchanged
+        Assert.Contains("public void SetFocus(LayerFocusInput value) =>", layer);
+        Assert.Contains("public void Add(LayerAddFeature feature, Shape shape, PointSnapshot at) =>", layer); // no bag for an abstract or a value-like class
+        Assert.Contains("public Result Edit(global::Interoper.JsScope scope, Edits edits, params Feature[] rest) =>", layer); // R22: a rest parameter stays params T[]
+        Assert.Contains("public LayerAddFeature(FeatureSnapshot value)", File(result, "LayerAddFeature.cs"));
+        Assert.Contains("public LayerFocusInput(FeatureSnapshot value)", File(result, "LayerFocusInput.cs"));
+        // A record no read position reaches takes snapshots; one that is read is unchanged.
+        Assert.Contains("public EditsAdd Add { get; init; }", File(result, "Edits.cs"));
+        Assert.Contains("public EditsAdd(FeatureSnapshot[] value)", File(result, "EditsAdd.cs"));
+        Assert.Contains("public required Feature[] Added { get; init; }", File(result, "Result.cs"));
+        // The snapshot is written with $c, so JS builds the Feature (new Feature(bag)); an abstract class's isn't.
+        Assert.Contains("writer.WriteNumber(\"$c\"u8, Maps.FeatureId);", File(result, "FeatureSnapshot.cs"));
+        Assert.DoesNotContain("$c", File(result, "ShapeSnapshot.cs"));
     }
 
     [Fact] // R28, R6: a property whose type has null through an alias (`Title | undefined`, `type Title = string | null`) sets JS null

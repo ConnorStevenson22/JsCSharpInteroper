@@ -9,6 +9,7 @@ public sealed partial record EmitterSnapshot : global::Interoper.IJsRecord<Emitt
     public static void Write(global::System.Text.Json.Utf8JsonWriter writer, EmitterSnapshot value)
     {
         writer.WriteStartObject();
+        writer.WriteNumber("$c"u8, DemoMaps.EmitterId);
         WriteMembers(writer, value);
         writer.WriteEndObject();
     }

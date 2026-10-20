@@ -15,6 +15,7 @@ public sealed partial record TileLayerSnapshot : global::Interoper.IJsRecord<Til
     public static void Write(global::System.Text.Json.Utf8JsonWriter writer, TileLayerSnapshot value)
     {
         writer.WriteStartObject();
+        writer.WriteNumber("$c"u8, global::GoldenSlice.Async.DemoMaps.TileLayerId);
         WriteMembers(writer, value);
         writer.WriteEndObject();
     }

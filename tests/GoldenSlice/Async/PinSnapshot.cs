@@ -14,6 +14,7 @@ public sealed partial record PinSnapshot : global::Interoper.IJsRecord<PinSnapsh
     public static void Write(global::System.Text.Json.Utf8JsonWriter writer, PinSnapshot value)
     {
         writer.WriteStartObject();
+        writer.WriteNumber("$c"u8, DemoMaps.PinId);
         WriteMembers(writer, value);
         writer.WriteEndObject();
     }

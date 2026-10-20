@@ -280,6 +280,23 @@ internal sealed class FakeMapView : FakeEmitter
                 var point = ScreenToMap(args);
                 var tolerance = 10 / Math.Pow(2, (double)Get("zoom")!);
                 return Task.FromResult(markers.Items.Cast<FakeMarker>().FirstOrDefault(m => Distance((FakePoint)m.Get("position")!, point) <= tolerance) as object);
+            case "edit": // adds and selects markers, which must be instances, as one built from a bag ($c) is
+                var edits = args.FirstOrDefault() as Dictionary<string, object?> ?? [];
+                var added = edits.GetValueOrDefault("add") switch { List<object?> list => list, FakeCollection c => [.. c.Items], _ => [] };
+                var select = edits.GetValueOrDefault("select", Undefined.Value);
+                if (added.Append(select).Any(m => m is not (FakeMarker or null or Undefined)))
+                {
+                    throw new JsException("TypeError", "edit takes Marker instances", null);
+                }
+                foreach (var marker in added)
+                {
+                    markers.Call("add", [marker]);
+                }
+                if (select is not Undefined)
+                {
+                    Set("selected", select);
+                }
+                return Undefined.Value;
             default:
                 return base.Call(name, args);
         }
@@ -443,11 +460,21 @@ internal sealed class FakeTileLayer : FakeLayer
 
     public override string ClassName => "layers.TileLayer";
 
+    public override object? Get(string name) => name == "emphasized" ? base.Get(name) as List<object?> ?? [] : base.Get(name);
+
     public override object? Call(string name, object?[] args)
     {
-        if (name != "refresh") return base.Call(name, args);
-        Set("refreshCount", (double)Get("refreshCount")! + 1);
-        return Undefined.Value;
+        switch (name)
+        {
+            case "refresh":
+                Set("refreshCount", (double)Get("refreshCount")! + 1);
+                return Undefined.Value;
+            case "emphasize": // one marker or several
+                Set("emphasized", args[0] as List<object?> ?? [args[0]]);
+                return Undefined.Value;
+            default:
+                return base.Call(name, args);
+        }
     }
 
     protected override FakeLayer Clone() => new FakeTileLayer(new() { ["url"] = Get("url"), ["title"] = Get("title"), ["visible"] = Get("visible") });

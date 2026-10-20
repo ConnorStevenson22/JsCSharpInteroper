@@ -367,11 +367,8 @@ public sealed class InMemoryTransport : IJsSyncTransport, IJsTransport
                 return elements.TryGetValue(id, out var element) ? element
                     : throw InteroperError($"No element has the capture attribute _bl_{id}; send an ElementReference after its first render");
             case JsonObject o when o.ContainsKey("$c"):
+                // A value-like class, or an entity's bag (R16, R18): every module is loaded here.
                 var entry = ClassEntry(o["$c"]!.GetValue<int>());
-                if (!entry.Value)
-                {
-                    throw InteroperError($"Class {entry.Name} is not loaded; only value-like classes can be sent as $c");
-                }
                 var bag = o.Where(p => p.Key != "$c").ToDictionary(p => p.Key, p => Revive(p.Value));
                 return entry.Construct([bag]);
             case JsonObject o:

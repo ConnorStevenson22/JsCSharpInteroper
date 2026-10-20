@@ -62,3 +62,7 @@ b.execute(1, { scale: 2 });
 void pair;
 void describe;
 void width;
+
+// MarkerEdits.add takes an array or a collection of markers (R2); select takes one, or null.
+view.edit({ add: [marker], select: null });
+view.edit({ add: view.markers, select: marker });

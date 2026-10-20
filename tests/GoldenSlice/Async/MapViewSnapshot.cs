@@ -20,6 +20,7 @@ public sealed partial record MapViewSnapshot : global::Interoper.IJsRecord<MapVi
     public static void Write(global::System.Text.Json.Utf8JsonWriter writer, MapViewSnapshot value)
     {
         writer.WriteStartObject();
+        writer.WriteNumber("$c"u8, DemoMaps.MapViewId);
         WriteMembers(writer, value);
         writer.WriteEndObject();
     }

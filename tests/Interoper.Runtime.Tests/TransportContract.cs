@@ -69,7 +69,7 @@ public sealed class Seam
 public static class TransportContract
 {
     // Class ids from the demo-maps metadata (tests/GoldenSlice/wwwroot/demo-maps.meta.js).
-    public const int Shape = 1, Point = 2, MapView = 5, Marker = 6;
+    public const int Shape = 1, Point = 2, MapView = 5, Marker = 6, Pin = 13;
     public const string Measure = "@acme/demo-maps/measure.js";
 
     public static readonly IReadOnlyList<(string Name, Func<Seam, Task> Run)> Cases =
@@ -77,6 +77,7 @@ public static class TransportContract
         ("create, get, set and release", CreateGetSet),
         ("typed fast paths", FastPaths),
         ("$c value arguments (R16)", ValueArguments),
+        ("$c of an entity: invoke imports its module first (R16, R18)", EntityBag),
         ("Promise calls", Promises),
         ("$f callback with a synchronous return value (R21)", SyncReturnCallback),
         ("$f callback that re-enters the seam (R21)", ReentrantCallback),
@@ -151,6 +152,23 @@ public static class TransportContract
         var center = await Value(seam, $$"""{"op":"get","h":{{h}},"name":"center"}""");
         Equal(Point, (int)center!["$t"]!);
         await Release(seam, h, (int)center["$h"]!);
+        Equal(baseline, await seam.Census());
+    }
+
+    // Nothing in the contract loads pins.js, so through invoke the bag is the first use of Pin's module. Sync mode
+    // preloads every class's module instead (design §3.5), and invokeSync can't import one.
+    private static async Task EntityBag(Seam seam)
+    {
+        if (seam.IsSync)
+        {
+            return;
+        }
+        var baseline = await seam.Census();
+        var pin = await Value(seam, """{"op":"wrap","value":{"$c":13,"label":"p"}}""");
+        Equal(Pin, (int)pin!["$t"]!); // JS built a Pin from the bag
+        var h = (int)pin["$h"]!;
+        Equal("\"p\"", await Value(seam, $$"""{"op":"get","h":{{h}},"name":"displayLabel"}"""));
+        await Release(seam, h);
         Equal(baseline, await seam.Census());
     }
 

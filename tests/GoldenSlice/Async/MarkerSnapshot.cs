@@ -14,6 +14,7 @@ public sealed partial record MarkerSnapshot : global::Interoper.IJsRecord<Marker
     public static void Write(global::System.Text.Json.Utf8JsonWriter writer, MarkerSnapshot value)
     {
         writer.WriteStartObject();
+        writer.WriteNumber("$c"u8, DemoMaps.MarkerId);
         WriteMembers(writer, value);
         writer.WriteEndObject();
     }

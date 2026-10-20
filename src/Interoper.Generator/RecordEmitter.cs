@@ -49,8 +49,9 @@ internal static class RecordEmitter
     }
 
     /// <summary>
-    /// A class's snapshot record (R18), an <c>IJsRecord</c> with a System.Text.Json converter. A value-like one is
-    /// written as a value: <c>$c</c> and its constants (R16), and any other as an object of its members and constants.
+    /// A class's snapshot record (R18), an <c>IJsRecord</c> with a System.Text.Json converter. A value-like one, or an
+    /// entity's that takes a bag, is written as a value: <c>$c</c> and its constants (R16), and any other as an object of
+    /// its members and constants.
     /// An abstract value-like class's is the closed base of its subclasses', read by their discriminant (R19 step 2).
     /// </summary>
     public static string Snapshot(TypeMap types, ClassDeclaration c)
@@ -81,7 +82,7 @@ internal static class RecordEmitter
         using (w.Block($"public static void Write(global::System.Text.Json.Utf8JsonWriter writer, {name} value)"))
         {
             w.Line("writer.WriteStartObject();");
-            if (types.IsValueLike(c))
+            if (types.IsValueLike(c) || types.TakesBag(c))
             {
                 w.Line($"writer.WriteNumber(\"$c\"u8, {types.ClassId(c, ns)});");
             }

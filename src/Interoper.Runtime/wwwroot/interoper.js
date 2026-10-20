@@ -37,7 +37,8 @@ class BatchError extends Error {
 // sink(callbackId, argsJson) calls a .NET callback and returns its result as JSON text ("null" for null), null or
 // nothing for undefined, or a Promise of either.
 // An entry with `of` is a variant (mapping §5): its own class id for its runtime class name, and of's entry otherwise.
-// Value-like classes are imported here so `$c` can be built synchronously, in sync mode too. A custom element's module
+// Value-like classes are imported here so `$c` can be built synchronously, in sync mode too; an entity's bag is `$c` too,
+// whose module invoke imports first, and sync mode preloads. A custom element's module
 // is loaded by its component (R28), or by the sync-mode registry's preload list.
 export async function start(metadataSpecifier, sink) {
   meta = (await import(metadataSpecifier)).default;
@@ -94,9 +95,30 @@ export function invokeSync(opJson) {
   return isThenable(response) ? failure(new InteroperError(PROMISE_IN_SYNC)) : response;
 }
 
-// For IJSRuntime.InvokeAsync and Promise-returning ops: never rejects; errors come back as {"e": …}.
+// For IJSRuntime.InvokeAsync and Promise-returning ops: never rejects; errors come back as {"e": …}. An entity's bag
+// (`$c`, R16, R18) may be the first use of its class's module, so that is imported before the op is parsed.
 export async function invoke(opJson) {
+  const unloaded = unloadedClassModules(opJson);
+  if (unloaded.length > 0) {
+    try {
+      await Promise.all(unloaded.map(load));
+    } catch (e) {
+      return failure(e);
+    }
+  }
   return respondWith(false, opJson);
+}
+
+// The modules of the classes the op's `$c` values name that aren't imported yet. In JSON text `"$c":` is always a key:
+// inside a string its quotes would be escaped.
+const classValue = /"\$c":(\d+)/g;
+function unloadedClassModules(opJson) {
+  const unloaded = new Set();
+  for (const [, id] of String(opJson).matchAll(classValue)) {
+    const module = meta.classes[id] && classEntry(id).module;
+    if (module && !modules.has(module)) unloaded.add(module);
+  }
+  return [...unloaded];
 }
 
 // Typed fast paths for [JSImport]: one JS function serves number, string and bool signatures, for members
@@ -380,7 +402,7 @@ function revive(_key, value) {
     const { $c, ...bag } = value;
     const entry = classEntry($c);
     const m = modules.get(entry.module);
-    if (!m) throw new InteroperError(`Class ${entry.name} is not loaded; only value-like classes can be sent as $c`);
+    if (!m) throw new InteroperError(`Class ${entry.name} is not loaded, so $c can't build it; send load first`);
     return new m[entry.export](bag);
   }
   return value;

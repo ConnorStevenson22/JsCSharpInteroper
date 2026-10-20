@@ -7,11 +7,13 @@ namespace GoldenSlice.Sync.Layers;
 public readonly partial struct TileLayerEmphasizeMarkers : global::Interoper.IJsUnion<TileLayerEmphasizeMarkers>, global::System.IEquatable<TileLayerEmphasizeMarkers>
 {
     private readonly object? _ref;
-    private readonly byte _tag; // 0 = undefined, 1 = null, 2 = global::GoldenSlice.Sync.Marker, 3 = global::GoldenSlice.Sync.Marker[]
+    private readonly byte _tag; // 0 = undefined, 1 = null, 2 = global::GoldenSlice.Sync.Marker, 3 = global::GoldenSlice.Sync.Marker[], 4 = global::GoldenSlice.Sync.MarkerSnapshot, 5 = global::GoldenSlice.Sync.MarkerSnapshot[]
 
     private TileLayerEmphasizeMarkers(object? value, byte tag) => (_ref, _tag) = (value, tag);
     public TileLayerEmphasizeMarkers(global::GoldenSlice.Sync.Marker value) : this(value, 2) { }
     public TileLayerEmphasizeMarkers(global::GoldenSlice.Sync.Marker[] value) : this(value, 3) { }
+    public TileLayerEmphasizeMarkers(global::GoldenSlice.Sync.MarkerSnapshot value) : this(value, 4) { }
+    public TileLayerEmphasizeMarkers(global::GoldenSlice.Sync.MarkerSnapshot[] value) : this(value, 5) { }
     public TileLayerEmphasizeMarkers(global::Interoper.Undefined? value) : this(null, value is null ? (byte)1 : (byte)0) { }
 
     public static implicit operator TileLayerEmphasizeMarkers(global::Interoper.Undefined? value) => new(value);
@@ -39,12 +41,26 @@ public readonly partial struct TileLayerEmphasizeMarkers : global::Interoper.IJs
         return _tag == 3;
     }
 
+    public bool TryGetValue([global::System.Diagnostics.CodeAnalysis.MaybeNullWhen(false)] out global::GoldenSlice.Sync.MarkerSnapshot value)
+    {
+        value = _tag == 4 ? (global::GoldenSlice.Sync.MarkerSnapshot)_ref! : null;
+        return _tag == 4;
+    }
+
+    public bool TryGetValue([global::System.Diagnostics.CodeAnalysis.MaybeNullWhen(false)] out global::GoldenSlice.Sync.MarkerSnapshot[] value)
+    {
+        value = _tag == 5 ? (global::GoldenSlice.Sync.MarkerSnapshot[])_ref! : null;
+        return _tag == 5;
+    }
+
     public static void WriteValue(global::System.Text.Json.Utf8JsonWriter writer, TileLayerEmphasizeMarkers value)
     {
         switch (value._tag)
         {
             case 2: global::GoldenSlice.Sync.Marker.Write(writer, (global::GoldenSlice.Sync.Marker)value._ref!); break;
             case 3: global::Interoper.JsJson.WriteArray(writer, (global::GoldenSlice.Sync.Marker[])value._ref!, global::GoldenSlice.Sync.Marker.Write); break;
+            case 4: global::GoldenSlice.Sync.MarkerSnapshot.Write(writer, (global::GoldenSlice.Sync.MarkerSnapshot)value._ref!); break;
+            case 5: global::Interoper.JsJson.WriteArray(writer, (global::GoldenSlice.Sync.MarkerSnapshot[])value._ref!, global::GoldenSlice.Sync.MarkerSnapshot.Write); break;
         }
     }
 

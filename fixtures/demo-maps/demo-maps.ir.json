@@ -270,6 +270,70 @@
           ]
         },
         {
+          "kind": "interface",
+          "name": "MarkerEdits",
+          "doc": {
+            "summary": "Only `MapView.edit`'s parameter, so it's only written: its markers may be snapshots, which JS builds (R16, R18)."
+          },
+          "members": [
+            {
+              "kind": "property",
+              "name": "add",
+              "optional": true,
+              "doc": {
+                "summary": "Added to `markers`, in order: an array or a collection, as a union with entity cases, which is only written (R2)."
+              },
+              "type": {
+                "kind": "union",
+                "types": [
+                  {
+                    "kind": "array",
+                    "element": {
+                      "kind": "ref",
+                      "name": "Marker",
+                      "module": "@acme/demo-maps/Marker.js"
+                    }
+                  },
+                  {
+                    "kind": "ref",
+                    "name": "Collection",
+                    "module": "@acme/demo-maps/core.js",
+                    "args": [
+                      {
+                        "kind": "ref",
+                        "name": "Marker",
+                        "module": "@acme/demo-maps/Marker.js"
+                      }
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "kind": "property",
+              "name": "select",
+              "optional": true,
+              "doc": {
+                "summary": "Becomes `selected`."
+              },
+              "type": {
+                "kind": "union",
+                "types": [
+                  {
+                    "kind": "ref",
+                    "name": "Marker",
+                    "module": "@acme/demo-maps/Marker.js"
+                  },
+                  {
+                    "kind": "primitive",
+                    "name": "null"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
           "kind": "alias",
           "name": "MapViewOptions",
           "type": {
@@ -702,6 +766,31 @@
                         ]
                       }
                     ]
+                  }
+                }
+              ]
+            },
+            {
+              "kind": "method",
+              "name": "edit",
+              "signatures": [
+                {
+                  "params": [
+                    {
+                      "name": "edits",
+                      "type": {
+                        "kind": "ref",
+                        "name": "MarkerEdits",
+                        "module": "@acme/demo-maps/MapView.js"
+                      }
+                    }
+                  ],
+                  "returns": {
+                    "kind": "primitive",
+                    "name": "void"
+                  },
+                  "doc": {
+                    "summary": "Adds and selects markers, which must be instances."
                   }
                 }
               ]

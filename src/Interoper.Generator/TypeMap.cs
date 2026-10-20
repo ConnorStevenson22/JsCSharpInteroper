@@ -360,6 +360,12 @@ internal sealed class TypeMap
     public bool Constructible(ClassDeclaration c) =>
         !c.Abstract && Import(c) is not null && (c.Constructors.Count == 0 || c.Constructors.Any(s => s.Params.Count == 0 || IsBag(s.Params[0].Type)));
 
+    /// <summary>
+    /// R16, R18: an entity class with <c>Create</c>, not generic: where it's only written, its snapshot stands for it too
+    /// (<see cref="BagType"/>), sent as <c>$c</c> and built in JS with <c>new X(bag)</c>.
+    /// </summary>
+    public bool TakesBag(ClassDeclaration c) => !IsValueLike(c) && c.TypeParameters.Count == 0 && Constructible(c);
+
     private bool IsBag(IrType type) => Values(type) is [var bag] &&
         (bag is ObjectType || bag is RefType r && Find(r) is InterfaceDeclaration or AliasDeclaration { Type: ObjectType });
 
@@ -434,6 +440,7 @@ internal sealed class TypeMap
         PrimitiveType { Name: "any" or "unknown" or "object" } => CsType.Any,
         RefType { Module: not null } r when Find(r) is { } declaration => Named(declaration, r.Args, owner),
         RefType r when IsElement(r) => CsType.DomElement, // R13
+        BagType b => CsType.Record(Snapshot((ClassDeclaration)Find(b.Class)!)), // R16, R18
         TypeParameterType t => CsType.TypeParameter(t.Name),
         FunctionType f => Callback(f, owner),
         ArrayType a => CsType.Array(Map(a.Element, owner)),
@@ -1062,7 +1069,7 @@ internal sealed class TypeMap
             AliasDeclaration { Type: not ObjectType } a when !written && Values(a.Type).Count > 1 => UnionProblem(a.Type, a.Name, written: false),
             _ => null,
         },
-        TypeParameterType => null, // an entity (mapping §2); selection checks it's the type's own
+        TypeParameterType or BagType => null, // an entity (mapping §2), whose type selection checks; a snapshot (R18)
         RefType r when IsElement(r) => written ? null : new("a DOM element JS returns (R13)"),
         ArrayType a => MapProblem(a.Element, written),
         TupleType { Required: null, Rest: false, Elements.Count: > 0 } t => t.Elements.Select(e => MapProblem(e, written)).FirstOrDefault(p => p is not null)
@@ -1326,6 +1333,7 @@ internal sealed class TypeMap
             { } d => Spell(Name(d), full),
             null => null,
         },
+        BagType b => Spell(Snapshot((ClassDeclaration)Find(b.Class)!), full),
         ArrayType a => NameOf(a.Element, full) is { } element ? element + "[]" : null,
         TupleType { Required: null, Rest: false, Elements.Count: > 0 } t =>
             t.Elements.Select(e => NameOf(e, full)).Distinct().ToList() is [{ } element] ? element + "[]" : null,
