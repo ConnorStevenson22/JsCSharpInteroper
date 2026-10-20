@@ -19,16 +19,16 @@ Interoper turns a JavaScript library's TypeScript typings into C# bindings for B
 
 | Kind | What it is |
 |---|---|
-| Live objects | A class per JS class, wrapping a handle. The same JS object always maps to the same C# object, and you get the most-derived type (`shape is Polygon`). Created with `Create`/`CreateAsync` and owned by a `JsScope`. |
-| Snapshots | `XSnapshot` records. One call reads every data member. The same record is the constructor input and, partly filled, a patch (R18). |
+| Live objects | A class per JS class and per interface with methods (R15), wrapping a handle. The same JS object always maps to the same C# object, and you get the most-derived type (`shape is Polygon`). Created with `Create`/`CreateAsync` and owned by a `JsScope`. |
+| Snapshots | `XSnapshot` records. One call reads every data member, or the ones you name. The same record is the constructor input and, partly filled, a patch (R18). |
 | Value types | Enums, extensible enums, unions and `Opt<T>`, with generated JSON readers and writers. No reflection, so they are trim and AOT safe. |
-| Events and watches | Typed subscriptions per event, with JS-side options (R24). Async mode also gets `IAsyncEnumerable` streams. |
+| Events and watches | Typed subscriptions per event, with JS-side options (R24), a watch per property, and one watch of the members you name (R18). Async mode also gets `IAsyncEnumerable` streams. |
 | Module functions | Stateless library functions over records. One call, no handles. |
 | Components | One plain C# class per custom element in the library's Custom Elements Manifest (R28). |
 | Custom events | `{Package}Events.cs`, the `[EventHandler]` attributes for the manifest's events (R28). |
 | JS metadata | One module, `{package}.meta.js`. For each class id it lists the module and export that construct it (`default` when left out), its runtime class name (a custom element's tag instead, since JS finds an element by its tag), whether it is value-like, and its snapshot members (none when left out). A variant (a class outside the selection that adds a mixin, [mapping §5](mapping.md#5-members)) lists only its runtime class name and `of`, the class whose entry it shares. There is no per-member generated JS. |
 
-Class ids start at 1 (0 means unknown): value-like classes first, then entities, each in IR order. A runtime class name is the declaring module's path within its package, dotted, plus the class name unless the file is named after it: `geometry.Point`, `MapView`, `layers.TileLayer`. The profile can add a prefix (`runtimeClassPrefix`).
+Class ids start at 1 (0 means unknown): value-like classes first, then entities, then live interfaces (R15), each in IR order. A live interface has no metadata entry, since JS never names its id. A runtime class name is the declaring module's path within its package, dotted, plus the class name unless the file is named after it: `geometry.Point`, `MapView`, `layers.TileLayer`. The profile can add a prefix (`runtimeClassPrefix`).
 
 The runtime also provides:
 
@@ -70,8 +70,23 @@ Batching, snapshots and module functions matter because every awaited call on Se
 
 - JS side: a `Map<id, object>` plus a `WeakMap<object, id>`, so one JS object always has one id. Every handle carries the object's class id.
 - .NET side: a weak cache per realm, so one id always gives the same C# object. A generated `JsClassRegistry` maps class ids to live types, which derive from `JsObject`. `JsScope.Wrap<T>(handle, classId)` returns the cached object or a new one of the most-derived registered type (R19). An unknown class id throws `JsException`.
+- Live interfaces (R15): a plain object's handle has class id 0, so its reader, `JsScope.Read<T>(ref reader, classId)`, passes the declared interface's id. The object is cached as that type. Read later where a derived interface is declared, it's wrapped again as that one, which the cache keeps from then on; the earlier C# object still works. A handle with a class id is read as R19 says.
 - Scopes: handles belong to a `JsScope`, and each component owns one. `Dispose` or `DisposeAsync` sends one `release` op for the handles no other scope owns, then drops the scope's callbacks. A result that arrives after its scope was disposed is released at once and the call throws `ObjectDisposedException`. On Server, a dropped circuit voids all handles.
 - Live objects hold their realm and handle, not a scope. A call's live results are owned by the scope the caller passes.
+- Child scopes: `scope.CreateChild()` makes a scope that its parent disposes first, with the same method. One disposed alone leaves its parent. It uses the parent's `Dispatch`.
+- Owned values: `scope.CreateOwnedAsync(create, teardown)` (`CreateOwned` in sync mode) runs `create` with a new child scope and returns a `JsOwned<T>`, the value and that scope as one. Disposing it, or its parent, runs `teardown` once, then releases what the child owns. A `create` that throws disposes the child. It suits an object that goes before its parent, such as one layer of a map, or that JS must tear down first (`destroy()`):
+
+  ```csharp
+  var layer = await Scope.CreateOwnedAsync(
+      scope => TileLayer.CreateAsync(scope, new() { Url = url }),
+      layer => layer.DestroyAsync());
+  await layer.Value.WatchLoadedAsync(layer.Scope, OnLoaded);   // released with the layer
+  await view.Map.Layers.AddAsync(layer.Value);
+  // …
+  await layer.DisposeAsync();   // destroy(), then one release; disposing Scope would do both too
+  ```
+
+- Disposal order: open batches' queues, children (newest first), the teardown, the `release`, then callbacks. The scope owns its handles until the release, and a teardown's write inside a batch is sent before it (§3.3). A failed step doesn't stop the rest: the first error is thrown after the release, and a dropped circuit is swallowed. `Dispose` throws `InvalidOperationException` before it forgets anything if the scope or a child has an open batch or an async teardown.
 - `JsScope.Callback` registers a delegate owned by the scope (R21). `JsScope.Subscribe`/`SubscribeAsync` registers an event listener, and `JsScope.StreamAsync` is the async-mode stream (R24).
 - Components: `JsComponentBase` owns the component's `Scope`, disposes it with the component, and starts the realm before the first interactive render, so live calls work from `OnInitializedAsync`. `ElementAsync<T>(reference)` gets a rendered element's live object.
 - Prerendering: there is no JS before a component is interactive, so live calls throw `JsRealmUnavailableException`.
@@ -111,21 +126,22 @@ Structured data is UTF-8 JSON. Undefined members are left out. Special values:
 | Op | Fields | Result |
 |---|---|---|
 | `create` | `t` class id, `args` | handle |
-| `get` | `h` or `module`, `name`, `byValue?` | value |
+| `get` | `h` or `module`, `name`, `byValue?`, `live?` | value |
 | `set` | `h` or `module`, `name`, `value` | none |
-| `call` | `h` or `module`, `name`, `args`, `byValue?` | value; a Promise is awaited |
-| `snapshot` | `h` | the snapshot members (R17) |
+| `call` | `h` or `module`, `name`, `args`, `byValue?`, `live?` | value; a Promise is awaited |
+| `snapshot` | `h`, `members?` | the snapshot members, or only `members` (R17, R18) |
 | `apply` | `h`, `value` (a partial snapshot) | none |
-| `subscribe` | `h`, `method` (`on`, `watch`), `name`, `callback`, `options?` | a subscription handle |
+| `subscribe` | `h`, `method` (`on`, `watch`), `name` or `names`, `callback`, `options?` | a subscription handle |
 | `release` | `ids` | none; unknown ids are ignored |
 | `load` | `modules` | none; imports them |
 | `wrap` | `value` | the value as a result (turns `$e` into a handle) |
 | `batch` | `ops` (only ops that return nothing) | none, or a `BatchError` listing failed ops |
 
-- Results send class instances as handles. With `byValue`, and always in callback arguments and snapshots, value-like instances go as `$c` data. Plain objects and arrays are copied.
-- A handle's `$t` is the class id of the object's runtime class name (R19). For a DOM element it is the class whose `tag` is the element's `localName`. A class with no runtime class name (a plain class, as an app's own module has) is known by its constructor once its module is loaded. When the metadata doesn't know the object's class, JS walks up the prototype chain to the nearest class it knows, so an object of an undeclared subclass gets its nearest declared ancestor. `$t` is 0 when no ancestor is known.
+- Results send class instances as handles. With `byValue`, and always in callback arguments and snapshots, value-like instances go as `$c` data. Plain objects and arrays are copied. With `live`, a plain object with a function-valued property goes as a handle with `$t` 0: a live interface's object (R15). Generated code sets it on a `get` or `call` whose result can hold one.
+- A handle's `$t` is the class id of the object's runtime class name (R19). For a DOM element it is the class whose `tag` is the element's `localName`. A class with no runtime class name (a plain class, as an app's own module has) is known by its constructor once its module is loaded. When the metadata doesn't know the object's class, JS walks up the prototype chain to the nearest class it knows, so an object of an undeclared subclass gets its nearest declared ancestor. `$t` is 0 when no ancestor is known, as for a plain object.
 - Every handle that reaches .NET is owned by .NET and must be released.
 - `subscribe` options wrap the listener in JS, so they apply in time even on Server (R24).
+- `subscribe` with `names` subscribes once per name, and releasing it disposes them all. After each JS turn in which any of them changed, the callback gets one argument: the `snapshot` of those members as they are then (R18). The turn ends at a microtask, so changes made by one op (a `batch`, a library method) are one message, and on WebAssembly so are sync-mode calls until .NET yields. A timer would add latency and is throttled in background tabs. `InMemoryTransport` ends a turn when an op returns or first awaits, and calls back at once for a change outside an op.
 - A result that can't be encoded (a `BigInt`, a cycle) becomes an error envelope.
 
 Entry points:
@@ -225,7 +241,7 @@ Fixtures: `fixtures/demo-maps` is a small JS library we write, with hand-written
 | Partial selections (`PartialSelectionTests`) | Generating each fixture module alone and in pairs never throws, and the result compiles. |
 | Components | The generated `DemoMap` rendered statically, interactively in memory, and in the browser on Server, WebAssembly and static SSR. |
 | CLI (`tests/Interoper.Tool.Tests`) | `generate` with the real extractor: the IR cache, the report, stale files and exit codes. |
-| Latency (`LatencyTests`) | Server with 50 ms added to every message. A batch of 100 writes must be one round trip. |
+| Latency (`LatencyTests`) | Server with 50 ms added to every message. A batch of 100 writes must be one round trip, and a burst of watched changes one message (R18). |
 | Size (`SizeBudgetTests`) | A trimmed WebAssembly publish has only the framework's own trim warnings, and the packages and golden slice stay under a size budget. |
 | Quickstart (`QuickstartTests`) | Runs [quickstart.md](quickstart.md)'s commands against packed packages, then checks both pages in Chromium. |
 

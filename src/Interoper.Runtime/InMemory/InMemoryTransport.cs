@@ -6,7 +6,8 @@ namespace Interoper;
 /// <summary>
 /// Both seams without a browser: a small C# copy of interoper.js over fake JS classes (<see cref="InMemoryObject"/>).
 /// It speaks the same JSON protocol (design §3.4), so the same contract tests run against it and in the browser.
-/// Modules are always loaded. Single-threaded, like JS.
+/// Modules are always loaded. Single-threaded, like JS. A JS turn is an op until it returns or first awaits: watches of
+/// several members (R18) call back once after it, as interoper.js's microtask does, and at once for a change outside one.
 /// </summary>
 public sealed class InMemoryTransport : IJsSyncTransport, IJsTransport
 {
@@ -20,6 +21,8 @@ public sealed class InMemoryTransport : IJsSyncTransport, IJsTransport
     private readonly Dictionary<string, InMemoryObject> modules = [];
     private readonly Dictionary<string, InMemoryObject> elements = [];
     private readonly List<string> subscribeOptions = [];
+    private readonly Queue<Action> turnEnd = []; // what runs once the current turn ends: queueMicrotask
+    private int turns; // ops running, nested through callbacks
     private int lastId;
     private bool syncOnly; // set while Invoke runs, as invokeSync sets it
 
@@ -64,7 +67,7 @@ public sealed class InMemoryTransport : IJsSyncTransport, IJsTransport
         try
         {
             // Like invokeSync, a Promise is reported after the op has run.
-            var result = Run(Parse(opJson));
+            var result = Turn(opJson);
             return result is Task ? Failure(InteroperError(PromiseInSync)) : Success(result);
         }
         catch (Exception e)
@@ -83,7 +86,7 @@ public sealed class InMemoryTransport : IJsSyncTransport, IJsTransport
         syncOnly = false;
         try
         {
-            var result = Run(Parse(opJson));
+            var result = Turn(opJson);
             syncOnly = outer;
             return Success(result is Task<object?> promise ? await promise : result);
         }
@@ -127,12 +130,44 @@ public sealed class InMemoryTransport : IJsSyncTransport, IJsTransport
     // --- Ops ---
     // Each returns its result in wire form (a JsonNode, or Undefined.Value), or a Task<object?> of it.
 
+    private object? Turn(string opJson)
+    {
+        turns++;
+        try
+        {
+            return Run(Parse(opJson));
+        }
+        finally
+        {
+            if (--turns == 0)
+            {
+                while (turnEnd.TryDequeue(out var next))
+                {
+                    next();
+                }
+            }
+        }
+    }
+
+    private void AfterTurn(Action action)
+    {
+        if (turns == 0)
+        {
+            action();
+        }
+        else
+        {
+            turnEnd.Enqueue(action);
+        }
+    }
+
     private Dictionary<string, object?> Parse(string opJson) => (Dictionary<string, object?>)Revive(JsonNode.Parse(opJson))!;
 
     private object? Run(Dictionary<string, object?> op)
     {
         string Name() => (string)op["name"]!;
         bool ByValue() => op.GetValueOrDefault("byValue") is true;
+        bool Live() => op.GetValueOrDefault("live") is true;
         object?[] Args() => op.GetValueOrDefault("args") is List<object?> args ? [.. args] : [];
         // An op targets a handle (`h`) or a module's exports (`module`).
         InMemoryObject Target() => op.GetValueOrDefault("module") is string module
@@ -144,15 +179,15 @@ public sealed class InMemoryTransport : IJsSyncTransport, IJsTransport
             case "create":
                 return Wire(ClassEntry(op.GetValueOrDefault("t") is double t ? (int)t : 0).Construct(Args()));
             case "get":
-                return Wire(Target().Get(Name()), ByValue());
+                return Wire(Target().Get(Name()), ByValue(), Live());
             case "set":
                 Target().Set(Name(), op.GetValueOrDefault("value", Undefined.Value));
                 return Undefined.Value;
             case "call":
                 var result = Target().Call(Name(), Args());
-                return result is Task promise ? Then(promise, ByValue()) : Wire(result, ByValue());
+                return result is Task promise ? Then(promise, ByValue(), Live()) : Wire(result, ByValue(), Live());
             case "snapshot":
-                return ToData(Target());
+                return ToData(Target(), Strings(op.GetValueOrDefault("members")));
             case "apply":
                 var target = Target();
                 foreach (var (name, value) in (Dictionary<string, object?>)op["value"]!)
@@ -160,6 +195,8 @@ public sealed class InMemoryTransport : IJsSyncTransport, IJsTransport
                     target.Set(name, value);
                 }
                 return Undefined.Value;
+            case "subscribe" when Strings(op.GetValueOrDefault("names")) is { } names:
+                return Own(WatchMembers(Target(), (string)op["method"]!, names, (JsFunction)op["callback"]!), (string)op["method"]!);
             case "subscribe":
                 return Subscribe(Target(), (string)op["method"]!, Name(), op["callback"], op.GetValueOrDefault("options") as Dictionary<string, object?>);
             case "release":
@@ -176,10 +213,12 @@ public sealed class InMemoryTransport : IJsSyncTransport, IJsTransport
         }
     }
 
-    private async Task<object?> Then(Task promise, bool byValue)
+    private static List<string>? Strings(object? value) => (value as List<object?>)?.Cast<string>().ToList();
+
+    private async Task<object?> Then(Task promise, bool byValue, bool live)
     {
         await promise;
-        return Wire(promise is Task<object?> withResult ? withResult.Result : Undefined.Value, byValue);
+        return Wire(promise is Task<object?> withResult ? withResult.Result : Undefined.Value, byValue, live);
     }
 
     // Runs ops that return nothing, in order, as runBatch does: a Promise is awaited before the next op, or under
@@ -233,11 +272,71 @@ public sealed class InMemoryTransport : IJsSyncTransport, IJsTransport
             subscribeOptions.Add(((JsonNode)Wire(options)!).ToJsonString());
             callback = WithOptions((JsFunction)callback!, options);
         }
-        var subscription = target.Call(method, [name, callback]);
-        if (subscription is null || DisposerOf(subscription) is null)
+        return Own(SubscribeTo(target, method, name, callback), method);
+    }
+
+    private static object SubscribeTo(InMemoryObject target, string method, string name, object? listener)
+    {
+        var subscription = target.Call(method, [name, listener]);
+        return subscription is not null && DisposerOf(subscription) is not null ? subscription : throw InteroperError($"{method} returned no dispose() or remove()");
+    }
+
+    // R18, as interoper.js does: one listener per member, and one call per turn in which any changed, with the members'
+    // snapshot as it is then.
+    private Watches WatchMembers(InMemoryObject target, string method, List<string> names, JsFunction callback)
+    {
+        var watches = new Watches();
+        var queued = false;
+        JsFunction changed = _ =>
         {
-            throw InteroperError($"{method} returned no dispose() or remove()");
+            if (!queued)
+            {
+                queued = true;
+                AfterTurn(() =>
+                {
+                    queued = false;
+                    if (watches.Live)
+                    {
+                        callback(ToData(target, names));
+                    }
+                });
+            }
+            return Undefined.Value;
+        };
+        try
+        {
+            foreach (var name in names)
+            {
+                watches.Add(SubscribeTo(target, method, name, changed));
+            }
         }
+        catch
+        {
+            watches.Dispose();
+            throw;
+        }
+        return watches;
+    }
+
+    private sealed class Watches : IDisposable
+    {
+        private readonly List<object> subscriptions = [];
+
+        public bool Live { get; private set; } = true;
+
+        public void Add(object subscription) => subscriptions.Add(subscription);
+
+        public void Dispose()
+        {
+            Live = false;
+            List<object> ended = [.. subscriptions];
+            subscriptions.Clear();
+            DisposeAll(ended);
+        }
+    }
+
+    private JsonNode Own(object subscription, string method)
+    {
         if (ids.ContainsKey(subscription))
         {
             throw InteroperError($"{method} returned an object that already has a handle");
@@ -290,21 +389,30 @@ public sealed class InMemoryTransport : IJsSyncTransport, IJsTransport
     // Releases every id, even when a Dispose() (or remove()) throws; then reports what failed.
     private void ReleaseAll(List<object?> list)
     {
-        var errors = new List<Exception>();
+        var ended = new List<object>();
         foreach (var id in list.Select(x => (int)(double)x!))
         {
-            if (!handles.Remove(id, out var value))
+            if (handles.Remove(id, out var value))
             {
-                continue;
+                ids.Remove(value);
+                if (subscriptions.Remove(id))
+                {
+                    ended.Add(value);
+                }
             }
-            ids.Remove(value);
-            if (!subscriptions.Remove(id))
-            {
-                continue;
-            }
+        }
+        DisposeAll(ended);
+    }
+
+    // Ends every subscription, even when one's Dispose() (or remove()) throws; then reports what failed.
+    private static void DisposeAll(List<object> list)
+    {
+        var errors = new List<Exception>();
+        foreach (var subscription in list)
+        {
             try
             {
-                DisposerOf(value)!();
+                DisposerOf(subscription)!();
             }
             catch (Exception e)
             {
@@ -325,8 +433,20 @@ public sealed class InMemoryTransport : IJsSyncTransport, IJsTransport
 
     private InMemoryObject Instance(object? handle) =>
         handle is double id && handles.TryGetValue((int)id, out var value)
-            ? value as InMemoryObject ?? throw InteroperError($"Handle {id} is not an in-memory object")
+            ? value as InMemoryObject ?? (value is Dictionary<string, object?> bag ? new PlainObject(bag) : throw InteroperError($"Handle {id} is not an in-memory object"))
             : throw InteroperError($"Unknown handle: {handle}");
+
+    // A plain object sent as a handle (R15): its members are its properties, and its functions its methods.
+    private sealed class PlainObject(Dictionary<string, object?> bag) : InMemoryObject
+    {
+        public override string ClassName => "Object";
+
+        public override object? Get(string name) => bag.GetValueOrDefault(name, Undefined.Value);
+
+        public override void Set(string name, object? value) => bag[name] = value;
+
+        public override object? Call(string name, object?[] args) => bag.GetValueOrDefault(name) is JsFunction method ? method(args) : base.Call(name, args);
+    }
 
     private int HandleOf(object value)
     {
@@ -391,32 +511,36 @@ public sealed class InMemoryTransport : IJsSyncTransport, IJsTransport
     };
 
     // A value in wire form: Undefined.Value, or a JsonNode (null for JS null). Plain objects and arrays are
-    // copied; other objects become handles, or with byValue, value-like instances become `$c` data. As data (a
-    // snapshot's members, R17) nothing becomes a handle: such an object is left out, undefined in an array.
-    private object? Wire(object? value, bool byValue = false, bool data = false) => value switch
+    // copied; other objects become handles, or with byValue, value-like instances become `$c` data. With live, a plain
+    // object with a function is a handle too (R15). As data (a snapshot's members, R17) nothing becomes a handle: such
+    // an object is left out, undefined in an array.
+    private object? Wire(object? value, bool byValue = false, bool live = false, bool data = false) => value switch
     {
         null => null,
         Undefined => Undefined.Value,
         double d => JsonValue.Create(d),
         string s => JsonValue.Create(s),
         bool b => JsonValue.Create(b),
-        List<object?> list => new JsonArray([.. list.Select(x => WireItem(Wire(x, byValue, data)))]),
-        Dictionary<string, object?> bag => WireObject(bag.Select(p => (p.Key, Wire(p.Value, byValue, data)))),
+        List<object?> list => new JsonArray([.. list.Select(x => WireItem(Wire(x, byValue, live, data)))]),
+        Dictionary<string, object?> bag when live && bag.Values.Any(v => v is JsFunction) => new JsonObject { ["$h"] = HandleOf(bag), ["$t"] = 0 },
+        Dictionary<string, object?> bag => WireObject(bag.Select(p => (p.Key, Wire(p.Value, byValue, live, data)))),
         InMemoryObject o when byValue && classes.TryGetValue(ClassIdOf(o), out var entry) && entry.Value => ToData(o),
         InMemoryObject or JsFunction or Task when data => Undefined.Value,
         InMemoryObject o => new JsonObject { ["$h"] = HandleOf(o), ["$t"] = ClassIdOf(o) },
         JsFunction or Task => new JsonObject { ["$h"] = HandleOf(value), ["$t"] = 0 },
+        JsonNode node => node.DeepClone(), // already in wire form: a snapshot (R18)
         _ => throw new InvalidOperationException($"A {value.GetType()} is not an in-memory JS value; see InMemoryObject."),
     };
 
     // Array items can't be omitted, so undefined is `$u`.
     private static JsonNode? WireItem(object? value) => value is Undefined ? new JsonObject { ["$u"] = 1 } : (JsonNode?)value;
 
-    // The snapshot members of an object, with value-like members copied deeply and no handles (R17).
-    private JsonObject ToData(InMemoryObject value)
+    // The snapshot members of an object, or the named ones, with value-like members copied deeply and no handles (R17,
+    // R18).
+    private JsonObject ToData(InMemoryObject value, IEnumerable<string>? names = null)
     {
         var entry = ClassEntry(ClassIdOf(value));
-        var data = WireObject(entry.Members.Select(name => (name, Wire(value.Get(name), byValue: true, data: true))));
+        var data = WireObject((names ?? entry.Members).Select(name => (name, Wire(value.Get(name), byValue: true, data: true))));
         if (entry.Value)
         {
             data.Insert(0, "$c", entry.Id);

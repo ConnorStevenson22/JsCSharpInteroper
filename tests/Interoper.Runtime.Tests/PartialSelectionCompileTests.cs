@@ -104,7 +104,7 @@ public sealed class PartialSelectionCompileTests
                 { "kind": "function", "name": "count", "signatures": [{ "params": [{ "name": "entries", "type": { "kind": "ref", "name": "Entries", "module": "@acme/maps/a.js" } }], "returns": {{Number}} }] },
                 { "kind": "class", "name": "XChart", "abstract": true, "members": [
                   { "kind": "property", "name": "label", "type": { "kind": "union", "types": [{{String}}, { "kind": "array", "element": {{String}} }] } },
-                  { "kind": "property", "name": "component", "type": { "kind": "object", "members": [{{X}}] } }] }] },
+                  { "kind": "property", "name": "component", "type": { "kind": "object", "members": [{ "kind": "property", "name": "z", "type": {{Number}} }] } }] }] },
               { "specifier": "@acme/maps/b.js", "declarations": [{ "kind": "class", "name": "Folder" }] }],
               "elements": [{ "tag": "x-chart", "class": { "kind": "ref", "name": "XChart", "module": "@acme/maps/a.js" },
                 "attributes": [{ "name": "label", "property": "label", "type": {{String}} }],

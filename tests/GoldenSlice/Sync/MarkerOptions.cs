@@ -5,7 +5,7 @@ namespace GoldenSlice.Sync;
 
 public sealed partial record MarkerOptions
 {
-    public MarkerOptionsPosition Position { get; init; }
+    public MarkerPositionInput Position { get; init; }
     public global::Interoper.Opt<string> Label { get; init; }
     public Style Style { get; init; }
     public global::Interoper.Opt<global::Interoper.JsAny> Data { get; init; }
@@ -22,7 +22,7 @@ public sealed partial record MarkerOptions
 
     public static MarkerOptions Read(ref global::System.Text.Json.Utf8JsonReader reader, global::Interoper.JsScope scope)
     {
-        MarkerOptionsPosition position = default;
+        MarkerPositionInput position = default;
         global::Interoper.Opt<string> label = default;
         Style style = default;
         global::Interoper.Opt<global::Interoper.JsAny> data = default;
@@ -32,7 +32,7 @@ public sealed partial record MarkerOptions
             reader.Read();
             switch (property)
             {
-                case "position": position = global::Interoper.JsJson.ReadUnion<MarkerOptionsPosition>(ref reader); break;
+                case "position": position = global::Interoper.JsJson.ReadUnion<MarkerPositionInput>(ref reader); break;
                 case "label": label = global::Interoper.JsJson.ReadOpt(ref reader, global::Interoper.JsJson.ReadString); break;
                 case "style": style = global::Interoper.JsJson.ReadUnion<Style>(ref reader); break;
                 case "data": data = global::Interoper.JsJson.ReadOpt(ref reader, (ref r) => global::Interoper.JsAny.Read(ref r, scope)); break;

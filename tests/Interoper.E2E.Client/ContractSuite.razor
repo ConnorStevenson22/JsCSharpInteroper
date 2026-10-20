@@ -6,7 +6,7 @@
 @code {
     // Runs the transport contract (tests/Interoper.Runtime.Tests/TransportContract.cs) against fixtures/demo-maps
     // through one seam, and prints one line per case for the test to assert on.
-    const string Load = """{"op":"load","modules":["@acme/demo-maps/MapView.js","@acme/demo-maps/Marker.js","@acme/demo-maps/measure.js"]}""";
+    const string Load = """{"op":"load","modules":["@acme/demo-maps/MapView.js","@acme/demo-maps/Marker.js","@acme/demo-maps/measure.js","@acme/demo-maps/tools.js"]}""";
 
     readonly List<string> lines = [];
     bool done;

@@ -15,7 +15,7 @@ public sealed partial class SizeBudgetTests
 
     // The summed published size, in bytes, of the assemblies below (webcil .wasm, trimmed, uncompressed), with about
     // 10% headroom.
-    private const long Budget = 486_000;
+    private const long Budget = 587_000;
 
     private static readonly string[] Assemblies = ["Interoper.Runtime", "Interoper.Blazor", "GoldenSlice"];
 

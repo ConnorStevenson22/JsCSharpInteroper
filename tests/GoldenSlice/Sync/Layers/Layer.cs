@@ -34,4 +34,10 @@ public partial class Layer : global::GoldenSlice.Sync.Observable
 
     public void Apply(LayerSnapshot patch) =>
         Realm.Send(global::Interoper.JsOp.Apply(Handle, w => LayerSnapshot.WriteMembers(w, patch)));
+
+    public LayerSnapshot Snapshot(global::Interoper.JsMembers<LayerSnapshot> members) =>
+        Realm.Snapshot(Handle, members);
+
+    public global::System.IDisposable Watch(global::Interoper.JsScope scope, global::Interoper.JsMembers<LayerSnapshot> members, global::System.Action<LayerSnapshot> handler) =>
+        scope.Subscribe(Handle, "watch", members, handler);
 }

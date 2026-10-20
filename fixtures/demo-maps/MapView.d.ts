@@ -94,4 +94,8 @@ export class MapView extends Emitter {
   markerAt(x: number, y: number): Promise<Marker | null>;
   /** Adds and selects markers, which must be instances. */
   edit(edits: MarkerEdits): void;
+  /** The marker at each `[x, y]` screen offset, or `null` where there is none. */
+  markersAt(offsets: [number, number][]): (Marker | null)[];
+  /** Back to zoom 1 and rotation 0: the library changes several properties in one call. */
+  reset(): void;
 }

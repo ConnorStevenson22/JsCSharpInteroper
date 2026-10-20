@@ -79,6 +79,28 @@ public sealed class GeneratorTests
         Assert.Contains("public required global::Interoper.Opt<string> Name { get; init; }", File(result, "Tag.cs"));
     }
 
+    [Fact] // R2, R3, R17: a nullable array element is Opt<T>, or a union, which has the bottom case itself
+    public void NullableElementsAreOptOrTheirUnion()
+    {
+        var result = Generate("""
+            { "kind": "alias", "name": "Name", "type": { "kind": "union", "types": [{ "kind": "primitive", "name": "string" }, { "kind": "primitive", "name": "null" }] } },
+            { "kind": "class", "name": "Layer" },
+            { "kind": "interface", "name": "Tag", "members": [
+              { "kind": "property", "name": "names", "type": { "kind": "array", "element": { "kind": "ref", "name": "Name", "module": "@acme/maps/a.js" } } },
+              { "kind": "property", "name": "layers", "type": { "kind": "array", "element": { "kind": "union", "types": [
+                { "kind": "ref", "name": "Layer", "module": "@acme/maps/a.js" }, { "kind": "primitive", "name": "null" }, { "kind": "primitive", "name": "undefined" }] } } },
+              { "kind": "property", "name": "keys", "type": { "kind": "array", "element": { "kind": "union", "types": [
+                { "kind": "primitive", "name": "string" }, { "kind": "array", "element": { "kind": "primitive", "name": "string" } }, { "kind": "primitive", "name": "null" }] } } }] }
+            """);
+        Assert.Empty(result.Diagnostics);
+        var tag = File(result, "Tag.cs");
+        Assert.Contains("public required global::Interoper.Opt<string>[] Names { get; init; }", tag);
+        Assert.Contains("public required global::Interoper.Opt<Layer>[] Layers { get; init; }", tag);
+        Assert.Contains("public required TagKeys[] Keys { get; init; }", tag);
+        Assert.Contains("global::Interoper.JsJson.ReadArray(ref reader, (ref r) => global::Interoper.JsJson.ReadOpt(ref r, scope.Read<Layer>))", tag);
+        Assert.Contains("global::Interoper.JsJson.WriteArray(writer, value.Layers, static (w, v) => global::Interoper.JsJson.WriteValue(w, v, Layer.Write))", tag);
+    }
+
     [Theory] // design §2, §3.5, R4, R19 step 1, R27
     [InlineData(Api.Sync)]
     [InlineData(Api.Async)]
@@ -304,17 +326,21 @@ public sealed class GeneratorTests
             Assert.Single(result.Diagnostics).ToString());
     }
 
-    [Fact] // R25: a rename is reported once, however many owners repeat the anonymous union that has it
+    [Fact] // R25, R11: a rename is reported once, for the first enum that has it; an anonymous union repeated at owners is one enum
     public void AnEnumMemberRenameIsReportedOnce()
     {
         const string Kind = """{ "kind": "union", "types": [{ "kind": "literal", "value": "a-b" }, { "kind": "literal", "value": "a_b" }] }""";
+        const string Wider = """{ "kind": "union", "types": [{ "kind": "literal", "value": "a-b" }, { "kind": "literal", "value": "a_b" }, { "kind": "literal", "value": "c" }] }""";
         var result = Generate($$"""
-            { "kind": "interface", "name": "Fill", "members": [{ "kind": "property", "name": "kind", "type": {{Kind}} }] },
             { "kind": "interface", "name": "Stroke", "members": [{ "kind": "property", "name": "kind", "type": {{Kind}} }] },
-            { "kind": "interface", "name": "Icon", "members": [{ "kind": "property", "name": "kind", "type": {{Kind}} }] }
+            { "kind": "interface", "name": "Fill", "members": [{ "kind": "property", "name": "kind", "type": {{Kind}} }] },
+            { "kind": "interface", "name": "Icon", "members": [{ "kind": "property", "name": "kind", "type": {{Wider}} }] }
             """);
-        Assert.Contains("    AB,\n    AB2,\n", File(result, "StrokeKind.cs"));
-        Assert.Equal("IOP2006 FillKind: \"a_b\" is AB2: AB is taken (R25), and in 2 other enums", Assert.Single(result.Diagnostics).ToString());
+        Assert.Contains("    AB,\n    AB2,\n", File(result, "FillKind.cs"));
+        Assert.Contains("public required FillKind Kind { get; init; }", File(result, "Stroke.cs"));
+        Assert.Contains("    AB,\n    AB2,\n    C,\n", File(result, "IconKind.cs"));
+        Assert.DoesNotContain(result.Files, f => f.Path == "StrokeKind.cs");
+        Assert.Equal("IOP2006 FillKind: \"a_b\" is AB2: AB is taken (R25), and in 1 other enum", Assert.Single(result.Diagnostics).ToString());
     }
 
     [Theory] // R22: a name that already ends in Async keeps the one suffix
@@ -363,6 +389,60 @@ public sealed class GeneratorTests
             """, new Profile { Package = "@acme/maps", Watch = "watch" });
         Assert.Contains("public global::System.IDisposable WatchOpacity(global::Interoper.JsScope scope, global::System.Action<double> handler) =>", File(result, "Layer.cs"));
         Assert.DoesNotContain("Watch", File(result, "Graphic.cs"));
+    }
+
+    [Theory] // R18, §5: snapshots and watches of chosen members
+    [InlineData(Api.Sync)]
+    [InlineData(Api.Async)]
+    public void ASnapshotsMembersCanBeReadAndWatchedTogether(Api api)
+    {
+        static string Ref(string name) => $$"""{ "kind": "ref", "name": "{{name}}", "module": "@acme/maps/a.js" }""";
+        static string Property(string name, bool readOnly = false) => $$"""{ "kind": "property", "name": "{{name}}", "readonly": {{(readOnly ? "true" : "false")}}, "type": {{Number}} }""";
+        var result = Generate(new Profile { Package = "@acme/maps", Watch = "watch", ValueClasses = ["Figure", "Tile"] }, api, ("a.js", $$"""
+            { "kind": "class", "name": "Layer", "members": [{{Property("opacity")}}, {{Property("loaded", readOnly: true)}},
+              { "kind": "method", "name": "watch", "signatures": [{ "params": [], "returns": {{Void}} }] }] },
+            { "kind": "class", "name": "FeatureLayer", "extends": {{Ref("Layer")}}, "members": [{{Property("minScale")}}] },
+            { "kind": "class", "name": "Group", "extends": {{Ref("Layer")}}, "members": [{{Property("members")}}] },
+            { "kind": "class", "name": "Status", "members": [{{Property("loaded", readOnly: true)}},
+              { "kind": "method", "name": "watch", "signatures": [{ "params": [], "returns": {{Void}} }] }] },
+            { "kind": "class", "name": "Graphic", "members": [{{Property("opacity")}}] },
+            { "kind": "class", "name": "Figure", "abstract": true, "members": [{ "kind": "property", "name": "kind", "readonly": true, "type": {{String}} }, {{Property("size")}}] },
+            { "kind": "class", "name": "Tile", "extends": {{Ref("Figure")}}, "members": [{ "kind": "property", "name": "kind", "readonly": true, "type": { "kind": "literal", "value": "tile" } }] }
+            """));
+
+        var (m, sync) = (api == Api.Sync ? "" : "Async", api == Api.Sync);
+        var layerSnapshot = File(result, "LayerSnapshot.cs");
+        Assert.Contains("    public static class Members\n    {\n        public static global::Interoper.JsMembers<LayerSnapshot> Opacity => new(\"opacity\");\n    }", layerSnapshot);
+        var layer = File(result, "Layer.cs");
+        Assert.Contains($"public {(sync ? "LayerSnapshot" : "global::System.Threading.Tasks.Task<LayerSnapshot>")} Snapshot{m}(global::Interoper.JsMembers<LayerSnapshot> members) =>", layer);
+        Assert.Contains($"Realm.Snapshot{m}(Handle, members);", layer);
+        var subscription = sync ? "global::System.IDisposable" : "global::System.Threading.Tasks.Task<global::System.IAsyncDisposable>";
+        Assert.Contains($"public {subscription} Watch{m}(global::Interoper.JsScope scope, global::Interoper.JsMembers<LayerSnapshot> members, global::System.Action<LayerSnapshot> handler) =>", layer);
+        Assert.Contains($"scope.Subscribe{m}(Handle, \"watch\", members, handler);", layer);
+        Assert.Equal(!sync, layer.Contains("public global::System.Collections.Generic.IAsyncEnumerable<LayerSnapshot> WatchStreamAsync(global::Interoper.JsScope scope, global::Interoper.JsMembers<LayerSnapshot> members, global::System.Threading.CancellationToken cancellationToken = default) =>", StringComparison.Ordinal));
+
+        // A subclass's are overloads, so a Layer reference reads and watches Layer's members of any layer (R26).
+        var featureLayer = File(result, "FeatureLayer.cs");
+        Assert.Contains($"public {subscription} Watch{m}(global::Interoper.JsScope scope, global::Interoper.JsMembers<FeatureLayerSnapshot> members", featureLayer);
+        Assert.Contains("public static global::Interoper.JsMembers<FeatureLayerSnapshot> MinScale => new(\"minScale\");", File(result, "FeatureLayerSnapshot.cs"));
+        Assert.Contains("public static global::Interoper.JsMembers<FeatureLayerSnapshot> Opacity => new(\"opacity\");", File(result, "FeatureLayerSnapshot.cs"));
+
+        // Without the watch method only the snapshot; without members, neither.
+        Assert.Contains($"Snapshot{m}(global::Interoper.JsMembers<GraphicSnapshot> members)", File(result, "Graphic.cs"));
+        Assert.DoesNotContain("Watch", File(result, "Graphic.cs"));
+        Assert.DoesNotContain("JsMembers", File(result, "StatusSnapshot.cs"));
+        Assert.DoesNotContain("JsMembers", File(result, "Status.cs"));
+
+        // R19 step 2: a closed base reads by its discriminant, so its members name it; a leaf's needn't.
+        Assert.Contains("public static global::Interoper.JsMembers<FigureSnapshot> Size => new(\"size\", \"kind\");", File(result, "FigureSnapshot.cs"));
+        var tile = File(result, "TileSnapshot.cs");
+        Assert.Contains("public new static class Members", tile);
+        Assert.Contains("public static global::Interoper.JsMembers<TileSnapshot> Size => new(\"size\");", tile);
+
+        // IOP2006: a member named Members.
+        Assert.Contains("public static class JsMembers", File(result, "GroupSnapshot.cs"));
+        Assert.Contains("public static global::Interoper.JsMembers<GroupSnapshot> Members => new(\"members\");", File(result, "GroupSnapshot.cs"));
+        Assert.Equal(["IOP2006 GroupSnapshot.Members: JsMembers: Members is taken (R26)"], result.Diagnostics.Select(d => d.ToString()));
     }
 
     [Theory] // R24
@@ -712,7 +792,7 @@ public sealed class GeneratorTests
         static string Alias(string name, params string[] args) => $$"""{ "kind": "ref", "name": "{{name}}", "module": "@acme/maps/a.js", "args": [{{string.Join(", ", args)}}] }""";
         var oneOrMany = $$"""{ "kind": "union", "types": [{{T}}, { "kind": "array", "element": {{T}} }] }""";
         var result = Generate(Api.Sync, ("a.js", $$"""
-            { "kind": "class", "name": "Marker" },
+            { "kind": "class", "name": "Marker", "abstract": true },
             { "kind": "alias", "name": "OneOrMany", "typeParameters": [{ "name": "T" }], "type": {{oneOrMany}} },
             { "kind": "alias", "name": "Same", "typeParameters": [{ "name": "V" }], "type": {{Alias("OneOrMany", """{ "kind": "typeParameter", "name": "V" }""")}} },
             { "kind": "alias", "name": "Many", "typeParameters": [{ "name": "T", "default": {{Marker}} }], "type": {{oneOrMany}} },
@@ -726,15 +806,16 @@ public sealed class GeneratorTests
 
         var view = File(result, "View.cs");
         // OneOrMany<Marker> is Marker | Marker[], an anonymous union only written (R2: it has entity cases); so are an
-        // alias of it and a use that takes the default.
+        // alias of it and a use that takes the default. They're one union, named after its shortest owner (R11). Marker is
+        // abstract, so they have no snapshot case, with which each would keep its owner's name (R16).
         Assert.Contains("public Marker GetMarker(global::Interoper.JsScope scope) =>", view);
-        Assert.Contains("public void SetMarker(ViewMarkerInput value) =>", view);
-        Assert.Contains("public ViewMarkerInput(Marker[] value) : this(value, 3) { }", File(result, "ViewMarkerInput.cs"));
+        Assert.Contains("public void SetMarker(ViewPinInput value) =>", view);
+        Assert.Contains("public void SetFlag(ViewPinInput value) =>", view);
         Assert.Contains("public ViewPinInput(Marker[] value) : this(value, 3) { }", File(result, "ViewPinInput.cs"));
-        Assert.Contains("public ViewFlagInput(Marker[] value) : this(value, 3) { }", File(result, "ViewFlagInput.cs"));
-        // OneOrMany<number> has a value-type case (R2), and LabelList doesn't resolve: the getters stay.
+        Assert.DoesNotContain(result.Files, f => f.Path is "ViewMarkerInput.cs" or "ViewFlagInput.cs");
+        // OneOrMany<number> is a union with a value-type case (R2); LabelList doesn't resolve, so its getter stays.
         Assert.Contains("public double Size\n", view.Replace(" =>", "\n"));
-        Assert.DoesNotContain("SetSize", view);
+        Assert.Contains("public void SetSize(ViewSizeInput value) =>", view);
         Assert.Contains("public string[] Labels =>\n", view); // read-only
         Assert.DoesNotContain("SetLabels", view);
         Assert.Equal(
@@ -742,9 +823,68 @@ public sealed class GeneratorTests
             "IOP2007 OneOrMany: skipped: uses generic `OneOrMany` (in `OneOrMany`)",
             "IOP2007 Same: skipped: uses generic `Same` (in `Same`)",
             "IOP2007 Many: skipped: uses generic `Many` (in `Many`)",
-            "IOP2007 View.size: setter dropped: uses a union with the value-type case double (R2)",
             "IOP2007 View.labels: setter dropped: uses unresolved `LabelList`",
         ], result.Diagnostics.Select(d => d.ToString()));
+    }
+
+    [Fact] // R2, R19 step 4: number, boolean and enum cases are kept as a double, unboxed, and read by their JSON token
+    public void ValueTypeCasesAreKeptUnboxed()
+    {
+        const string Unit = """{ "kind": "ref", "name": "Unit", "module": "@acme/maps/a.js" }""";
+        var result = Generate("""
+            { "kind": "enum", "name": "Level", "members": [{ "name": "Low", "value": 1 }, { "name": "High", "value": 2 }] },
+            { "kind": "alias", "name": "Unit", "type": { "kind": "union", "types": [{ "kind": "literal", "value": "m" }, { "kind": "literal", "value": "km" }] } },
+            { "kind": "interface", "name": "Options", "members": [
+              { "kind": "property", "name": "flag", "type": { "kind": "union", "types": [{ "kind": "primitive", "name": "boolean" }, { "kind": "primitive", "name": "string" }] } },
+              { "kind": "property", "name": "level", "type": { "kind": "union", "types": [{ "kind": "ref", "name": "Level", "module": "@acme/maps/a.js" }, { "kind": "array", "element": { "kind": "primitive", "name": "string" } }] } },
+              { "kind": "property", "name": "unit", "type": { "kind": "union", "types": [UNIT, { "kind": "primitive", "name": "number" }] } },
+              { "kind": "property", "name": "other", "type": { "kind": "union", "types": [UNIT, { "kind": "literal", "value": "mi" }, { "kind": "primitive", "name": "number" }] } }] }
+            """.Replace("UNIT", Unit));
+        Assert.Empty(result.Diagnostics);
+
+        var flag = File(result, "OptionsFlag.cs");
+        Assert.Contains("private readonly double _number;", flag);
+        Assert.Contains("public OptionsFlag(bool value) : this(null, value ? 1 : 0, 2) { }", flag);
+        Assert.Contains("public OptionsFlag(string value) : this(value, 0, 3) { }", flag);
+        Assert.Contains("value = _tag == 2 ? _number != 0 : default;", flag);
+        Assert.Contains("global::System.Text.Json.JsonTokenType.True or global::System.Text.Json.JsonTokenType.False => global::Interoper.JsJson.ReadBoolean(ref reader),", flag);
+        Assert.Contains("_tag == other._tag && Equals(_ref, other._ref) && _number.Equals(other._number)", flag);
+
+        var level = File(result, "OptionsLevel.cs");
+        Assert.Contains("public OptionsLevel(Level value) : this(null, (int)value, 2) { }", level);
+        Assert.Contains("case 2: global::Interoper.JsJson.WriteNumber(writer, (int)(Level)(int)value._number); break;", level);
+        Assert.Contains("global::System.Text.Json.JsonTokenType.Number => (Level)global::Interoper.JsJson.ReadNumber(ref reader),", level);
+
+        // The string literals are one enum case: the alias's when they are its literals, else one named after the union.
+        Assert.Contains("public OptionsUnit(Unit value) : this(null, (int)value, 2) { }", File(result, "OptionsUnit.cs"));
+        Assert.Contains("public OptionsOther(OptionsOtherLiteral value) : this(null, (int)value, 2) { }", File(result, "OptionsOther.cs"));
+        Assert.Contains("\"mi\" => OptionsOtherLiteral.Mi,", File(result, "OptionsOtherLiteral.cs"));
+        Assert.Contains("Unit.cs", result.Files.Select(f => f.Path));
+    }
+
+    [Fact] // R27, R2: an anonymous union whose owner's name a declaration has takes the next free name
+    public void AnAnonymousUnionTakesAFreeName()
+    {
+        // Dock.mode's union is DockMode, the name of the enum it has as a case, which Pair.mode maps first.
+        const string Mode = """{ "kind": "ref", "name": "DockMode", "module": "@acme/maps/a.js" }""";
+        var result = Generate("""
+            { "kind": "alias", "name": "DockMode", "type": { "kind": "union", "types": [{ "kind": "literal", "value": "a" }, { "kind": "literal", "value": "b" }] } },
+            { "kind": "interface", "name": "Pair", "members": [{ "kind": "property", "name": "mode", "type": MODE }] },
+            { "kind": "interface", "name": "DockBreakpoint", "members": [{ "kind": "property", "name": "width", "type": { "kind": "primitive", "name": "number" } }] },
+            { "kind": "interface", "name": "Dock", "members": [{ "kind": "property", "name": "breakpoint", "optional": true, "type": { "kind": "union", "types": [
+              { "kind": "ref", "name": "DockBreakpoint", "module": "@acme/maps/a.js" }, { "kind": "primitive", "name": "boolean" }] } },
+              { "kind": "property", "name": "mode", "type": { "kind": "union", "types": [{ "kind": "ref", "name": "Pair", "module": "@acme/maps/a.js" }, MODE] } }] }
+            """.Replace("MODE", Mode));
+        Assert.Equal(
+        [
+            "IOP2006 Acme.Maps.DockBreakpoint: the union is DockBreakpoint2: DockBreakpoint is taken (R27)",
+            "IOP2006 Acme.Maps.DockMode: the union is DockMode2: DockMode is taken (R27)",
+        ], result.Diagnostics.Select(d => d.ToString()));
+        var dock = File(result, "Dock.cs");
+        Assert.Contains("public DockBreakpoint2 Breakpoint { get; init; }", dock);
+        Assert.Contains("public required DockMode2 Mode { get; init; }", dock);
+        Assert.Contains("public DockBreakpoint2(DockBreakpoint value) : this(value, 0, 2) { }", File(result, "DockBreakpoint2.cs"));
+        Assert.Contains("public DockMode2(DockMode value) : this(null, (int)value, 3) { }", File(result, "DockMode2.cs"));
     }
 
     [Fact] // §2: a recursive generic union alias stops expanding, and what uses it is skipped
@@ -841,7 +981,7 @@ public sealed class GeneratorTests
             """, new Profile { Package = "@acme/maps", ValueClasses = ["Figure", "Tile"] });
 
         var tile = File(result, "TileSnapshot.cs");
-        Assert.DoesNotContain("Anchor {", tile); // the base's
+        Assert.DoesNotContain("Anchor { get; init; }", tile); // the base's
         Assert.DoesNotContain("JsAnchor", tile);
         Assert.Contains("    /// <summary>Its label.</summary>\n    public new global::Interoper.Opt<string> Size { get; init; }", tile); // R29: its own docs
         Assert.Single(tile.Split('\n'), l => l.Contains("\"anchor\"u8", StringComparison.Ordinal));
@@ -1384,16 +1524,15 @@ public sealed class GeneratorTests
             "IOP2007 Feature.each(cb)(e).bag: skipped: uses `IterableIterator` (in `Bag`)",
         ], result.Diagnostics.Select(d => d.ToString()));
         var feature = File(result, "Feature.cs");
-        Assert.Contains("public void Each(global::Interoper.JsScope scope, global::System.Action<FeatureEachCbE> cb) =>", feature);
+        Assert.Contains("public void Each(global::Interoper.JsScope scope, global::System.Action<VisitE> cb) =>", feature); // the same record once its member is dropped (R11)
         Assert.Contains("public void Visit(global::Interoper.JsScope scope, global::System.Action<VisitE> cb) =>", feature); // the alias's record, once
         Assert.Contains("public void Revisit(global::Interoper.JsScope scope, global::System.Action<VisitE> cb) =>", feature);
         Assert.DoesNotContain(result.Files, f => f.Path.StartsWith("FeatureVisit", StringComparison.Ordinal) || f.Path.StartsWith("FeatureRevisit", StringComparison.Ordinal));
-        foreach (var record in new[] { File(result, "FeatureEachCbE.cs"), File(result, "VisitE.cs") })
-        {
-            Assert.Contains("public required double X { get; init; }", record);
-            Assert.DoesNotContain("Legs", record);
-            Assert.DoesNotContain("Bag", record);
-        }
+        var visit = File(result, "VisitE.cs");
+        Assert.Contains("public required double X { get; init; }", visit);
+        Assert.DoesNotContain("Legs", visit);
+        Assert.DoesNotContain("Bag", visit);
+        Assert.DoesNotContain(result.Files, f => f.Path == "FeatureEachCbE.cs");
         Assert.DoesNotContain("Bag.cs", result.Files.Select(f => f.Path));
     }
 
@@ -1422,9 +1561,11 @@ public sealed class GeneratorTests
             "IOP2007 Pin.rack: skipped: uses generic `Mark` (in `Mark`) (in `Rack`)",
         ], result.Diagnostics.Select(d => d.ToString()));
         Assert.DoesNotContain(result.Files, f => f.Path.StartsWith("Rack", StringComparison.Ordinal));
-        Assert.Contains("public required double N { get; init; }", File(result, "SpotA.cs"));
-        Assert.DoesNotContain("Rack", File(result, "SpotA.cs"));
+        // Spot's flattened cases and Pin's are one record each (R11), named after the shorter owner.
+        Assert.Contains("public required double N { get; init; }", File(result, "PinA.cs"));
         Assert.DoesNotContain("Rack", File(result, "PinA.cs"));
+        Assert.DoesNotContain(result.Files, f => f.Path is "SpotA.cs" or "SpotB.cs");
+        Assert.Contains("public Spot(PinA value)", File(result, "Spot.cs"));
         Assert.Contains("public Spot Spot", File(result, "Feature.cs"));
     }
 
@@ -1462,7 +1603,7 @@ public sealed class GeneratorTests
         Assert.Contains("public required double X { get; init; }", File(result, "FeatureSize.cs"));
     }
 
-    [Fact] // R11, R27, R2: an inline record a union narrows to keeps its owner's name, as does a union alias's
+    [Fact] // R11, R27, R2: an inline record a union narrows to keeps its owner's name, as does a union alias's; the same record at both is one
     public void ANarrowedInlineRecordKeepsItsName()
     {
         var result = Generate(new Profile { Package = "@acme/maps", Include = ["@acme/maps/a.js"] }, Api.Sync, ("a.js", $$"""
@@ -1476,10 +1617,10 @@ public sealed class GeneratorTests
             "IOP2007 FeatureMark: case `Layer` dropped: a class outside the selection (R2)",
             "IOP2007 Owner: case `Layer` dropped: a class outside the selection (R2)",
         ], result.Diagnostics.Select(d => d.ToString()).Order(StringComparer.Ordinal)); // no IOP2006
-        Assert.Contains("public FeatureMark Mark", File(result, "Feature.cs"));
+        Assert.Contains("public Owner Mark", File(result, "Feature.cs"));
         Assert.Contains("public Owner Owner", File(result, "Feature.cs"));
-        Assert.Contains("public required double X { get; init; }", File(result, "FeatureMark.cs"));
         Assert.Contains("public required double X { get; init; }", File(result, "Owner.cs"));
+        Assert.DoesNotContain(result.Files, f => f.Path == "FeatureMark.cs");
     }
 
     [Fact] // R2, R17: a class outside the selection is no entity, so a member that only it would make scoped is read, or skipped
@@ -1559,6 +1700,53 @@ public sealed class GeneratorTests
         Assert.Empty(result.Diagnostics);
         Assert.Contains("global::Interoper.JsJson.PeekString(reader, \"type\"u8) switch", File(result, "LayerGrouping.cs"));
         Assert.Contains("public LayerGrouping(LayerGroupingHeat value)", File(result, "LayerGrouping.cs"));
+    }
+
+    [Fact] // R16, R19 step 3: value-like cases without a discriminant are told apart by class id, each id going to its nearest case
+    public void ValueLikeCasesAreReadByClassId()
+    {
+        // paint: Fill | Material | Pbr, where Fill is an abstract base of Solid, and Gloss extends Pbr extends Material.
+        static string Sub(string name, string of, string tag = "") => $$"""
+            { "kind": "class", "name": "{{name}}", "extends": { "kind": "ref", "name": "{{of}}", "module": "@acme/maps/a.js" },
+              "members": [{{(tag == "" ? "" : $$"""{ "kind": "property", "name": "type", "readonly": true, "type": { "kind": "literal", "value": "{{tag}}" } }""")}}] }
+            """;
+        static string Ref(string name) => $$"""{ "kind": "ref", "name": "{{name}}", "module": "@acme/maps/a.js" }""";
+        var result = Generate($$"""
+            { "kind": "class", "name": "Fill", "abstract": true, "members": [{ "kind": "property", "name": "opacity", "type": {{Number}} }] },
+            {{Sub("Solid", "Fill", "solid")}},
+            { "kind": "class", "name": "Material", "members": [{ "kind": "property", "name": "opacity", "type": {{Number}} }] },
+            {{Sub("Pbr", "Material")}},
+            {{Sub("Gloss", "Pbr")}},
+            { "kind": "class", "name": "View", "members": [{ "kind": "property", "name": "paint", "type": { "kind": "union", "types": [{{Ref("Fill")}}, {{Ref("Material")}}, {{Ref("Pbr")}}] } }] }
+            """, new Profile { Package = "@acme/maps", ValueClasses = ["Fill", "Solid", "Material", "Pbr", "Gloss"] });
+
+        Assert.Empty(result.Diagnostics);
+        Assert.Contains("""
+                    global::System.Text.Json.JsonTokenType.StartObject when global::Interoper.JsJson.PeekClass(reader) is Maps.FillId or Maps.SolidId => new ViewPaint(FillSnapshot.Read(ref reader)),
+                    global::System.Text.Json.JsonTokenType.StartObject when global::Interoper.JsJson.PeekClass(reader) is Maps.MaterialId => new ViewPaint(MaterialSnapshot.Read(ref reader)),
+                    global::System.Text.Json.JsonTokenType.StartObject when global::Interoper.JsJson.PeekClass(reader) is Maps.PbrId or Maps.GlossId => new ViewPaint(PbrSnapshot.Read(ref reader)),
+                    var token => throw new global::System.Text.Json.JsonException($"ViewPaint: unexpected {token}"),
+            """, File(result, "ViewPaint.cs"));
+    }
+
+    [Fact] // R2, R13, R19: a setter's union that selection let through because a record case held a DOM element, which it then dropped, is only written
+    public void ASetterUnionOfRecordsThatLostADomMemberIsOnlyWritten()
+    {
+        // set material(value: MaterialProps | GlossProps | null), where MaterialProps.texture?: Pixels | HTMLImageElement
+        // and Pixels can't be mapped, so the records drop texture and have no required member of their own.
+        var result = Generate($$"""
+            { "kind": "interface", "name": "Pixels", "indexSignatures": [{ "key": {{String}}, "type": {{Number}} }] },
+            { "kind": "interface", "name": "MaterialProps", "members": [
+              { "kind": "property", "name": "opacity", "optional": true, "type": {{Number}} },
+              { "kind": "property", "name": "texture", "optional": true, "type": { "kind": "union", "types": [{ "kind": "ref", "name": "Pixels", "module": "@acme/maps/a.js" }, { "kind": "ref", "name": "HTMLImageElement" }] } }] },
+            { "kind": "interface", "name": "GlossProps", "extends": [{ "kind": "ref", "name": "MaterialProps", "module": "@acme/maps/a.js" }], "members": [
+              { "kind": "property", "name": "gloss", "optional": true, "type": {{Number}} }] },
+            { "kind": "class", "name": "View", "members": [{ "kind": "property", "name": "material", "type": {{Number}},
+              "writeType": { "kind": "union", "types": [{ "kind": "ref", "name": "MaterialProps", "module": "@acme/maps/a.js" }, { "kind": "ref", "name": "GlossProps", "module": "@acme/maps/a.js" }] } }] }
+            """);
+
+        Assert.Contains("public static ViewMaterialInput ReadValue(ref global::System.Text.Json.Utf8JsonReader reader) => throw new global::System.Text.Json.JsonException(\"ViewMaterialInput is only written (R2)\");",
+            File(result, "ViewMaterialInput.cs"));
     }
 
     [Fact] // §5, R2: a setter that takes a class's constructor bag, which the getter returns, also takes the class (autocast)
@@ -1689,6 +1877,76 @@ public sealed class GeneratorTests
         Assert.Contains("public FeatureDrawMark(FeatureDrawMarkCase3 value)", File(result, "FeatureDrawMark.cs"));
     }
 
+    [Fact] // R11, R27: structurally identical anonymous types are one type, named after their shortest owner, in its namespace
+    public void IdenticalAnonymousTypesAreOne()
+    {
+        static string Property(string name, string type, bool optional = false, string doc = "") =>
+            $$"""{ "kind": "property", "name": "{{name}}", {{(optional ? "\"optional\": true, " : "")}}{{doc}}"type": {{type}} }""";
+        static string Literals(params string[] values) => $$"""{ "kind": "union", "types": [{{string.Join(", ", values.Select(v => $$"""{ "kind": "literal", "value": "{{v}}" }"""))}}] }""";
+        static string Object(params string[] members) => $$"""{ "kind": "object", "members": [{{string.Join(", ", members)}}] }""";
+        var pad = Object(Property("top", Number), Property("left", Number));
+        var result = Generate(Api.Sync,
+            ("views/MapView.js", $$"""
+                { "kind": "class", "name": "MapView", "members": [
+                  {{Property("padding", Object(Property("top", Number), Property("left", Number, doc: "\"doc\": { \"summary\": \"Pixels.\" }, ")))}},
+                  {{Property("margin", Object(Property("top", Number), Property("left", Number, optional: true)))}},
+                  {{Property("edge", Object(Property("top", Number), Property("left", Number), Property("side", """{ "kind": "literal", "value": "x" }""")))}},
+                  {{Property("fit", Literals("cover", "contain"))}},
+                  {{Property("align", Literals("cover", "fill"))}},
+                  {{Property("fill", $$"""{ "kind": "union", "types": [{{String}}, {{pad}}] }""")}}] }
+                """),
+            ("a.js", $$"""
+                { "kind": "class", "name": "Box", "members": [
+                  {{Property("pad", pad)}},
+                  {{Property("edge", Object(Property("top", Number), Property("left", Number), Property("side", """{ "kind": "literal", "value": "x" }""", optional: true)))}},
+                  {{Property("fit", Literals("cover", "contain"))}},
+                  {{Property("background", $$"""{ "kind": "union", "types": [{{String}}, {{pad}}] }""")}}] }
+                """));
+
+        Assert.Empty(result.Diagnostics); // sharing a type isn't a rename
+        var view = File(result, "Views/MapView.cs");
+        // Docs don't change the wire or the API, so they don't keep two records apart.
+        Assert.Contains("public global::Acme.Maps.BoxPad Padding", view);
+        Assert.Contains("public global::Acme.Maps.BoxFit Fit", view);
+        Assert.Contains("public BoxPad Pad", File(result, "Box.cs"));
+        Assert.Contains("public global::Acme.Maps.BoxEdge Edge", view); // a constant is always written (R20), optional or not
+        // A union and its inline case, which has a shorter owner of its own.
+        Assert.Contains("public MapViewFill Fill", view);
+        Assert.Contains("public global::Acme.Maps.Views.MapViewFill Background", File(result, "Box.cs"));
+        Assert.Contains("public MapViewFill(global::Acme.Maps.BoxPad value)", File(result, "Views/MapViewFill.cs"));
+        // An optional member and a literal make other types, and so does a constant (BoxEdge).
+        Assert.Contains("public MapViewMargin Margin", view);
+        Assert.Contains("public MapViewAlign Align", view);
+        Assert.Equal(
+            ["Box.cs", "BoxEdge.cs", "BoxFit.cs", "BoxPad.cs", "Views/MapView.cs", "Views/MapViewAlign.cs", "Views/MapViewFill.cs", "Views/MapViewMargin.cs"],
+            result.Files.Select(f => f.Path).Where(p => p.EndsWith(".cs", StringComparison.Ordinal) && !p.Contains("Snapshot", StringComparison.Ordinal) && p != "Maps.cs").Order(StringComparer.Ordinal));
+    }
+
+    [Theory] // R11, R27: an intersection of a named type and string constants is named after both, in the type's namespace if it has emitted types
+    [InlineData(false, "Styles/PropsGlow.cs")]
+    [InlineData(true, "Views/PropsGlow.cs")]
+    public void ATaggedIntersectionIsNamedAfterItsNamedPart(bool withoutStyles, string path)
+    {
+        // glow: Props & { kind: "glow" }, resolved (ir.md), at two owners.
+        var glow = $$"""
+            { "kind": "object", "bases": [{ "kind": "ref", "name": "Props", "module": "@acme/maps/styles/Props.js" }], "members": [
+              { "kind": "property", "name": "blur", "optional": true, "inherited": true, "type": {{Number}} },
+              { "kind": "property", "name": "kind", "inherited": true, "type": { "kind": "literal", "value": "glow" } }] }
+            """;
+        var profile = new Profile { Package = "@acme/maps", Include = withoutStyles ? ["@acme/maps/views/*"] : null };
+        var result = Generate(profile, Api.Sync,
+            ("styles/Props.js", $$"""{ "kind": "interface", "name": "Props", "members": [{ "kind": "property", "name": "blur", "optional": true, "type": {{Number}} }] }"""),
+            ("views/MapView.js", $$"""{ "kind": "class", "name": "MapView", "members": [{ "kind": "property", "name": "glow", "type": {{glow}} }] }"""),
+            ("views/Marker.js", $$"""{ "kind": "class", "name": "Marker", "members": [{ "kind": "property", "name": "halo", "type": {{glow}} }] }"""));
+
+        Assert.Empty(result.Diagnostics);
+        Assert.Contains("""writer.WriteString("kind"u8, "glow"u8);""", File(result, path));
+        var type = withoutStyles ? "PropsGlow" : "global::Acme.Maps.Styles.PropsGlow";
+        Assert.Contains($"public {type} Glow", File(result, "Views/MapView.cs"));
+        Assert.Contains($"public {type} Halo", File(result, "Views/Marker.cs"));
+        Assert.DoesNotContain(result.Files, f => f.Path.Contains("MapViewGlow", StringComparison.Ordinal) || f.Path.Contains("MarkerHalo", StringComparison.Ordinal));
+    }
+
     [Fact] // R24, R11: an inline payload is projected to its record's members, as a named one is
     public void AnInlinePayloadIsProjected()
     {
@@ -1812,6 +2070,115 @@ public sealed class GeneratorTests
         Assert.Contains("public partial class Mid : List<Marker>", File(result, "Mid.cs"));
         Assert.Contains("public new global::System.IDisposable OnChange(", File(result, "Route.cs"));
     }
+
+    [Fact] // R15, R19: an interface with methods is a live class, its first such base its base class; one with data only is a record
+    public void AnInterfaceWithMethodsIsALiveClass()
+    {
+        var result = Generate(Api.Sync, ("controls.js", $$"""
+            { "kind": "interface", "name": "Settings", "members": [{ "kind": "property", "name": "zoom", "type": {{Number}} }] },
+            { "kind": "interface", "name": "Disposable", "members": [{ "kind": "method", "name": "dispose", "signatures": [{ "returns": {{Void}} }] }] },
+            { "kind": "interface", "name": "Control", "extends": [{{Ref("Disposable")}}], "members": [
+              { "kind": "method", "name": "applySettings", "signatures": [{ "params": [{ "name": "settings", "type": {{Ref("Settings")}} }], "returns": {{Void}} }] }] },
+            { "kind": "interface", "name": "LayerControl", "extends": [{{Ref("Control")}}, {{Ref("Settings")}}], "members": [
+              { "kind": "method", "name": "refresh", "signatures": [{ "returns": {{Void}} }] }] },
+            { "kind": "interface", "name": "Names", "members": [{ "kind": "property", "name": "count", "type": {{Number}} },
+              { "kind": "method", "name": "values", "signatures": [{ "returns": { "kind": "ref", "name": "IterableIterator", "args": [{{String}}] } }] }] }
+            """), ("factories.js", $$"""
+            { "kind": "function", "name": "createControl", "signatures": [{ "returns": {{Ref("Control")}} }] },
+            { "kind": "function", "name": "all", "signatures": [{ "returns": { "kind": "array", "element": {{Ref("Control")}} } }] },
+            { "kind": "function", "name": "count", "signatures": [{ "params": [{ "name": "names", "type": {{Ref("Names")}} }], "returns": {{Number}} }] }
+            """), ("view.js", """{ "kind": "class", "name": "View" }"""));
+        Assert.Contains("public partial class Disposable : global::Interoper.JsObject", File(result, "Disposable.cs"));
+        Assert.Contains("public partial class Control : Disposable", File(result, "Control.cs"));
+        var layerControl = File(result, "LayerControl.cs");
+        Assert.Contains("public sealed partial class LayerControl : Control", layerControl);
+        Assert.Contains("get => Realm.GetNumber(Handle, \"zoom\");", layerControl); // Settings' member is its own
+        Assert.Contains("public void Refresh() => Realm.Send(global::Interoper.JsOp.Call(Handle, \"refresh\"));", layerControl);
+        Assert.DoesNotContain("Create", layerControl);
+        Assert.DoesNotContain("Snapshot", layerControl);
+        Assert.DoesNotContain(result.Files, f => f.Path.EndsWith("ControlSnapshot.cs", StringComparison.Ordinal));
+        Assert.Contains("public required double Zoom { get; init; }", File(result, "Settings.cs"));
+        Assert.Contains("public required double Count { get; init; }", File(result, "Names.cs")); // iterator methods aside, data
+
+        // R19: a plain object's handle has class id 0, so the reader passes the declared interface's; JS is asked for handles.
+        var controls = File(result, "Factories.cs");
+        Assert.Contains("global::Interoper.JsOp.Call(Module, \"createControl\", live: true), (ref r) => scope.Read<Control>(ref r, global::Acme.Maps.Maps.ControlId))", controls);
+        Assert.Contains("(ref r1) => scope.Read<Control>(ref r1, global::Acme.Maps.Maps.ControlId)", controls);
+        Assert.DoesNotContain("live: true", controls[controls.IndexOf("Count(", StringComparison.Ordinal)..]);
+
+        // Their ids follow the classes', and the metadata module has no entry for them: JS never names them.
+        var registry = File(result, "Maps.cs");
+        Assert.Contains("public const int ViewId = 1;\n    public const int DisposableId = 2;\n    public const int ControlId = 3;\n    public const int LayerControlId = 4;", registry);
+        Assert.Contains(".Add(LayerControlId, static (realm, handle) => new LayerControl(realm, handle))", registry);
+        Assert.DoesNotContain("controls.js", registry); // no class to preload
+        Assert.DoesNotContain("Control", File(result, "maps.meta.js"));
+        Assert.Equal("IOP2007 Names.values: skipped: uses `IterableIterator`", Assert.Single(result.Diagnostics).ToString());
+    }
+
+    [Fact] // R15, R21, R24: a live interface's object where JS sends copies (a callback's argument, a payload, a watch) isn't mapped
+    public void ALiveInterfaceIsNotSentByValue()
+    {
+        var result = Generate(new Profile { Package = "@acme/maps", Events = new(Subscribe: "on"), Watch = "watch" }, Api.Sync, ("a.js", $$"""
+            { "kind": "interface", "name": "Tool", "members": [{ "kind": "method", "name": "activate", "signatures": [{ "returns": {{Void}} }] }] },
+            { "kind": "interface", "name": "Picked", "members": [{ "kind": "property", "name": "x", "type": {{Number}} },
+              { "kind": "property", "name": "tool", "type": {{Ref("Tool", "a")}} },
+              { "kind": "method", "name": "stopPropagation", "signatures": [{ "returns": {{Void}} }] }] },
+            { "kind": "class", "name": "View", "members": [
+              { "kind": "property", "name": "tool", "type": {{Ref("Tool", "a")}} },
+              { "kind": "method", "name": "watch", "signatures": [{ "params": [{ "name": "name", "type": {{String}} }, { "name": "callback", "type": { "kind": "function", "params": [], "returns": {{Void}} } }], "returns": {{Void}} }] },
+              { "kind": "method", "name": "forEachTool", "signatures": [{ "params": [{ "name": "callback", "type": { "kind": "function", "params": [{ "name": "tool", "type": {{Ref("Tool", "a")}} }], "returns": {{Void}} } }], "returns": {{Void}} }] }],
+              "events": [{ "name": "pick", "type": {{Ref("Picked", "a")}} }] }
+            """));
+        var view = File(result, "View.cs");
+        Assert.Contains("Realm.Call(global::Interoper.JsOp.Get(Handle, \"tool\", live: true), (ref r) => scope.Read<Tool>(ref r, global::Acme.Maps.Maps.ToolId))!;", view);
+        Assert.Contains("OnPick(", view);
+        Assert.DoesNotContain("WatchTool", view);
+        Assert.Contains("public required double X { get; init; }", File(result, "Picked.cs"));
+        Assert.DoesNotContain("Tool", File(result, "Picked.cs"));
+        Assert.Equal(
+        [
+            "IOP2007 Picked.tool: skipped: uses a live interface's object where JS sends a copy (R15)",
+            "IOP2007 Picked.stopPropagation: skipped: a method of an event payload (R24)",
+            "IOP2007 View.forEachTool: skipped: uses a live interface's object where JS sends a copy (R15)",
+        ], result.Diagnostics.Select(d => d.ToString()));
+    }
+
+    [Fact] // R15: a live interface outside the selection is emitted where an emitted member uses it, as a data type is
+    public void ALiveInterfaceOutsideTheSelectionIsEmittedWhereItIsUsed()
+    {
+        var result = Generate(new Profile { Package = "@acme/maps", Include = ["@acme/maps/a.js"] }, Api.Sync,
+            ("core/Handles.js", $$"""
+                { "kind": "interface", "name": "ResourceHandle", "members": [{ "kind": "method", "name": "remove", "signatures": [{ "returns": {{Void}} }] }] },
+                { "kind": "interface", "name": "Unused", "members": [{ "kind": "method", "name": "remove", "signatures": [{ "returns": {{Void}} }] }] }
+                """),
+            ("a.js", $$"""{ "kind": "function", "name": "watchIt", "signatures": [{ "returns": { "kind": "ref", "name": "ResourceHandle", "module": "@acme/maps/core/Handles.js" } }] }"""));
+        Assert.Contains("public void Remove() => Realm.Send(global::Interoper.JsOp.Call(Handle, \"remove\"));", File(result, "Core/ResourceHandle.cs"));
+        Assert.DoesNotContain(result.Files, f => f.Path.Contains("Unused", StringComparison.Ordinal));
+        Assert.Empty(result.Diagnostics);
+    }
+
+    [Fact] // R15, §5: a mixin's members reach a live interface, but a mixin's base is not emitted
+    public void AMixinReachesALiveInterfaceButNotItsBase()
+    {
+        var handle = """{ "kind": "ref", "name": "ResourceHandle", "module": "@acme/maps/core/Handles.js" }""";
+        var result = Generate(new Profile { Package = "@acme/maps", Include = ["@acme/maps/layers/VectorLayer.js"] }, Api.Sync,
+            ("core/Handles.js", $$"""{ "kind": "interface", "name": "ResourceHandle", "members": [{ "kind": "method", "name": "remove", "signatures": [{ "returns": {{Void}} }] }] }"""),
+            ("layers/Layer.js", """{ "kind": "class", "name": "Layer" }"""),
+            ("layers/mixins/Origin.js", """{ "kind": "class", "name": "Origin", "abstract": true, "members": [{ "kind": "method", "name": "revert", "signatures": [{ "returns": { "kind": "primitive", "name": "void" } }] }] }"""),
+            ("layers/mixins/Watchable.js", $$"""
+                { "kind": "class", "name": "Watchable", "abstract": true, "extends": { "kind": "ref", "name": "Origin", "module": "@acme/maps/layers/mixins/Origin.js" },
+                  "members": [{ "kind": "method", "name": "watch", "signatures": [{ "returns": {{handle}} }] }] }
+                """),
+            ("layers/VectorLayer.js", $$"""
+                { "kind": "class", "name": "VectorLayer", "extends": { "kind": "ref", "name": "Layer", "module": "@acme/maps/layers/Layer.js" },
+                  "mixins": [{ "kind": "ref", "name": "Watchable", "module": "@acme/maps/layers/mixins/Watchable.js" }],
+                  "members": [{ "kind": "method", "name": "watch", "inherited": true, "signatures": [{ "returns": {{handle}} }] }] }
+                """));
+        Assert.Contains("public global::Acme.Maps.Core.ResourceHandle Watch(global::Interoper.JsScope scope) =>", File(result, "Layers/Mixins/IWatchable.cs"));
+        Assert.DoesNotContain(result.Files, f => f.Path.Contains("Origin", StringComparison.Ordinal));
+    }
+
+    private static string Ref(string name, string module = "controls") => $$"""{ "kind": "ref", "name": "{{name}}", "module": "@acme/maps/{{module}}.js" }""";
 
     private const string Void = """{ "kind": "primitive", "name": "void" }""";
     private const string X = """{ "kind": "property", "name": "x", "type": { "kind": "primitive", "name": "number" } }""";

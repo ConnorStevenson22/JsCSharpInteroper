@@ -138,10 +138,10 @@ These are the custom elements from the listed packages' Custom Elements Manifest
 | `tuple` | `elements`, `required` (when some are optional), `rest` (the last element repeats) | `[number, number]` |
 | `union` | `types`, `discriminant` (R19) | `Style` on `type` |
 | `intersection` | `types`, when a part isn't an object type | `string & {}` (R10), `T & Named` |
-| `object` | `members`, `indexSignatures`, `callSignatures`, `constructSignatures` | `{ zoom: number }`, resolved mapped types and intersections (R11) |
+| `object` | `members`, `indexSignatures`, `callSignatures`, `constructSignatures`, and for a resolved intersection `bases`, its parts that are named classes or interfaces | `{ zoom: number }`, resolved mapped types and intersections (R11): `GlowOptions & { kind: "glow" }` has `bases` `[GlowOptions]` |
 | `function` | a signature's fields, for an object with one call signature and nothing else | `(marker: Marker) => string` |
 | `unresolved` | `text` (the checker's spelling). The generator skips it (R12) | `keyof this`, `this["$events"][K]` |
 
 - A union keeps named members as written. `FlyToTarget` is `Shape | [number, number] | Camera`, not the checker's flattened list. The generator flattens it (R6). `boolean` is a `primitive`, never `true | false`.
-- A `discriminant` is the first property that every non-nullish member declares with a distinct literal type. A member may be an object type or an intersection of them.
+- A `discriminant` is the first property that every non-nullish member declares with a distinct literal type. A member may be an object type or an intersection of them. The members are the checker's: nested unions and union aliases are flattened into the union, and a member written twice counts once.
 - Aliases declared by a package, including a dependency, are `ref`s. Platform aliases such as `Partial` are resolved in place.

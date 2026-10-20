@@ -155,6 +155,40 @@ public class JsJsonTests
         Assert.IsType(expected, Json.Read(json, JsJson.ReadUnion<FlyToTarget>).Value);
     }
 
+    [Fact] // R19 step 3: the class id of a value-like instance, and the reader stays where it was
+    public void PeekClass_reads_the_class_id()
+    {
+        var reader = new Utf8JsonReader("""{"type":"point","$c":2}"""u8);
+        reader.Read();
+
+        Assert.Equal(2, JsJson.PeekClass(reader));
+        Assert.Equal(JsonTokenType.StartObject, reader.TokenType);
+        var plain = new Utf8JsonReader("""{"$c":"x"}"""u8);
+        plain.Read();
+        Assert.Equal(0, JsJson.PeekClass(plain));
+    }
+
+    [Theory] // R16, R19 step 3: Point | Shape has no discriminant, so the class id picks the nearest case
+    [InlineData("""{"$c":2,"type":"point","x":1}""", typeof(PointSnapshot))]
+    [InlineData("""{"$c":3,"type":"line","path":[]}""", typeof(LineSnapshot))]
+    public void Value_like_cases_are_classified_by_class_id(string json, Type expected)
+    {
+        var simplified = Json.Read(json, JsJson.ReadUnion<MeasureSimplify>);
+
+        Assert.IsType(expected, simplified.Value);
+        Assert.Equal(expected == typeof(PointSnapshot), simplified.TryGetValue(out PointSnapshot? _));
+        Assert.Throws<JsonException>(() => Json.Read("""{"type":"point","x":1}""", JsJson.ReadUnion<MeasureSimplify>)); // no class id
+    }
+
+    [Fact] // R6, R19 step 2: a discriminant across a union alias, a repeated member, and nested unions of intersections
+    public void Nested_and_repeated_cases_are_classified_by_discriminant()
+    {
+        Assert.IsType<LineSnapshot>(Json.Read($$"""{"$c":{{DemoMaps.LineId}},"type":"line","path":[]}""", JsJson.ReadUnion<AnyShape>).Value);
+        Assert.IsType<PolygonSnapshot>(Json.Read($$"""{"$c":{{DemoMaps.PolygonId}},"type":"polygon","vertices":[]}""", JsJson.ReadUnion<AnyShape>).Value);
+        Assert.IsType<IconStyle>(Json.Read("""{"type":"icon","name":"pin-1"}""", JsJson.ReadUnion<OutlineStyle>).Value);
+        Assert.IsType<MeasureShapeFromOptionsLine>(Json.Read("""{"type":"line","path":[[0,1]]}""", JsJson.ReadUnion<MeasureShapeFromOptions>).Value);
+    }
+
     [Fact] // R16, R20: a value-like snapshot is written as an instance of its class, keeping its discriminant
     public void Value_like_snapshots_carry_their_class_id()
     {

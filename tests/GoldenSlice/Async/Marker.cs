@@ -30,6 +30,14 @@ public partial class Marker : Observable
     public global::System.Threading.Tasks.Task SetStyleAsync(Style value) =>
         Realm.SendAsync(global::Interoper.JsOp.Set(Handle, "style", w => global::Interoper.JsJson.WriteValue(w, value)));
 
+    /// <summary>The same tagged intersection as <c>TileLayer.glow</c>, in another module.</summary>
+    public global::System.Threading.Tasks.Task<global::Interoper.Opt<GlowOptionsGlow>> GetGlowAsync() =>
+        Realm.CallAsync(global::Interoper.JsOp.Get(Handle, "glow"), static (ref r) => global::Interoper.JsJson.ReadOpt(ref r, GlowOptionsGlow.Read));
+
+    /// <summary>The same tagged intersection as <c>TileLayer.glow</c>, in another module.</summary>
+    public global::System.Threading.Tasks.Task SetGlowAsync(global::Interoper.Opt<GlowOptionsGlow> value) =>
+        Realm.SendAsync(global::Interoper.JsOp.Set(Handle, "glow", w => global::Interoper.JsJson.WriteValue(w, value, GlowOptionsGlow.Write)));
+
     /// <summary>The app's own data, untyped; it may hold other markers.</summary>
     public global::System.Threading.Tasks.Task<global::Interoper.Opt<global::Interoper.JsAny>> GetDataAsync(global::Interoper.JsScope scope) =>
         Realm.CallAsync(global::Interoper.JsOp.Get(Handle, "data"), (ref r) => global::Interoper.JsJson.ReadOpt(ref r, (ref r1) => global::Interoper.JsAny.Read(ref r1, scope)));
@@ -60,6 +68,12 @@ public partial class Marker : Observable
     public global::System.Collections.Generic.IAsyncEnumerable<Style> WatchStyleStreamAsync(global::Interoper.JsScope scope, global::System.Threading.CancellationToken cancellationToken = default) =>
         scope.StreamAsync(Handle, "watch", "style", global::Interoper.JsJson.ReadUnion<Style>, null, null, cancellationToken);
 
+    public global::System.Threading.Tasks.Task<global::System.IAsyncDisposable> WatchGlowAsync(global::Interoper.JsScope scope, global::System.Action<global::Interoper.Opt<GlowOptionsGlow>> handler) =>
+        scope.SubscribeAsync(Handle, "watch", "glow", static (ref r) => global::Interoper.JsJson.ReadOpt(ref r, GlowOptionsGlow.Read), handler, null, null);
+
+    public global::System.Collections.Generic.IAsyncEnumerable<global::Interoper.Opt<GlowOptionsGlow>> WatchGlowStreamAsync(global::Interoper.JsScope scope, global::System.Threading.CancellationToken cancellationToken = default) =>
+        scope.StreamAsync(Handle, "watch", "glow", static (ref r) => global::Interoper.JsJson.ReadOpt(ref r, GlowOptionsGlow.Read), null, null, cancellationToken);
+
     public global::System.Threading.Tasks.Task<global::System.IAsyncDisposable> WatchDataAsync(global::Interoper.JsScope scope, global::System.Action<global::Interoper.Opt<global::Interoper.JsAny>> handler) =>
         scope.SubscribeAsync(Handle, "watch", "data", (ref r) => global::Interoper.JsJson.ReadOpt(ref r, (ref r1) => global::Interoper.JsAny.Read(ref r1, scope)), handler, null, null);
 
@@ -77,4 +91,13 @@ public partial class Marker : Observable
 
     public global::System.Threading.Tasks.Task ApplyAsync(MarkerSnapshot patch) =>
         Realm.SendAsync(global::Interoper.JsOp.Apply(Handle, w => MarkerSnapshot.WriteMembers(w, patch)));
+
+    public global::System.Threading.Tasks.Task<MarkerSnapshot> SnapshotAsync(global::Interoper.JsMembers<MarkerSnapshot> members) =>
+        Realm.SnapshotAsync(Handle, members);
+
+    public global::System.Threading.Tasks.Task<global::System.IAsyncDisposable> WatchAsync(global::Interoper.JsScope scope, global::Interoper.JsMembers<MarkerSnapshot> members, global::System.Action<MarkerSnapshot> handler) =>
+        scope.SubscribeAsync(Handle, "watch", members, handler);
+
+    public global::System.Collections.Generic.IAsyncEnumerable<MarkerSnapshot> WatchStreamAsync(global::Interoper.JsScope scope, global::Interoper.JsMembers<MarkerSnapshot> members, global::System.Threading.CancellationToken cancellationToken = default) =>
+        scope.StreamAsync(Handle, "watch", members, cancellationToken);
 }

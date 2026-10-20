@@ -30,6 +30,13 @@ public partial class Marker : Observable
         set => Realm.Send(global::Interoper.JsOp.Set(Handle, "style", w => global::Interoper.JsJson.WriteValue(w, value)));
     }
 
+    /// <summary>The same tagged intersection as <c>TileLayer.glow</c>, in another module.</summary>
+    public global::Interoper.Opt<GlowOptionsGlow> Glow
+    {
+        get => Realm.Call(global::Interoper.JsOp.Get(Handle, "glow"), static (ref r) => global::Interoper.JsJson.ReadOpt(ref r, GlowOptionsGlow.Read));
+        set => Realm.Send(global::Interoper.JsOp.Set(Handle, "glow", w => global::Interoper.JsJson.WriteValue(w, value, GlowOptionsGlow.Write)));
+    }
+
     /// <summary>Overrides <c>label</c> when set.</summary>
     public void SetLabelFormatter(global::Interoper.JsScope scope, global::System.Func<Marker, string>? value) =>
         Realm.Send(global::Interoper.JsOp.Set(Handle, "labelFormatter", w => global::Interoper.JsJson.WriteCallback(w, value is null ? null : scope.Callback(value, scope.Read<Marker>, global::Interoper.JsJson.WriteString))));
@@ -54,6 +61,9 @@ public partial class Marker : Observable
     public global::System.IDisposable WatchStyle(global::Interoper.JsScope scope, global::System.Action<Style> handler) =>
         scope.Subscribe(Handle, "watch", "style", global::Interoper.JsJson.ReadUnion<Style>, handler, null, null);
 
+    public global::System.IDisposable WatchGlow(global::Interoper.JsScope scope, global::System.Action<global::Interoper.Opt<GlowOptionsGlow>> handler) =>
+        scope.Subscribe(Handle, "watch", "glow", static (ref r) => global::Interoper.JsJson.ReadOpt(ref r, GlowOptionsGlow.Read), handler, null, null);
+
     public global::System.IDisposable WatchData(global::Interoper.JsScope scope, global::System.Action<global::Interoper.Opt<global::Interoper.JsAny>> handler) =>
         scope.Subscribe(Handle, "watch", "data", (ref r) => global::Interoper.JsJson.ReadOpt(ref r, (ref r1) => global::Interoper.JsAny.Read(ref r1, scope)), handler, null, null);
 
@@ -64,4 +74,10 @@ public partial class Marker : Observable
 
     public void Apply(MarkerSnapshot patch) =>
         Realm.Send(global::Interoper.JsOp.Apply(Handle, w => MarkerSnapshot.WriteMembers(w, patch)));
+
+    public MarkerSnapshot Snapshot(global::Interoper.JsMembers<MarkerSnapshot> members) =>
+        Realm.Snapshot(Handle, members);
+
+    public global::System.IDisposable Watch(global::Interoper.JsScope scope, global::Interoper.JsMembers<MarkerSnapshot> members, global::System.Action<MarkerSnapshot> handler) =>
+        scope.Subscribe(Handle, "watch", members, handler);
 }

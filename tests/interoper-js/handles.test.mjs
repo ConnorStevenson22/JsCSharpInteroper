@@ -52,6 +52,21 @@ test("an object of a class the metadata doesn't know is its nearest registered a
   release(fast, guarded, source, endless);
 });
 
+test("with live, a plain object with a method is a handle of class id 0, and data stays a copy (R15)", async () => {
+  const before = census();
+  const result = value(await sendAsync({ op: "call", module: faulty, name: "objects", live: true }));
+  assert.deepEqual(result.data, { x: 1 });
+  assert.deepEqual(result.list[0], { y: 2 });
+  assert.deepEqual([Object.keys(result.tool), result.tool.$t, result.list[1].$t], [["$h", "$t"], 0, 0]);
+  assert.equal(call(result.tool, "go"), 7);
+  assert.equal(get(result.tool, "name"), "t");
+  release(result.tool, result.list[1]);
+  const copy = value(await sendAsync({ op: "call", module: faulty, name: "objects" })); // without live, a copy
+  assert.equal(copy.tool.name, "t");
+  release(copy.tool.go, copy.list[1].go);
+  assert.equal(census(), before);
+});
+
 test("a variant has its own class id and its base's entry (§5)", async () => {
   const glow = value(await sendAsync({ op: "call", module: faulty, name: "glowMarker" }));
   assert.equal(glow.$t, ids.GlowMarker);

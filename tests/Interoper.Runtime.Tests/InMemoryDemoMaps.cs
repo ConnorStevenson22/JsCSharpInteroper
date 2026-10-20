@@ -27,12 +27,13 @@ internal static class InMemoryDemoMaps
         .Define(new(DemoMaps.CollectionId, "core.Collection", args => new FakeCollection(args.FirstOrDefault() as List<object?> ?? [])))
         .Define(new(DemoMaps.DemoMapElementId, "demo-map.DemoMapElement", _ => new FakeDemoMapElement()) { Members = ["basemap", "zoom", "center"] })
         .Define(new(DemoMaps.LayerId, "layers.Layer", _ => throw new JsException("TypeError", "Layer is abstract", null)) { Members = ["title", "visible"] })
-        .Define(new(DemoMaps.TileLayerId, "layers.TileLayer", args => new FakeTileLayer(Bag(args))) { Members = ["url", "refreshInterval", "title", "visible"] })
+        .Define(new(DemoMaps.TileLayerId, "layers.TileLayer", args => new FakeTileLayer(Bag(args))) { Members = ["url", "tileSize", "refreshInterval", "title", "visible"] })
         .Define(new(DemoMaps.PinId, "pins.Pin", args => new FakePin(Bag(args))) { Members = ["meta", "position", "label", "style", "data"] })
         .DefineModule(TransportContract.Measure, new FakeMeasure())
         .DefineModule("@acme/demo-maps/ops/a.js", new FakeExecute((x, options) => x * (double)options.GetValueOrDefault("scale", 1.0)!))
         .DefineModule("@acme/demo-maps/ops/b.js", new FakeExecute((x, options) => x + (double)options.GetValueOrDefault("offset", 0.0)!))
-        .DefineModule("@acme/demo-maps/styles.js", new FakeStyles());
+        .DefineModule("@acme/demo-maps/styles.js", new FakeStyles())
+        .DefineModule(TransportContract.Tools, new FakeTools());
 
     // The constructor bag: `new X({ … } = {})`.
     private static Dictionary<string, object?> Bag(object?[] args) => args.FirstOrDefault() as Dictionary<string, object?> ?? [];
@@ -276,10 +277,14 @@ internal sealed class FakeMapView : FakeEmitter
                 return Task.FromResult<object?>(Undefined.Value);
             case "screenToMap":
                 return ScreenToMap(args);
-            case "markerAt": // the first marker within 10 pixels of the screen offset, or null
-                var point = ScreenToMap(args);
-                var tolerance = 10 / Math.Pow(2, (double)Get("zoom")!);
-                return Task.FromResult(markers.Items.Cast<FakeMarker>().FirstOrDefault(m => Distance((FakePoint)m.Get("position")!, point) <= tolerance) as object);
+            case "reset": // several properties in one call
+                Set("zoom", 1.0);
+                Set("rotation", 0.0);
+                return Undefined.Value;
+            case "markerAt":
+                return Task.FromResult(Nearest(args));
+            case "markersAt":
+                return ((List<object?>)args[0]!).Select(offset => Nearest([offset])).ToList();
             case "edit": // adds and selects markers, which must be instances, as one built from a bag ($c) is
                 var edits = args.FirstOrDefault() as Dictionary<string, object?> ?? [];
                 var added = edits.GetValueOrDefault("add") switch { List<object?> list => list, FakeCollection c => [.. c.Items], _ => [] };
@@ -300,6 +305,14 @@ internal sealed class FakeMapView : FakeEmitter
             default:
                 return base.Call(name, args);
         }
+    }
+
+    // The first marker within 10 pixels of the screen offset, or null.
+    private object? Nearest(object?[] args)
+    {
+        var point = ScreenToMap(args);
+        var tolerance = 10 / Math.Pow(2, (double)Get("zoom")!);
+        return markers.Items.Cast<FakeMarker>().FirstOrDefault(m => Distance((FakePoint)m.Get("position")!, point) <= tolerance);
     }
 
     // An offset from the center, or an [x, y] pair, in pixels; one pixel is 2^-zoom map units.
@@ -335,7 +348,7 @@ internal sealed class FakeMapView : FakeEmitter
     private static double Distance(FakePoint a, FakePoint b) =>
         Math.Sqrt(Math.Pow((double)a.Get("x")! - (double)b.Get("x")!, 2) + Math.Pow((double)a.Get("y")! - (double)b.Get("y")!, 2));
 
-    private static FakePoint Midpoint(Dictionary<string, object?> b) => new(new()
+    public static FakePoint Midpoint(Dictionary<string, object?> b) => new(new()
     {
         ["x"] = ((double)b["minX"]! + (double)b["maxX"]!) / 2,
         ["y"] = ((double)b["minY"]! + (double)b["maxY"]!) / 2,
@@ -461,7 +474,18 @@ internal sealed class FakeTileLayer : FakeLayer
 
     public override string ClassName => "layers.TileLayer";
 
-    public override object? Get(string name) => name == "emphasized" ? base.Get(name) as List<object?> ?? [] : base.Get(name);
+    // One size, or one per zoom level, of which the getter gives the first.
+    public override object? Get(string name) => name switch
+    {
+        "emphasized" => base.Get(name) as List<object?> ?? [],
+        "tileSize" => base.Get(name) switch
+        {
+            double size => size,
+            List<object?> sizes => sizes[0],
+            _ => 256.0,
+        },
+        _ => base.Get(name),
+    };
 
     public override object? Call(string name, object?[] args)
     {
@@ -521,9 +545,12 @@ internal sealed class FakeMeasure : InMemoryObject
 
     public override object? Call(string name, object?[] args) => name switch
     {
-        "distance" => Distance(args[0]!, args[1]!),
+        "distance" => Distance(args[0]!, args[1]!) / (args.Length < 3 ? 1 : args[2] switch { double unit => unit, "kilometers" => 1000, _ => 1 }),
         "perimeter" => args.Select((point, i) => Distance(point!, args[(i + 1) % args.Length]!)).Sum(), // the closed path through `...points`
         "describe" => args[0] is FakeShape shape ? shape.Get("type") : $"marker {((InMemoryObject)args[0]!).Get("displayLabel")}",
+        // `markers.map((marker) => marker && distance(origin, marker.position))`; centers keeps null and undefined the same way
+        "distances" => ((List<object?>)args[1]!).Select(m => m is InMemoryObject marker ? Distance(args[0]!, marker.Get("position")!) : m).ToList(),
+        "centers" => ((List<object?>)args[0]!).Select(s => s is FakeShape shape ? FakeMapView.Midpoint((Dictionary<string, object?>)shape.Get("bounds")!) : s).ToList(),
         _ => base.Call(name, args),
     };
 
@@ -541,4 +568,49 @@ internal sealed class FakeExecute(Func<double, Dictionary<string, object?>, doub
 
     public override object? Call(string name, object?[] args) =>
         name == "execute" ? execute((double)args[0]!, args.ElementAtOrDefault(1) as Dictionary<string, object?> ?? []) : base.Call(name, args);
+}
+
+/// <summary>The <c>tools.js</c> module: factories that return plain objects, each kept with its view (R15).</summary>
+internal sealed class FakeTools : InMemoryObject
+{
+    private readonly Dictionary<object, List<object?>> made = new(ReferenceEqualityComparer.Instance);
+
+    public override string ClassName => "tools";
+
+    public override object? Call(string name, object?[] args) => name switch
+    {
+        "createPanTool" => Tool(args[0]!, "pan"),
+        "createMeasureTool" => Measure((InMemoryObject)args[0]!),
+        "toolsOf" => made.TryGetValue(args[0]!, out var tools) ? tools.ToList() : new List<object?>(),
+        _ => base.Call(name, args),
+    };
+
+    private Dictionary<string, object?> Measure(InMemoryObject view)
+    {
+        var tool = Tool(view, "measure");
+        tool["readings"] = 0.0;
+        tool["measure"] = new JsFunction(_ =>
+        {
+            tool["readings"] = (double)tool["readings"]! + 1;
+            return view.Get("zoom");
+        });
+        tool["clear"] = Setter(tool, "readings", 0.0);
+        return tool;
+    }
+
+    private Dictionary<string, object?> Tool(object view, string name)
+    {
+        var tool = new Dictionary<string, object?> { ["name"] = name, ["active"] = false };
+        tool["activate"] = Setter(tool, "active", true);
+        tool["deactivate"] = Setter(tool, "active", false);
+        (made.TryGetValue(view, out var tools) ? tools : made[view] = []).Add(tool);
+        return tool;
+    }
+
+    // A method that sets a member and returns undefined.
+    private static JsFunction Setter(Dictionary<string, object?> tool, string name, object value) => _ =>
+    {
+        tool[name] = value;
+        return Undefined.Value;
+    };
 }

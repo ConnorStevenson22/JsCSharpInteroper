@@ -794,6 +794,70 @@
                   }
                 }
               ]
+            },
+            {
+              "kind": "method",
+              "name": "markersAt",
+              "signatures": [
+                {
+                  "params": [
+                    {
+                      "name": "offsets",
+                      "type": {
+                        "kind": "array",
+                        "element": {
+                          "kind": "tuple",
+                          "elements": [
+                            {
+                              "kind": "primitive",
+                              "name": "number"
+                            },
+                            {
+                              "kind": "primitive",
+                              "name": "number"
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  ],
+                  "returns": {
+                    "kind": "array",
+                    "element": {
+                      "kind": "union",
+                      "types": [
+                        {
+                          "kind": "ref",
+                          "name": "Marker",
+                          "module": "@acme/demo-maps/Marker.js"
+                        },
+                        {
+                          "kind": "primitive",
+                          "name": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "doc": {
+                    "summary": "The marker at each `[x, y]` screen offset, or `null` where there is none."
+                  }
+                }
+              ]
+            },
+            {
+              "kind": "method",
+              "name": "reset",
+              "signatures": [
+                {
+                  "returns": {
+                    "kind": "primitive",
+                    "name": "void"
+                  },
+                  "doc": {
+                    "summary": "Back to zoom 1 and rotation 0: the library changes several properties in one call."
+                  }
+                }
+              ]
             }
           ],
           "events": [
@@ -1017,6 +1081,74 @@
                 "kind": "ref",
                 "name": "Style",
                 "module": "@acme/demo-maps/styles.js"
+              }
+            },
+            {
+              "kind": "property",
+              "name": "glow",
+              "optional": true,
+              "doc": {
+                "summary": "The same tagged intersection as `TileLayer.glow`, in another module."
+              },
+              "type": {
+                "kind": "union",
+                "types": [
+                  {
+                    "kind": "object",
+                    "bases": [
+                      {
+                        "kind": "ref",
+                        "name": "GlowOptions",
+                        "module": "@acme/demo-maps/styles.js"
+                      }
+                    ],
+                    "members": [
+                      {
+                        "kind": "property",
+                        "name": "blur",
+                        "optional": true,
+                        "inherited": true,
+                        "type": {
+                          "kind": "primitive",
+                          "name": "number"
+                        }
+                      },
+                      {
+                        "kind": "property",
+                        "name": "color",
+                        "optional": true,
+                        "inherited": true,
+                        "type": {
+                          "kind": "union",
+                          "types": [
+                            {
+                              "kind": "ref",
+                              "name": "ColorInput",
+                              "module": "@acme/demo-maps/styles.js"
+                            },
+                            {
+                              "kind": "primitive",
+                              "name": "null"
+                            }
+                          ]
+                        }
+                      },
+                      {
+                        "kind": "property",
+                        "name": "kind",
+                        "inherited": true,
+                        "type": {
+                          "kind": "literal",
+                          "value": "glow"
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "kind": "primitive",
+                    "name": "null"
+                  }
+                ]
               }
             },
             {
@@ -2251,6 +2383,52 @@
               }
             }
           ]
+        },
+        {
+          "kind": "alias",
+          "name": "OpenShape",
+          "doc": {
+            "summary": "Shapes without an area."
+          },
+          "type": {
+            "kind": "union",
+            "types": [
+              {
+                "kind": "ref",
+                "name": "Point",
+                "module": "@acme/demo-maps/geometry.js"
+              },
+              {
+                "kind": "ref",
+                "name": "Line",
+                "module": "@acme/demo-maps/geometry.js"
+              }
+            ],
+            "discriminant": "type"
+          }
+        },
+        {
+          "kind": "alias",
+          "name": "AnyShape",
+          "doc": {
+            "summary": "A union of a union alias and a class, discriminated by `type` across both."
+          },
+          "type": {
+            "kind": "union",
+            "types": [
+              {
+                "kind": "ref",
+                "name": "OpenShape",
+                "module": "@acme/demo-maps/geometry.js"
+              },
+              {
+                "kind": "ref",
+                "name": "Polygon",
+                "module": "@acme/demo-maps/geometry.js"
+              }
+            ],
+            "discriminant": "type"
+          }
         }
       ]
     },
@@ -2494,7 +2672,7 @@
               "kind": "property",
               "name": "tileSize",
               "doc": {
-                "summary": "The tiles' edge in pixels. The setter also takes one per zoom level, a union with a value-type case (R2), which\nisn't mapped: the getter is kept, read-only (§5)."
+                "summary": "The tiles' edge in pixels. The setter also takes one per zoom level: `number | number[]`, a union with a\nvalue-type case (R2)."
               },
               "type": {
                 "kind": "primitive",
@@ -2508,6 +2686,65 @@
                   {
                     "kind": "primitive",
                     "name": "number"
+                  }
+                ]
+              }
+            },
+            {
+              "kind": "property",
+              "name": "glow",
+              "optional": true,
+              "doc": {
+                "summary": "The same tagged intersection as `Marker.glow`."
+              },
+              "type": {
+                "kind": "object",
+                "bases": [
+                  {
+                    "kind": "ref",
+                    "name": "GlowOptions",
+                    "module": "@acme/demo-maps/styles.js"
+                  }
+                ],
+                "members": [
+                  {
+                    "kind": "property",
+                    "name": "blur",
+                    "optional": true,
+                    "inherited": true,
+                    "type": {
+                      "kind": "primitive",
+                      "name": "number"
+                    }
+                  },
+                  {
+                    "kind": "property",
+                    "name": "color",
+                    "optional": true,
+                    "inherited": true,
+                    "type": {
+                      "kind": "union",
+                      "types": [
+                        {
+                          "kind": "ref",
+                          "name": "ColorInput",
+                          "module": "@acme/demo-maps/styles.js"
+                        },
+                        {
+                          "kind": "primitive",
+                          "name": "null"
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "kind": "property",
+                    "name": "kind",
+                    "inherited": true,
+                    "type": {
+                      "kind": "literal",
+                      "value": "glow"
+                    }
                   }
                 ]
               }
@@ -2634,6 +2871,23 @@
       "specifier": "@acme/demo-maps/measure.js",
       "declarations": [
         {
+          "kind": "alias",
+          "name": "LengthUnit",
+          "type": {
+            "kind": "union",
+            "types": [
+              {
+                "kind": "literal",
+                "value": "meters"
+              },
+              {
+                "kind": "literal",
+                "value": "kilometers"
+              }
+            ]
+          }
+        },
+        {
           "kind": "function",
           "name": "distance",
           "signatures": [
@@ -2654,11 +2908,32 @@
                     "name": "Point",
                     "module": "@acme/demo-maps/geometry.js"
                   }
+                },
+                {
+                  "name": "unit",
+                  "type": {
+                    "kind": "union",
+                    "types": [
+                      {
+                        "kind": "ref",
+                        "name": "LengthUnit",
+                        "module": "@acme/demo-maps/measure.js"
+                      },
+                      {
+                        "kind": "primitive",
+                        "name": "number"
+                      }
+                    ]
+                  },
+                  "optional": true
                 }
               ],
               "returns": {
                 "kind": "primitive",
                 "name": "number"
+              },
+              "doc": {
+                "summary": "In `unit`s: meters by default, or a unit that many meters long."
               }
             }
           ]
@@ -2740,6 +3015,315 @@
               },
               "doc": {
                 "summary": "The shape's `type`, or \"marker\" and its label."
+              }
+            }
+          ]
+        },
+        {
+          "kind": "function",
+          "name": "distances",
+          "signatures": [
+            {
+              "params": [
+                {
+                  "name": "origin",
+                  "type": {
+                    "kind": "ref",
+                    "name": "Point",
+                    "module": "@acme/demo-maps/geometry.js"
+                  }
+                },
+                {
+                  "name": "markers",
+                  "type": {
+                    "kind": "array",
+                    "element": {
+                      "kind": "union",
+                      "types": [
+                        {
+                          "kind": "ref",
+                          "name": "Marker",
+                          "module": "@acme/demo-maps/Marker.js"
+                        },
+                        {
+                          "kind": "primitive",
+                          "name": "null"
+                        }
+                      ]
+                    }
+                  }
+                }
+              ],
+              "returns": {
+                "kind": "array",
+                "element": {
+                  "kind": "union",
+                  "types": [
+                    {
+                      "kind": "primitive",
+                      "name": "number"
+                    },
+                    {
+                      "kind": "primitive",
+                      "name": "null"
+                    }
+                  ]
+                }
+              },
+              "doc": {
+                "summary": "The distance from `origin` to each marker's position, or `null` for a gap in the list."
+              }
+            }
+          ]
+        },
+        {
+          "kind": "function",
+          "name": "centers",
+          "signatures": [
+            {
+              "params": [
+                {
+                  "name": "shapes",
+                  "type": {
+                    "kind": "array",
+                    "element": {
+                      "kind": "union",
+                      "types": [
+                        {
+                          "kind": "primitive",
+                          "name": "undefined"
+                        },
+                        {
+                          "kind": "primitive",
+                          "name": "null"
+                        },
+                        {
+                          "kind": "ref",
+                          "name": "Shape",
+                          "module": "@acme/demo-maps/geometry.js"
+                        }
+                      ]
+                    }
+                  }
+                }
+              ],
+              "returns": {
+                "kind": "array",
+                "element": {
+                  "kind": "union",
+                  "types": [
+                    {
+                      "kind": "ref",
+                      "name": "Point",
+                      "module": "@acme/demo-maps/geometry.js"
+                    },
+                    {
+                      "kind": "primitive",
+                      "name": "null"
+                    },
+                    {
+                      "kind": "primitive",
+                      "name": "undefined"
+                    }
+                  ]
+                }
+              },
+              "doc": {
+                "summary": "Each shape's bounds center; `null` and `undefined` elements stay as they are."
+              }
+            }
+          ]
+        },
+        {
+          "kind": "function",
+          "name": "simplify",
+          "signatures": [
+            {
+              "params": [
+                {
+                  "name": "shape",
+                  "type": {
+                    "kind": "ref",
+                    "name": "AnyShape",
+                    "module": "@acme/demo-maps/geometry.js"
+                  }
+                }
+              ],
+              "returns": {
+                "kind": "union",
+                "types": [
+                  {
+                    "kind": "ref",
+                    "name": "Point",
+                    "module": "@acme/demo-maps/geometry.js"
+                  },
+                  {
+                    "kind": "ref",
+                    "name": "Shape",
+                    "module": "@acme/demo-maps/geometry.js"
+                  }
+                ]
+              },
+              "doc": {
+                "summary": "A shape with one vertex as that point; any other shape as it is. The result has no discriminant, only class ids."
+              }
+            }
+          ]
+        },
+        {
+          "kind": "function",
+          "name": "shapeFrom",
+          "signatures": [
+            {
+              "params": [
+                {
+                  "name": "options",
+                  "type": {
+                    "kind": "union",
+                    "types": [
+                      {
+                        "kind": "union",
+                        "types": [
+                          {
+                            "kind": "union",
+                            "types": [
+                              {
+                                "kind": "object",
+                                "members": [
+                                  {
+                                    "kind": "property",
+                                    "name": "x",
+                                    "optional": true,
+                                    "inherited": true,
+                                    "type": {
+                                      "kind": "primitive",
+                                      "name": "number"
+                                    }
+                                  },
+                                  {
+                                    "kind": "property",
+                                    "name": "y",
+                                    "optional": true,
+                                    "inherited": true,
+                                    "type": {
+                                      "kind": "primitive",
+                                      "name": "number"
+                                    }
+                                  },
+                                  {
+                                    "kind": "property",
+                                    "name": "type",
+                                    "inherited": true,
+                                    "type": {
+                                      "kind": "literal",
+                                      "value": "point"
+                                    }
+                                  }
+                                ]
+                              },
+                              {
+                                "kind": "object",
+                                "members": [
+                                  {
+                                    "kind": "property",
+                                    "name": "path",
+                                    "optional": true,
+                                    "inherited": true,
+                                    "type": {
+                                      "kind": "array",
+                                      "element": {
+                                        "kind": "tuple",
+                                        "elements": [
+                                          {
+                                            "kind": "primitive",
+                                            "name": "number"
+                                          },
+                                          {
+                                            "kind": "primitive",
+                                            "name": "number"
+                                          }
+                                        ]
+                                      }
+                                    }
+                                  },
+                                  {
+                                    "kind": "property",
+                                    "name": "type",
+                                    "inherited": true,
+                                    "type": {
+                                      "kind": "literal",
+                                      "value": "line"
+                                    }
+                                  }
+                                ]
+                              }
+                            ],
+                            "discriminant": "type"
+                          },
+                          {
+                            "kind": "object",
+                            "members": [
+                              {
+                                "kind": "property",
+                                "name": "vertices",
+                                "optional": true,
+                                "inherited": true,
+                                "type": {
+                                  "kind": "array",
+                                  "element": {
+                                    "kind": "tuple",
+                                    "elements": [
+                                      {
+                                        "kind": "primitive",
+                                        "name": "number"
+                                      },
+                                      {
+                                        "kind": "primitive",
+                                        "name": "number"
+                                      }
+                                    ]
+                                  }
+                                }
+                              },
+                              {
+                                "kind": "property",
+                                "name": "type",
+                                "inherited": true,
+                                "type": {
+                                  "kind": "literal",
+                                  "value": "polygon"
+                                }
+                              }
+                            ]
+                          }
+                        ],
+                        "discriminant": "type"
+                      },
+                      {
+                        "kind": "primitive",
+                        "name": "null"
+                      }
+                    ],
+                    "discriminant": "type"
+                  }
+                }
+              ],
+              "returns": {
+                "kind": "union",
+                "types": [
+                  {
+                    "kind": "ref",
+                    "name": "Shape",
+                    "module": "@acme/demo-maps/geometry.js"
+                  },
+                  {
+                    "kind": "primitive",
+                    "name": "null"
+                  }
+                ]
+              },
+              "doc": {
+                "summary": "A shape from its constructor bag tagged with its `type`, the unions nested as typings write them."
               }
             }
           ]
@@ -3724,6 +4308,34 @@
                 "kind": "primitive",
                 "name": "number"
               }
+            },
+            {
+              "kind": "property",
+              "name": "dash",
+              "optional": true,
+              "doc": {
+                "summary": "A named pattern, or dash and gap lengths."
+              },
+              "type": {
+                "kind": "union",
+                "types": [
+                  {
+                    "kind": "literal",
+                    "value": "solid"
+                  },
+                  {
+                    "kind": "literal",
+                    "value": "dotted"
+                  },
+                  {
+                    "kind": "array",
+                    "element": {
+                      "kind": "primitive",
+                      "name": "number"
+                    }
+                  }
+                ]
+              }
             }
           ]
         },
@@ -3746,6 +4358,64 @@
                 "kind": "ref",
                 "name": "IconName",
                 "module": "@acme/demo-maps/styles.js"
+              }
+            },
+            {
+              "kind": "property",
+              "name": "color",
+              "optional": true,
+              "type": {
+                "kind": "union",
+                "types": [
+                  {
+                    "kind": "ref",
+                    "name": "ColorInput",
+                    "module": "@acme/demo-maps/styles.js"
+                  },
+                  {
+                    "kind": "primitive",
+                    "name": "null"
+                  }
+                ]
+              }
+            },
+            {
+              "kind": "property",
+              "name": "size",
+              "optional": true,
+              "doc": {
+                "summary": "Pixels, or a CSS length such as \"2em\"."
+              },
+              "type": {
+                "kind": "union",
+                "types": [
+                  {
+                    "kind": "primitive",
+                    "name": "number"
+                  },
+                  {
+                    "kind": "primitive",
+                    "name": "string"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "kind": "interface",
+          "name": "GlowOptions",
+          "doc": {
+            "summary": "A soft glow under a marker or a layer, tagged where it's used (`GlowOptions & { kind: \"glow\" }`)."
+          },
+          "members": [
+            {
+              "kind": "property",
+              "name": "blur",
+              "optional": true,
+              "type": {
+                "kind": "primitive",
+                "name": "number"
               }
             },
             {
@@ -3798,6 +4468,34 @@
           }
         },
         {
+          "kind": "alias",
+          "name": "OutlineStyle",
+          "doc": {
+            "summary": "Names `StrokeStyle` twice, as generated typings can; still discriminated by `type`."
+          },
+          "type": {
+            "kind": "union",
+            "types": [
+              {
+                "kind": "ref",
+                "name": "StrokeStyle",
+                "module": "@acme/demo-maps/styles.js"
+              },
+              {
+                "kind": "ref",
+                "name": "IconStyle",
+                "module": "@acme/demo-maps/styles.js"
+              },
+              {
+                "kind": "ref",
+                "name": "StrokeStyle",
+                "module": "@acme/demo-maps/styles.js"
+              }
+            ],
+            "discriminant": "type"
+          }
+        },
+        {
           "kind": "function",
           "name": "toRgba",
           "signatures": [
@@ -3816,6 +4514,192 @@
                 "kind": "ref",
                 "name": "Rgba",
                 "module": "@acme/demo-maps/styles.js"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "specifier": "@acme/demo-maps/tools.js",
+      "declarations": [
+        {
+          "kind": "interface",
+          "name": "Tool",
+          "doc": {
+            "summary": "A tool for a view. Its factory makes a plain object, so no class makes it (R15)."
+          },
+          "members": [
+            {
+              "kind": "property",
+              "name": "name",
+              "readonly": true,
+              "type": {
+                "kind": "primitive",
+                "name": "string"
+              }
+            },
+            {
+              "kind": "property",
+              "name": "active",
+              "readonly": true,
+              "type": {
+                "kind": "primitive",
+                "name": "boolean"
+              }
+            },
+            {
+              "kind": "method",
+              "name": "activate",
+              "signatures": [
+                {
+                  "returns": {
+                    "kind": "primitive",
+                    "name": "void"
+                  }
+                }
+              ]
+            },
+            {
+              "kind": "method",
+              "name": "deactivate",
+              "signatures": [
+                {
+                  "returns": {
+                    "kind": "primitive",
+                    "name": "void"
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "kind": "interface",
+          "name": "MeasureTool",
+          "doc": {
+            "summary": "A tool that reads the view's zoom: an interface that extends another (R15)."
+          },
+          "extends": [
+            {
+              "kind": "ref",
+              "name": "Tool",
+              "module": "@acme/demo-maps/tools.js"
+            }
+          ],
+          "members": [
+            {
+              "kind": "property",
+              "name": "readings",
+              "doc": {
+                "summary": "How many readings since the last `clear()`."
+              },
+              "readonly": true,
+              "type": {
+                "kind": "primitive",
+                "name": "number"
+              }
+            },
+            {
+              "kind": "method",
+              "name": "measure",
+              "signatures": [
+                {
+                  "returns": {
+                    "kind": "primitive",
+                    "name": "number"
+                  },
+                  "doc": {
+                    "summary": "The view's zoom now."
+                  }
+                }
+              ]
+            },
+            {
+              "kind": "method",
+              "name": "clear",
+              "signatures": [
+                {
+                  "returns": {
+                    "kind": "primitive",
+                    "name": "void"
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "kind": "function",
+          "name": "createPanTool",
+          "signatures": [
+            {
+              "params": [
+                {
+                  "name": "view",
+                  "type": {
+                    "kind": "ref",
+                    "name": "MapView",
+                    "module": "@acme/demo-maps/MapView.js"
+                  }
+                }
+              ],
+              "returns": {
+                "kind": "ref",
+                "name": "Tool",
+                "module": "@acme/demo-maps/tools.js"
+              }
+            }
+          ]
+        },
+        {
+          "kind": "function",
+          "name": "createMeasureTool",
+          "signatures": [
+            {
+              "params": [
+                {
+                  "name": "view",
+                  "type": {
+                    "kind": "ref",
+                    "name": "MapView",
+                    "module": "@acme/demo-maps/MapView.js"
+                  }
+                }
+              ],
+              "returns": {
+                "kind": "ref",
+                "name": "MeasureTool",
+                "module": "@acme/demo-maps/tools.js"
+              }
+            }
+          ]
+        },
+        {
+          "kind": "function",
+          "name": "toolsOf",
+          "signatures": [
+            {
+              "params": [
+                {
+                  "name": "view",
+                  "type": {
+                    "kind": "ref",
+                    "name": "MapView",
+                    "module": "@acme/demo-maps/MapView.js"
+                  }
+                }
+              ],
+              "returns": {
+                "kind": "array",
+                "element": {
+                  "kind": "ref",
+                  "name": "Tool",
+                  "module": "@acme/demo-maps/tools.js"
+                }
+              },
+              "doc": {
+                "summary": "The tools made for the view, in order, as `Tool`s."
               }
             }
           ]

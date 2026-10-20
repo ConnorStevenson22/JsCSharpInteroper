@@ -77,8 +77,22 @@ export class MapView extends Emitter {
 
   // The first marker within 10 pixels of the screen offset, or null.
   async markerAt(x, y) {
+    return this.#nearest(x, y);
+  }
+
+  markersAt(offsets) {
+    return offsets.map(([x, y]) => this.#nearest(x, y));
+  }
+
+  #nearest(x, y) {
     const point = this.screenToMap(x, y);
     const tolerance = 10 / 2 ** this.zoom;
     return this.#markers.find((m) => Math.hypot(m.position.x - point.x, m.position.y - point.y) <= tolerance) ?? null;
+  }
+
+  // Each property's watchers are called as it changes, so one call raises several watches in one turn.
+  reset() {
+    this.zoom = 1;
+    this.rotation = 0;
   }
 }

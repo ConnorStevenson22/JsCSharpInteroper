@@ -29,6 +29,15 @@ test("watch on zoom", () => {
   assert.deepEqual(seen, [[2, 1]]);
 });
 
+test("reset changes zoom and rotation in one call, each watch called synchronously", () => {
+  const view = new MapView({ zoom: 5, rotation: 90 });
+  const seen = [];
+  view.watch("zoom", (zoom) => seen.push(["zoom", zoom]));
+  view.watch("rotation", (rotation) => seen.push(["rotation", rotation]));
+  view.reset();
+  assert.deepEqual(seen, [["zoom", 1], ["rotation", 0]]);
+});
+
 test("screenToMap takes x and y, or an [x, y] pair", () => {
   const view = new MapView({ center: new Point({ x: 10, y: 10 }), zoom: 1 });
   assert.deepEqual([view.screenToMap(4, 2).x, view.screenToMap([4, 2]).y], [12, 9]);
@@ -70,6 +79,13 @@ test("markerAt resolves to the marker under the offset, or null", async () => {
   view.markers.add(marker);
   assert.equal(await view.markerAt(105, 50), marker);
   assert.equal(await view.markerAt(0, 0), null);
+});
+
+test("markersAt has null where no marker is", () => {
+  const view = new MapView({ zoom: 0 });
+  const marker = new Marker({ position: [100, -50] });
+  view.markers.add(marker);
+  assert.deepEqual(view.markersAt([[0, 0], [105, 50]]), [null, marker]);
 });
 
 test("no autocast: a plain snapshot is not turned into a Point", () => {

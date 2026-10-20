@@ -68,7 +68,7 @@ public readonly partial struct FlyToTarget : global::Interoper.IJsUnion<FlyToTar
     public static FlyToTarget ReadValue(ref global::System.Text.Json.Utf8JsonReader reader) => reader.TokenType switch
     {
         global::System.Text.Json.JsonTokenType.StartArray => global::Interoper.JsJson.ReadArray(ref reader, global::Interoper.JsJson.ReadNumber),
-        global::System.Text.Json.JsonTokenType.StartObject when global::Interoper.JsJson.HasProperty(reader, "type"u8) => ShapeSnapshot.Read(ref reader),
+        global::System.Text.Json.JsonTokenType.StartObject when global::Interoper.JsJson.PeekClass(reader) is DemoMaps.ShapeId or DemoMaps.PointId or DemoMaps.LineId or DemoMaps.PolygonId => new FlyToTarget(ShapeSnapshot.Read(ref reader)),
         global::System.Text.Json.JsonTokenType.StartObject when global::Interoper.JsJson.HasProperty(reader, "minX"u8) => Bounds.Read(ref reader),
         global::System.Text.Json.JsonTokenType.StartObject when global::Interoper.JsJson.HasProperty(reader, "center"u8) => CenterAndZoom.Read(ref reader),
         var token => throw new global::System.Text.Json.JsonException($"FlyToTarget: unexpected {token}"),

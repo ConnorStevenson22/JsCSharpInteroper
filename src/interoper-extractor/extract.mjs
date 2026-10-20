@@ -351,7 +351,8 @@ export function extract(packageDirs, { eventMap } = {}) {
     const bools = parts.filter(([t]) => t.flags & T.BooleanLiteral);
     if (bools.length === 2) parts = parts.filter((p) => p !== bools[1]).map((p) => (p === bools[0] ? [checker.getBooleanType()] : p));
     if (parts.length === 1) return typeRef(parts[0][0], parts[0][1]);
-    const records = parts.map(([t]) => t).filter((t) => !(t.flags & (T.Null | T.Undefined)));
+    // The checker's members, not the written ones: nested unions and union aliases flattened, repeats dropped (R6).
+    const records = type.types.filter((t) => !(t.flags & (T.Null | T.Undefined)));
     // Object types, and intersections of them (`Props & { type: "heat" }`), which TypeScript doesn't flag as objects.
     const tagged = records.length > 1 && records.every((t) => t.flags & (T.Object | T.Intersection) && !checker.isArrayLikeType(t) && !t.getCallSignatures().length);
     return compact({
@@ -387,7 +388,9 @@ export function extract(packageDirs, { eventMap } = {}) {
     stack.delete(type);
     const [call] = shape.callSignatures;
     if (call && shape.callSignatures.length === 1 && !shape.members.length && !shape.indexSignatures.length) return { kind: "function", ...call };
-    return compact({ kind: "object", ...shape });
+    // R11: an intersection's named parts (`Props` in `Props & { type: "poly" }`), which its record is named after.
+    const bases = type.isIntersection() ? type.types.filter(isNamed).map((t) => typeRef(t)) : undefined;
+    return compact({ kind: "object", bases, ...shape });
   }
 
   /**

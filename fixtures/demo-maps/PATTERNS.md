@@ -22,13 +22,21 @@ node --test "fixtures/demo-maps/test/*.test.mjs"
 | Member a subclass redeclares | R26 (`new`) | `TileLayer.clone(): TileLayer` over `Layer.clone(): Layer` |
 | Value-like classes (live class + snapshot) | R16–R18 | `Shape` and subclasses, via `profile.json` |
 | Class-typed positions need instances, not bags (`$c`) | R16, R20 | `MapView.center`, `Marker.position`, `MapView.flyTo` |
+| Factory returning a plain object typed by an interface; an interface extending another | R15, R19 | `createPanTool(view): Tool`, `createMeasureTool(view): MeasureTool` where `MeasureTool extends Tool`, `toolsOf(view): Tool[]` (`tools`); `Subscription { dispose() }` (`core`) |
 | Data records | R15, R20 | `Bounds` (`geometry`), `Rgba`, `FillStyle`, … (`styles`), `ClickEvent` (`MapView`) |
 | Properties, read-only properties | §5, R7 | `MapView.zoom`, `MapView.markers` |
 | Getter type ≠ setter type | §5, R27 | `Marker.position`: get `Point`, set `Point \| [number, number]` |
 | Discriminated union | R2, R19 (step 2), R20 | `Style` = `FillStyle \| StrokeStyle \| IconStyle` on `type` (`styles`); `Shape.type` |
+| Discriminated union of a union alias and a class | R6, R19 (step 2) | `AnyShape` = `OpenShape \| Polygon`, where `OpenShape` = `Point \| Line` (`geometry`) |
+| Union that names a member twice | R6, R19 (step 2) | `OutlineStyle` = `StrokeStyle \| IconStyle \| StrokeStyle` (`styles`) |
+| Nested unions of tagged constructor bags | R11, R19 (step 2), R27 | `shapeFrom(options)`: `((Partial<Pick<Point, …>> & { type: "point" }) \| (… & { type: "line" })) \| (… & { type: "polygon" }) \| null` (`measure`) |
+| Value-like cases without a discriminant | R16, R19 (step 3) | `simplify(shape): Point \| Shape`, read by class id: a line is a `ShapeSnapshot` (`measure`); `FlyToTarget`'s `Shape` |
 | Untagged union | R2, R19 (step 3) | `Camera` = `Bounds \| CenterAndZoom` (`MapView`) |
 | Mixed union (live object, tuple, nested union) | R2, R5, R6, R19 | `FlyToTarget` = `Shape \| [number, number] \| Camera` (`MapView`) |
 | Mixed union (primitive, array, object) | R2, R19 (step 4) | `ColorInput` = `string \| number[] \| Rgba` (`styles`) |
+| Union with a number case | R2, R19 (step 4) | `IconStyle.size?: number \| string` (`styles`); `TileLayer.tileSize`'s setter, `number \| number[]` (`layers/`) |
+| String literals next to other types | R2, R19 (step 4) | `distance(a, b, unit?: LengthUnit \| number)`, the alias's enum (`measure`); `StrokeStyle.dash?: "solid" \| "dotted" \| number[]`, an anonymous enum (`styles`) |
+| Anonymous types repeated at several owners | R11, R27 | `GlowOptions & { kind: "glow" }` at `Marker.glow` and `TileLayer.glow` (`layers/`) is one `GlowOptionsGlow` (`styles`); `MarkerPositionInput` (`Marker.position`'s setter, `MarkerOptions.position`), `MapViewContainer` (`MapView.container`, `MapViewOptions.container`), `ClickEventButton` (`ClickEvent.button`, `DemoMapElement.clickAt`'s `button`) |
 | Union with an entity case, only written | R2, R17 | `Measurable` = `Point \| Polygon \| Marker`, the parameter of `describe` (`measure`) |
 | Entity only written takes its snapshot (`$c`) | R16, R18, §5 | `MapView.edit(edits: MarkerEdits)`, a record only written: `add: Marker[] \| Collection<Marker>`, `select: Marker \| null`; the setter `MapView.selected`; `TileLayer.emphasize`; `Measurable` |
 | `any` | §2, IOP2001, R17 | `Pin.meta` (`pins`), `Marker.data`: in snapshots as data, without handles |
@@ -37,6 +45,7 @@ node --test "fixtures/demo-maps/test/*.test.mjs"
 | Open-ended literal union | R10 | `Cursor` = known values `\| (string & {})` (`MapView`) |
 | Number-literal union | §2 | `ClickEvent.button` (`MapView`) |
 | Homogeneous numeric tuples | R5 | `Line.path`, `Polygon.vertices`, `CenterAndZoom.center` |
+| Arrays with `null` or `undefined` elements | R3, R17 | `distances(origin, markers: (Marker \| null)[])` returns `(number \| null)[]`, `centers(shapes: Array<Shape \| null \| undefined>)` (`measure`); `MapView.markersAt` returns `(Marker \| null)[]` |
 | `null \| undefined` positions | R2, R3 | `MapView.title?: string \| null`, `MapView.cursor?`, `MapView.selected: Marker \| null`, `Marker.label`, `Marker.labelFormatter`, `Style` colors, `Collection.at` |
 | DOM element type | R13 | `MapView.container: HTMLElement \| string \| null` (setter-only, a union only written), `MapViewOptions.container` (a record only written) |
 | `Partial<Pick<…>>` constructor bags | R12, R18 | `Point`, `Line`, `Polygon` constructors; `MapViewOptions`; `MarkerOptions` (also extends with a wider `position`) |
@@ -52,9 +61,10 @@ node --test "fixtures/demo-maps/test/*.test.mjs"
 | Event map through a phantom property | R24 | `"$events"` + `on<K extends keyof this["$events"]>` (`core`); `MapViewEvents.click` |
 | Subscription with `remove()`, not `dispose()` | R24, [design §3.4](../../docs/design.md#34-protocol) | `Pin.on` (`pins`) |
 | Property watch | §5 | `Observable.watch(name, callback)` (`core`) |
+| Several watched properties changing in one call | R18, [design §3.4](../../docs/design.md#34-protocol) | `Observable.watch` calls back synchronously on each change; `MapView.reset()` changes `zoom` and `rotation` at once |
 | Collection type (generic) | §2 (generic `T`), R17 | `Collection<T>` with a `change` event whose payload holds entities (`core`); `MapView.markers`, and `MapView.layers` of an abstract class |
 | Type parameter with a default | §2 | `Tagged<T = any>`, a generic record (`core`) |
-| Module functions | §5 | `distance`, `perimeter`, `describe` (`measure`); `toRgba` (`styles`); `execute` (`ops/a`, `ops/b`) |
+| Module functions | §5 | `distance`, `perimeter`, `describe`, `simplify`, `shapeFrom` (`measure`); `toRgba` (`styles`); `execute` (`ops/a`, `ops/b`) |
 | Custom element: attributes, properties, events, slots | R28, design §2 | `<demo-map>` (`demo-map`, `custom-elements.json`): attributes `basemap`, `zoom`; properties `view`, `center`; events `demo-map-click`, `demo-map-zoom-change` (`@bind-Zoom`), `demo-map-ready`; default and `toolbar` slots |
 
 The golden slice (`tests/GoldenSlice`) holds the fixture's generated bindings.

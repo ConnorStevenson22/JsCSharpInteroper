@@ -21,6 +21,8 @@ export class Marker extends Observable {
   set label(value) { this._set("label", value); }
   get style() { return this._get("style"); }
   set style(value) { this._set("style", value); }
+  get glow() { return this._get("glow"); }
+  set glow(value) { this._set("glow", value); }
   get labelFormatter() { return this._get("labelFormatter"); }
   set labelFormatter(value) { this._set("labelFormatter", value); }
 
