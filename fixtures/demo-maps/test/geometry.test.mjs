@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { Line, Point, Polygon, Shape } from "../geometry.js";
-import { describe, distance, perimeter } from "../measure.js";
+import { centers, describe, distance, distances, perimeter } from "../measure.js";
 import { Marker } from "../Marker.js";
 
 test("Shape is abstract; subclasses carry a type discriminant", () => {
@@ -56,4 +56,10 @@ test("describe takes a value-like shape or an entity", () => {
   assert.equal(describe(new Point()), "point");
   assert.equal(describe(new Polygon()), "polygon");
   assert.equal(describe(new Marker({ label: "m" })), "marker m");
+});
+
+test("distances and centers keep null and undefined elements", () => {
+  const marker = new Marker({ position: [3, 4] });
+  assert.deepEqual(distances(new Point(), [marker, null]), [5, null]);
+  assert.deepEqual(centers([new Line({ path: [[0, 0], [4, 2]] }), null, undefined]), [new Point({ x: 2, y: 1 }), null, undefined]);
 });

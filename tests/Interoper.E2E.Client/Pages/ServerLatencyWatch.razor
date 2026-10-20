@@ -1,0 +1,46 @@
+@page "/server-latency-watch"
+@rendermode @(new InteractiveServerRenderMode(prerender: false))
+@using GoldenSlice.Async
+@inherits JsComponentBase
+
+<pre id="result" data-done="@done">@result</pre>
+
+@code {
+    // A watch of several members on Server (R18): a burst of changes in one JS turn reaches .NET as one message, with
+    // the latest values. LatencyTests open it on a host that delays every message from the browser.
+    string result = "";
+    bool done;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        try
+        {
+            var view = await MapView.CreateAsync(Scope, new MapViewSnapshot());
+            var (calls, last) = (0, new MapViewSnapshot());
+            var called = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var members = MapViewSnapshot.Members.Zoom | MapViewSnapshot.Members.Rotation | MapViewSnapshot.Members.Basemap;
+            await using (await view.WatchAsync(Scope, members, changed => { calls++; last = changed; called.TrySetResult(); }))
+            {
+                await using (Scope.BeginBatch())
+                {
+                    for (var i = 1; i <= 10; i++)
+                    {
+                        await view.SetZoomAsync(i);
+                        await view.SetRotationAsync(10 * i);
+                    }
+                    await view.SetBasemapAsync(Basemap.Night);
+                }
+                await called.Task.WaitAsync(TimeSpan.FromSeconds(10));
+                await view.GetZoomAsync(); // a round trip: any later message from the burst would have come first
+            }
+            result = $"{calls} call(s): zoom {last.Zoom}, rotation {last.Rotation}, basemap {last.Basemap}";
+        }
+        catch (Exception e)
+        {
+            result = $"FAIL {e.GetType().Name}: {e.Message}";
+        }
+        done = true;
+        StateHasChanged();
+    }
+}

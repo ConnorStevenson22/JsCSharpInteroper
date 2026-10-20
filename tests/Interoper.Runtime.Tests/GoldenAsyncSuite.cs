@@ -50,8 +50,11 @@ public static class GoldenAsyncSuite
         ("a subscription with remove() instead of dispose(), delivered then released (R24)", InScope(RemoveSubscription)),
         ("any is JsAny: data, or a handle the scope owns (§2)", InScope(Any)),
         ("a union with an entity case is a parameter's (R2, R17)", InScope(WrittenUnion)),
+        ("arrays with null and undefined elements: entities, records and numbers (R3, R17)", InScope(NullableElements)),
         ("same-named types of sibling modules (R27)", InScope(SiblingModules)),
         ("a custom element drives its live view, and its class is found by its tag (§5, R22, R28)", InScope(CustomElement)),
+        ("a watch of chosen members: one call per burst, with their snapshot (R18)", InScope(MemberWatch)),
+        ("chosen members read and watched through a base type, and streamed (R18)", InScope(MembersThroughABase)),
     ];
 
     private static async Task CreateSnapshotApply(JsScope scope)
@@ -666,6 +669,19 @@ public static class GoldenAsyncSuite
         Equal("marker p", await Measure.DescribeAsync(scope.Realm, await Pin.CreateAsync(scope, new PinSnapshot { Label = "p" }))); // a subclass of the case
     }
 
+    private static async Task NullableElements(JsScope scope)
+    {
+        var marker = await Marker.CreateAsync(scope, new MarkerSnapshot { Position = new PointSnapshot { X = 100, Y = -50 } });
+        var view = await MapView.CreateAsync(scope, new MapViewSnapshot { Zoom = 0 });
+        await (await view.GetMarkersAsync(scope)).AddAsync(marker);
+        Expect(await view.MarkersAtAsync(scope, new double[][] { [0, 0], [100, 50] }) is [{ IsNull: true }, var found] && found.TryGetValue(out Marker? at) && ReferenceEquals(at, marker),
+            "null where no marker is, then the marker (R17)");
+        Equal("5, null", string.Join(", ", await Measure.DistancesAsync(scope.Realm, new PointSnapshot { X = 97, Y = -46 }, [marker, null])));
+        var centers = await Measure.CentersAsync(scope.Realm, [new LineSnapshot { Path = new double[][] { [0, 0], [4, 2] } }, null, Undefined.Value]); // undefined is {"$u":1} both ways
+        Expect(centers is [_, { IsNull: true }, { IsUndefined: true }], "null and undefined to stay as they are");
+        Equal<Opt<PointSnapshot>>(new PointSnapshot { X = 2, Y = 1 }, centers[0]);
+    }
+
     private static async Task CustomElement(JsScope scope)
     {
         // A custom element's constructor takes no bag. In the browser its class id comes from its tag, since its
@@ -681,7 +697,7 @@ public static class GoldenAsyncSuite
         await using (await view.OnClickAsync(scope, click => { clicks.Add(click); if (clicks.Count == 2) both.TrySetResult(); }))
         {
             await element.ClickAtAsync(8, 0); // the button is optional
-            await element.ClickAtAsync(0, 0, DemoMapElementClickAtButton._2);
+            await element.ClickAtAsync(0, 0, ClickEventButton._2);
             await both.Task.WaitAsync(Timeout);
         }
         Equal("1 _0, 0 _2", string.Join(", ", clicks.Select(c => $"{c.MapPoint.X} {c.Button}")));
@@ -692,6 +708,65 @@ public static class GoldenAsyncSuite
         Equal(6.0, await Ops.A.ExecuteAsync(scope.Realm, 3, new Ops.Options { Scale = 2 }));
         Equal(5.0, await Ops.B.ExecuteAsync(scope.Realm, 3, new Ops.BOptions { Offset = 2 }));
         Equal(3.0, await Ops.B.ExecuteAsync(scope.Realm, 3));
+    }
+
+    private static async Task MemberWatch(JsScope scope)
+    {
+        var view = await MapView.CreateAsync(scope, new MapViewSnapshot { Zoom = 5, Rotation = 90 });
+        var baseline = await Count(scope.Realm);
+        var seen = new List<MapViewSnapshot>();
+        var (first, second) = (new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously), new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously));
+        await using (await view.WatchAsync(scope, MapViewSnapshot.Members.Zoom | MapViewSnapshot.Members.Rotation, changed =>
+        {
+            lock (seen)
+            {
+                seen.Add(changed);
+                (seen.Count == 1 ? first : second).TrySetResult();
+            }
+        }))
+        {
+            await using (scope.BeginBatch()) // one op: one JS turn
+            {
+                await view.SetZoomAsync(2);
+                await view.SetZoomAsync(3);
+                await view.SetRotationAsync(10);
+                await view.SetTitleAsync("not watched");
+            }
+            await first.Task.WaitAsync(Timeout);
+            await view.ResetAsync(); // the library's own burst
+            await second.Task.WaitAsync(Timeout);
+            await view.SetTitleAsync("still not watched");
+        }
+        Equal(baseline, await Count(scope.Realm)); // every listener released
+        await view.SetZoomAsync(7);
+        await view.GetZoomAsync(); // a round trip after the change: a call back would have come first
+        Equal("3 10, 1 0", string.Join(", ", seen.Select(s => $"{s.Zoom} {s.Rotation}")));
+        Equal(new MapViewSnapshot { Zoom = 1, Rotation = 0 }, seen[1]); // only the watched members
+    }
+
+    private static async Task MembersThroughABase(JsScope scope)
+    {
+        Layer layer = await TileLayer.CreateAsync(scope, new TileLayerSnapshot { Url = "u", Title = "t" });
+        Equal(new LayerSnapshot { Visible = true }, await layer.SnapshotAsync(LayerSnapshot.Members.Visible));
+        Equal(new TileLayerSnapshot { Url = "u", Title = "t" }, await ((TileLayer)layer).SnapshotAsync(TileLayerSnapshot.Members.Url | TileLayerSnapshot.Members.Title));
+
+        var before = new LayerSnapshot { Title = "t", Visible = true };
+        var changed = new TaskCompletionSource<LayerSnapshot>(TaskCreationOptions.RunContinuationsAsynchronously);
+        await using (await layer.WatchAsync(scope, LayerSnapshot.Members.Visible | LayerSnapshot.Members.Title, s => changed.TrySetResult(s)))
+        {
+            await layer.SetVisibleAsync(false);
+            var after = await changed.Task.WaitAsync(Timeout);
+            Equal(new LayerSnapshot { Title = "t", Visible = false }, after);
+            Equal(new LayerSnapshot { Visible = false }, LayerSnapshot.Diff(before, after)); // the patch
+        }
+
+        var showing = WhenSubscribed(scope.Realm, await Count(scope.Realm), () => layer.ApplyAsync(new LayerSnapshot { Title = "v", Visible = true }));
+        await foreach (var shown in layer.WatchStreamAsync(scope, LayerSnapshot.Members.Visible))
+        {
+            Equal(new LayerSnapshot { Visible = true }, shown);
+            break;
+        }
+        await showing;
     }
 
     // --- Helpers ---

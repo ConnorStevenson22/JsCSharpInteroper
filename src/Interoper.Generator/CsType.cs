@@ -170,6 +170,13 @@ internal sealed class CsType
             scoped: element.Scoped)
         { Element = element, fullName = element.FullName + "[]", rebuild = change => Array(change(element)) };
 
+    /// <summary>An array or tuple element that can be null or undefined (R3): <c>Opt&lt;T&gt;</c>, undefined as <c>{"$u":1}</c>.</summary>
+    public static CsType Opt(CsType value) =>
+        new($"global::Interoper.Opt<{value.Name}>", value.Json, isValueType: true, null, null,
+            (w, v, d) => $"global::Interoper.JsJson.WriteValue({w}, {v}, {value.Writer(d)})", (r, d) => $"global::Interoper.JsJson.ReadOpt(ref {r}, {value.Reader(d)})",
+            scoped: value.Scoped)
+        { fullName = $"global::Interoper.Opt<{value.FullName}>", rebuild = change => Opt(change(value)) };
+
     /// <summary>
     /// A callback (R21): an <c>Action</c>, or a <c>Func</c> when it has a result, with an argument per parameter (an
     /// optional or nullable one is <c>Opt&lt;T&gt;</c>, R3). It's registered with the caller's scope and written as

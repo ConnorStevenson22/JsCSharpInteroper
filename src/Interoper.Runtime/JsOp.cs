@@ -63,6 +63,14 @@ public static class JsOp
         w.WriteNumber("h"u8, handle);
     });
 
+    /// <summary>A partial snapshot (R18): only <paramref name="members"/>.</summary>
+    public static string Snapshot<T>(int handle, JsMembers<T> members) where T : class, IJsRecord<T> => Write(w =>
+    {
+        w.WriteString("op"u8, "snapshot"u8);
+        w.WriteNumber("h"u8, handle);
+        Strings(w, "members"u8, members.Names);
+    });
+
     /// <summary>Sets a patch member by member (R18): <paramref name="patch"/> writes the members it sets.</summary>
     public static string Apply(int handle, Action<Utf8JsonWriter> patch) => Write(w =>
     {
@@ -74,18 +82,15 @@ public static class JsOp
     });
 
     /// <summary>
-    /// <c>target[method](name, callback)</c>, which returns a subscription (R24); see <see cref="JsScope.Subscribe{T}"/>.
+    /// <c>target[method](name, callback)</c>, which returns a subscription (R24); see
+    /// <see cref="JsScope.Subscribe{T}(int, string, string, JsonRead{T}, Action{T}, EventOptions?, IReadOnlyList{string}?)"/>.
     /// <paramref name="options"/> go as <c>options</c>, left out when they set nothing.
     /// </summary>
     public static string Subscribe(int handle, string method, string name, int callback, EventOptions? options = null) => Write(w =>
     {
-        w.WriteString("op"u8, "subscribe"u8);
-        w.WriteNumber("h"u8, handle);
-        w.WriteString("method"u8, method);
+        Subscription(w, handle, method);
         w.WriteString("name"u8, name);
-        w.WriteStartObject("callback"u8);
-        w.WriteNumber("$f"u8, callback);
-        w.WriteEndObject();
+        Callback(w, callback);
         if (options is { } o && (o.PreventDefault || o.StopPropagation || o.Fields is not null))
         {
             w.WriteStartObject("options"u8);
@@ -99,16 +104,36 @@ public static class JsOp
             }
             if (o.Fields is { } fields)
             {
-                w.WriteStartArray("fields"u8);
-                foreach (var field in fields)
-                {
-                    w.WriteStringValue(field);
-                }
-                w.WriteEndArray();
+                Strings(w, "fields"u8, fields);
             }
             w.WriteEndObject();
         }
     });
+
+    /// <summary>
+    /// R18: <c>target[method](name, listener)</c> for each of <paramref name="members"/>, as one subscription. After each
+    /// turn in which any of them changed, JS calls back once with their snapshot.
+    /// </summary>
+    public static string Subscribe<T>(int handle, string method, JsMembers<T> members, int callback) where T : class, IJsRecord<T> => Write(w =>
+    {
+        Subscription(w, handle, method);
+        Strings(w, "names"u8, members.Names);
+        Callback(w, callback);
+    });
+
+    private static void Subscription(Utf8JsonWriter w, int handle, string method)
+    {
+        w.WriteString("op"u8, "subscribe"u8);
+        w.WriteNumber("h"u8, handle);
+        w.WriteString("method"u8, method);
+    }
+
+    private static void Callback(Utf8JsonWriter w, int callback)
+    {
+        w.WriteStartObject("callback"u8);
+        w.WriteNumber("$f"u8, callback);
+        w.WriteEndObject();
+    }
 
     /// <summary>
     /// Returns <paramref name="value"/> in wire form, revived as any value is (design §3.4): how a component gets its
@@ -136,12 +161,7 @@ public static class JsOp
     public static string Load(IEnumerable<string> modules) => Write(w =>
     {
         w.WriteString("op"u8, "load"u8);
-        w.WriteStartArray("modules"u8);
-        foreach (var module in modules)
-        {
-            w.WriteStringValue(module);
-        }
-        w.WriteEndArray();
+        Strings(w, "modules"u8, modules);
     });
 
     internal static string Release(IEnumerable<int> handles) =>
@@ -164,6 +184,16 @@ public static class JsOp
         w.WriteString("op"u8, op);
         w.WriteNumber("h"u8, handle);
         w.WriteString("name"u8, name);
+    }
+
+    private static void Strings(Utf8JsonWriter w, ReadOnlySpan<byte> name, IEnumerable<string> values)
+    {
+        w.WriteStartArray(name);
+        foreach (var value in values)
+        {
+            w.WriteStringValue(value);
+        }
+        w.WriteEndArray();
     }
 
     private static void Arguments(Utf8JsonWriter w, Action<Utf8JsonWriter>? args, bool byValue)

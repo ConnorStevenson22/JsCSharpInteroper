@@ -27,4 +27,13 @@ public sealed partial class Line : Shape
 
     public global::System.Threading.Tasks.Task ApplyAsync(LineSnapshot patch) =>
         Realm.SendAsync(global::Interoper.JsOp.Apply(Handle, w => LineSnapshot.WriteMembers(w, patch)));
+
+    public global::System.Threading.Tasks.Task<LineSnapshot> SnapshotAsync(global::Interoper.JsMembers<LineSnapshot> members) =>
+        Realm.SnapshotAsync(Handle, members);
+
+    public global::System.Threading.Tasks.Task<global::System.IAsyncDisposable> WatchAsync(global::Interoper.JsScope scope, global::Interoper.JsMembers<LineSnapshot> members, global::System.Action<LineSnapshot> handler) =>
+        scope.SubscribeAsync(Handle, "watch", members, handler);
+
+    public global::System.Collections.Generic.IAsyncEnumerable<LineSnapshot> WatchStreamAsync(global::Interoper.JsScope scope, global::Interoper.JsMembers<LineSnapshot> members, global::System.Threading.CancellationToken cancellationToken = default) =>
+        scope.StreamAsync(Handle, "watch", members, cancellationToken);
 }

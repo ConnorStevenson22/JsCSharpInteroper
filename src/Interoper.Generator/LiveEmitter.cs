@@ -142,6 +142,36 @@ internal sealed class LiveEmitter
             Expression($"public {Declare(Mode("Snapshot"), [])}{snapshotType} {Mode("Snapshot")}()", read);
             var (applyType, apply) = Run("Realm", $"global::Interoper.JsOp.Apply(Handle, w => {snapshot}.WriteMembers(w, patch))", null, async);
             Expression($"public {Declare(Mode("Apply"), [snapshotKey])}{applyType} {Mode("Apply")}({snapshot} patch)", apply);
+            if (types.HasSnapshotMembers(c))
+            {
+                Members(name, c, snapshot, snapshotKey);
+            }
+        }
+    }
+
+    /// <summary>
+    /// R18: a snapshot of some members, and with the profile's watch method, one watch of some members whose handler gets
+    /// their snapshot once per JS turn in which any changed (async mode adds its stream).
+    /// </summary>
+    private void Members(string name, ClassDeclaration c, string snapshot, string snapshotKey)
+    {
+        var (members, membersKey) = ($"global::Interoper.JsMembers<{snapshot}>", $"global::Interoper.JsMembers<{snapshotKey}>");
+        var type = async ? $"global::System.Threading.Tasks.Task<{snapshot}>" : snapshot;
+        Expression($"public {Declare(Mode("Snapshot"), [membersKey])}{type} {Mode("Snapshot")}({members} members)", $"Realm.{Mode("Snapshot")}(Handle, members)");
+        if (!types.HasWatches(c))
+        {
+            return;
+        }
+        var (subscription, subscribe) = async ? ("global::System.Threading.Tasks.Task<global::System.IAsyncDisposable>", "SubscribeAsync") : ("global::System.IDisposable", "Subscribe");
+        var method = Syntax.Literal(profile.Watch!);
+        var watch = Claim(Mode("Watch"), $"{name}.watch");
+        Expression($"public {Declare(watch, ["global::Interoper.JsScope", membersKey, $"global::System.Action<{snapshotKey}>"])}{subscription} {watch}(global::Interoper.JsScope scope, {members} members, global::System.Action<{snapshot}> handler)",
+            $"scope.{subscribe}(Handle, {method}, members, handler)");
+        if (async)
+        {
+            var stream = Claim("WatchStreamAsync", $"{name}.watch");
+            Expression($"public {Declare(stream, ["global::Interoper.JsScope", membersKey, CancellationToken])}global::System.Collections.Generic.IAsyncEnumerable<{snapshot}> {stream}(global::Interoper.JsScope scope, {members} members, {CancellationToken} cancellationToken = default)",
+                $"scope.StreamAsync(Handle, {method}, members, cancellationToken)");
         }
     }
 

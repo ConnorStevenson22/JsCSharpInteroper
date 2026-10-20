@@ -1,4 +1,4 @@
-import { Point, Polygon } from "./geometry.js";
+import { Point, Polygon, Shape } from "./geometry.js";
 import { Marker } from "./Marker.js";
 
 export type LengthUnit = "meters" | "kilometers";
@@ -14,3 +14,9 @@ export type Measurable = Point | Polygon | Marker;
 
 /** The shape's `type`, or "marker" and its label. */
 export function describe(target: Measurable): string;
+
+/** The distance from `origin` to each marker's position, or `null` for a gap in the list. */
+export function distances(origin: Point, markers: (Marker | null)[]): (number | null)[];
+
+/** Each shape's bounds center; `null` and `undefined` elements stay as they are. */
+export function centers(shapes: Array<Shape | null | undefined>): (Point | null | undefined)[];

@@ -37,4 +37,9 @@ public sealed partial class Pin : Marker
 
     public void Apply(PinSnapshot patch) =>
         Realm.Send(global::Interoper.JsOp.Apply(Handle, w => PinSnapshot.WriteMembers(w, patch)));
+
+    public PinSnapshot Snapshot(global::Interoper.JsMembers<PinSnapshot> members) => Realm.Snapshot(Handle, members);
+
+    public global::System.IDisposable Watch(global::Interoper.JsScope scope, global::Interoper.JsMembers<PinSnapshot> members, global::System.Action<PinSnapshot> handler) =>
+        scope.Subscribe(Handle, "watch", members, handler);
 }

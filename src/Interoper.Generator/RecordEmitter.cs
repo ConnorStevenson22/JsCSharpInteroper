@@ -53,7 +53,7 @@ internal static class RecordEmitter
     /// written as a value: <c>$c</c> and its constants (R16), and any other as an object of its members and constants.
     /// An abstract value-like class's is the closed base of its subclasses', read by their discriminant (R19 step 2).
     /// </summary>
-    public static string Snapshot(TypeMap types, ClassDeclaration c)
+    public static string Snapshot(TypeMap types, ClassDeclaration c, ICollection<Diagnostic> diagnostics)
     {
         var (ns, name) = types.Snapshot(c);
         var fields = Unhidden(types.Fields(c), ns);
@@ -71,8 +71,34 @@ internal static class RecordEmitter
             {
                 Leaf(w, types, c, ns, name, b is null ? "" : "new ", fields);
             }
+            if (types.HasSnapshotMembers(c))
+            {
+                w.Line();
+                Members(w, types, c, name, fields, b is not null && types.HasSnapshotMembers(b) ? "new " : "", diagnostics);
+            }
         }
         return w.ToString();
+    }
+
+    /// <summary>
+    /// R18: each member as a <c>JsMembers</c>, for partial snapshots and watches. A closed base reads its subclasses'
+    /// snapshots by their discriminant (R19 step 2), so each of its members names that too. The class is <c>Members</c>
+    /// unless a member has that name (IOP2006).
+    /// </summary>
+    private static void Members(CodeWriter w, TypeMap types, ClassDeclaration c, string name, IReadOnlyList<Field> fields, string modifier,
+        ICollection<Diagnostic> diagnostics)
+    {
+        var discriminant = types.IsClosed(c) ? ", " + Syntax.Literal(types.Discriminant(c)) : "";
+        var members = fields.Where(f => f.Constant is null).ToList();
+        var taken = members.Select(f => f.Name).ToHashSet();
+        using (w.Block($"public {modifier}static class {Naming.Member(taken, "Members", $"{name}.Members", diagnostics)}"))
+        {
+            foreach (var f in members)
+            {
+                XmlDoc.Write(w, f.Doc);
+                w.Line($"public static global::Interoper.JsMembers<{name}> {f.Name} => new({Syntax.Literal(f.JsName)}{discriminant});");
+            }
+        }
     }
 
     /// <summary>Write, WriteMembers, Read and Diff.</summary>

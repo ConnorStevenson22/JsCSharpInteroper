@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Text.Json;
+using System.Text.Json.Serialization.Metadata;
 using Interoper.Generator.Ir;
 
 namespace Interoper.Generator;
@@ -77,6 +78,15 @@ internal sealed class TypeMap
     private readonly List<DataType> owned = [];
     /// <summary>R11: each inline object type's record (unnamed until it's mapped), and the names of those mapped, in order.</summary>
     private readonly Dictionary<ObjectType, AliasDeclaration> bags = new(ReferenceEqualityComparer.Instance);
+    /// <summary>
+    /// R11, R27: for each anonymous type's structure (<see cref="Key"/>), the shortest name its owners give it, which a
+    /// census run collects and a sharing run (<see cref="share"/>) names it by; the first of each structure met, whose
+    /// record the others share.
+    /// </summary>
+    private readonly Dictionary<string, TypeName>? census;
+    private readonly bool share;
+    private readonly Dictionary<string, ObjectType> shared = [];
+    private readonly Dictionary<IrType, string> keys = new(ReferenceEqualityComparer.Instance);
     private readonly Dictionary<Declaration, TypeName> inline = new(ReferenceEqualityComparer.Instance);
     private readonly List<Declaration> records = [];
     /// <summary>R27: the names an inline record can't take (<see cref="Taken"/>), ignoring case, as files' paths may.</summary>
@@ -107,9 +117,11 @@ internal sealed class TypeMap
     /// </summary>
     /// <param name="payloads">The event payloads (R24), whose required members are dropped like optional ones (<see cref="DroppedProblem"/>).</param>
     /// <param name="selection">The selection's mixins and variants (§5), once it has them.</param>
+    /// <param name="census">R11, R27: the anonymous types' names, collected by a run without <paramref name="share"/>, and used by one with it.</param>
     public TypeMap(IrDocument ir, Profile profile, IEnumerable<Selected> selected, ICollection<Diagnostic> diagnostics, string ns,
-        IEnumerable<InterfaceDeclaration>? payloads = null, Selection? selection = null)
+        IEnumerable<InterfaceDeclaration>? payloads = null, Selection? selection = null, Dictionary<string, TypeName>? census = null, bool share = false)
     {
+        (this.census, this.share) = (census, share);
         payloadMembers.UnionWith((payloads ?? []).SelectMany(i => i.Members.OfType<PropertyMember>()));
         foreach (var module in ir.Modules)
         {
@@ -338,6 +350,9 @@ internal sealed class TypeMap
     /// <summary>R16: the snapshots of an abstract value-like class form a closed hierarchy.</summary>
     public bool IsClosed(ClassDeclaration c) => c.Abstract && IsValueLike(c);
 
+    /// <summary>R18: whether the class's snapshot has members other than constants, so it has a <c>Members</c> class.</summary>
+    public bool HasSnapshotMembers(ClassDeclaration c) => Fields(c).Any(f => f.Constant is null);
+
     /// <summary>The emitted live classes, in IR order.</summary>
     public IReadOnlyList<ClassDeclaration> Classes => classes;
 
@@ -438,10 +453,10 @@ internal sealed class TypeMap
         RefType r when IsElement(r) => CsType.DomElement, // R13
         TypeParameterType t => CsType.TypeParameter(t.Name),
         FunctionType f => Callback(f, owner),
-        ArrayType a => CsType.Array(Map(a.Element, owner)),
+        ArrayType a => CsType.Array(Element(a.Element, owner)),
         TupleType { Required: null, Rest: false, Elements.Count: > 0 } t
-            when t.Elements.Select(e => Map(e, owner).FullName).Distinct().Count() == 1 => CsType.Array(Map(t.Elements[0], owner)), // R5
-        UnionType u when Union(Anonymous(owner, union: Kept(u).Count > 1), u) is { } union => Own(union),
+            when t.Elements.Select(e => Element(e, owner).FullName).Distinct().Count() == 1 => CsType.Array(Element(t.Elements[0], owner)), // R5
+        UnionType u when Union(Anonymous(Owner(u, owner), union: Kept(u).Count > 1), u) is { } union => Own(union),
         UnionType u when Kept(u) is [var single] => Map(single, owner), // R2: the one case left in the selection
         ObjectType o => CsType.Record(Name(Inline(o, owner)), scoped: IsScoped(Bag(o))), // R11
         _ => throw Unreachable(owner.Name),
@@ -464,6 +479,19 @@ internal sealed class TypeMap
         var mapped = type is ThisType && self is not null ? self : Map(type, owner);
         return (mapped, nullable || Flatten(type).Any(t => IsNullish(t) || t is PrimitiveType { Name: "any" or "unknown" }));
     }
+
+    /// <summary>
+    /// An array or tuple element: <c>Opt&lt;T&gt;</c> when it can be null or undefined (R3), unless it's a union, which has
+    /// those states itself (R2).
+    /// </summary>
+    private CsType Element(IrType type, TypeName owner)
+    {
+        var mapped = Slot(type, owner).Type;
+        return IsNullable(type) && !mapped.IsUnion ? CsType.Opt(mapped) : mapped;
+    }
+
+    /// <summary>Whether a type has null or undefined in it, also through a union alias (R6).</summary>
+    private bool IsNullable(IrType type) => Flatten(type).Any(IsNullish);
 
     /// <summary>
     /// R21: a callback, an <c>Action</c> or a <c>Func</c>; an anonymous type in it is named after its owner and the
@@ -625,8 +653,8 @@ internal sealed class TypeMap
     }
 
     /// <summary>
-    /// R25: names for the values. A rename is reported once, for the first enum it's met in: an anonymous union that
-    /// many types repeat makes an enum for each.
+    /// R25: names for the values. A rename is reported once, for the first enum it's met in: enums of different values
+    /// may share it.
     /// </summary>
     private List<(string, JsonElement)> EnumMembers(string type, List<JsonElement> values, IEnumerable<string> names)
     {
@@ -670,16 +698,16 @@ internal sealed class TypeMap
         foreach (var type in types)
         {
             var owner = name;
+            var position = (all.FindIndex(t => ReferenceEquals(t, type)) + 1).ToString(System.Globalization.CultureInfo.InvariantCulture);
             if (type is ObjectType o)
             {
-                var position = (all.FindIndex(t => ReferenceEquals(t, o)) + 1).ToString(System.Globalization.CultureInfo.InvariantCulture);
                 owner = name with { Name = name.Name + (tag is not null ? Tag(o, tag) : "Case" + position) };
-                if (tag is null)
-                {
-                    diagnostics.Add(new(Diagnostic.Renamed, name.ToString(), $"its case {position} is {owner.Name}: the inline cases have no string tag (R27)"));
-                }
             }
             var mapped = IsStringLiteral(type) ? LiteralCase(name, union, types) : Map(type, owner);
+            if (type is ObjectType && tag is null && mapped.Name.StartsWith(owner.Name, StringComparison.Ordinal)) // not when another owner names it
+            {
+                diagnostics.Add(new(Diagnostic.Renamed, name.ToString(), $"its case {position} is {mapped.Name}: the inline cases have no string tag (R27)"));
+            }
             if (cases.All(c => c.Type.FullName != mapped.FullName))
             {
                 cases.Add(new(mapped, type is RefType r ? Find(r) : type is ObjectType bag ? Bag(bag) : null));
@@ -693,9 +721,13 @@ internal sealed class TypeMap
         o.Members.OfType<PropertyMember>().FirstOrDefault(p => p.Name == member)?.Type is LiteralType { Value.ValueKind: JsonValueKind.String } value &&
         Naming.Pascal(value.Value.GetString()!) is { Length: > 0 } pascal ? pascal : null;
 
-    /// <summary>R11: an inline object type as a record, unnamed: what the mapping checks look at.</summary>
+    /// <summary>
+    /// R11: an inline object type as a record, unnamed: what the mapping checks look at. When sharing, structurally
+    /// identical ones are one record.
+    /// </summary>
     private AliasDeclaration Bag(ObjectType o)
     {
+        o = First(o);
         if (!bags.TryGetValue(o, out var bag))
         {
             bags[o] = bag = new AliasDeclaration { Name = "", Type = o };
@@ -703,8 +735,97 @@ internal sealed class TypeMap
         return bag;
     }
 
+    /// <summary>When sharing, the first object type met with this one's structure; otherwise this one.</summary>
+    private ObjectType First(ObjectType o)
+    {
+        if (!share)
+        {
+            return o;
+        }
+        var key = Key(o);
+        if (!shared.TryGetValue(key, out var first))
+        {
+            shared[key] = first = o;
+        }
+        return first;
+    }
+
     /// <summary>
-    /// R11: an inline object type's record, named after its owner (R27) where it's first mapped. A name that is taken (by
+    /// R11: an anonymous type's structure, which decides what it maps to: its IR without docs, without which members are
+    /// inherited, and without whether a constant is optional, since it's always written (R20).
+    /// </summary>
+    private string Key(IrType type)
+    {
+        if (!keys.TryGetValue(type, out var key))
+        {
+            keys[type] = key = JsonSerializer.Serialize(type, KeyOptions);
+        }
+        return key;
+    }
+
+    private static readonly JsonSerializerOptions KeyOptions = new(Json.Options)
+    {
+        TypeInfoResolver = new DefaultJsonTypeInfoResolver
+        {
+            Modifiers =
+            {
+                info =>
+                {
+                    foreach (var property in info.Properties.Where(p => p.Name is "doc" or "inherited"))
+                    {
+                        property.ShouldSerialize = (_, _) => false;
+                    }
+                    if (info.Type == typeof(PropertyMember) && info.Properties.FirstOrDefault(p => p.Name == "optional") is { } optional)
+                    {
+                        optional.ShouldSerialize = (member, _) => ((PropertyMember)member).Type is not LiteralType;
+                    }
+                },
+            },
+        },
+    };
+
+    /// <summary>
+    /// R11, R27: the name of an anonymous type at <paramref name="owner"/>. A sharing run gives every use the shortest
+    /// name any owner gave the type in the census run, in that owner's namespace; ties go to the first in ordinal order.
+    /// </summary>
+    private TypeName Owner(IrType type, TypeName owner)
+    {
+        if (census is null)
+        {
+            return owner;
+        }
+        var key = Key(type);
+        if (share)
+        {
+            return census.GetValueOrDefault(key) ?? owner;
+        }
+        if (!census.TryGetValue(key, out var known) || (owner.Name.Length, owner.Name, owner.Namespace).CompareTo((known.Name.Length, known.Name, known.Namespace)) < 0)
+        {
+            census[key] = owner;
+        }
+        return owner;
+    }
+
+    /// <summary>
+    /// R11, R27: an intersection of one named type with string constants (<c>Props &amp; { type: "poly" }</c>) is named
+    /// after the type and the constants' values, <c>PropsPoly</c>, whatever its owner: in the type's namespace if it has
+    /// emitted types, otherwise in the owner's.
+    /// </summary>
+    private TypeName Tagged(ObjectType o, TypeName owner)
+    {
+        var tags = o.Members.OfType<PropertyMember>().Select(p => p.Type is LiteralType { Value.ValueKind: JsonValueKind.String } value ? Naming.Pascal(value.Value.GetString()!) : "")
+            .Where(t => t.Length > 0).ToList();
+        if (o.Bases is not [RefType r] || Find(r) is not { } named || tags.Count == 0)
+        {
+            return owner;
+        }
+        var name = Name(named);
+        return new(name.Namespace == root || Namespaces.Contains(name.Namespace) ? name.Namespace : owner.Namespace, name.Name + string.Concat(tags));
+    }
+
+    /// <summary>
+    /// R11: an inline object type's record, named where it's first mapped: after its owner (R27), or its named part
+    /// (<see cref="Tagged"/>), or the shortest name of its structure (<see cref="Owner"/>). A name that is taken (by
     /// an emitted declaration, a snapshot, the registry, a module's functions, an anonymous union or enum, a component,
     /// or another inline record) gets a numeric suffix, reported as IOP2006. Its members are mapped now, so the types they own are met
     /// before it's emitted.
@@ -712,6 +833,7 @@ internal sealed class TypeMap
     private AliasDeclaration Inline(ObjectType o, TypeName owner)
     {
         var bag = Bag(o);
+        owner = Owner(o, Tagged(o, owner));
         if (inline.ContainsKey(bag))
         {
             return bag;
@@ -874,7 +996,7 @@ internal sealed class TypeMap
     public Declaration? RecordOf(IrType type) => type switch
     {
         RefType r when Find(r) is (InterfaceDeclaration { IndexSignatures.Count: 0 } or AliasDeclaration { Type: ObjectType { IndexSignatures.Count: 0 } }) and var d => d,
-        ObjectType { IndexSignatures.Count: 0 } o when bags.TryGetValue(o, out var bag) && inline.ContainsKey(bag) => bag,
+        ObjectType { IndexSignatures.Count: 0 } o when bags.TryGetValue(First(o), out var bag) && inline.ContainsKey(bag) => bag,
         _ => null,
     };
 
@@ -1142,7 +1264,12 @@ internal sealed class TypeMap
         ArrayType a => MapProblem(a.Element, written),
         TupleType { Required: null, Rest: false, Elements.Count: > 0 } t => t.Elements.Select(e => MapProblem(e, written)).FirstOrDefault(p => p is not null)
             ?? (NameOf(t, full: true) is null ? new("a tuple of different types") : null), // R5
-        UnionType u => Values(u).Count < 2 ? new("a nullable array or tuple element") : UnionProblem(u, null, written),
+        UnionType u => Values(u) switch // an array or tuple element's, which may be Opt<T> (R3)
+        {
+            [] => new("only `null` and `undefined`"),
+            [var single] => MapProblem(single, written),
+            _ => UnionProblem(u, null, written),
+        },
         FunctionType => new("a callback that isn't a parameter (R21)"),
         PrimitiveType p => new($"`{p.Name}` here"),
         LiteralType => new("a literal here"),
@@ -1388,11 +1515,17 @@ internal sealed class TypeMap
             { } d => Spell(Name(d), full),
             null => null,
         },
-        ArrayType a => NameOf(a.Element, full) is { } element ? element + "[]" : null,
+        ArrayType a => ElementName(a.Element, full) is { } element ? element + "[]" : null,
         TupleType { Required: null, Rest: false, Elements.Count: > 0 } t =>
-            t.Elements.Select(e => NameOf(e, full)).Distinct().ToList() is [{ } element] ? element + "[]" : null,
+            t.Elements.Select(e => ElementName(e, full)).Distinct().ToList() is [{ } element] ? element + "[]" : null,
         _ => null,
     };
+
+    /// <summary>An array or tuple element's, as <see cref="Element"/> maps it: <c>Opt&lt;T&gt;</c> when it's nullable; null for a nullable union.</summary>
+    private string? ElementName(IrType type, bool full) =>
+        !IsNullable(type) ? NameOf(type, full)
+        : Values(type) is [var single] && NameOf(single, full) is { } name ? (full ? $"global::Interoper.Opt<{name}>" : $"Opt<{name}>")
+        : null;
 
     private static string Spell(TypeName name, bool full) => full ? name.FullName : name.Name;
 

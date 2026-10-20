@@ -242,6 +242,7 @@ test("TS enums, and R11: an intersection of object types is resolved", (t) => {
     ["mode", { kind: "ref", name: "Mode", module: "@acme/extra/index.js" }],
     ["type", { kind: "literal", value: "tagged" }],
   ]);
+  assert.deepEqual(tagged.type.bases, [{ kind: "ref", name: "Named", module: "@acme/extra/index.js" }]); // R11: what names its record
 });
 
 test("design §2: custom elements come from the manifest, linked to the typings", () => {

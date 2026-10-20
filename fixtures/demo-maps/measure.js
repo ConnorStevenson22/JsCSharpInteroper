@@ -1,3 +1,5 @@
+import { Point } from "./geometry.js";
+
 // Module functions. They read fields only, so plain JSON shapes work as well as instances.
 
 const meters = { meters: 1, kilometers: 1000 };
@@ -12,4 +14,12 @@ export function perimeter(...points) {
 
 export function describe(target) {
   return target.type ?? `marker ${target.displayLabel}`;
+}
+
+export function distances(origin, markers) {
+  return markers.map((marker) => marker && distance(origin, marker.position));
+}
+
+export function centers(shapes) {
+  return shapes.map((shape) => shape && new Point({ x: (shape.bounds.minX + shape.bounds.maxX) / 2, y: (shape.bounds.minY + shape.bounds.maxY) / 2 }));
 }
