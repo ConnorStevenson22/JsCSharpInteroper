@@ -2383,7 +2383,7 @@
               "kind": "property",
               "name": "tileSize",
               "doc": {
-                "summary": "The tiles' edge in pixels. The setter also takes one per zoom level, a union with a value-type case (R2), which\nisn't mapped: the getter is kept, read-only (§5)."
+                "summary": "The tiles' edge in pixels. The setter also takes one per zoom level: `number | number[]`, a union with a\nvalue-type case (R2)."
               },
               "type": {
                 "kind": "primitive",
@@ -2523,6 +2523,23 @@
       "specifier": "@acme/demo-maps/measure.js",
       "declarations": [
         {
+          "kind": "alias",
+          "name": "LengthUnit",
+          "type": {
+            "kind": "union",
+            "types": [
+              {
+                "kind": "literal",
+                "value": "meters"
+              },
+              {
+                "kind": "literal",
+                "value": "kilometers"
+              }
+            ]
+          }
+        },
+        {
           "kind": "function",
           "name": "distance",
           "signatures": [
@@ -2543,11 +2560,32 @@
                     "name": "Point",
                     "module": "@acme/demo-maps/geometry.js"
                   }
+                },
+                {
+                  "name": "unit",
+                  "type": {
+                    "kind": "union",
+                    "types": [
+                      {
+                        "kind": "ref",
+                        "name": "LengthUnit",
+                        "module": "@acme/demo-maps/measure.js"
+                      },
+                      {
+                        "kind": "primitive",
+                        "name": "number"
+                      }
+                    ]
+                  },
+                  "optional": true
                 }
               ],
               "returns": {
                 "kind": "primitive",
                 "name": "number"
+              },
+              "doc": {
+                "summary": "In `unit`s: meters by default, or a unit that many meters long."
               }
             }
           ]
@@ -3613,6 +3651,34 @@
                 "kind": "primitive",
                 "name": "number"
               }
+            },
+            {
+              "kind": "property",
+              "name": "dash",
+              "optional": true,
+              "doc": {
+                "summary": "A named pattern, or dash and gap lengths."
+              },
+              "type": {
+                "kind": "union",
+                "types": [
+                  {
+                    "kind": "literal",
+                    "value": "solid"
+                  },
+                  {
+                    "kind": "literal",
+                    "value": "dotted"
+                  },
+                  {
+                    "kind": "array",
+                    "element": {
+                      "kind": "primitive",
+                      "name": "number"
+                    }
+                  }
+                ]
+              }
             }
           ]
         },
@@ -3652,6 +3718,27 @@
                   {
                     "kind": "primitive",
                     "name": "null"
+                  }
+                ]
+              }
+            },
+            {
+              "kind": "property",
+              "name": "size",
+              "optional": true,
+              "doc": {
+                "summary": "Pixels, or a CSS length such as \"2em\"."
+              },
+              "type": {
+                "kind": "union",
+                "types": [
+                  {
+                    "kind": "primitive",
+                    "name": "number"
+                  },
+                  {
+                    "kind": "primitive",
+                    "name": "string"
                   }
                 ]
               }

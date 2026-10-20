@@ -18,10 +18,17 @@ public sealed partial class TileLayer : Layer, IRefreshable
     public global::System.Threading.Tasks.Task SetUrlAsync(string value) => Realm.SetAsync(Handle, "url", value);
 
     /// <summary>
-    /// The tiles' edge in pixels. The setter also takes one per zoom level, a union with a value-type case (R2), which
-    /// isn't mapped: the getter is kept, read-only (§5).
+    /// The tiles' edge in pixels. The setter also takes one per zoom level: <c>number | number[]</c>, a union with a
+    /// value-type case (R2).
     /// </summary>
     public global::System.Threading.Tasks.Task<double> GetTileSizeAsync() => Realm.GetNumberAsync(Handle, "tileSize");
+
+    /// <summary>
+    /// The tiles' edge in pixels. The setter also takes one per zoom level: <c>number | number[]</c>, a union with a
+    /// value-type case (R2).
+    /// </summary>
+    public global::System.Threading.Tasks.Task SetTileSizeAsync(TileLayerTileSizeInput value) =>
+        Realm.SendAsync(global::Interoper.JsOp.Set(Handle, "tileSize", w => global::Interoper.JsJson.WriteValue(w, value)));
 
     /// <summary>The markers drawn on top of the tiles.</summary>
     public async global::System.Threading.Tasks.Task<global::GoldenSlice.Async.Marker[]> GetEmphasizedAsync(global::Interoper.JsScope scope) =>

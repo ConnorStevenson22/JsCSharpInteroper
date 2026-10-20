@@ -1,7 +1,9 @@
 // Module functions. They read fields only, so plain JSON shapes work as well as instances.
 
-export function distance(a, b) {
-  return Math.hypot(b.x - a.x, b.y - a.y);
+const meters = { meters: 1, kilometers: 1000 };
+
+export function distance(a, b, unit = "meters") {
+  return Math.hypot(b.x - a.x, b.y - a.y) / (typeof unit === "number" ? unit : meters[unit]);
 }
 
 export function perimeter(...points) {

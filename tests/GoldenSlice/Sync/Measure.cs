@@ -7,11 +7,13 @@ public static partial class Measure
 {
     private const string Module = "@acme/demo-maps/measure.js";
 
-    public static double Distance(global::Interoper.JsRealm realm, PointSnapshot a, PointSnapshot b) =>
+    /// <summary>In <c>unit</c>s: meters by default, or a unit that many meters long.</summary>
+    public static double Distance(global::Interoper.JsRealm realm, PointSnapshot a, PointSnapshot b, MeasureDistanceUnit unit = default) =>
         realm.Call(global::Interoper.JsOp.Call(Module, "distance", w =>
         {
             PointSnapshot.Write(w, a);
             PointSnapshot.Write(w, b);
+            if (!unit.IsUndefined) global::Interoper.JsJson.WriteValue(w, unit);
         }), global::Interoper.JsJson.ReadNumber);
 
     /// <summary>The length of the closed path through the points: the last joins the first.</summary>

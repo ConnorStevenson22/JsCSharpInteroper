@@ -27,7 +27,7 @@ internal static class InMemoryDemoMaps
         .Define(new(DemoMaps.CollectionId, "core.Collection", args => new FakeCollection(args.FirstOrDefault() as List<object?> ?? [])))
         .Define(new(DemoMaps.DemoMapElementId, "demo-map.DemoMapElement", _ => new FakeDemoMapElement()) { Members = ["basemap", "zoom", "center"] })
         .Define(new(DemoMaps.LayerId, "layers.Layer", _ => throw new JsException("TypeError", "Layer is abstract", null)) { Members = ["title", "visible"] })
-        .Define(new(DemoMaps.TileLayerId, "layers.TileLayer", args => new FakeTileLayer(Bag(args))) { Members = ["url", "refreshInterval", "title", "visible"] })
+        .Define(new(DemoMaps.TileLayerId, "layers.TileLayer", args => new FakeTileLayer(Bag(args))) { Members = ["url", "tileSize", "refreshInterval", "title", "visible"] })
         .Define(new(DemoMaps.PinId, "pins.Pin", args => new FakePin(Bag(args))) { Members = ["position", "label", "style"] })
         .DefineModule(TransportContract.Measure, new FakeMeasure())
         .DefineModule("@acme/demo-maps/ops/a.js", new FakeExecute((x, options) => x * (double)options.GetValueOrDefault("scale", 1.0)!))
@@ -443,6 +443,14 @@ internal sealed class FakeTileLayer : FakeLayer
 
     public override string ClassName => "layers.TileLayer";
 
+    // One size, or one per zoom level, of which the getter gives the first.
+    public override object? Get(string name) => name != "tileSize" ? base.Get(name) : base.Get(name) switch
+    {
+        double size => size,
+        List<object?> sizes => sizes[0],
+        _ => 256.0,
+    };
+
     public override object? Call(string name, object?[] args)
     {
         if (name != "refresh") return base.Call(name, args);
@@ -493,7 +501,7 @@ internal sealed class FakeMeasure : InMemoryObject
 
     public override object? Call(string name, object?[] args) => name switch
     {
-        "distance" => Distance(args[0]!, args[1]!),
+        "distance" => Distance(args[0]!, args[1]!) / (args.Length < 3 ? 1 : args[2] switch { double unit => unit, "kilometers" => 1000, _ => 1 }),
         "perimeter" => args.Select((point, i) => Distance(point!, args[(i + 1) % args.Length]!)).Sum(), // the closed path through `...points`
         "describe" => args[0] is FakeShape shape ? shape.Get("type") : $"marker {((InMemoryObject)args[0]!).Get("displayLabel")}",
         _ => base.Call(name, args),

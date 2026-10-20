@@ -24,7 +24,6 @@ public sealed class GoldenSliceTests
         (null, "IOP2007 Emitter.emit: skipped: uses type parameter `K`", "its payload depends on a type parameter"),
         (null, "IOP2007 Collection.constructor: skipped: its parameter isn't a bag, so there's no Create (R18)", "a collection comes from its owner"),
         (null, "IOP2007 DemoMapElement.observedAttributes: skipped: a static member", "static members aren't bound"),
-        (null, "IOP2007 TileLayer.tileSize: setter dropped: uses a union with the value-type case double (R2)", "a union isn't boxing, so number | number[] isn't one; the getter stays (§5)"),
         (null, "IOP2001 Pin.meta: `any` is JsAny (§2)", "untyped by design: the app keeps anything there"),
         (null, "IOP2007 iconNames: skipped: uses a variable", "variables aren't bound"),
         (null, "IOP2006 @acme/demo-maps/ops/b.js: its Options is BOptions: @acme/demo-maps/ops/a.js has one too (R27)",

@@ -90,6 +90,12 @@ internal sealed class CsType
     /// <summary>A string enum's name map (R9), which converts it for the <c>String</c> fast path.</summary>
     public string? Names { get; }
 
+    /// <summary>
+    /// The string property a value type wraps, which a union keeps it as (R2): an extensible enum's <c>Value</c> (R10), a DOM
+    /// element's <c>Id</c> (R13).
+    /// </summary>
+    public string? Wraps { get; private init; }
+
     public static CsType Number { get; } = new("double", JsonKind.Number, true, "global::Interoper.JsJson.WriteNumber", "global::Interoper.JsJson.ReadNumber", fast: "Number");
 
     public static CsType String { get; } = new("string", JsonKind.String, false, "global::Interoper.JsJson.WriteString", "global::Interoper.JsJson.ReadString", fast: "String");
@@ -107,11 +113,11 @@ internal sealed class CsType
     /// A DOM element (R13): Blazor's <c>ElementReference</c>, written as <c>{"$e":id}</c> (in <c>Interoper.Blazor</c>) and
     /// never read.
     /// </summary>
-    public static CsType DomElement { get; } = new("global::Microsoft.AspNetCore.Components.ElementReference", JsonKind.Object, true, "global::Interoper.JsElement.Write", null);
+    public static CsType DomElement { get; } = new("global::Microsoft.AspNetCore.Components.ElementReference", JsonKind.Object, true, "global::Interoper.JsElement.Write", null) { Wraps = "Id" };
 
     /// <summary>An extensible enum (R10): a string wrapper with static <c>Write</c> and <c>Read</c> methods.</summary>
     public static CsType Extensible(TypeName type) =>
-        Named(type, [], name => new(name, JsonKind.String, true, $"{name}.Write", $"{name}.Read"));
+        Named(type, [], name => new(name, JsonKind.String, true, $"{name}.Write", $"{name}.Read") { Wraps = "Value" });
 
     /// <summary>A string enum and its name map (R9).</summary>
     public static CsType StringEnum(TypeName type) =>
@@ -243,7 +249,7 @@ internal sealed class CsType
         string? Qualify(string? method) => method?.StartsWith(Name + ".", StringComparison.Ordinal) == true ? $"global::{Namespace}.{method}" : method;
         // A scoped record's reader is a call, not a method group: Cursor.Read(ref r, scope).
         Func<string, int, string>? QualifyRead(Func<string, int, string>? f) => f is null ? null : (r, d) => Qualify(f(r, d))!;
-        return new(Name, Json, IsValueType, Qualify(writeMethod), Qualify(readMethod), write, QualifyRead(read), IsUnion, Scoped, Fast, Names) { Namespace = Namespace, baseName = baseName, named = named };
+        return new(Name, Json, IsValueType, Qualify(writeMethod), Qualify(readMethod), write, QualifyRead(read), IsUnion, Scoped, Fast, Names) { Namespace = Namespace, baseName = baseName, named = named, Wraps = Wraps };
     }
 
     /// <summary>An expression that writes <paramref name="value"/> with <paramref name="writer"/>.</summary>

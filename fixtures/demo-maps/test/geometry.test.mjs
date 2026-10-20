@@ -40,6 +40,13 @@ test("distance accepts instances and plain JSON alike", () => {
   assert.equal(distance(new Point({ x: 0, y: 0 }), { type: "point", x: 3, y: 4 }), 5);
 });
 
+test("distance takes a unit's name or its length in meters", () => {
+  const [a, b] = [new Point({ x: 0, y: 0 }), new Point({ x: 3000, y: 4000 })];
+  assert.equal(distance(a, b, "meters"), 5000);
+  assert.equal(distance(a, b, "kilometers"), 5);
+  assert.equal(distance(a, b, 500), 10);
+});
+
 test("perimeter takes any number of points and closes the path", () => {
   assert.equal(perimeter(new Point({ x: 0, y: 0 }), new Point({ x: 3, y: 0 }), { type: "point", x: 3, y: 4 }), 12);
   assert.equal(perimeter(), 0);

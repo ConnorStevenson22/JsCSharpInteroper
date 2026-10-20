@@ -19,10 +19,17 @@ public sealed partial class TileLayer : Layer, IRefreshable
     }
 
     /// <summary>
-    /// The tiles' edge in pixels. The setter also takes one per zoom level, a union with a value-type case (R2), which
-    /// isn't mapped: the getter is kept, read-only (§5).
+    /// The tiles' edge in pixels. The setter also takes one per zoom level: <c>number | number[]</c>, a union with a
+    /// value-type case (R2).
     /// </summary>
     public double TileSize => Realm.GetNumber(Handle, "tileSize");
+
+    /// <summary>
+    /// The tiles' edge in pixels. The setter also takes one per zoom level: <c>number | number[]</c>, a union with a
+    /// value-type case (R2).
+    /// </summary>
+    public void SetTileSize(TileLayerTileSizeInput value) =>
+        Realm.Send(global::Interoper.JsOp.Set(Handle, "tileSize", w => global::Interoper.JsJson.WriteValue(w, value)));
 
     /// <summary>The markers drawn on top of the tiles.</summary>
     public global::GoldenSlice.Sync.Marker[] GetEmphasized(global::Interoper.JsScope scope) =>

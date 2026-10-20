@@ -24,6 +24,7 @@ public static class GoldenSyncSuite
         ("overloads (R23)", InScope(Overloads)),
         ("Promise of an optional entity (R8, R3)", InScope(PromiseOfAnEntity)),
         ("module function over a union (R2, §5)", InScope(UnionModuleFunction)),
+        ("number, string-enum and literal cases next to other types, read by their JSON token (R2, R19)", InScope(ValueTypeCases)),
         ("a watch on every property, delivered then released (§5)", InScope(Watches)),
         ("base classes are live classes (R19)", InScope(Bases)),
         ("a default export: create, a redeclared clone and the most-derived type (R4, R19, R26)", InScope(DefaultExport)),
@@ -208,6 +209,32 @@ public static class GoldenSyncSuite
         Equal(new Rgba { R = 1, G = 2, B = 3, A = 1 }, Styles.ToRgba(scope.Realm, new Rgba { R = 1, G = 2, B = 3 }));
     }
 
+    private static void ValueTypeCases(JsScope scope)
+    {
+        var marker = Marker.Create(scope, new MarkerSnapshot());
+        foreach (var size in new IconStyleSize[] { 12, "2em" })
+        {
+            marker.Style = new IconStyle { Name = IconName.Pin1, Size = size };
+            Equal<Style>(new IconStyle { Name = IconName.Pin1, Size = size }, marker.Style);
+        }
+        marker.Style = new StrokeStyle { Dash = StrokeStyleDashLiteral.Dotted };
+        Expect(marker.Style.TryGetValue(out StrokeStyle? dotted) && dotted.Dash.TryGetValue(out StrokeStyleDashLiteral dash) && dash == StrokeStyleDashLiteral.Dotted,
+            "a dotted stroke");
+        marker.Style = new StrokeStyle { Dash = new double[] { 4, 2 } };
+        Expect(marker.Style.TryGetValue(out StrokeStyle? dashed) && dashed.Dash.TryGetValue(out double[]? lengths) && lengths.SequenceEqual([4.0, 2]), "a dashed stroke");
+
+        var tile = TileLayer.Create(scope, new TileLayerSnapshot());
+        tile.SetTileSize(512);
+        Equal(512.0, tile.TileSize);
+        tile.SetTileSize(new double[] { 128, 256 });
+        Equal(128.0, tile.TileSize);
+
+        var (a, b) = (new PointSnapshot { X = 0, Y = 0 }, new PointSnapshot { X = 3000, Y = 4000 });
+        Equal(5000.0, Measure.Distance(scope.Realm, a, b));
+        Equal(5.0, Measure.Distance(scope.Realm, a, b, LengthUnit.Kilometers));
+        Equal(10.0, Measure.Distance(scope.Realm, a, b, 500));
+    }
+
     private static async Task Watches(JsScope scope)
     {
         var view = MapView.Create(scope, new MapViewSnapshot());
@@ -252,10 +279,10 @@ public static class GoldenSyncSuite
     private static void DefaultExport(JsScope scope)
     {
         var tile = TileLayer.Create(scope, new TileLayerSnapshot { Url = "u", Title = "Streets" });
-        Equal(new TileLayerSnapshot { Url = "u", RefreshInterval = 0, Title = "Streets", Visible = true }, tile.Snapshot());
+        Equal(new TileLayerSnapshot { Url = "u", TileSize = 256, RefreshInterval = 0, Title = "Streets", Visible = true }, tile.Snapshot());
         TileLayer copy = tile.Clone(scope); // TileLayer's clone hides Layer's
         Expect(!ReferenceEquals(copy, tile), "a clone to be another object");
-        Equal(new TileLayerSnapshot { Url = "u", RefreshInterval = 0, Title = "Streets", Visible = true }, copy.Snapshot());
+        Equal(new TileLayerSnapshot { Url = "u", TileSize = 256, RefreshInterval = 0, Title = "Streets", Visible = true }, copy.Snapshot());
         Layer layer = tile;
         Expect(layer.Clone(scope) is TileLayer { Url: "u" }, "a Layer's clone to be a TileLayer");
     }
@@ -282,7 +309,7 @@ public static class GoldenSyncSuite
         Expect(tile is Layer and Observable, "a TileLayer to be a Layer and an Observable");
         tile.Title = null;
         tile.Visible = false;
-        Equal(new TileLayerSnapshot { Url = "", RefreshInterval = 0, Title = null, Visible = false }, tile.Snapshot());
+        Equal(new TileLayerSnapshot { Url = "", TileSize = 256, RefreshInterval = 0, Title = null, Visible = false }, tile.Snapshot());
     }
 
     private static void Collections(JsScope scope)

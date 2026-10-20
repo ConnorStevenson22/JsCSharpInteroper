@@ -19,7 +19,7 @@ public sealed class SelectionTests
             "geometry.js: ShapeType, Bounds, Shape, Point, Line, Polygon",
             "layers/Layer.js: Layer",
             "layers/TileLayer.js: TileLayer",
-            "measure.js: distance, perimeter, Measurable, describe",
+            "measure.js: LengthUnit, distance, perimeter, Measurable, describe",
             "ops/a.js: Options, execute",
             "ops/b.js: Options, execute",
             "pins.js: PinDragEvent, PinEvents, Pin",
@@ -56,7 +56,7 @@ public sealed class SelectionTests
     public void AStarMatchesAnyCharactersSlashesIncluded()
     {
         Assert.Equal(Modules(Selection.Select(Fixture.Ir, Fixture.Profile)), Modules(Select("@acme/*")));
-        Assert.Equal(["core.js: Observable", "geometry.js: ShapeType, Bounds, Shape, Point, Line, Polygon", "measure.js: distance, perimeter, Measurable, describe"],
+        Assert.Equal(["core.js: Observable", "geometry.js: ShapeType, Bounds, Shape, Point, Line, Polygon", "measure.js: LengthUnit, distance, perimeter, Measurable, describe"],
             Modules(Select("*/measure.js", "*/geometry.js")));
         Assert.Equal(["core.js: Observable", "layers/Layer.js: Layer", "layers/TileLayer.js: TileLayer"], Modules(Select("@acme/demo-maps/layers/*")));
     }
@@ -117,12 +117,15 @@ public sealed class SelectionTests
     /// the interface <c>Holder { t: T }</c>. An ambiguous union is IOP2003 (R19), anything else IOP2007.
     /// </summary>
     [Theory]
-    [InlineData( // R2: a literal next to other types
-        """{ "kind": "alias", "name": "T", "type": { "kind": "union", "types": [{ "kind": "literal", "value": "auto" }, { "kind": "array", "element": { "kind": "primitive", "name": "string" } }] } }""",
-        "IOP2007", "the union `T` of a literal and other types")]
-    [InlineData( // R2: unions don't box
-        """{ "kind": "alias", "name": "T", "type": { "kind": "union", "types": [{ "kind": "primitive", "name": "string" }, { "kind": "primitive", "name": "number" }] } }""",
-        "IOP2007", "the union `T` with the value-type case double (R2)")]
+    [InlineData( // R2: a number literal next to other types (a string literal is an enum case)
+        """{ "kind": "alias", "name": "T", "type": { "kind": "union", "types": [{ "kind": "literal", "value": 1 }, { "kind": "array", "element": { "kind": "primitive", "name": "string" } }] } }""",
+        "IOP2007", "the union `T` of a number or boolean literal and other types")]
+    [InlineData( // R19 step 4: a number and a number enum are both JSON numbers
+        """
+        { "kind": "alias", "name": "T", "type": { "kind": "union", "types": [{ "kind": "primitive", "name": "number" }, { "kind": "ref", "name": "E", "module": "@acme/maps/a.js" }] } },
+        { "kind": "enum", "name": "E", "members": [{ "name": "a", "value": 1 }, { "name": "b", "value": 2 }] }
+        """,
+        "IOP2003", "the ambiguous union `T`: double and E are both JSON Number (R19)")]
     [InlineData( // §2: a TS enum
         """{ "kind": "enum", "name": "T", "members": [{ "name": "a", "value": "a" }, { "name": "b", "value": 1 }] }""",
         "IOP2007", "an enum of strings and numbers")]

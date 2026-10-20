@@ -169,7 +169,7 @@ public sealed class CliTests(SeededConsumer seeded) : IClassFixture<SeededConsum
         Assert.True(File.Exists(Path.Combine(outDir, "GlobalUsings.g.cs")));
         Assert.True(File.Exists(Path.Combine(outDir, "MapView.Extensions.cs")));
         Assert.True(File.Exists(Path.Combine(outDir, "MapView.cs")));
-        Assert.Contains(": 71 written, 3 deleted.", error, StringComparison.Ordinal);
+        Assert.Contains(": 77 written, 3 deleted.", error, StringComparison.Ordinal);
         Assert.DoesNotContain("Old.cs", File.ReadAllText(Path.Combine(outDir, ".interoper", "files.txt")), StringComparison.Ordinal);
     }
 

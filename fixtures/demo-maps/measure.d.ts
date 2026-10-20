@@ -1,7 +1,10 @@
 import { Point, Polygon } from "./geometry.js";
 import { Marker } from "./Marker.js";
 
-export function distance(a: Point, b: Point): number;
+export type LengthUnit = "meters" | "kilometers";
+
+/** In `unit`s: meters by default, or a unit that many meters long. */
+export function distance(a: Point, b: Point, unit?: LengthUnit | number): number;
 
 /** The length of the closed path through the points: the last joins the first. */
 export function perimeter(...points: Point[]): number;

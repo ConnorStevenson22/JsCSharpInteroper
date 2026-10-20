@@ -13,8 +13,8 @@ export default class TileLayer extends TileLayerBase {
   /** The URL template of the tiles. */
   url: string;
   /**
-   * The tiles' edge in pixels. The setter also takes one per zoom level, a union with a value-type case (R2), which
-   * isn't mapped: the getter is kept, read-only (§5).
+   * The tiles' edge in pixels. The setter also takes one per zoom level: `number | number[]`, a union with a
+   * value-type case (R2).
    */
   get tileSize(): number;
   set tileSize(value: OneOrMany<number>);

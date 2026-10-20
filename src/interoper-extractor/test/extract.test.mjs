@@ -212,7 +212,11 @@ test("R9, R10: literal unions and the open-ended form", () => {
 
 test("R21: function types and module functions", () => {
   assert.deepEqual(decl("Marker", "LabelFormatter").type, { kind: "function", params: [{ name: "marker", type: ref("Marker", "Marker") }], returns: { kind: "primitive", name: "string" } });
-  assert.deepEqual(decl("measure", "distance"), { kind: "function", name: "distance", signatures: [{ params: [{ name: "a", type: ref("geometry", "Point") }, { name: "b", type: ref("geometry", "Point") }], returns: num }] });
+  assert.deepEqual(decl("measure", "distance").signatures[0].params, [
+    { name: "a", type: ref("geometry", "Point") },
+    { name: "b", type: ref("geometry", "Point") },
+    { name: "unit", type: { kind: "union", types: [ref("measure", "LengthUnit"), num] }, optional: true }, // R2: the alias stays a ref
+  ]);
 });
 
 test("R22: a rest parameter's type is its array", () => {

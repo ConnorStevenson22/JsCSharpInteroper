@@ -730,9 +730,9 @@ public sealed class GeneratorTests
         Assert.Contains("public ViewMarkerInput(Marker[] value) : this(value, 3) { }", File(result, "ViewMarkerInput.cs"));
         Assert.Contains("public ViewPinInput(Marker[] value) : this(value, 3) { }", File(result, "ViewPinInput.cs"));
         Assert.Contains("public ViewFlagInput(Marker[] value) : this(value, 3) { }", File(result, "ViewFlagInput.cs"));
-        // OneOrMany<number> has a value-type case (R2), and LabelList doesn't resolve: the getters stay.
+        // OneOrMany<number> is a union with a value-type case (R2); LabelList doesn't resolve, so its getter stays.
         Assert.Contains("public double Size\n", view.Replace(" =>", "\n"));
-        Assert.DoesNotContain("SetSize", view);
+        Assert.Contains("public void SetSize(ViewSizeInput value) =>", view);
         Assert.Contains("public string[] Labels =>\n", view); // read-only
         Assert.DoesNotContain("SetLabels", view);
         Assert.Equal(
@@ -740,9 +740,68 @@ public sealed class GeneratorTests
             "IOP2007 OneOrMany: skipped: uses generic `OneOrMany` (in `OneOrMany`)",
             "IOP2007 Same: skipped: uses generic `Same` (in `Same`)",
             "IOP2007 Many: skipped: uses generic `Many` (in `Many`)",
-            "IOP2007 View.size: setter dropped: uses a union with the value-type case double (R2)",
             "IOP2007 View.labels: setter dropped: uses unresolved `LabelList`",
         ], result.Diagnostics.Select(d => d.ToString()));
+    }
+
+    [Fact] // R2, R19 step 4: number, boolean and enum cases are kept as a double, unboxed, and read by their JSON token
+    public void ValueTypeCasesAreKeptUnboxed()
+    {
+        const string Unit = """{ "kind": "ref", "name": "Unit", "module": "@acme/maps/a.js" }""";
+        var result = Generate("""
+            { "kind": "enum", "name": "Level", "members": [{ "name": "Low", "value": 1 }, { "name": "High", "value": 2 }] },
+            { "kind": "alias", "name": "Unit", "type": { "kind": "union", "types": [{ "kind": "literal", "value": "m" }, { "kind": "literal", "value": "km" }] } },
+            { "kind": "interface", "name": "Options", "members": [
+              { "kind": "property", "name": "flag", "type": { "kind": "union", "types": [{ "kind": "primitive", "name": "boolean" }, { "kind": "primitive", "name": "string" }] } },
+              { "kind": "property", "name": "level", "type": { "kind": "union", "types": [{ "kind": "ref", "name": "Level", "module": "@acme/maps/a.js" }, { "kind": "array", "element": { "kind": "primitive", "name": "string" } }] } },
+              { "kind": "property", "name": "unit", "type": { "kind": "union", "types": [UNIT, { "kind": "primitive", "name": "number" }] } },
+              { "kind": "property", "name": "other", "type": { "kind": "union", "types": [UNIT, { "kind": "literal", "value": "mi" }, { "kind": "primitive", "name": "number" }] } }] }
+            """.Replace("UNIT", Unit));
+        Assert.Empty(result.Diagnostics);
+
+        var flag = File(result, "OptionsFlag.cs");
+        Assert.Contains("private readonly double _number;", flag);
+        Assert.Contains("public OptionsFlag(bool value) : this(null, value ? 1 : 0, 2) { }", flag);
+        Assert.Contains("public OptionsFlag(string value) : this(value, 0, 3) { }", flag);
+        Assert.Contains("value = _tag == 2 ? _number != 0 : default;", flag);
+        Assert.Contains("global::System.Text.Json.JsonTokenType.True or global::System.Text.Json.JsonTokenType.False => global::Interoper.JsJson.ReadBoolean(ref reader),", flag);
+        Assert.Contains("_tag == other._tag && Equals(_ref, other._ref) && _number.Equals(other._number)", flag);
+
+        var level = File(result, "OptionsLevel.cs");
+        Assert.Contains("public OptionsLevel(Level value) : this(null, (int)value, 2) { }", level);
+        Assert.Contains("case 2: global::Interoper.JsJson.WriteNumber(writer, (int)(Level)(int)value._number); break;", level);
+        Assert.Contains("global::System.Text.Json.JsonTokenType.Number => (Level)global::Interoper.JsJson.ReadNumber(ref reader),", level);
+
+        // The string literals are one enum case: the alias's when they are its literals, else one named after the union.
+        Assert.Contains("public OptionsUnit(Unit value) : this(null, (int)value, 2) { }", File(result, "OptionsUnit.cs"));
+        Assert.Contains("public OptionsOther(OptionsOtherLiteral value) : this(null, (int)value, 2) { }", File(result, "OptionsOther.cs"));
+        Assert.Contains("\"mi\" => OptionsOtherLiteral.Mi,", File(result, "OptionsOtherLiteral.cs"));
+        Assert.Contains("Unit.cs", result.Files.Select(f => f.Path));
+    }
+
+    [Fact] // R27, R2: an anonymous union whose owner's name a declaration has takes the next free name
+    public void AnAnonymousUnionTakesAFreeName()
+    {
+        // Dock.mode's union is DockMode, the name of the enum it has as a case, which Pair.mode maps first.
+        const string Mode = """{ "kind": "ref", "name": "DockMode", "module": "@acme/maps/a.js" }""";
+        var result = Generate("""
+            { "kind": "alias", "name": "DockMode", "type": { "kind": "union", "types": [{ "kind": "literal", "value": "a" }, { "kind": "literal", "value": "b" }] } },
+            { "kind": "interface", "name": "Pair", "members": [{ "kind": "property", "name": "mode", "type": MODE }] },
+            { "kind": "interface", "name": "DockBreakpoint", "members": [{ "kind": "property", "name": "width", "type": { "kind": "primitive", "name": "number" } }] },
+            { "kind": "interface", "name": "Dock", "members": [{ "kind": "property", "name": "breakpoint", "optional": true, "type": { "kind": "union", "types": [
+              { "kind": "ref", "name": "DockBreakpoint", "module": "@acme/maps/a.js" }, { "kind": "primitive", "name": "boolean" }] } },
+              { "kind": "property", "name": "mode", "type": { "kind": "union", "types": [{ "kind": "ref", "name": "Pair", "module": "@acme/maps/a.js" }, MODE] } }] }
+            """.Replace("MODE", Mode));
+        Assert.Equal(
+        [
+            "IOP2006 Acme.Maps.DockBreakpoint: the union is DockBreakpoint2: DockBreakpoint is taken (R27)",
+            "IOP2006 Acme.Maps.DockMode: the union is DockMode2: DockMode is taken (R27)",
+        ], result.Diagnostics.Select(d => d.ToString()));
+        var dock = File(result, "Dock.cs");
+        Assert.Contains("public DockBreakpoint2 Breakpoint { get; init; }", dock);
+        Assert.Contains("public required DockMode2 Mode { get; init; }", dock);
+        Assert.Contains("public DockBreakpoint2(DockBreakpoint value) : this(value, 0, 2) { }", File(result, "DockBreakpoint2.cs"));
+        Assert.Contains("public DockMode2(DockMode value) : this(null, (int)value, 3) { }", File(result, "DockMode2.cs"));
     }
 
     [Fact] // §2: a recursive generic union alias stops expanding, and what uses it is skipped

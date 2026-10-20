@@ -8,6 +8,8 @@ public sealed partial record IconStyle : global::Interoper.IJsRecord<IconStyle>
 {
     public required IconName Name { get; init; }
     public ColorInput Color { get; init; }
+    /// <summary>Pixels, or a CSS length such as "2em".</summary>
+    public IconStyleSize Size { get; init; }
 
     public static void Write(global::System.Text.Json.Utf8JsonWriter writer, IconStyle value)
     {
@@ -16,6 +18,7 @@ public sealed partial record IconStyle : global::Interoper.IJsRecord<IconStyle>
         writer.WritePropertyName("name"u8);
         IconName.Write(writer, value.Name);
         global::Interoper.JsJson.WriteProperty(writer, "color"u8, value.Color);
+        global::Interoper.JsJson.WriteProperty(writer, "size"u8, value.Size);
         writer.WriteEndObject();
     }
 
@@ -23,6 +26,7 @@ public sealed partial record IconStyle : global::Interoper.IJsRecord<IconStyle>
     {
         IconName name = default;
         ColorInput color = default;
+        IconStyleSize size = default;
         while (reader.Read() && reader.TokenType == global::System.Text.Json.JsonTokenType.PropertyName)
         {
             var property = reader.GetString();
@@ -31,9 +35,10 @@ public sealed partial record IconStyle : global::Interoper.IJsRecord<IconStyle>
             {
                 case "name": name = IconName.Read(ref reader); break;
                 case "color": color = global::Interoper.JsJson.ReadUnion<ColorInput>(ref reader); break;
+                case "size": size = global::Interoper.JsJson.ReadUnion<IconStyleSize>(ref reader); break;
                 default: reader.Skip(); break;
             }
         }
-        return new IconStyle { Name = name, Color = color };
+        return new IconStyle { Name = name, Color = color, Size = size };
     }
 }
