@@ -2157,6 +2157,23 @@ public sealed class GeneratorTests
         Assert.Empty(result.Diagnostics);
     }
 
+    [Fact] // R2, R15: a union reader can't wrap a plain object's handle, so a live interface case is only written
+    public void AUnionWithALiveInterfaceCaseIsOnlyWritten()
+    {
+        var union = $$"""{ "kind": "union", "types": [{{Ref("Control")}}, {{String}}] }""";
+        var result = Generate(Api.Sync, ("controls.js", $$"""
+            { "kind": "interface", "name": "Control", "members": [{ "kind": "method", "name": "dispose", "signatures": [{ "returns": {{Void}} }] }] },
+            { "kind": "function", "name": "find", "signatures": [{ "returns": {{union}} }] },
+            { "kind": "function", "name": "show", "signatures": [{ "params": [{ "name": "control", "type": {{union}} }], "returns": {{Void}} }] }
+            """));
+        Assert.Equal("IOP2007 find: skipped: uses a union with the live interface case Control, whose plain objects have no class id to read it by (R2, R15)",
+            Assert.Single(result.Diagnostics).ToString());
+        Assert.DoesNotContain("Find(", File(result, "Controls.cs"));
+        var written = File(result, "ControlsShowControl.cs");
+        Assert.Contains("case 2: Control.Write(writer, (Control)value._ref!); break;", written);
+        Assert.Contains("=> throw new global::System.Text.Json.JsonException(\"ControlsShowControl is only written (R2)\");", written);
+    }
+
     [Fact] // R15, §5: a mixin's members reach a live interface, but a mixin's base is not emitted
     public void AMixinReachesALiveInterfaceButNotItsBase()
     {

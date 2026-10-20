@@ -1404,6 +1404,10 @@ internal sealed class TypeMap
             {
                 return new($"{label} with a case of the type parameter `{parameter.Name}` (§2)"); // a union struct isn't generic
             }
+            if (!written && t is RefType { Module: not null } live && Find(live) is ClassDeclaration { Interface: true })
+            {
+                return new($"{label} with the live interface case {NameOf(t)}, whose plain objects have no class id to read it by (R2, R15)");
+            }
             if (!written && UsesEntity(t))
             {
                 return new($"{label} with the case {NameOf(t) ?? "`this`"}, which needs a scope to be read (R17, R19)");

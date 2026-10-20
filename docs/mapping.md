@@ -125,6 +125,7 @@ The central decision for every class and interface.
 - An interface whose members are all data is a data record. So is an interface an event names as its payload, and its bases, minus their methods (R24).
 - An interface with a method, its own or an interface base's, is a live class: its objects can't be copied, such as the plain object a factory returns (`createPopup(view): Control`). It has no `Create` and no snapshot (R18). Its first such base is its base class (`LayerControl : Control`), and the other bases' members are its own. JS gives a plain object class id 0, so it's read as the type its position declares (R19 step 1). Not one that extends a class, a callable one, or a generic one (§2), which aren't mapped yet (IOP2007).
 - A live interface is emitted like a data type: one outside `include` is emitted when an emitted member names it. It isn't a type argument (`Collection<Control>`), and where JS sends values by copy (a callback's argument, an event payload, a watch) it isn't mapped yet (IOP2007); a payload record drops such a member.
+- A union with a live interface case is only written (R2): a plain object's handle has no class id for a union reader to read it by. Where it would be read, its user is skipped (IOP2007).
 - A data record's optional member that can't be mapped is left out (IOP2007), so the record still maps. A required one skips the record and its users.
 - An interface's iterator methods (`values()` returning `Iterator` and kin) are left out (IOP2007). Symbol-keyed members never reach the IR.
 
