@@ -46,6 +46,12 @@ export interface IconStyle {
   color?: ColorInput | null;
 }
 
+/** A soft glow under a marker or a layer, tagged where it's used (`GlowOptions & { kind: "glow" }`). */
+export interface GlowOptions {
+  blur?: number;
+  color?: ColorInput | null;
+}
+
 /** Discriminated by `type`. */
 export type Style = FillStyle | StrokeStyle | IconStyle;
 

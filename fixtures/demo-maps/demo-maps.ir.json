@@ -986,6 +986,74 @@
             },
             {
               "kind": "property",
+              "name": "glow",
+              "optional": true,
+              "doc": {
+                "summary": "The same tagged intersection as `TileLayer.glow`, in another module."
+              },
+              "type": {
+                "kind": "union",
+                "types": [
+                  {
+                    "kind": "object",
+                    "bases": [
+                      {
+                        "kind": "ref",
+                        "name": "GlowOptions",
+                        "module": "@acme/demo-maps/styles.js"
+                      }
+                    ],
+                    "members": [
+                      {
+                        "kind": "property",
+                        "name": "blur",
+                        "optional": true,
+                        "inherited": true,
+                        "type": {
+                          "kind": "primitive",
+                          "name": "number"
+                        }
+                      },
+                      {
+                        "kind": "property",
+                        "name": "color",
+                        "optional": true,
+                        "inherited": true,
+                        "type": {
+                          "kind": "union",
+                          "types": [
+                            {
+                              "kind": "ref",
+                              "name": "ColorInput",
+                              "module": "@acme/demo-maps/styles.js"
+                            },
+                            {
+                              "kind": "primitive",
+                              "name": "null"
+                            }
+                          ]
+                        }
+                      },
+                      {
+                        "kind": "property",
+                        "name": "kind",
+                        "inherited": true,
+                        "type": {
+                          "kind": "literal",
+                          "value": "glow"
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "kind": "primitive",
+                    "name": "null"
+                  }
+                ]
+              }
+            },
+            {
+              "kind": "property",
               "name": "labelFormatter",
               "optional": true,
               "doc": {
@@ -2467,6 +2535,65 @@
             },
             {
               "kind": "property",
+              "name": "glow",
+              "optional": true,
+              "doc": {
+                "summary": "The same tagged intersection as `Marker.glow`."
+              },
+              "type": {
+                "kind": "object",
+                "bases": [
+                  {
+                    "kind": "ref",
+                    "name": "GlowOptions",
+                    "module": "@acme/demo-maps/styles.js"
+                  }
+                ],
+                "members": [
+                  {
+                    "kind": "property",
+                    "name": "blur",
+                    "optional": true,
+                    "inherited": true,
+                    "type": {
+                      "kind": "primitive",
+                      "name": "number"
+                    }
+                  },
+                  {
+                    "kind": "property",
+                    "name": "color",
+                    "optional": true,
+                    "inherited": true,
+                    "type": {
+                      "kind": "union",
+                      "types": [
+                        {
+                          "kind": "ref",
+                          "name": "ColorInput",
+                          "module": "@acme/demo-maps/styles.js"
+                        },
+                        {
+                          "kind": "primitive",
+                          "name": "null"
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "kind": "property",
+                    "name": "kind",
+                    "inherited": true,
+                    "type": {
+                      "kind": "literal",
+                      "value": "glow"
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "kind": "property",
               "name": "emphasized",
               "doc": {
                 "summary": "The markers drawn on top of the tiles."
@@ -3814,6 +3941,43 @@
                 "kind": "ref",
                 "name": "IconName",
                 "module": "@acme/demo-maps/styles.js"
+              }
+            },
+            {
+              "kind": "property",
+              "name": "color",
+              "optional": true,
+              "type": {
+                "kind": "union",
+                "types": [
+                  {
+                    "kind": "ref",
+                    "name": "ColorInput",
+                    "module": "@acme/demo-maps/styles.js"
+                  },
+                  {
+                    "kind": "primitive",
+                    "name": "null"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "kind": "interface",
+          "name": "GlowOptions",
+          "doc": {
+            "summary": "A soft glow under a marker or a layer, tagged where it's used (`GlowOptions & { kind: \"glow\" }`)."
+          },
+          "members": [
+            {
+              "kind": "property",
+              "name": "blur",
+              "optional": true,
+              "type": {
+                "kind": "primitive",
+                "name": "number"
               }
             },
             {

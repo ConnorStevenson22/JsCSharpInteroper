@@ -508,7 +508,7 @@ public static class GoldenSyncSuite
         using (view.OnClick(scope, clicks.Add)) // sync mode: delivered before ClickAt returns
         {
             element.ClickAt(8, 0); // the button is optional
-            element.ClickAt(0, 0, DemoMapElementClickAtButton._2);
+            element.ClickAt(0, 0, ClickEventButton._2);
         }
         Equal("1 _0, 0 _2", string.Join(", ", clicks.Select(c => $"{c.MapPoint.X} {c.Button}")));
     }

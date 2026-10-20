@@ -6,7 +6,7 @@ namespace GoldenSlice.Async;
 [global::System.Text.Json.Serialization.JsonConverter(typeof(global::Interoper.JsRecordConverter<MarkerOptions>))]
 public sealed partial record MarkerOptions : global::Interoper.IJsRecord<MarkerOptions>
 {
-    public MarkerOptionsPosition Position { get; init; }
+    public MarkerPositionInput Position { get; init; }
     public global::Interoper.Opt<string> Label { get; init; }
     public Style Style { get; init; }
 
@@ -21,7 +21,7 @@ public sealed partial record MarkerOptions : global::Interoper.IJsRecord<MarkerO
 
     public static MarkerOptions Read(ref global::System.Text.Json.Utf8JsonReader reader)
     {
-        MarkerOptionsPosition position = default;
+        MarkerPositionInput position = default;
         global::Interoper.Opt<string> label = default;
         Style style = default;
         while (reader.Read() && reader.TokenType == global::System.Text.Json.JsonTokenType.PropertyName)
@@ -30,7 +30,7 @@ public sealed partial record MarkerOptions : global::Interoper.IJsRecord<MarkerO
             reader.Read();
             switch (property)
             {
-                case "position": position = global::Interoper.JsJson.ReadUnion<MarkerOptionsPosition>(ref reader); break;
+                case "position": position = global::Interoper.JsJson.ReadUnion<MarkerPositionInput>(ref reader); break;
                 case "label": label = global::Interoper.JsJson.ReadOpt(ref reader, global::Interoper.JsJson.ReadString); break;
                 case "style": style = global::Interoper.JsJson.ReadUnion<Style>(ref reader); break;
                 default: reader.Skip(); break;

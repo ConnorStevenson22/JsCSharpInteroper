@@ -11,7 +11,7 @@ public sealed partial record MapViewOptions
     public global::Interoper.Opt<Basemap> Basemap { get; init; }
     public global::Interoper.Opt<Cursor> Cursor { get; init; }
     public global::Interoper.Opt<string> Title { get; init; }
-    public MapViewOptionsContainer Container { get; init; }
+    public MapViewContainer Container { get; init; }
 
     public static void Write(global::System.Text.Json.Utf8JsonWriter writer, MapViewOptions value)
     {

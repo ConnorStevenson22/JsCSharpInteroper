@@ -1,5 +1,6 @@
 import { OneOrMany } from "../core.js";
 import { Marker } from "../Marker.js";
+import { GlowOptions } from "../styles.js";
 import { Layer } from "./Layer.js";
 import { Refreshable } from "./Refreshable.js";
 
@@ -18,6 +19,8 @@ export default class TileLayer extends TileLayerBase {
    */
   get tileSize(): number;
   set tileSize(value: OneOrMany<number>);
+  /** The same tagged intersection as `Marker.glow`. */
+  glow?: GlowOptions & { kind: "glow" };
   /** The markers drawn on top of the tiles. */
   readonly emphasized: Marker[];
   /** Highlights one marker or several: `OneOrMany<Marker>` is `Marker | Marker[]` (§2). */

@@ -76,7 +76,7 @@ An array or tuple element that can be null or undefined is `Opt<T>` too: `(Marke
 | class | live class | §3 |
 | value-like class (per profile) | live class plus `XSnapshot` record | §3 |
 | interface with only data members | data record with the same name | §3 |
-| inline object type, including an intersection of data bags | data record named after its owner | **R11** |
+| inline object type, including an intersection of data bags | data record named after its owner, one per structure | **R11** |
 | class extending a mixin's base (`PinBase: typeof Marker & typeof Draggable`) | derives from the named class (`Pin : Marker`), with the mixin's members as its own, and implements each exported mixin's interface (§5) | [ir.md](ir.md#declarations) |
 | generic `T` | generic over entities (`where T : JsObject`), or its constraint | See Generics below |
 | `this` (return type) | the declaring type | |
@@ -93,6 +93,8 @@ An array or tuple element that can be null or undefined is `Opt<T>` too: `(Marke
 
 - In a union, each inline case is named after the union and its tag value. The tag is the discriminant (R19), or else a member every inline case has with its own string literal. So `(PolyProps & { type: "poly" }) | (DotProps & { type: "dot" })` on the setter of `Feature.shape` gives `FeatureShapeInputPoly` and `FeatureShapeInputDot`.
 - Without a tag, a case is named by its position in the union as written (`FeatureShapeCase2`), with IOP2006. `null` and `undefined` don't count toward the position.
+- An intersection of one named type with string constants is named after the type and the constants' values, whatever its owner: `GlowOptions & { kind: "glow" }` is `GlowOptionsGlow`. It is in the type's namespace if that namespace has emitted types, and otherwise in its owner's. The IR's `bases` names the type ([ir.md](ir.md#types)).
+- Structurally identical anonymous records, unions and enums are one type, which every use names: the same members in the same order, with the same types, optionality and constants. Docs don't count, and neither does whether a constant is optional, since it is always written (R20). The type takes the shortest of the names its owners would give it, in that owner's namespace; a tie goes to the name, then the namespace, in ordinal order. `Marker.position`'s setter and `MarkerOptions.position` share `MarkerPositionInput`. Sharing isn't reported.
 - Members it can't map follow R15: an optional one is left out (IOP2007), a required one skips the record and its users. This holds wherever the record appears, including callback arguments and results. For a callback alias, the record keeps the alias's name (`VisitE`).
 - An inline type with a method, a call signature or a type parameter of an enclosing generic type isn't data. It is skipped (IOP2007).
 - If the name is taken (by a declaration, snapshot, registry, module class, other anonymous type or component), it gets a numeric suffix (`FeatureSize2`) and IOP2006.
@@ -261,7 +263,7 @@ So `"--"` is `MinusMinus`. The empty string is `Empty`. Duplicates get a numeric
 - References. Generated code names types in its own namespace plainly and all others with `global::`. Runtime and .NET types are always qualified and generated files have no usings, so a generated name like `Opt` or `Task` hides nothing. A record reader qualifies a type that one of its members is named after.
 - Sibling modules. When modules in one folder export the same name (`ops/a.js` and `ops/b.js` each export `Options`), the first in IR order keeps it and later ones get their module's name as a prefix (`BOptions`). Names that differ only in case count as the same.
 - Case. Two generated paths that differ only in case clash, since Windows and macOS ignore case. A file and a folder that differ only in case don't.
-- Anonymous types are named after their owner: `Feature.shape` gives `FeatureShape`, its setter's wider type `FeatureShapeInput`, a method result `FeatureMoveTo`, a parameter `FeatureMoveToTarget`, an event payload `FeatureClick`.
+- Anonymous types are named after their owner: `Feature.shape` gives `FeatureShape`, its setter's wider type `FeatureShapeInput`, a method result `FeatureMoveTo`, a parameter `FeatureMoveToTarget`, an event payload `FeatureClick`. Identical ones share the shortest of those names, and a tagged intersection takes its named part's (R11).
 - The registry is named after the package without scope (`Maps`), or the next free name (`Widgets2`) if a namespace has it.
 - A namespace with the full name of a declared type (`Marker` next to a `marker/` folder) takes the next free name (`Acme.Maps.Marker2`), so the type keeps its name.
 - Clashes. When two generated types would share a path, the registry keeps its name, and a module's static class takes the next free one (`Measure2`). Any other later type is skipped, and so is a type with a namespace's full name. A skipped type's users are not removed, so they won't compile.

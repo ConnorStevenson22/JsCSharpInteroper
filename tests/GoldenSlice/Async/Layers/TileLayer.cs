@@ -23,6 +23,14 @@ public sealed partial class TileLayer : Layer, IRefreshable
     /// </summary>
     public global::System.Threading.Tasks.Task<double> GetTileSizeAsync() => Realm.GetNumberAsync(Handle, "tileSize");
 
+    /// <summary>The same tagged intersection as <c>Marker.glow</c>.</summary>
+    public global::System.Threading.Tasks.Task<global::Interoper.Opt<global::GoldenSlice.Async.GlowOptionsGlow>> GetGlowAsync() =>
+        Realm.CallAsync(global::Interoper.JsOp.Get(Handle, "glow"), static (ref r) => global::Interoper.JsJson.ReadOpt(ref r, global::GoldenSlice.Async.GlowOptionsGlow.Read));
+
+    /// <summary>The same tagged intersection as <c>Marker.glow</c>.</summary>
+    public global::System.Threading.Tasks.Task SetGlowAsync(global::Interoper.Opt<global::GoldenSlice.Async.GlowOptionsGlow> value) =>
+        Realm.SendAsync(global::Interoper.JsOp.Set(Handle, "glow", w => global::Interoper.JsJson.WriteValue(w, value, global::GoldenSlice.Async.GlowOptionsGlow.Write)));
+
     /// <summary>The markers drawn on top of the tiles.</summary>
     public async global::System.Threading.Tasks.Task<global::GoldenSlice.Async.Marker[]> GetEmphasizedAsync(global::Interoper.JsScope scope) =>
         (await Realm.CallAsync(global::Interoper.JsOp.Get(Handle, "emphasized"), (ref r) => global::Interoper.JsJson.ReadArray(ref r, scope.Read<global::GoldenSlice.Async.Marker>)))!;
@@ -63,6 +71,12 @@ public sealed partial class TileLayer : Layer, IRefreshable
 
     public global::System.Collections.Generic.IAsyncEnumerable<double> WatchTileSizeStreamAsync(global::Interoper.JsScope scope, global::System.Threading.CancellationToken cancellationToken = default) =>
         scope.StreamAsync(Handle, "watch", "tileSize", global::Interoper.JsJson.ReadNumber, null, null, cancellationToken);
+
+    public global::System.Threading.Tasks.Task<global::System.IAsyncDisposable> WatchGlowAsync(global::Interoper.JsScope scope, global::System.Action<global::Interoper.Opt<global::GoldenSlice.Async.GlowOptionsGlow>> handler) =>
+        scope.SubscribeAsync(Handle, "watch", "glow", static (ref r) => global::Interoper.JsJson.ReadOpt(ref r, global::GoldenSlice.Async.GlowOptionsGlow.Read), handler, null, null);
+
+    public global::System.Collections.Generic.IAsyncEnumerable<global::Interoper.Opt<global::GoldenSlice.Async.GlowOptionsGlow>> WatchGlowStreamAsync(global::Interoper.JsScope scope, global::System.Threading.CancellationToken cancellationToken = default) =>
+        scope.StreamAsync(Handle, "watch", "glow", static (ref r) => global::Interoper.JsJson.ReadOpt(ref r, global::GoldenSlice.Async.GlowOptionsGlow.Read), null, null, cancellationToken);
 
     public global::System.Threading.Tasks.Task<global::System.IAsyncDisposable> WatchEmphasizedAsync(global::Interoper.JsScope scope, global::System.Action<global::GoldenSlice.Async.Marker[]> handler) =>
         scope.SubscribeAsync(Handle, "watch", "emphasized", (ref r) => global::Interoper.JsJson.ReadArray(ref r, scope.Read<global::GoldenSlice.Async.Marker>), handler, null, null);
