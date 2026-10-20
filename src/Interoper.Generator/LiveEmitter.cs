@@ -113,7 +113,7 @@ internal sealed class LiveEmitter
         // An abstract entity class isn't abstract in C#: JS can hand back an instance whose class id is its own (an element's
         // class, by its tag; a subclass that keeps its runtime class name), so the registry makes it (design §3.2).
         var modifier = types.IsClosed(c) ? "closed " : types.HasSubclasses(c) ? "" : "sealed ";
-        taken.UnionWith([name, "Realm", "Handle", "Write", Mode("Snapshot"), Mode("Apply")]);
+        taken.UnionWith([name, "Realm", "Handle", "Write", .. c.Interface ? [] : new[] { Mode("Snapshot"), Mode("Apply") }]);
         if (!async)
         {
             Hide(c);
@@ -133,10 +133,15 @@ internal sealed class LiveEmitter
                 Expression($"public static {Declare(create, ["global::Interoper.JsScope", snapshotKey])}{type} {create}(global::Interoper.JsScope scope, {snapshot} props)", body, c.Constructors.FirstOrDefault()?.Doc);
             }
             Members(name, c);
-            // §5; a callback or a DOM element can't be read back (R21, R13).
-            foreach (var p in types.HasWatches(c) ? c.Members.OfType<PropertyMember>().Where(p => p.Type is not LiteralType && !types.IsCallback(p) && !types.IsElement(p)) : [])
+            // §5; a callback or a DOM element can't be read back (R21, R13), and a live interface's object comes as a copy (R15).
+            foreach (var p in types.HasWatches(c) ? c.Members.OfType<PropertyMember>().Where(p => p.Type is not LiteralType && !types.IsCallback(p) && !types.IsElement(p) &&
+                !types.HoldsInterface(p.Type)) : [])
             {
                 Subscription(name, "Watch" + Naming.Pascal(p.Name), profile.Watch!, p.Name, p.Type, $"{name}.watch:{p.Name}", p.Optional, isEvent: false);
+            }
+            if (c.Interface)
+            {
+                return; // R15: no snapshot
             }
             var (snapshotType, read) = Run("Realm", "global::Interoper.JsOp.Snapshot(Handle)", new(CsType.Record(new(ns, snapshot)), false), async);
             Expression($"public {Declare(Mode("Snapshot"), [])}{snapshotType} {Mode("Snapshot")}()", read);
@@ -201,7 +206,7 @@ internal sealed class LiveEmitter
             Expression($"public {Declare(setName, [set!.Key])}{elementType} {setName}({set.Name} value)", elementSetter, p.Doc);
             return;
         }
-        var (getType, getter) = Get(get, js, ByValue(p.Type));
+        var (getType, getter) = Get(get, js, ByValue(p.Type) + Live(p.Type));
         var (setType, setter) = set is null ? default : Set(set, js);
         if (async || get.Type.Scoped)
         {
@@ -262,11 +267,11 @@ internal sealed class LiveEmitter
         }
     }
 
-    private (string Type, string Body) Get(Value value, string js, string byValue)
+    private (string Type, string Body) Get(Value value, string js, string flags)
     {
         if (value.Opt || value.Type.Fast is not { } fast)
         {
-            return Run("Realm", $"global::Interoper.JsOp.Get(Handle, {js}{byValue})", value, async);
+            return Run("Realm", $"global::Interoper.JsOp.Get(Handle, {js}{flags})", value, async);
         }
         var call = $"Realm.Get{fast}{(async ? "Async" : "")}(Handle, {js})";
         return value.Type.Names is not { } names ? (async ? $"global::System.Threading.Tasks.Task<{value.Name}>" : value.Name, call)
@@ -308,7 +313,7 @@ internal sealed class LiveEmitter
             name = names.TryGetValue(name, out var claimed) ? claimed : names[name] = Claim(name, $"{owner}.{js}");
             var scoped = result?.Type.Scoped == true || callbacks.Count > 0;
             var cancellable = (async || promise) && signature.Params is not [.., { Rest: true }];
-            var op = $"global::Interoper.JsOp.Call({(self is null ? module : "Handle")}, {Syntax.Literal(export ?? js)}{args}{ByValue(returns)})";
+            var op = $"global::Interoper.JsOp.Call({(self is null ? module : "Handle")}, {Syntax.Literal(export ?? js)}{args}{ByValue(returns)}{Live(returns)})";
             var (type, body) = Run(self is not null ? "Realm" : scoped ? "scope.Realm" : "realm", op, result, async || promise, cancellable);
             var (first, firstType) = scoped ? ("global::Interoper.JsScope scope", "global::Interoper.JsScope") : self is null ? ("global::Interoper.JsRealm realm", "global::Interoper.JsRealm") : (null, null);
             var hides = Declare(name, (firstType is null ? keys : keys.Prepend(firstType)).Concat(cancellable ? [CancellationToken] : []));
@@ -383,6 +388,9 @@ internal sealed class LiveEmitter
 
     /// <summary>R16: a result that mentions a value-like class is read by value.</summary>
     private string ByValue(IrType type) => types.ByValue(type) ? ", byValue: true" : "";
+
+    /// <summary>R15: a result that can hold a live interface's object asks for plain objects with methods as handles.</summary>
+    private string Live(IrType type) => types.HoldsInterface(type) ? ", live: true" : "";
 
     /// <summary>
     /// The parameters (R22: an optional one is <c>= default</c>, undefined; a rest one is <c>params T[]</c>), their types

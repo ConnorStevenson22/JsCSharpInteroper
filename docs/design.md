@@ -19,7 +19,7 @@ Interoper turns a JavaScript library's TypeScript typings into C# bindings for B
 
 | Kind | What it is |
 |---|---|
-| Live objects | A class per JS class, wrapping a handle. The same JS object always maps to the same C# object, and you get the most-derived type (`shape is Polygon`). Created with `Create`/`CreateAsync` and owned by a `JsScope`. |
+| Live objects | A class per JS class and per interface with methods (R15), wrapping a handle. The same JS object always maps to the same C# object, and you get the most-derived type (`shape is Polygon`). Created with `Create`/`CreateAsync` and owned by a `JsScope`. |
 | Snapshots | `XSnapshot` records. One call reads every data member. The same record is the constructor input and, partly filled, a patch (R18). |
 | Value types | Enums, extensible enums, unions and `Opt<T>`, with generated JSON readers and writers. No reflection, so they are trim and AOT safe. |
 | Events and watches | Typed subscriptions per event, with JS-side options (R24). Async mode also gets `IAsyncEnumerable` streams. |
@@ -28,7 +28,7 @@ Interoper turns a JavaScript library's TypeScript typings into C# bindings for B
 | Custom events | `{Package}Events.cs`, the `[EventHandler]` attributes for the manifest's events (R28). |
 | JS metadata | One module, `{package}.meta.js`. For each class id it lists the module and export that construct it (`default` when left out), its runtime class name (a custom element's tag instead, since JS finds an element by its tag), whether it is value-like, and its snapshot members (none when left out). A variant (a class outside the selection that adds a mixin, [mapping §5](mapping.md#5-members)) lists only its runtime class name and `of`, the class whose entry it shares. There is no per-member generated JS. |
 
-Class ids start at 1 (0 means unknown): value-like classes first, then entities, each in IR order. A runtime class name is the declaring module's path within its package, dotted, plus the class name unless the file is named after it: `geometry.Point`, `MapView`, `layers.TileLayer`. The profile can add a prefix (`runtimeClassPrefix`).
+Class ids start at 1 (0 means unknown): value-like classes first, then entities, then live interfaces (R15), each in IR order. A live interface has no metadata entry, since JS never names its id. A runtime class name is the declaring module's path within its package, dotted, plus the class name unless the file is named after it: `geometry.Point`, `MapView`, `layers.TileLayer`. The profile can add a prefix (`runtimeClassPrefix`).
 
 The runtime also provides:
 
@@ -70,6 +70,7 @@ Batching, snapshots and module functions matter because every awaited call on Se
 
 - JS side: a `Map<id, object>` plus a `WeakMap<object, id>`, so one JS object always has one id. Every handle carries the object's class id.
 - .NET side: a weak cache per realm, so one id always gives the same C# object. A generated `JsClassRegistry` maps class ids to live types, which derive from `JsObject`. `JsScope.Wrap<T>(handle, classId)` returns the cached object or a new one of the most-derived registered type (R19). An unknown class id throws `JsException`.
+- Live interfaces (R15): a plain object's handle has class id 0, so its reader, `JsScope.Read<T>(ref reader, classId)`, passes the declared interface's id. The object is cached as that type. Read later where a derived interface is declared, it's wrapped again as that one, which the cache keeps from then on; the earlier C# object still works. A handle with a class id is read as R19 says.
 - Scopes: handles belong to a `JsScope`, and each component owns one. `Dispose` or `DisposeAsync` sends one `release` op for the handles no other scope owns, then drops the scope's callbacks. A result that arrives after its scope was disposed is released at once and the call throws `ObjectDisposedException`. On Server, a dropped circuit voids all handles.
 - Live objects hold their realm and handle, not a scope. A call's live results are owned by the scope the caller passes.
 - `JsScope.Callback` registers a delegate owned by the scope (R21). `JsScope.Subscribe`/`SubscribeAsync` registers an event listener, and `JsScope.StreamAsync` is the async-mode stream (R24).
@@ -111,9 +112,9 @@ Structured data is UTF-8 JSON. Undefined members are left out. Special values:
 | Op | Fields | Result |
 |---|---|---|
 | `create` | `t` class id, `args` | handle |
-| `get` | `h` or `module`, `name`, `byValue?` | value |
+| `get` | `h` or `module`, `name`, `byValue?`, `live?` | value |
 | `set` | `h` or `module`, `name`, `value` | none |
-| `call` | `h` or `module`, `name`, `args`, `byValue?` | value; a Promise is awaited |
+| `call` | `h` or `module`, `name`, `args`, `byValue?`, `live?` | value; a Promise is awaited |
 | `snapshot` | `h` | the snapshot members (R17) |
 | `apply` | `h`, `value` (a partial snapshot) | none |
 | `subscribe` | `h`, `method` (`on`, `watch`), `name`, `callback`, `options?` | a subscription handle |
@@ -122,8 +123,8 @@ Structured data is UTF-8 JSON. Undefined members are left out. Special values:
 | `wrap` | `value` | the value as a result (turns `$e` into a handle) |
 | `batch` | `ops` (only ops that return nothing) | none, or a `BatchError` listing failed ops |
 
-- Results send class instances as handles. With `byValue`, and always in callback arguments and snapshots, value-like instances go as `$c` data. Plain objects and arrays are copied.
-- A handle's `$t` is the class id of the object's runtime class name (R19). For a DOM element it is the class whose `tag` is the element's `localName`. A class with no runtime class name (a plain class, as an app's own module has) is known by its constructor once its module is loaded. When the metadata doesn't know the object's class, JS walks up the prototype chain to the nearest class it knows, so an object of an undeclared subclass gets its nearest declared ancestor. `$t` is 0 when no ancestor is known.
+- Results send class instances as handles. With `byValue`, and always in callback arguments and snapshots, value-like instances go as `$c` data. Plain objects and arrays are copied. With `live`, a plain object with a function-valued property goes as a handle with `$t` 0: a live interface's object (R15). Generated code sets it on a `get` or `call` whose result can hold one.
+- A handle's `$t` is the class id of the object's runtime class name (R19). For a DOM element it is the class whose `tag` is the element's `localName`. A class with no runtime class name (a plain class, as an app's own module has) is known by its constructor once its module is loaded. When the metadata doesn't know the object's class, JS walks up the prototype chain to the nearest class it knows, so an object of an undeclared subclass gets its nearest declared ancestor. `$t` is 0 when no ancestor is known, as for a plain object.
 - Every handle that reaches .NET is owned by .NET and must be released.
 - `subscribe` options wrap the listener in JS, so they apply in time even on Server (R24).
 - A result that can't be encoded (a `BigInt`, a cycle) becomes an error envelope.

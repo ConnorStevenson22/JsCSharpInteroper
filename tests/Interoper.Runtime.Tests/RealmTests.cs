@@ -38,6 +38,27 @@ public sealed class RealmTests
         Assert.IsType<Polygon>(await polygon.CloneAsync(scope)); // read through the base: the registry picks Polygon
     }
 
+    [Fact] // R15, R19, design §3.2: a plain object (class id 0) is its declared live interface, and a derived one's once read as that
+    public async Task APlainObjectIsItsDeclaredInterface()
+    {
+        var scope = new JsScope(await StartedRealm());
+        var view = await MapView.CreateAsync(scope, new());
+        var pan = await Tools.CreatePanToolAsync(scope, view);
+        Assert.Equal(typeof(Tool), pan.GetType());
+        Assert.Same(pan, Read<Tool>(pan.Handle, 0, DemoMaps.ToolId));
+        var measure = Read<MeasureTool>(pan.Handle, 0, DemoMaps.MeasureToolId); // re-wrapped as the derived one
+        Assert.Same(measure, Read<Tool>(pan.Handle, 0, DemoMaps.ToolId));
+        Assert.Same(view, Read<JsObject>(view.Handle, DemoMaps.MapViewId, DemoMaps.ToolId)); // an object of a known class is R19's
+        Assert.Throws<JsException>(() => Read<Tool>(view.Handle, DemoMaps.MapViewId, DemoMaps.ToolId));
+
+        T Read<T>(int handle, int classId, int declared) where T : JsObject
+        {
+            var reader = new System.Text.Json.Utf8JsonReader(System.Text.Encoding.UTF8.GetBytes($$"""{"$h":{{handle}},"$t":{{classId}}}"""));
+            reader.Read();
+            return scope.Read<T>(ref reader, declared);
+        }
+    }
+
     [Fact]
     public async Task ACancelledCallStopsWaitingWhileJsFinishesIt() // §5
     {

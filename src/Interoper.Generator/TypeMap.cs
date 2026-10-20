@@ -225,7 +225,7 @@ internal sealed class TypeMap
             else if (MakesType(d) && (d is not AliasDeclaration { Type: not ObjectType } alias || Kept(alias.Type).Count > 1))
             {
                 taken.Add(Name(d));
-                if (d is ClassDeclaration c)
+                if (d is ClassDeclaration { Interface: false } c)
                 {
                     taken.Add(Snapshot(c));
                 }
@@ -354,11 +354,11 @@ internal sealed class TypeMap
     public CsType Self(ClassDeclaration c) => CsType.Live(Name(c), [.. c.TypeParameters.Select(t => CsType.TypeParameter(t.Name))]);
 
     /// <summary>
-    /// Whether a class gets <c>Create</c> (R18): it isn't abstract, it can be imported (<see cref="Import"/>), and its
+    /// Whether a class gets <c>Create</c> (R18): it isn't abstract or an interface (R15), it can be imported (<see cref="Import"/>), and its
     /// constructor takes nothing or a bag (an object type or a record), whose members its snapshot carries.
     /// </summary>
     public bool Constructible(ClassDeclaration c) =>
-        !c.Abstract && Import(c) is not null && (c.Constructors.Count == 0 || c.Constructors.Any(s => s.Params.Count == 0 || IsBag(s.Params[0].Type)));
+        !c.Abstract && !c.Interface && Import(c) is not null && (c.Constructors.Count == 0 || c.Constructors.Any(s => s.Params.Count == 0 || IsBag(s.Params[0].Type)));
 
     private bool IsBag(IrType type) => Values(type) is [var bag] &&
         (bag is ObjectType || bag is RefType r && Find(r) is InterfaceDeclaration or AliasDeclaration { Type: ObjectType });
@@ -493,11 +493,37 @@ internal sealed class TypeMap
     /// <summary>Whether a result mentions a value-like class, so it's read by value (R16, design §3.4 <c>byValue</c>).</summary>
     public bool ByValue(IrType type) => Mentions(type, IsValueLike);
 
+    /// <summary>
+    /// R15: whether a value of the type can hold a live interface's object, directly or in a record, which JS sends as a
+    /// handle only when asked to (design §3.4 <c>live</c>).
+    /// </summary>
+    public bool HoldsInterface(IrType type) => HoldsInterface(type, new(ReferenceEqualityComparer.Instance));
+
+    private bool HoldsInterface(IrType type, HashSet<Declaration> seen) => type switch
+    {
+        RefType { Module: not null } r when Find(r) is { } d => d switch
+        {
+            ClassDeclaration c => c.Interface && classes.Contains(c),
+            AliasDeclaration { Type: not ObjectType } a => HoldsInterface(a.Type, seen),
+            _ => seen.Add(d) && RecordMembers(d).Any(p => HoldsInterface(p.Type, seen)),
+        },
+        ObjectType o => o.Members.OfType<PropertyMember>().Any(p => HoldsInterface(p.Type, seen)),
+        _ => Selection.Children(type).Any(t => HoldsInterface(t, seen)),
+    };
+
+    /// <summary>
+    /// R15: a live interface's object where JS sends values without being asked for handles (a callback's argument, an
+    /// event's payload, a watched value) arrives as a copy, so it isn't mapped there yet.
+    /// </summary>
+    public Unmappable? ByValueProblem(IrType type) =>
+        HoldsInterface(type) ? new("a live interface's object where JS sends a copy (R15)") : null;
+
     private CsType Named(Declaration declaration, IReadOnlyList<IrType> args, TypeName owner) => declaration switch
     {
         InterfaceDeclaration or AliasDeclaration { Type: ObjectType } =>
             CsType.Record(Name(declaration), [.. args.Select(a => Map(a, owner))], IsScoped(declaration)), // R17
         ClassDeclaration c when IsValueLike(c) => CsType.Record(Snapshot(c)), // R16
+        ClassDeclaration { Interface: true } c => CsType.Live(Name(c), classId: $"{new TypeName(root, Registry).FullName}.{ids[c]}"), // R15
         ClassDeclaration c => CsType.Live(Name(c), [.. args.Select(a => Map(a, owner))]),
         EnumDeclaration e => TypeOf(Enum(e)),
         AliasDeclaration a when Union(Name(a), a.Type) is { } union => TypeOf(union),
@@ -1029,7 +1055,7 @@ internal sealed class TypeMap
         f.TypeParameters.Count > 0 ? new("a generic callback (R21)")
         : f.Params.Count > MaxCallbackParameters ? new($"a callback with more than {MaxCallbackParameters} parameters (R21)")
         : f.Params.Any(p => p.Rest) ? new("a callback with a rest parameter (R21)")
-        : f.Params.Select(p => Problem(p.Type, Position.Data)).FirstOrDefault(p => p is not null)
+        : f.Params.Select(p => Problem(p.Type, Position.Data) ?? ByValueProblem(p.Type)).FirstOrDefault(p => p is not null)
             ?? f.Returns switch
             {
                 PrimitiveType { Name: "void" or "undefined" } => null,
@@ -1088,9 +1114,9 @@ internal sealed class TypeMap
         : args.Any(a => !IsEntity(a)) ? new($"`{name}` of a type that isn't an entity (§2)")
         : args.Select(a => MapProblem(a)).FirstOrDefault(p => p is not null);
 
-    /// <summary>A live object as data: an entity class, or a type parameter, which is one (mapping §2).</summary>
+    /// <summary>A live object as data: an entity class, or a type parameter, which is one (mapping §2); not a live interface (R15).</summary>
     private bool IsEntity(IrType type) =>
-        type is TypeParameterType || type is RefType { Module: not null } r && Find(r) is ClassDeclaration c && !IsValueLike(c);
+        type is TypeParameterType || type is RefType { Module: not null } r && Find(r) is ClassDeclaration { Interface: false } c && !IsValueLike(c);
 
     /// <summary>
     /// What <see cref="Union"/> and the union reader (R19) refuse: a literal next to other types, a value-type case (R2
@@ -1217,7 +1243,8 @@ internal sealed class TypeMap
     /// which is written (R13), and a union only written (<see cref="IsWrittenMember"/>).
     /// </summary>
     private Unmappable? MemberProblem(PropertyMember p) =>
-        p.Static || p.Type is LiteralType ? null : Problem(p.Type, ElementOf(p.Type) || IsWrittenMember(p) ? Position.Parameter : Position.Data);
+        p.Static || p.Type is LiteralType ? null
+        : Problem(p.Type, ElementOf(p.Type) || IsWrittenMember(p) ? Position.Parameter : Position.Data) ?? (payloadMembers.Contains(p) ? ByValueProblem(p.Type) : null);
 
     /// <summary>
     /// R2, R17: a data record's member typed with a union that has a case needing a scope to be read (an entity, or a

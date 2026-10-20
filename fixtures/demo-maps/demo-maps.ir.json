@@ -3710,6 +3710,192 @@
           ]
         }
       ]
+    },
+    {
+      "specifier": "@acme/demo-maps/tools.js",
+      "declarations": [
+        {
+          "kind": "interface",
+          "name": "Tool",
+          "doc": {
+            "summary": "A tool for a view. Its factory makes a plain object, so no class makes it (R15)."
+          },
+          "members": [
+            {
+              "kind": "property",
+              "name": "name",
+              "readonly": true,
+              "type": {
+                "kind": "primitive",
+                "name": "string"
+              }
+            },
+            {
+              "kind": "property",
+              "name": "active",
+              "readonly": true,
+              "type": {
+                "kind": "primitive",
+                "name": "boolean"
+              }
+            },
+            {
+              "kind": "method",
+              "name": "activate",
+              "signatures": [
+                {
+                  "returns": {
+                    "kind": "primitive",
+                    "name": "void"
+                  }
+                }
+              ]
+            },
+            {
+              "kind": "method",
+              "name": "deactivate",
+              "signatures": [
+                {
+                  "returns": {
+                    "kind": "primitive",
+                    "name": "void"
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "kind": "interface",
+          "name": "MeasureTool",
+          "doc": {
+            "summary": "A tool that reads the view's zoom: an interface that extends another (R15)."
+          },
+          "extends": [
+            {
+              "kind": "ref",
+              "name": "Tool",
+              "module": "@acme/demo-maps/tools.js"
+            }
+          ],
+          "members": [
+            {
+              "kind": "property",
+              "name": "readings",
+              "doc": {
+                "summary": "How many readings since the last `clear()`."
+              },
+              "readonly": true,
+              "type": {
+                "kind": "primitive",
+                "name": "number"
+              }
+            },
+            {
+              "kind": "method",
+              "name": "measure",
+              "signatures": [
+                {
+                  "returns": {
+                    "kind": "primitive",
+                    "name": "number"
+                  },
+                  "doc": {
+                    "summary": "The view's zoom now."
+                  }
+                }
+              ]
+            },
+            {
+              "kind": "method",
+              "name": "clear",
+              "signatures": [
+                {
+                  "returns": {
+                    "kind": "primitive",
+                    "name": "void"
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "kind": "function",
+          "name": "createPanTool",
+          "signatures": [
+            {
+              "params": [
+                {
+                  "name": "view",
+                  "type": {
+                    "kind": "ref",
+                    "name": "MapView",
+                    "module": "@acme/demo-maps/MapView.js"
+                  }
+                }
+              ],
+              "returns": {
+                "kind": "ref",
+                "name": "Tool",
+                "module": "@acme/demo-maps/tools.js"
+              }
+            }
+          ]
+        },
+        {
+          "kind": "function",
+          "name": "createMeasureTool",
+          "signatures": [
+            {
+              "params": [
+                {
+                  "name": "view",
+                  "type": {
+                    "kind": "ref",
+                    "name": "MapView",
+                    "module": "@acme/demo-maps/MapView.js"
+                  }
+                }
+              ],
+              "returns": {
+                "kind": "ref",
+                "name": "MeasureTool",
+                "module": "@acme/demo-maps/tools.js"
+              }
+            }
+          ]
+        },
+        {
+          "kind": "function",
+          "name": "toolsOf",
+          "signatures": [
+            {
+              "params": [
+                {
+                  "name": "view",
+                  "type": {
+                    "kind": "ref",
+                    "name": "MapView",
+                    "module": "@acme/demo-maps/MapView.js"
+                  }
+                }
+              ],
+              "returns": {
+                "kind": "array",
+                "element": {
+                  "kind": "ref",
+                  "name": "Tool",
+                  "module": "@acme/demo-maps/tools.js"
+                }
+              },
+              "doc": {
+                "summary": "The tools made for the view, in order, as `Tool`s."
+              }
+            }
+          ]
+        }
+      ]
     }
   ],
   "elements": [

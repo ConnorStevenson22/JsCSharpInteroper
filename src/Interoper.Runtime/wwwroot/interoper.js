@@ -181,9 +181,9 @@ const ops = {
     const entry = classEntry(op.t);
     return withModule(entry.module, (m) => toWire(new m[entry.export](...(op.args ?? []))));
   },
-  get: (op) => withTarget(op, (o) => toWire(o[op.name], op.byValue)),
+  get: (op) => withTarget(op, (o) => toWire(o[op.name], op.byValue, op.live)),
   set: (op) => withTarget(op, (o) => { o[op.name] = op.value; }),
-  call: (op) => withTarget(op, (o) => then(o[op.name](...(op.args ?? [])), (r) => toWire(r, op.byValue))),
+  call: (op) => withTarget(op, (o) => then(o[op.name](...(op.args ?? [])), (r) => toWire(r, op.byValue, op.live))),
   snapshot: (op) => toData(target(op.h)),
   apply: (op) => { const o = target(op.h); for (const [k, v] of Object.entries(op.value)) o[k] = v; },
   subscribe: (op) => {
@@ -392,14 +392,17 @@ function callback(id) {
 }
 
 // A JS value in wire form. Plain objects and arrays are copied; other objects become handles, or with
-// byValue, value-like class instances become `$c` data.
-function toWire(value, byValue = false) {
+// byValue, value-like class instances become `$c` data. With live, a plain object with a method is a handle too: a live
+// interface's object (R15), which no class the metadata knows has made.
+function toWire(value, byValue = false, live = false) {
   if (value === null || (typeof value !== "object" && typeof value !== "function")) return value;
-  if (Array.isArray(value)) return Array.from(value, (x) => wireItem(toWire(x, byValue)));
+  if (Array.isArray(value)) return Array.from(value, (x) => wireItem(toWire(x, byValue, live)));
   const proto = Object.getPrototypeOf(value);
   if (proto === Object.prototype || proto === null) {
+    const entries = Object.entries(value);
+    if (live && entries.some(([, x]) => typeof x === "function")) return { $h: handleOf(value), $t: 0 };
     const out = {};
-    for (const [k, x] of Object.entries(value)) if (x !== undefined) out[k] = toWire(x, byValue);
+    for (const [k, x] of entries) if (x !== undefined) out[k] = toWire(x, byValue, live);
     return out;
   }
   const classId = classIdOf(value);

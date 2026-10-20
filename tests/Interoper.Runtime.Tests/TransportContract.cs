@@ -70,7 +70,7 @@ public static class TransportContract
 {
     // Class ids from the demo-maps metadata (tests/GoldenSlice/wwwroot/demo-maps.meta.js).
     public const int Shape = 1, Point = 2, MapView = 5, Marker = 6;
-    public const string Measure = "@acme/demo-maps/measure.js";
+    public const string Measure = "@acme/demo-maps/measure.js", Tools = "@acme/demo-maps/tools.js";
 
     public static readonly IReadOnlyList<(string Name, Func<Seam, Task> Run)> Cases =
     [
@@ -82,6 +82,7 @@ public static class TransportContract
         ("$f callback that re-enters the seam (R21)", ReentrantCallback),
         ("$f callback whose handler throws (R21)", ThrowingCallback),
         ("module function call", ModuleCall),
+        ("live: a plain object with a method comes back as a handle with class id 0 (R15)", LivePlainObject),
         ("subscribe and release (R24)", Subscribe),
         ("subscribe with options: JS calls the event's methods, then sends only the fields (R24)", SubscribeWithOptions),
         ("errors become JsException", Errors),
@@ -227,6 +228,23 @@ public static class TransportContract
     {
         var distance = $$"""{"op":"call","module":"{{Measure}}","name":"distance","args":[{"x":0,"y":0},{"x":3,"y":4}]}""";
         Equal("""{"v":5}""", await seam.Send(distance));
+    }
+
+    private static async Task LivePlainObject(Seam seam)
+    {
+        var baseline = await seam.Census();
+        var view = await Create(seam, MapView);
+        var tool = await Value(seam, $$$"""{"op":"call","module":"{{{Tools}}}","name":"createPanTool","args":[{"$h":{{{view}}}}],"live":true}""");
+        Equal(0, (int)tool!["$t"]!);
+        var h = (int)tool["$h"]!;
+        Equal("{}", await seam.Send($$"""{"op":"call","h":{{h}},"name":"activate","args":[]}"""));
+        Equal(true, await seam.GetBoolean(h, "active"));
+        Equal($$"""[{"$h":{{h}},"$t":0}]""", await Value(seam, $$$"""{"op":"call","module":"{{{Tools}}}","name":"toolsOf","args":[{"$h":{{{view}}}}],"live":true}"""));
+        // Without live, it's a copy: data, and its functions as handles (nothing asks for those).
+        var copy = await Value(seam, $$$"""{"op":"call","module":"{{{Tools}}}","name":"toolsOf","args":[{"$h":{{{view}}}}]}""");
+        Equal("pan", (string)copy![0]!["name"]!);
+        await Release(seam, [view, h, .. new[] { "activate", "deactivate" }.Select(f => (int)copy[0]![f]!["$h"]!)]);
+        Equal(baseline, await seam.Census());
     }
 
     private static async Task Subscribe(Seam seam)

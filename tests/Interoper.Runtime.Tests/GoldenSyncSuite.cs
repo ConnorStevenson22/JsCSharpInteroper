@@ -26,6 +26,7 @@ public static class GoldenSyncSuite
         ("module function over a union (R2, §5)", InScope(UnionModuleFunction)),
         ("a watch on every property, delivered then released (§5)", InScope(Watches)),
         ("base classes are live classes (R19)", InScope(Bases)),
+        ("a factory's plain object is its declared live interface, owned by the caller's scope (R15, R19)", InScope(LiveInterfaces)),
         ("a default export: create, a redeclared clone and the most-derived type (R4, R19, R26)", InScope(DefaultExport)),
         ("module function with a rest parameter (R22)", InScope(RestParameter)),
         ("module folders are namespaces (R27)", InScope(Namespaces)),
@@ -247,6 +248,28 @@ public static class GoldenSyncSuite
         Expect(Emitter.Create(scope, new EmitterSnapshot()) is Emitter and not MapView, "an Emitter to be just an Emitter");
         Expect(Observable.Create(scope, new ObservableSnapshot()).GetType() == typeof(Observable), "an Observable to be just an Observable");
         Expect(Point.Create(scope, new PointSnapshot()) is Observable, "a Point to be an Observable");
+    }
+
+    private static void LiveInterfaces(JsScope scope)
+    {
+        var view = MapView.Create(scope, new MapViewSnapshot { Zoom = 4 });
+        var pan = Tools.CreatePanTool(scope, view);
+        var measure = Tools.CreateMeasureTool(scope, view);
+        Equal("pan", pan.Name);
+        pan.Activate();
+        Expect(pan.Active, "the tool to be active");
+        Equal(4.0, measure.Measure());
+        Equal(1.0, measure.Readings);
+        measure.Clear();
+        Equal(0.0, measure.Readings);
+        using (var other = new JsScope(scope.Realm))
+        {
+            // Read as Tools: the same C# objects, each of the type it was first read as.
+            var tools = Tools.ToolsOf(other, view);
+            Expect(tools.Length == 2 && ReferenceEquals(tools[0], pan) && ReferenceEquals(tools[1], measure), "one JS object to be one C# object");
+        }
+        measure.Deactivate(); // the other scope's release left it to this one
+        Expect(!measure.Active, "the measure tool to be inactive");
     }
 
     private static void DefaultExport(JsScope scope)

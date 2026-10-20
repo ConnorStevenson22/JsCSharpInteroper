@@ -74,6 +74,7 @@ A union that is only written (a parameter, or a setter's wider type) may have ca
 | class | live class | §3 |
 | value-like class (per profile) | live class plus `XSnapshot` record | §3 |
 | interface with only data members | data record with the same name | §3 |
+| interface with methods | live class with the same name | R15 |
 | inline object type, including an intersection of data bags | data record named after its owner | **R11** |
 | class extending a mixin's base (`PinBase: typeof Marker & typeof Draggable`) | derives from the named class (`Pin : Marker`), with the mixin's members as its own, and implements each exported mixin's interface (§5) | [ir.md](ir.md#declarations) |
 | generic `T` | generic over entities (`where T : JsObject`), or its constraint | See Generics below |
@@ -116,7 +117,9 @@ The central decision for every class and interface.
 **R15. Default classification.**
 
 - A `class` is an entity: a live object with identity, behind a handle.
-- An interface whose members are all data is a data record. So is an interface an event names as its payload, minus its methods (R24). Any other interface with methods isn't mapped yet (IOP2007).
+- An interface whose members are all data is a data record. So is an interface an event names as its payload, and its bases, minus their methods (R24).
+- An interface with a method, its own or an interface base's, is a live class: its objects can't be copied, such as the plain object a factory returns (`createPopup(view): Control`). It has no `Create` and no snapshot (R18). Its first such base is its base class (`LayerControl : Control`), and the other bases' members are its own. JS gives a plain object class id 0, so it's read as the type its position declares (R19 step 1). Not one that extends a class, a callable one, or a generic one (§2), which aren't mapped yet (IOP2007).
+- A live interface is emitted like a data type: one outside `include` is emitted when an emitted member names it. It isn't a type argument (`Collection<Control>`), and where JS sends values by copy (a callback's argument, an event payload, a watch) it isn't mapped yet (IOP2007); a payload record drops such a member.
 - A data record's optional member that can't be mapped is left out (IOP2007), so the record still maps. A required one skips the record and its users.
 - An interface's iterator methods (`values()` returning `Iterator` and kin) are left out (IOP2007). Symbol-keyed members never reach the IR.
 
@@ -133,7 +136,7 @@ Sent to JS, a value-like snapshot arrives as an instance. The writer adds its cl
 
 A data record (not a snapshot) may hold entities, directly, in arrays or through a type parameter. Only emitted classes count: a member typed with a class outside the selection is dropped or skipped (R2), so it makes nothing scoped. Such a record is *scoped*: its reader is `Read(ref reader, JsScope scope)`, so whatever returns it takes a scope (§5). Union readers take no scope, so only a write-only union can have an entity or scoped record case (R2).
 
-**R18. Every live class has an `XSnapshot` record.** It holds the class's writable data members, all optional, typed as the getter where getter and setter differ. One type serves as:
+**R18. Every live class has an `XSnapshot` record**, except a live interface (R15). It holds the class's writable data members, all optional, typed as the getter where getter and setter differ. One type serves as:
 
 - what `Snapshot()` / `SnapshotAsync()` returns;
 - the constructor input for `Create` / `CreateAsync`;
@@ -157,7 +160,7 @@ When JS returns a value for a union position, the runtime must pick the case.
 
 **R19. Classification order:**
 
-1. **Handle with a class id** (`{"$h": 12, "$t": 7}`). The generated registry maps the id to the most-derived live type, and the case is the one that type converts to. An object whose class isn't in the metadata (undeclared, or outside the selection) gets the id of its nearest known ancestor: the runtime walks up the prototype chain, reading at each level the class-name property, or else the prototype's own `constructor` when it is a loaded module's export. So a plain class with no class-name property, as an app's own module has, is still known. A variant (§5) is known too, so an unselected class that adds a mixin reads as its nearest emitted ancestor with the mixin's interface. With none, the id is 0, and reading it as an entity throws.
+1. **Handle with a class id** (`{"$h": 12, "$t": 7}`). The generated registry maps the id to the most-derived live type, and the case is the one that type converts to. An object whose class isn't in the metadata (undeclared, or outside the selection) gets the id of its nearest known ancestor: the runtime walks up the prototype chain, reading at each level the class-name property, or else the prototype's own `constructor` when it is a loaded module's export. So a plain class with no class-name property, as an app's own module has, is still known. A variant (§5) is known too, so an unselected class that adds a mixin reads as its nearest emitted ancestor with the mixin's interface. With none, the id is 0, and reading it as an entity throws, unless a live interface is declared there (R15): then it's that interface ([design §3.2](design.md#32-handles-identity-and-lifetime)).
 2. **Object with a discriminant.** The extractor finds a property every member declares with a distinct literal type (`type: "point"`), intersections (`Props & { type: "heat" }`) included. The generator switches on its value. A nullable union that holds one union (`(A | B) | null`) uses that union's.
 3. **Object without a discriminant.** If the sets of *required* member names separate the cases, the generator emits a structural check. Otherwise the union is ambiguous and is skipped (IOP2003). Optional members don't count, because typings make most of them optional.
 4. **Primitives** by JSON token kind. Two cases with the same kind (`string` and a string enum) are told apart by value where possible, otherwise IOP2003.

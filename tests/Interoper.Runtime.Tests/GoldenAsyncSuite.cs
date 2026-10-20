@@ -29,6 +29,7 @@ public static class GoldenAsyncSuite
         ("module function over a union (R2, §5)", InScope(UnionModuleFunction)),
         ("a watch on every property, delivered then released (§5)", InScope(Watches)),
         ("base classes are live classes (R19)", InScope(Bases)),
+        ("a factory's plain object is its declared live interface, owned by the caller's scope (R15, R19)", InScope(LiveInterfaces)),
         ("a default export: create, a redeclared clone and the most-derived type (R4, R19, R26)", InScope(DefaultExport)),
         ("module function with a rest parameter (R22)", InScope(RestParameter)),
         ("module folders are namespaces (R27)", InScope(Namespaces)),
@@ -409,6 +410,28 @@ public static class GoldenAsyncSuite
         Expect(await Emitter.CreateAsync(scope, new EmitterSnapshot()) is Emitter and not MapView, "an Emitter to be just an Emitter");
         Expect((await Observable.CreateAsync(scope, new ObservableSnapshot())).GetType() == typeof(Observable), "an Observable to be just an Observable");
         Expect(await Point.CreateAsync(scope, new PointSnapshot()) is Observable, "a Point to be an Observable");
+    }
+
+    private static async Task LiveInterfaces(JsScope scope)
+    {
+        var view = await MapView.CreateAsync(scope, new MapViewSnapshot { Zoom = 4 });
+        var pan = await Tools.CreatePanToolAsync(scope, view);
+        var measure = await Tools.CreateMeasureToolAsync(scope, view);
+        Equal("pan", await pan.GetNameAsync());
+        await pan.ActivateAsync();
+        Expect(await pan.GetActiveAsync(), "the tool to be active");
+        Equal(4.0, await measure.MeasureAsync());
+        Equal(1.0, await measure.GetReadingsAsync());
+        await measure.ClearAsync();
+        Equal(0.0, await measure.GetReadingsAsync());
+        await using (var other = new JsScope(scope.Realm))
+        {
+            // Read as Tools: the same C# objects, each of the type it was first read as.
+            var tools = await Tools.ToolsOfAsync(other, view);
+            Expect(tools.Length == 2 && ReferenceEquals(tools[0], pan) && ReferenceEquals(tools[1], measure), "one JS object to be one C# object");
+        }
+        await measure.DeactivateAsync(); // the other scope's release left it to this one
+        Expect(!await measure.GetActiveAsync(), "the measure tool to be inactive");
     }
 
     private static async Task DefaultExport(JsScope scope)

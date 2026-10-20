@@ -90,11 +90,21 @@ public sealed class Selection
         var included = Included();
         var roots = all.Where(x => included.Contains(x.Module) && !(x.Declaration is ClassDeclaration c && mixinClasses.Contains(c)))
             .Select(x => x.Declaration).ToHashSet(ReferenceEqualityComparer.Instance);
-        foreach (var c in roots.OfType<ClassDeclaration>().ToList())
+        // The bases of emitted classes, and R15: the live interfaces that their types name, through data types and other
+        // live interfaces, as the data types they use are emitted.
+        var reached = new HashSet<Declaration>(roots.Cast<Declaration>(), ReferenceEqualityComparer.Instance);
+        var pending = new Stack<Declaration>(reached);
+        while (pending.TryPop(out var d))
         {
-            for (var b = Base(c); b is not null; b = Base(b))
+            var next = d is ClassDeclaration c ? MixinsOf(c).Concat(roots.Contains(c) && Base(c) is { } b && roots.Add(b) ? [b] : []) : [];
+            var used = Types(d).SelectMany(Refs).Select(Find).OfType<Declaration>().Where(n => n is not ClassDeclaration { Interface: false });
+            foreach (var n in next.Concat(used).Where(reached.Add))
             {
-                roots.Add(b);
+                if (n is ClassDeclaration { Interface: true })
+                {
+                    roots.Add(n);
+                }
+                pending.Push(n);
             }
         }
         classes.UnionWith(roots.OfType<ClassDeclaration>().Where(c => c.TypeParameters.Count == 0 || profile.Collections.Contains(c.Name)));
@@ -251,7 +261,7 @@ public sealed class Selection
     private void AddClass(ClassDeclaration c)
     {
         typeParameters = c.TypeParameters;
-        if (!c.Abstract && !types.Constructible(c))
+        if (!c.Abstract && !c.Interface && !types.Constructible(c))
         {
             Report(new(Diagnostic.NotSupported, $"{c.Name}.constructor", types.Import(c) is not null
                 ? "skipped: its parameter isn't a bag, so there's no Create (R18)"
@@ -322,7 +332,7 @@ public sealed class Selection
                 events.Add(e); // R24: no payload, so a parameterless handler
                 continue;
             }
-            if ((Problem(e.Type) ?? types.Problem(e.Type, Position.Member)) is { } problem)
+            if ((Problem(e.Type) ?? types.Problem(e.Type, Position.Member) ?? types.ByValueProblem(e.Type)) is { } problem)
             {
                 Skip($"{c.Name}.on:{e.Name}", problem);
                 continue;
@@ -381,18 +391,7 @@ public sealed class Selection
     /// </summary>
     private HashSet<ClassDeclaration> Named()
     {
-        static IEnumerable<IrType> Types(Member m) => m switch
-        {
-            PropertyMember p => p.WriteType is { } w ? [p.Type, w] : [p.Type],
-            MethodMember method => method.Signatures.SelectMany(s => s.Params.Select(p => p.Type).Concat(s.Returns is { } r ? [r] : [])),
-            _ => [],
-        };
-        var types = new Stack<IrType>(selected.Values.Concat(mixins.Values).Select(s => s.Declaration).SelectMany(d => d switch
-        {
-            ClassDeclaration c => c.Members.SelectMany(Types).Concat(c.Events.Select(e => e.Type)),
-            FunctionDeclaration f => f.Signatures.SelectMany(s => s.Params.Select(p => p.Type).Concat(s.Returns is { } r ? [r] : [])),
-            _ => Parts(d),
-        }));
+        var types = new Stack<IrType>(selected.Values.Concat(mixins.Values).Select(s => s.Declaration).SelectMany(Types));
         var seen = new HashSet<IrType>();
         var result = new HashSet<ClassDeclaration>(ReferenceEqualityComparer.Instance);
         while (types.TryPop(out var type))
@@ -514,7 +513,7 @@ public sealed class Selection
         {
             var subject = $"<{element.Tag}> on:{e.Name}";
             var detail = e.Detail is { } d && Flatten(d).Any(t => !IsNullish(t) && t is not PrimitiveType { Name: "void" }) ? d : null;
-            if (detail is not null && (Problem(detail) ?? types.Problem(detail, Position.Member)) is { } problem)
+            if (detail is not null && (Problem(detail) ?? types.Problem(detail, Position.Member) ?? types.ByValueProblem(detail)) is { } problem)
             {
                 Skip(subject, problem);
                 continue;
@@ -671,7 +670,7 @@ public sealed class Selection
     /// An iterator method (<c>values(): IterableIterator&lt;T&gt;</c>, <c>[Symbol.iterator]()</c>), which iterators aren't
     /// mapped for: it's left out of an interface (IOP2007), so the interface can still be a data record (R15).
     /// </summary>
-    private static bool IsIterator(Member member) =>
+    internal static bool IsIterator(Member member) =>
         member is MethodMember { Signatures.Count: > 0 } method && method.Signatures.All(s => s.Returns is RefType
         {
             Module: null,
@@ -942,6 +941,25 @@ public sealed class Selection
     }
 
     private Declaration? Find(RefType type) => byName.GetValueOrDefault((type.Module!, type.Name));
+
+    /// <summary>The types a declaration's members, events, signatures or parts have.</summary>
+    private static IEnumerable<IrType> Types(Declaration declaration) => declaration switch
+    {
+        ClassDeclaration c => c.Members.SelectMany(m => m switch
+        {
+            PropertyMember p => p.WriteType is { } w ? [p.Type, w] : [p.Type],
+            MethodMember method => method.Signatures.SelectMany(Types),
+            _ => [],
+        }).Concat(c.Events.Select(e => e.Type)),
+        FunctionDeclaration f => f.Signatures.SelectMany(Types),
+        _ => Parts(declaration),
+    };
+
+    private static IEnumerable<IrType> Types(Signature s) => s.Params.Select(p => p.Type).Concat(s.Returns is { } r ? [r] : []);
+
+    /// <summary>The named types a type names, at any depth.</summary>
+    private static IEnumerable<RefType> Refs(IrType type) =>
+        Children(type).SelectMany(Refs).Concat(type is RefType { Module: not null } r ? [r] : []);
 
     /// <summary>The types a data type is made of.</summary>
     private static IEnumerable<IrType> Parts(Declaration declaration) => declaration switch

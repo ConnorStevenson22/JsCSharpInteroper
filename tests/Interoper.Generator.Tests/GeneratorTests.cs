@@ -1757,6 +1757,115 @@ public sealed class GeneratorTests
         Assert.Contains("public new global::System.IDisposable OnChange(", File(result, "Route.cs"));
     }
 
+    [Fact] // R15, R19: an interface with methods is a live class, its first such base its base class; one with data only is a record
+    public void AnInterfaceWithMethodsIsALiveClass()
+    {
+        var result = Generate(Api.Sync, ("controls.js", $$"""
+            { "kind": "interface", "name": "Settings", "members": [{ "kind": "property", "name": "zoom", "type": {{Number}} }] },
+            { "kind": "interface", "name": "Disposable", "members": [{ "kind": "method", "name": "dispose", "signatures": [{ "returns": {{Void}} }] }] },
+            { "kind": "interface", "name": "Control", "extends": [{{Ref("Disposable")}}], "members": [
+              { "kind": "method", "name": "applySettings", "signatures": [{ "params": [{ "name": "settings", "type": {{Ref("Settings")}} }], "returns": {{Void}} }] }] },
+            { "kind": "interface", "name": "LayerControl", "extends": [{{Ref("Control")}}, {{Ref("Settings")}}], "members": [
+              { "kind": "method", "name": "refresh", "signatures": [{ "returns": {{Void}} }] }] },
+            { "kind": "interface", "name": "Names", "members": [{ "kind": "property", "name": "count", "type": {{Number}} },
+              { "kind": "method", "name": "values", "signatures": [{ "returns": { "kind": "ref", "name": "IterableIterator", "args": [{{String}}] } }] }] }
+            """), ("factories.js", $$"""
+            { "kind": "function", "name": "createControl", "signatures": [{ "returns": {{Ref("Control")}} }] },
+            { "kind": "function", "name": "all", "signatures": [{ "returns": { "kind": "array", "element": {{Ref("Control")}} } }] },
+            { "kind": "function", "name": "count", "signatures": [{ "params": [{ "name": "names", "type": {{Ref("Names")}} }], "returns": {{Number}} }] }
+            """), ("view.js", """{ "kind": "class", "name": "View" }"""));
+        Assert.Contains("public partial class Disposable : global::Interoper.JsObject", File(result, "Disposable.cs"));
+        Assert.Contains("public partial class Control : Disposable", File(result, "Control.cs"));
+        var layerControl = File(result, "LayerControl.cs");
+        Assert.Contains("public sealed partial class LayerControl : Control", layerControl);
+        Assert.Contains("get => Realm.GetNumber(Handle, \"zoom\");", layerControl); // Settings' member is its own
+        Assert.Contains("public void Refresh() => Realm.Send(global::Interoper.JsOp.Call(Handle, \"refresh\"));", layerControl);
+        Assert.DoesNotContain("Create", layerControl);
+        Assert.DoesNotContain("Snapshot", layerControl);
+        Assert.DoesNotContain(result.Files, f => f.Path.EndsWith("ControlSnapshot.cs", StringComparison.Ordinal));
+        Assert.Contains("public required double Zoom { get; init; }", File(result, "Settings.cs"));
+        Assert.Contains("public required double Count { get; init; }", File(result, "Names.cs")); // iterator methods aside, data
+
+        // R19: a plain object's handle has class id 0, so the reader passes the declared interface's; JS is asked for handles.
+        var controls = File(result, "Factories.cs");
+        Assert.Contains("global::Interoper.JsOp.Call(Module, \"createControl\", live: true), (ref r) => scope.Read<Control>(ref r, global::Acme.Maps.Maps.ControlId))", controls);
+        Assert.Contains("(ref r1) => scope.Read<Control>(ref r1, global::Acme.Maps.Maps.ControlId)", controls);
+        Assert.DoesNotContain("live: true", controls[controls.IndexOf("Count(", StringComparison.Ordinal)..]);
+
+        // Their ids follow the classes', and the metadata module has no entry for them: JS never names them.
+        var registry = File(result, "Maps.cs");
+        Assert.Contains("public const int ViewId = 1;\n    public const int DisposableId = 2;\n    public const int ControlId = 3;\n    public const int LayerControlId = 4;", registry);
+        Assert.Contains(".Add(LayerControlId, static (realm, handle) => new LayerControl(realm, handle))", registry);
+        Assert.DoesNotContain("controls.js", registry); // no class to preload
+        Assert.DoesNotContain("Control", File(result, "maps.meta.js"));
+        Assert.Equal("IOP2007 Names.values: skipped: uses `IterableIterator`", Assert.Single(result.Diagnostics).ToString());
+    }
+
+    [Fact] // R15, R21, R24: a live interface's object where JS sends copies (a callback's argument, a payload, a watch) isn't mapped
+    public void ALiveInterfaceIsNotSentByValue()
+    {
+        var result = Generate(new Profile { Package = "@acme/maps", Events = new(Subscribe: "on"), Watch = "watch" }, Api.Sync, ("a.js", $$"""
+            { "kind": "interface", "name": "Tool", "members": [{ "kind": "method", "name": "activate", "signatures": [{ "returns": {{Void}} }] }] },
+            { "kind": "interface", "name": "Picked", "members": [{ "kind": "property", "name": "x", "type": {{Number}} },
+              { "kind": "property", "name": "tool", "type": {{Ref("Tool", "a")}} },
+              { "kind": "method", "name": "stopPropagation", "signatures": [{ "returns": {{Void}} }] }] },
+            { "kind": "class", "name": "View", "members": [
+              { "kind": "property", "name": "tool", "type": {{Ref("Tool", "a")}} },
+              { "kind": "method", "name": "watch", "signatures": [{ "params": [{ "name": "name", "type": {{String}} }, { "name": "callback", "type": { "kind": "function", "params": [], "returns": {{Void}} } }], "returns": {{Void}} }] },
+              { "kind": "method", "name": "forEachTool", "signatures": [{ "params": [{ "name": "callback", "type": { "kind": "function", "params": [{ "name": "tool", "type": {{Ref("Tool", "a")}} }], "returns": {{Void}} } }], "returns": {{Void}} }] }],
+              "events": [{ "name": "pick", "type": {{Ref("Picked", "a")}} }] }
+            """));
+        var view = File(result, "View.cs");
+        Assert.Contains("Realm.Call(global::Interoper.JsOp.Get(Handle, \"tool\", live: true), (ref r) => scope.Read<Tool>(ref r, global::Acme.Maps.Maps.ToolId))!;", view);
+        Assert.Contains("OnPick(", view);
+        Assert.DoesNotContain("WatchTool", view);
+        Assert.Contains("public required double X { get; init; }", File(result, "Picked.cs"));
+        Assert.DoesNotContain("Tool", File(result, "Picked.cs"));
+        Assert.Equal(
+        [
+            "IOP2007 Picked.tool: skipped: uses a live interface's object where JS sends a copy (R15)",
+            "IOP2007 Picked.stopPropagation: skipped: a method of an event payload (R24)",
+            "IOP2007 View.forEachTool: skipped: uses a live interface's object where JS sends a copy (R15)",
+        ], result.Diagnostics.Select(d => d.ToString()));
+    }
+
+    [Fact] // R15: a live interface outside the selection is emitted where an emitted member uses it, as a data type is
+    public void ALiveInterfaceOutsideTheSelectionIsEmittedWhereItIsUsed()
+    {
+        var result = Generate(new Profile { Package = "@acme/maps", Include = ["@acme/maps/a.js"] }, Api.Sync,
+            ("core/Handles.js", $$"""
+                { "kind": "interface", "name": "ResourceHandle", "members": [{ "kind": "method", "name": "remove", "signatures": [{ "returns": {{Void}} }] }] },
+                { "kind": "interface", "name": "Unused", "members": [{ "kind": "method", "name": "remove", "signatures": [{ "returns": {{Void}} }] }] }
+                """),
+            ("a.js", $$"""{ "kind": "function", "name": "watchIt", "signatures": [{ "returns": { "kind": "ref", "name": "ResourceHandle", "module": "@acme/maps/core/Handles.js" } }] }"""));
+        Assert.Contains("public void Remove() => Realm.Send(global::Interoper.JsOp.Call(Handle, \"remove\"));", File(result, "Core/ResourceHandle.cs"));
+        Assert.DoesNotContain(result.Files, f => f.Path.Contains("Unused", StringComparison.Ordinal));
+        Assert.Empty(result.Diagnostics);
+    }
+
+    [Fact] // R15, §5: a mixin's members reach a live interface, but a mixin's base is not emitted
+    public void AMixinReachesALiveInterfaceButNotItsBase()
+    {
+        var handle = """{ "kind": "ref", "name": "ResourceHandle", "module": "@acme/maps/core/Handles.js" }""";
+        var result = Generate(new Profile { Package = "@acme/maps", Include = ["@acme/maps/layers/VectorLayer.js"] }, Api.Sync,
+            ("core/Handles.js", $$"""{ "kind": "interface", "name": "ResourceHandle", "members": [{ "kind": "method", "name": "remove", "signatures": [{ "returns": {{Void}} }] }] }"""),
+            ("layers/Layer.js", """{ "kind": "class", "name": "Layer" }"""),
+            ("layers/mixins/Origin.js", """{ "kind": "class", "name": "Origin", "abstract": true, "members": [{ "kind": "method", "name": "revert", "signatures": [{ "returns": { "kind": "primitive", "name": "void" } }] }] }"""),
+            ("layers/mixins/Watchable.js", $$"""
+                { "kind": "class", "name": "Watchable", "abstract": true, "extends": { "kind": "ref", "name": "Origin", "module": "@acme/maps/layers/mixins/Origin.js" },
+                  "members": [{ "kind": "method", "name": "watch", "signatures": [{ "returns": {{handle}} }] }] }
+                """),
+            ("layers/VectorLayer.js", $$"""
+                { "kind": "class", "name": "VectorLayer", "extends": { "kind": "ref", "name": "Layer", "module": "@acme/maps/layers/Layer.js" },
+                  "mixins": [{ "kind": "ref", "name": "Watchable", "module": "@acme/maps/layers/mixins/Watchable.js" }],
+                  "members": [{ "kind": "method", "name": "watch", "inherited": true, "signatures": [{ "returns": {{handle}} }] }] }
+                """));
+        Assert.Contains("public global::Acme.Maps.Core.ResourceHandle Watch(global::Interoper.JsScope scope) =>", File(result, "Layers/Mixins/IWatchable.cs"));
+        Assert.DoesNotContain(result.Files, f => f.Path.Contains("Origin", StringComparison.Ordinal));
+    }
+
+    private static string Ref(string name, string module = "controls") => $$"""{ "kind": "ref", "name": "{{name}}", "module": "@acme/maps/{{module}}.js" }""";
+
     private const string Void = """{ "kind": "primitive", "name": "void" }""";
     private const string X = """{ "kind": "property", "name": "x", "type": { "kind": "primitive", "name": "number" } }""";
     private const string Legs = """{ "kind": "property", "name": "legs", "optional": true, "type": { "kind": "tuple", "elements": [{ "kind": "primitive", "name": "number" }, { "kind": "primitive", "name": "string" }] } }""";

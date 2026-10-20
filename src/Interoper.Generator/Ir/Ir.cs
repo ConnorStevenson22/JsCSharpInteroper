@@ -76,6 +76,13 @@ public sealed record ClassDeclaration : Declaration
     public IReadOnlyList<Signature> Constructors { get; init; } = [];
     public IReadOnlyList<Member> Members { get; init; } = [];
     public IReadOnlyList<Event> Events { get; init; } = [];
+
+    /// <summary>
+    /// Not in the IR: an interface with methods, which the generator maps as a live class (R15).
+    /// Its objects are plain JS objects, so it has no constructor, runtime class name or snapshot.
+    /// </summary>
+    [JsonIgnore]
+    public bool Interface { get; init; }
 }
 
 public sealed record InterfaceDeclaration : Declaration

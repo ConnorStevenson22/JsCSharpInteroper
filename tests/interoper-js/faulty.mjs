@@ -58,3 +58,6 @@ class GlowMarker extends Marker {
   static className = "GlowMarker";
 }
 export const glowMarker = () => new GlowMarker();
+
+// Plain objects, some with methods, as a factory returns (R15).
+export const objects = () => ({ data: { x: 1 }, list: [{ y: 2 }, { go() { return 7; } }], tool: { name: "t", go() { return 7; } } });

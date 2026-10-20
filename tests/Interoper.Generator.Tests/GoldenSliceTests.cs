@@ -18,7 +18,6 @@ public sealed class GoldenSliceTests
     [
         (null, "IOP2007 FlyToOptions.signal: skipped: uses `AbortSignal`", "AbortSignal (R14) isn't bridged yet; the record drops the optional member"),
         (null, "IOP2007 MarkerOptions.labelFormatter: skipped: uses a callback that isn't a parameter (R21)", "a data record can't hold a callback (R21); the record drops the optional member"),
-        (null, "IOP2007 Subscription: skipped: uses method `dispose` (in `Subscription`)", "an interface with a method isn't a data record (R15)"),
         (null, "IOP2007 ChangeCallback: skipped: uses generic `ChangeCallback` (in `ChangeCallback`)", "a generic callback type has no C# type"),
         (null, "IOP2007 OneOrMany: skipped: uses generic `OneOrMany` (in `OneOrMany`)", "a generic union alias has no C# type; each use is its union (§2)"),
         (null, "IOP2007 Emitter.emit: skipped: uses type parameter `K`", "its payload depends on a type parameter"),

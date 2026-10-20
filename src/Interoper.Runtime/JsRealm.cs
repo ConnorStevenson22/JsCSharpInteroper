@@ -191,9 +191,10 @@ public sealed class JsRealm(Func<Task<IJsTransport>> start, JsClassRegistry clas
     /// <summary>
     /// The live object for a handle, now also owned by <paramref name="scope"/>: the cached one, or a new one of the
     /// class's most-derived type, or of the type <paramref name="create"/> makes (a generic one, which the registry
-    /// can't make).
+    /// can't make). A <paramref name="declared"/> class id is a live interface's, for a plain object (R15): it replaces a
+    /// cached object of a base interface.
     /// </summary>
-    internal JsObject Wrap(JsScope scope, int handle, int classId, Func<JsRealm, int, JsObject>? create = null)
+    internal JsObject Wrap(JsScope scope, int handle, int classId, Func<JsRealm, int, JsObject>? create = null, bool declared = false)
     {
         lock (objects)
         {
@@ -201,7 +202,17 @@ public sealed class JsRealm(Func<Task<IJsTransport>> start, JsClassRegistry clas
             var entry = Own(scope, handle);
             if (entry.Object?.TryGetTarget(out var live) == true)
             {
-                return live;
+                if (!declared)
+                {
+                    return live;
+                }
+                var derived = classes.Create(this, handle, classId);
+                if (!derived.GetType().IsSubclassOf(live.GetType()))
+                {
+                    return live;
+                }
+                entry.Object = new(derived);
+                return derived;
             }
             var created = create is null ? classes.Create(this, handle, classId) : create(this, handle);
             entry.Object = new(created);

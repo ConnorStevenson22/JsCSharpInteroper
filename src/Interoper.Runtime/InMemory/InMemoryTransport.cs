@@ -133,6 +133,7 @@ public sealed class InMemoryTransport : IJsSyncTransport, IJsTransport
     {
         string Name() => (string)op["name"]!;
         bool ByValue() => op.GetValueOrDefault("byValue") is true;
+        bool Live() => op.GetValueOrDefault("live") is true;
         object?[] Args() => op.GetValueOrDefault("args") is List<object?> args ? [.. args] : [];
         // An op targets a handle (`h`) or a module's exports (`module`).
         InMemoryObject Target() => op.GetValueOrDefault("module") is string module
@@ -144,13 +145,13 @@ public sealed class InMemoryTransport : IJsSyncTransport, IJsTransport
             case "create":
                 return Wire(ClassEntry(op.GetValueOrDefault("t") is double t ? (int)t : 0).Construct(Args()));
             case "get":
-                return Wire(Target().Get(Name()), ByValue());
+                return Wire(Target().Get(Name()), ByValue(), Live());
             case "set":
                 Target().Set(Name(), op.GetValueOrDefault("value", Undefined.Value));
                 return Undefined.Value;
             case "call":
                 var result = Target().Call(Name(), Args());
-                return result is Task promise ? Then(promise, ByValue()) : Wire(result, ByValue());
+                return result is Task promise ? Then(promise, ByValue(), Live()) : Wire(result, ByValue(), Live());
             case "snapshot":
                 return ToData(Target());
             case "apply":
@@ -176,10 +177,10 @@ public sealed class InMemoryTransport : IJsSyncTransport, IJsTransport
         }
     }
 
-    private async Task<object?> Then(Task promise, bool byValue)
+    private async Task<object?> Then(Task promise, bool byValue, bool live)
     {
         await promise;
-        return Wire(promise is Task<object?> withResult ? withResult.Result : Undefined.Value, byValue);
+        return Wire(promise is Task<object?> withResult ? withResult.Result : Undefined.Value, byValue, live);
     }
 
     // Runs ops that return nothing, in order, as runBatch does: a Promise is awaited before the next op, or under
@@ -325,8 +326,20 @@ public sealed class InMemoryTransport : IJsSyncTransport, IJsTransport
 
     private InMemoryObject Instance(object? handle) =>
         handle is double id && handles.TryGetValue((int)id, out var value)
-            ? value as InMemoryObject ?? throw InteroperError($"Handle {id} is not an in-memory object")
+            ? value as InMemoryObject ?? (value is Dictionary<string, object?> bag ? new PlainObject(bag) : throw InteroperError($"Handle {id} is not an in-memory object"))
             : throw InteroperError($"Unknown handle: {handle}");
+
+    // A plain object sent as a handle (R15): its members are its properties, and its functions its methods.
+    private sealed class PlainObject(Dictionary<string, object?> bag) : InMemoryObject
+    {
+        public override string ClassName => "Object";
+
+        public override object? Get(string name) => bag.GetValueOrDefault(name, Undefined.Value);
+
+        public override void Set(string name, object? value) => bag[name] = value;
+
+        public override object? Call(string name, object?[] args) => bag.GetValueOrDefault(name) is JsFunction method ? method(args) : base.Call(name, args);
+    }
 
     private int HandleOf(object value)
     {
@@ -394,16 +407,18 @@ public sealed class InMemoryTransport : IJsSyncTransport, IJsTransport
     };
 
     // A value in wire form: Undefined.Value, or a JsonNode (null for JS null). Plain objects and arrays are
-    // copied; other objects become handles, or with byValue, value-like instances become `$c` data.
-    private object? Wire(object? value, bool byValue = false) => value switch
+    // copied; other objects become handles, or with byValue, value-like instances become `$c` data. With live, a plain
+    // object with a function is a handle too (R15).
+    private object? Wire(object? value, bool byValue = false, bool live = false) => value switch
     {
         null => null,
         Undefined => Undefined.Value,
         double d => JsonValue.Create(d),
         string s => JsonValue.Create(s),
         bool b => JsonValue.Create(b),
-        List<object?> list => new JsonArray([.. list.Select(x => WireItem(Wire(x, byValue)))]),
-        Dictionary<string, object?> bag => WireObject(bag.Select(p => (p.Key, Wire(p.Value, byValue)))),
+        List<object?> list => new JsonArray([.. list.Select(x => WireItem(Wire(x, byValue, live)))]),
+        Dictionary<string, object?> bag when live && bag.Values.Any(v => v is JsFunction) => new JsonObject { ["$h"] = HandleOf(bag), ["$t"] = 0 },
+        Dictionary<string, object?> bag => WireObject(bag.Select(p => (p.Key, Wire(p.Value, byValue, live)))),
         InMemoryObject o when byValue && classes.TryGetValue(ClassIdOf(o), out var entry) && entry.Value => ToData(o),
         InMemoryObject o => new JsonObject { ["$h"] = HandleOf(o), ["$t"] = ClassIdOf(o) },
         JsFunction or Task => new JsonObject { ["$h"] = HandleOf(value), ["$t"] = 0 },

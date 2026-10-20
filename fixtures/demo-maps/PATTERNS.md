@@ -22,6 +22,7 @@ node --test "fixtures/demo-maps/test/*.test.mjs"
 | Member a subclass redeclares | R26 (`new`) | `TileLayer.clone(): TileLayer` over `Layer.clone(): Layer` |
 | Value-like classes (live class + snapshot) | R16–R18 | `Shape` and subclasses, via `profile.json` |
 | Class-typed positions need instances, not bags (`$c`) | R16, R20 | `MapView.center`, `Marker.position`, `MapView.flyTo` |
+| Factory returning a plain object typed by an interface; an interface extending another | R15, R19 | `createPanTool(view): Tool`, `createMeasureTool(view): MeasureTool` where `MeasureTool extends Tool`, `toolsOf(view): Tool[]` (`tools`); `Subscription { dispose() }` (`core`) |
 | Data records | R15, R20 | `Bounds` (`geometry`), `Rgba`, `FillStyle`, … (`styles`), `ClickEvent` (`MapView`) |
 | Properties, read-only properties | §5, R7 | `MapView.zoom`, `MapView.markers` |
 | Getter type ≠ setter type | §5, R27 | `Marker.position`: get `Point`, set `Point \| [number, number]` |

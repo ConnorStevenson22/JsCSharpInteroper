@@ -27,8 +27,9 @@ public static class Generator
     /// </summary>
     public static GeneratorResult Generate(IrDocument ir, Profile profile, GeneratorOptions options)
     {
-        // §2: a constrained type parameter is its constraint, and a generic union alias's uses are its unions.
-        ir = Instantiation.Instantiate(Instantiation.Erase(ir, profile.Collections));
+        // §2: a constrained type parameter is its constraint, and a generic union alias's uses are its unions. R15: an
+        // interface with methods is a live class.
+        ir = LiveInterfaces.Convert(Instantiation.Instantiate(Instantiation.Erase(ir, profile.Collections)));
         var selection = Selection.Select(ir, profile);
         var diagnostics = selection.Diagnostics.ToList();
         var types = new TypeMap(ir, profile, selection.Declarations, diagnostics, options.Namespace, selection.Payloads, selection);
@@ -71,7 +72,10 @@ public static class Generator
                     break;
                 case ClassDeclaration c:
                     Add(types.Name(c), LiveEmitter.Class(types, profile, options, diagnostics, declared, c));
-                    Add(types.Snapshot(c), RecordEmitter.Snapshot(types, c));
+                    if (!c.Interface)
+                    {
+                        Add(types.Snapshot(c), RecordEmitter.Snapshot(types, c));
+                    }
                     break;
             }
         }

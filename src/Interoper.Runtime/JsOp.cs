@@ -23,15 +23,13 @@ public static class JsOp
 
     /// <summary>
     /// Reads a member. With <paramref name="byValue"/>, a value-like instance comes back as <c>$c</c> data (R16);
-    /// without it, as a handle.
+    /// without it, as a handle. With <paramref name="live"/>, a plain object with a method comes back as a handle too, a
+    /// live interface's object (R15); without it, as a copy.
     /// </summary>
-    public static string Get(int handle, string name, bool byValue = false) => Write(w =>
+    public static string Get(int handle, string name, bool byValue = false, bool live = false) => Write(w =>
     {
         Target(w, "get"u8, handle, name);
-        if (byValue)
-        {
-            w.WriteBoolean("byValue"u8, true);
-        }
+        Flags(w, byValue, live);
     });
 
     public static string Set(int handle, string name, Action<Utf8JsonWriter> value) => Write(w =>
@@ -41,20 +39,25 @@ public static class JsOp
         value(w);
     });
 
-    /// <summary>Calls a method; <paramref name="args"/> writes the arguments in order (none when null).</summary>
-    public static string Call(int handle, string name, Action<Utf8JsonWriter>? args = null, bool byValue = false) => Write(w =>
+    /// <summary>
+    /// Calls a method; <paramref name="args"/> writes the arguments in order (none when null). The result is read as
+    /// <see cref="Get"/>'s.
+    /// </summary>
+    public static string Call(int handle, string name, Action<Utf8JsonWriter>? args = null, bool byValue = false, bool live = false) => Write(w =>
     {
         Target(w, "call"u8, handle, name);
-        Arguments(w, args, byValue);
+        Arguments(w, args);
+        Flags(w, byValue, live);
     });
 
     /// <summary>Calls a module function (design §2).</summary>
-    public static string Call(string module, string name, Action<Utf8JsonWriter>? args = null, bool byValue = false) => Write(w =>
+    public static string Call(string module, string name, Action<Utf8JsonWriter>? args = null, bool byValue = false, bool live = false) => Write(w =>
     {
         w.WriteString("op"u8, "call"u8);
         w.WriteString("module"u8, module);
         w.WriteString("name"u8, name);
-        Arguments(w, args, byValue);
+        Arguments(w, args);
+        Flags(w, byValue, live);
     });
 
     public static string Snapshot(int handle) => Write(w =>
@@ -166,14 +169,22 @@ public static class JsOp
         w.WriteString("name"u8, name);
     }
 
-    private static void Arguments(Utf8JsonWriter w, Action<Utf8JsonWriter>? args, bool byValue)
+    private static void Arguments(Utf8JsonWriter w, Action<Utf8JsonWriter>? args)
     {
         w.WriteStartArray("args"u8);
         args?.Invoke(w);
         w.WriteEndArray();
+    }
+
+    private static void Flags(Utf8JsonWriter w, bool byValue, bool live)
+    {
         if (byValue)
         {
             w.WriteBoolean("byValue"u8, true);
+        }
+        if (live)
+        {
+            w.WriteBoolean("live"u8, true);
         }
     }
 

@@ -29,7 +29,7 @@ const pair = { kind: "tuple", elements: [num, num] };
 test("modules are keyed by specifier, declarations keep source order", () => {
   assert.equal(ir.version, 1);
   assert.deepEqual(ir.package, { name: "@acme/demo-maps", version: "0.0.0" });
-  assert.deepEqual(ir.modules.map((m) => m.specifier.slice("@acme/demo-maps/".length)), ["MapView.js", "Marker.js", "core.js", "demo-map.js", "geometry.js", "layers/Layer.js", "layers/Refreshable.js", "layers/TileLayer.js", "measure.js", "ops/a.js", "ops/b.js", "pins.js", "styles.js"]);
+  assert.deepEqual(ir.modules.map((m) => m.specifier.slice("@acme/demo-maps/".length)), ["MapView.js", "Marker.js", "core.js", "demo-map.js", "geometry.js", "layers/Layer.js", "layers/Refreshable.js", "layers/TileLayer.js", "measure.js", "ops/a.js", "ops/b.js", "pins.js", "styles.js", "tools.js"]);
   assert.deepEqual(ir.modules.find((m) => m.specifier.endsWith("/geometry.js")).declarations.map((d) => `${d.kind} ${d.name}`),
     ["alias ShapeType", "interface Bounds", "class Shape", "class Point", "class Line", "class Polygon"]);
 });

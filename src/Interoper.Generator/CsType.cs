@@ -119,12 +119,15 @@ internal sealed class CsType
 
     /// <summary>
     /// A live class, written as its handle and read with the caller's scope (design §3.2). A generic one (a collection,
-    /// mapping §2) isn't in the registry, so its reader makes it.
+    /// mapping §2) isn't in the registry, so its reader makes it. A live interface's reader passes its
+    /// <paramref name="classId"/>, which a plain object (<c>$t</c> 0) is wrapped as (R15).
     /// </summary>
-    public static CsType Live(TypeName type, IReadOnlyList<CsType>? args = null) => args is not { Count: > 0 }
-        ? Named(type, [], name => new(name, JsonKind.Object, false, $"{name}.Write", $"scope.Read<{name}>", scoped: true))
-        : Named(type, args, name => new(name, JsonKind.Object, false, $"{name}.Write", null,
-            read: (r, _) => $"scope.Read(ref {r}, static (realm, handle) => new {name}(realm, handle))", scoped: true));
+    public static CsType Live(TypeName type, IReadOnlyList<CsType>? args = null, string? classId = null) =>
+        args is { Count: > 0 } ? Named(type, args, name => new(name, JsonKind.Object, false, $"{name}.Write", null,
+            read: (r, _) => $"scope.Read(ref {r}, static (realm, handle) => new {name}(realm, handle))", scoped: true))
+        : classId is not null ? Named(type, [], name => new(name, JsonKind.Object, false, $"{name}.Write", null,
+            read: (r, _) => $"scope.Read<{name}>(ref {r}, {classId})", scoped: true))
+        : Named(type, [], name => new(name, JsonKind.Object, false, $"{name}.Write", $"scope.Read<{name}>", scoped: true));
 
     /// <summary>A type parameter of a generic class or record: an entity (<c>where T : JsObject</c>, mapping §2).</summary>
     public static CsType TypeParameter(string name) => new(name, JsonKind.Object, false, "global::Interoper.JsObject.Write", $"scope.Read<{name}>", scoped: true);

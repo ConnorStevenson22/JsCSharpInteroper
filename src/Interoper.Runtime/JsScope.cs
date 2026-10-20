@@ -41,13 +41,13 @@ public sealed class JsScope(JsRealm realm) : IDisposable, IAsyncDisposable
     /// </summary>
     public T Wrap<T>(int handle, int classId) where T : JsObject => Wrap<T>(handle, classId, null);
 
-    private T Wrap<T>(int handle, int classId, Func<JsRealm, int, T>? create) where T : JsObject
+    private T Wrap<T>(int handle, int classId, Func<JsRealm, int, T>? create, bool declared = false) where T : JsObject
     {
         JsObject live;
         lock (gate)
         {
             ThrowIfDisposed(handle);
-            live = Realm.Wrap(this, handle, classId, create);
+            live = Realm.Wrap(this, handle, classId, create, declared);
         }
         // Still owned, so the scope releases it.
         return live as T ?? throw new JsException("InteroperError",
@@ -62,6 +62,18 @@ public sealed class JsScope(JsRealm realm) : IDisposable, IAsyncDisposable
     {
         var (handle, classId) = ReadHandle(ref reader);
         return Wrap<T>(handle, classId);
+    }
+
+    /// <summary>
+    /// Reads a handle where a live interface is declared (R15). A plain object has no class the metadata knows (class id
+    /// 0), so it's wrapped as <paramref name="classId"/>, the interface's; read later as an interface that derives from
+    /// that one, it's wrapped again as that one, which the cache keeps from then on. Any other object is read as
+    /// <see cref="Read{T}(ref Utf8JsonReader)"/> reads it (R19).
+    /// </summary>
+    public T Read<T>(ref Utf8JsonReader reader, int classId) where T : JsObject
+    {
+        var (handle, actual) = ReadHandle(ref reader);
+        return actual == 0 ? Wrap<T>(handle, classId, null, declared: true) : Wrap<T>(handle, actual);
     }
 
     /// <summary>
