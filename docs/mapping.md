@@ -147,6 +147,19 @@ Every snapshot record has `Write` (the whole object, with its constants; a value
 
 System.Text.Json: every snapshot record, and every data record that reads without a scope (not scoped, R17; no DOM member, R13; not generic), implements `IJsRecord<T>` and has `[JsonConverter(typeof(JsRecordConverter<T>))]`. So app types that hold them serialize in their wire format, with no reflection over the record. A value-like snapshot keeps its `$c`, which `Read` ignores.
 
+Chosen members: every snapshot record with members other than constants has a nested static class `Members` with one `JsMembers<XSnapshot>` per member (`LayerSnapshot.Members.Visible`), combined with `|`. They name members without strings:
+
+- `SnapshotAsync(members)` reads only those members, in one round trip. The rest are undefined, so the result works with `Diff` and `ApplyAsync`.
+- A class with the profile's watch method also has `WatchAsync(scope, members, handler)`, one subscription for all of them. After each JS turn in which any changed, the handler gets one partial snapshot of those members as they are then, so a burst is one message ([design §3.4](design.md#34-protocol)). `Diff` against the previous one gives the patch. Async mode adds `WatchStreamAsync`.
+- They are overloads, not `new` (R26), so a `Layer` reference to a `FeatureLayer` reads and watches `Layer` members.
+- A closed base's members also name its discriminant, which its `Read` needs (R19 step 2).
+- A member named `Members` renames the class `JsMembers` (IOP2006).
+
+```csharp
+var settings = await layer.SnapshotAsync(LayerSnapshot.Members.Visible | LayerSnapshot.Members.Opacity);
+await using var watch = await layer.WatchAsync(scope, LayerSnapshot.Members.Visible | LayerSnapshot.Members.Opacity, now => settings = now);
+```
+
 `Diff`: every snapshot record except a closed base has `static XSnapshot Diff(XSnapshot before, XSnapshot after)`, which returns the patch from `before` to `after`.
 
 - A member is in the patch when `after` defines it and it differs from `before`.
@@ -185,6 +198,8 @@ When JS returns a value for a union position, the runtime must pick the case.
 | property watch (classes with the profile's watch method, own or inherited) | `IDisposable WatchZoom(JsScope scope, Action<double>)` | `Task<IAsyncDisposable> WatchZoomAsync(…)` |
 | property watch stream | none | `IAsyncEnumerable<double> WatchZoomStreamAsync(JsScope scope, CancellationToken cancellationToken = default)` |
 | snapshot / patch | `XSnapshot Snapshot()`, `void Apply(XSnapshot)` | `SnapshotAsync()`, `ApplyAsync(XSnapshot)` |
+| snapshot of some members (R18) | `XSnapshot Snapshot(JsMembers<XSnapshot> members)` | `SnapshotAsync(members)` |
+| watch of some members (R18; classes with the profile's watch method) | `IDisposable Watch(JsScope scope, JsMembers<XSnapshot> members, Action<XSnapshot> handler)` | `Task<IAsyncDisposable> WatchAsync(…)`, `IAsyncEnumerable<XSnapshot> WatchStreamAsync(JsScope scope, JsMembers<XSnapshot> members, CancellationToken cancellationToken = default)` |
 | module function | static method on a static class per module, with a leading `JsRealm realm` (or `JsScope scope` when the rules above need one) | same, async |
 
 - A setter whose wider type takes the constructor bag of an entity class the getter returns also takes that class, as libraries that build an instance from the bag (autocasting) do: `get theme(): Theme`, `set theme(v: ThemeOptions | string)` is `SetTheme(ViewThemeInput)`, whose cases are `ThemeOptions`, `string` and `Theme`. The union is only written (R2).
@@ -286,6 +301,6 @@ The generator never throws for a shape it can't map. It skips the shape along wi
 | IOP2003 | Skipped: an ambiguous union (R19) and its users |
 | IOP2004 | Not reported yet: overloads merged after mapping (R23) |
 | IOP2005 | Skipped in async mode: a callback whose result JS uses synchronously (R21) |
-| IOP2006 | A name changed or a type skipped to avoid a collision (R11, R25–R28) |
+| IOP2006 | A name changed or a type skipped to avoid a collision (R11, R18, R25–R28) |
 | IOP2007 | Skipped: something the generator can't map yet, or that uses it. Includes classes and union cases outside the selection (R2), dropped record members (R11, R15), iterator methods, and declarations that can't be imported because no public module re-exports them ([design §3.5](design.md#35-module-loading)) |
 | IOP3001 | Analyzer, Info: two or more consecutive awaited writes to live objects outside `await using (scope.BeginBatch())`. Each is a round trip on Server ([design §3.3](design.md#33-batching-async-mode)). Raise it with `dotnet_diagnostic.IOP3001.severity = warning` |

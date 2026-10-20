@@ -47,6 +47,7 @@ public static class GoldenSyncSuite
         ("arrays with null and undefined elements: entities, records and numbers (R3, R17)", InScope(NullableElements)),
         ("same-named types of sibling modules (R27)", InScope(SiblingModules)),
         ("a custom element drives its live view, and its class is found by its tag (§5, R22, R28)", InScope(CustomElement)),
+        ("a watch of chosen members: one call per burst, with their snapshot, also through a base type (R18)", InScope(MemberWatch)),
     ];
 
     private static void CreateSnapshotApply(JsScope scope)
@@ -522,6 +523,26 @@ public static class GoldenSyncSuite
     // --- Helpers ---
 
     // Each case has its own scope; once it is disposed, the census and the callbacks are back to their baseline.
+    // In the browser JS calls back once .NET yields, which the await does.
+    private static async Task MemberWatch(JsScope scope)
+    {
+        var view = MapView.Create(scope, new MapViewSnapshot { Zoom = 5, Rotation = 90 });
+        var baseline = await Count(scope.Realm);
+        var seen = new List<MapViewSnapshot>();
+        var called = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using (view.Watch(scope, MapViewSnapshot.Members.Zoom | MapViewSnapshot.Members.Rotation, changed => { seen.Add(changed); called.TrySetResult(); }))
+        {
+            view.Reset(); // the library changes both in one call
+            await called.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        }
+        Equal(baseline, await Count(scope.Realm));
+        view.Zoom = 7;
+        Equal(new MapViewSnapshot { Zoom = 1, Rotation = 0 }, seen.Single());
+
+        Layer layer = TileLayer.Create(scope, new TileLayerSnapshot { Url = "u" });
+        Equal(new LayerSnapshot { Visible = true }, layer.Snapshot(LayerSnapshot.Members.Visible));
+    }
+
     private static Func<JsRealm, Task> InScope(Action<JsScope> body) => InScope(scope =>
     {
         body(scope);

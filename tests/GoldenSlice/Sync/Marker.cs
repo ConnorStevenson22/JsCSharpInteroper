@@ -53,4 +53,10 @@ public partial class Marker : Observable
 
     public void Apply(MarkerSnapshot patch) =>
         Realm.Send(global::Interoper.JsOp.Apply(Handle, w => MarkerSnapshot.WriteMembers(w, patch)));
+
+    public MarkerSnapshot Snapshot(global::Interoper.JsMembers<MarkerSnapshot> members) =>
+        Realm.Snapshot(Handle, members);
+
+    public global::System.IDisposable Watch(global::Interoper.JsScope scope, global::Interoper.JsMembers<MarkerSnapshot> members, global::System.Action<MarkerSnapshot> handler) =>
+        scope.Subscribe(Handle, "watch", members, handler);
 }

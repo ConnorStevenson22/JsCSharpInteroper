@@ -84,6 +84,7 @@ public static class TransportContract
         ("module function call", ModuleCall),
         ("subscribe and release (R24)", Subscribe),
         ("subscribe with options: JS calls the event's methods, then sends only the fields (R24)", SubscribeWithOptions),
+        ("snapshot of some members, and one watch of them: one call per JS turn (R18)", MemberWatch),
         ("errors become JsException", Errors),
         ("batch op: failures listed by index, the rest applied", BatchOp),
         ("BeginBatch: N writes are one round trip, a read flushes first", BeginBatch),
@@ -291,6 +292,37 @@ public static class TransportContract
         seam.Callbacks.Release(listener);
         seam.Callbacks.Release(preventDefault);
         seam.Callbacks.Release(stopPropagation);
+        Equal(baseline, (await seam.Census(), seam.Callbacks.Count));
+    }
+
+    private static async Task MemberWatch(Seam seam)
+    {
+        var baseline = (await seam.Census(), seam.Callbacks.Count);
+        var h = await Create(seam, MapView, """{"zoom":5}""");
+        Equal("""{"zoom":5,"basemap":"plain"}""", await Value(seam, $$"""{"op":"snapshot","h":{{h}},"members":["zoom","basemap","title"]}""")); // title is undefined
+
+        var calls = new List<string>();
+        var called = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var listener = seam.Callbacks.Register(args =>
+        {
+            lock (calls)
+            {
+                calls.Add(args);
+            }
+            called.TrySetResult();
+            return null;
+        });
+        var subscription = await Value(seam, $$$"""{"op":"subscribe","h":{{{h}}},"method":"watch","names":["zoom","rotation"],"callback":{"$f":{{{listener}}}}}""");
+        string Set(string name, double value) => $$"""{"op":"set","h":{{h}},"name":"{{name}}","value":{{value}}}""";
+        Equal("{}", await seam.Send($$"""{"op":"batch","ops":[{{Set("zoom", 2)}},{{Set("zoom", 3)}},{{Set("rotation", 10)}}]}"""));
+        await called.Task.WaitAsync(TimeSpan.FromSeconds(10));
+
+        await Release(seam, (int)subscription!); // every listener
+        await seam.Send(Set("zoom", 4));
+        await seam.GetNumber(h, "zoom"); // a round trip after the change: a call back would have come first
+        Equal("""[{"zoom":3,"rotation":10}]""", string.Join("\n", calls));
+        await Release(seam, h);
+        seam.Callbacks.Release(listener);
         Equal(baseline, (await seam.Census(), seam.Callbacks.Count));
     }
 

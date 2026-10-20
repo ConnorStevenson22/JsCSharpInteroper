@@ -87,4 +87,13 @@ public sealed partial class TileLayer : Layer, IRefreshable
 
     public global::System.Threading.Tasks.Task ApplyAsync(TileLayerSnapshot patch) =>
         Realm.SendAsync(global::Interoper.JsOp.Apply(Handle, w => TileLayerSnapshot.WriteMembers(w, patch)));
+
+    public global::System.Threading.Tasks.Task<TileLayerSnapshot> SnapshotAsync(global::Interoper.JsMembers<TileLayerSnapshot> members) =>
+        Realm.SnapshotAsync(Handle, members);
+
+    public global::System.Threading.Tasks.Task<global::System.IAsyncDisposable> WatchAsync(global::Interoper.JsScope scope, global::Interoper.JsMembers<TileLayerSnapshot> members, global::System.Action<TileLayerSnapshot> handler) =>
+        scope.SubscribeAsync(Handle, "watch", members, handler);
+
+    public global::System.Collections.Generic.IAsyncEnumerable<TileLayerSnapshot> WatchStreamAsync(global::Interoper.JsScope scope, global::Interoper.JsMembers<TileLayerSnapshot> members, global::System.Threading.CancellationToken cancellationToken = default) =>
+        scope.StreamAsync(Handle, "watch", members, cancellationToken);
 }

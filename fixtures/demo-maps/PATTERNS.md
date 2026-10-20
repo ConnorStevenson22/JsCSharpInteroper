@@ -52,6 +52,7 @@ node --test "fixtures/demo-maps/test/*.test.mjs"
 | Event map through a phantom property | R24 | `"$events"` + `on<K extends keyof this["$events"]>` (`core`); `MapViewEvents.click` |
 | Subscription with `remove()`, not `dispose()` | R24, [design §3.4](../../docs/design.md#34-protocol) | `Pin.on` (`pins`) |
 | Property watch | §5 | `Observable.watch(name, callback)` (`core`) |
+| Several watched properties changing in one call | R18, [design §3.4](../../docs/design.md#34-protocol) | `Observable.watch` calls back synchronously on each change; `MapView.reset()` changes `zoom` and `rotation` at once |
 | Collection type (generic) | §2 (generic `T`), R17 | `Collection<T>` with a `change` event whose payload holds entities (`core`); `MapView.markers`, and `MapView.layers` of an abstract class |
 | Type parameter with a default | §2 | `Tagged<T = any>`, a generic record (`core`) |
 | Module functions | §5 | `distance`, `perimeter`, `describe` (`measure`); `toRgba` (`styles`); `execute` (`ops/a`, `ops/b`) |

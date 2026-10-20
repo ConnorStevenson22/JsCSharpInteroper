@@ -18,6 +18,14 @@ export class Source {
     return this;
   }
 
+  // Counts its live listeners, and returns nothing disposable for "broken".
+  listening = 0;
+  onCounted(name) {
+    if (name === "broken") return {};
+    this.listening++;
+    return { dispose: () => { this.listening--; } };
+  }
+
   dispose() {}
 }
 

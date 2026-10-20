@@ -336,6 +336,9 @@ internal sealed class TypeMap
     /// <summary>R16: the snapshots of an abstract value-like class form a closed hierarchy.</summary>
     public bool IsClosed(ClassDeclaration c) => c.Abstract && IsValueLike(c);
 
+    /// <summary>R18: whether the class's snapshot has members other than constants, so it has a <c>Members</c> class.</summary>
+    public bool HasSnapshotMembers(ClassDeclaration c) => Fields(c).Any(f => f.Constant is null);
+
     /// <summary>The emitted live classes, in IR order.</summary>
     public IReadOnlyList<ClassDeclaration> Classes => classes;
 

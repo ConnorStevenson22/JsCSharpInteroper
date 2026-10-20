@@ -276,6 +276,10 @@ internal sealed class FakeMapView : FakeEmitter
                 return Task.FromResult<object?>(Undefined.Value);
             case "screenToMap":
                 return ScreenToMap(args);
+            case "reset": // several properties in one call
+                Set("zoom", 1.0);
+                Set("rotation", 0.0);
+                return Undefined.Value;
             case "markerAt":
                 return Task.FromResult(Nearest(args));
             case "markersAt":

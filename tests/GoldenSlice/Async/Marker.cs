@@ -63,4 +63,13 @@ public partial class Marker : Observable
 
     public global::System.Threading.Tasks.Task ApplyAsync(MarkerSnapshot patch) =>
         Realm.SendAsync(global::Interoper.JsOp.Apply(Handle, w => MarkerSnapshot.WriteMembers(w, patch)));
+
+    public global::System.Threading.Tasks.Task<MarkerSnapshot> SnapshotAsync(global::Interoper.JsMembers<MarkerSnapshot> members) =>
+        Realm.SnapshotAsync(Handle, members);
+
+    public global::System.Threading.Tasks.Task<global::System.IAsyncDisposable> WatchAsync(global::Interoper.JsScope scope, global::Interoper.JsMembers<MarkerSnapshot> members, global::System.Action<MarkerSnapshot> handler) =>
+        scope.SubscribeAsync(Handle, "watch", members, handler);
+
+    public global::System.Collections.Generic.IAsyncEnumerable<MarkerSnapshot> WatchStreamAsync(global::Interoper.JsScope scope, global::Interoper.JsMembers<MarkerSnapshot> members, global::System.Threading.CancellationToken cancellationToken = default) =>
+        scope.StreamAsync(Handle, "watch", members, cancellationToken);
 }

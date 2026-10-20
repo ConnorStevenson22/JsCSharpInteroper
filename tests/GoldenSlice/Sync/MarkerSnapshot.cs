@@ -51,4 +51,12 @@ public sealed partial record MarkerSnapshot : global::Interoper.IJsRecord<Marker
         Label = after.Label.IsUndefined || global::Interoper.JsDiff.Same(before.Label, after.Label) ? default : after.Label,
         Style = after.Style.IsUndefined || global::Interoper.JsDiff.Same(before.Style, after.Style) ? default : after.Style,
     };
+
+    public static class Members
+    {
+        /// <summary>Where the marker is; a pair is taken as <c>[x, y]</c>.</summary>
+        public static global::Interoper.JsMembers<MarkerSnapshot> Position => new("position");
+        public static global::Interoper.JsMembers<MarkerSnapshot> Label => new("label");
+        public static global::Interoper.JsMembers<MarkerSnapshot> Style => new("style");
+    }
 }

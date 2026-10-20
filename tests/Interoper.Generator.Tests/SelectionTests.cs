@@ -26,7 +26,7 @@ public sealed class SelectionTests
             "styles.js: Rgba, ColorInput, IconName, FillStyle, StrokeStyle, IconStyle, Style, toRgba",
         ], Modules(selection));
 
-        Assert.Equal(["center", "zoom", "rotation", "basemap", "cursor", "title", "container", "selected", "markers", "layers", "screenToMap", "flyTo", "markerAt", "markersAt"],
+        Assert.Equal(["center", "zoom", "rotation", "basemap", "cursor", "title", "container", "selected", "markers", "layers", "screenToMap", "flyTo", "markerAt", "markersAt", "reset"],
             Members(selection, "MapView")); // R13: the DOM container too
         Assert.Equal(["position", "label", "style", "labelFormatter", "displayLabel"], Members(selection, "Marker")); // R21: no LabelFormatter type
         Assert.Equal(["length", "at", "add", "remove", "find", "forEach", "toArray"], Members(selection, "Collection")); // §2: a generic live class
@@ -66,7 +66,7 @@ public sealed class SelectionTests
     {
         var selection = Select("*/MapView.js");
         // R2: flyTo only writes its FlyToTarget, which drops its Shape case; the generator reports that.
-        Assert.Equal(["zoom", "rotation", "basemap", "cursor", "title", "container", "flyTo"], Members(selection, "MapView"));
+        Assert.Equal(["zoom", "rotation", "basemap", "cursor", "title", "container", "flyTo", "reset"], Members(selection, "MapView"));
         Assert.Equal(
         [
             "IOP2007 FlyToOptions.signal: skipped: uses `AbortSignal`", // R15: an optional member is dropped, a required one skips its record

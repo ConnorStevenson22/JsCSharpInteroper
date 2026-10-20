@@ -382,13 +382,25 @@ public sealed class JsScope(JsRealm realm) : IDisposable, IAsyncDisposable
     /// <see cref="EventOptions.Fields"/> replace <paramref name="fields"/>, the generated default projection.
     /// </summary>
     public IDisposable Subscribe<T>(int handle, string method, string name, JsonRead<T> read, Action<T> handler, EventOptions? options,
-        IReadOnlyList<string>? fields)
+        IReadOnlyList<string>? fields) =>
+        Subscribe(Op(handle, method, name, options, fields), Listener(read, handler));
+
+    /// <summary>
+    /// Watches some members of a snapshot record through the sync seam (sync mode, R18): calls
+    /// <c>target[method](name, listener)</c> for each, and after each JS turn in which any of them changed,
+    /// <paramref name="handler"/> gets their snapshot once. See
+    /// <see cref="Subscribe{T}(int, string, string, JsonRead{T}, Action{T}, EventOptions?, IReadOnlyList{string}?)"/>.
+    /// </summary>
+    public IDisposable Subscribe<T>(int handle, string method, JsMembers<T> members, Action<T> handler) where T : class, IJsRecord<T> =>
+        Subscribe(Op(handle, method, members), Listener<T>(T.Read, handler));
+
+    private IDisposable Subscribe(Func<int, string> op, Func<string, string?> callback)
     {
-        var listener = Register(Listener(read, handler));
+        var listener = Register(callback);
         int subscription;
         try
         {
-            subscription = (int)Realm.Call(JsOp.Subscribe(handle, method, name, listener, Projected(options, fields)), JsJson.ReadNumber);
+            subscription = (int)Realm.Call(op(listener), JsJson.ReadNumber);
         }
         catch
         {
@@ -401,7 +413,8 @@ public sealed class JsScope(JsRealm realm) : IDisposable, IAsyncDisposable
 
     /// <summary>
     /// Subscribes to an event without a payload (sync mode, R24): <paramref name="handler"/> takes nothing, and nothing of
-    /// the event crosses the wire unless the options name fields; see <see cref="Subscribe{T}"/>.
+    /// the event crosses the wire unless the options name fields; see
+    /// <see cref="Subscribe{T}(int, string, string, JsonRead{T}, Action{T}, EventOptions?, IReadOnlyList{string}?)"/>.
     /// </summary>
     public IDisposable Subscribe(int handle, string method, string name, Action handler, EventOptions? options) =>
         Subscribe(handle, method, name, Ignore, _ => handler(), options, []);
@@ -416,19 +429,34 @@ public sealed class JsScope(JsRealm realm) : IDisposable, IAsyncDisposable
         return true;
     }
 
-    /// <summary>Subscribes through the async seam (async mode); see <see cref="Subscribe{T}"/>.</summary>
+    /// <summary>
+    /// Subscribes through the async seam (async mode); see
+    /// <see cref="Subscribe{T}(int, string, string, JsonRead{T}, Action{T}, EventOptions?, IReadOnlyList{string}?)"/>.
+    /// </summary>
     public Task<IAsyncDisposable> SubscribeAsync<T>(int handle, string method, string name, JsonRead<T> read, Action<T> handler,
         EventOptions? options, IReadOnlyList<string>? fields) =>
-        SubscribeAsync(handle, method, name, Listener(read, handler), options, fields);
+        SubscribeAsync(Op(handle, method, name, options, fields), Listener(read, handler));
 
-    private async Task<IAsyncDisposable> SubscribeAsync(int handle, string method, string name, Func<string, string?> callback,
-        EventOptions? options, IReadOnlyList<string>? fields)
+    /// <summary>
+    /// Watches some members of a snapshot record through the async seam (async mode, R18); see
+    /// <see cref="Subscribe{T}(int, string, JsMembers{T}, Action{T})"/>.
+    /// </summary>
+    public Task<IAsyncDisposable> SubscribeAsync<T>(int handle, string method, JsMembers<T> members, Action<T> handler) where T : class, IJsRecord<T> =>
+        SubscribeAsync(Op(handle, method, members), Listener<T>(T.Read, handler));
+
+    private static Func<int, string> Op(int handle, string method, string name, EventOptions? options, IReadOnlyList<string>? fields) =>
+        listener => JsOp.Subscribe(handle, method, name, listener, Projected(options, fields));
+
+    private static Func<int, string> Op<T>(int handle, string method, JsMembers<T> members) where T : class, IJsRecord<T> =>
+        listener => JsOp.Subscribe(handle, method, members, listener);
+
+    private async Task<IAsyncDisposable> SubscribeAsync(Func<int, string> op, Func<string, string?> callback)
     {
         var listener = Register(callback);
         int subscription;
         try
         {
-            subscription = (int)await Realm.CallAsync(JsOp.Subscribe(handle, method, name, listener, Projected(options, fields)), JsJson.ReadNumber);
+            subscription = (int)await Realm.CallAsync(op(listener), JsJson.ReadNumber);
         }
         catch
         {
@@ -440,13 +468,25 @@ public sealed class JsScope(JsRealm realm) : IDisposable, IAsyncDisposable
     }
 
     /// <summary>
-    /// The events or changes of <see cref="SubscribeAsync{T}"/> as a stream (async mode, R24). It subscribes when the
-    /// enumeration starts, and unsubscribes when it ends: on <c>break</c>, cancellation or disposal. Disposing the scope
+    /// The events or changes of
+    /// <see cref="SubscribeAsync{T}(int, string, string, JsonRead{T}, Action{T}, EventOptions?, IReadOnlyList{string}?)"/>
+    /// as a stream (async mode, R24). It subscribes when the enumeration starts, and unsubscribes when it ends: on <c>break</c>, cancellation or disposal. Disposing the scope
     /// completes it, even while it subscribes, so <c>await foreach</c> ends normally; a payload that can't be read ends it
     /// with that error. JS can't be paused, so values queue without bound until read.
     /// </summary>
-    public async IAsyncEnumerable<T> StreamAsync<T>(int handle, string method, string name, JsonRead<T> read, EventOptions? options,
-        IReadOnlyList<string>? fields, [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    public IAsyncEnumerable<T> StreamAsync<T>(int handle, string method, string name, JsonRead<T> read, EventOptions? options,
+        IReadOnlyList<string>? fields, CancellationToken cancellationToken = default) =>
+        StreamAsync(Op(handle, method, name, options, fields), read, cancellationToken);
+
+    /// <summary>
+    /// The snapshots of <see cref="SubscribeAsync{T}(int, string, JsMembers{T}, Action{T})"/> as a stream (async mode,
+    /// R18); see <see cref="StreamAsync{T}(int, string, string, JsonRead{T}, EventOptions?, IReadOnlyList{string}?, CancellationToken)"/>.
+    /// </summary>
+    public IAsyncEnumerable<T> StreamAsync<T>(int handle, string method, JsMembers<T> members, CancellationToken cancellationToken = default)
+        where T : class, IJsRecord<T> =>
+        StreamAsync(Op(handle, method, members), T.Read, cancellationToken);
+
+    private async IAsyncEnumerable<T> StreamAsync<T>(Func<int, string> op, JsonRead<T> read, [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         var channel = Channel.CreateUnbounded<T>(new() { SingleReader = true });
         Action complete = () => channel.Writer.TryComplete();
@@ -461,7 +501,7 @@ public sealed class JsScope(JsRealm realm) : IDisposable, IAsyncDisposable
             IAsyncDisposable subscription;
             try
             {
-                subscription = await SubscribeAsync(handle, method, name, args =>
+                subscription = await SubscribeAsync(op, args =>
                 {
                     try
                     {
@@ -472,7 +512,7 @@ public sealed class JsScope(JsRealm realm) : IDisposable, IAsyncDisposable
                         channel.Writer.TryComplete(e);
                         return null;
                     }
-                }, options, fields);
+                });
             }
             catch (ObjectDisposedException) when (channel.Reader.Completion.IsCompleted)
             {

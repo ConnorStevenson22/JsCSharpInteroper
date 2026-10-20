@@ -71,7 +71,7 @@ public static class Generator
                     break;
                 case ClassDeclaration c:
                     Add(types.Name(c), LiveEmitter.Class(types, profile, options, diagnostics, declared, c));
-                    Add(types.Snapshot(c), RecordEmitter.Snapshot(types, c));
+                    Add(types.Snapshot(c), RecordEmitter.Snapshot(types, c, diagnostics));
                     break;
             }
         }

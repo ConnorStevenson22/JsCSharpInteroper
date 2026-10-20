@@ -50,4 +50,7 @@ public sealed partial class DemoMapElement : global::Interoper.JsObject
 
     public void Apply(DemoMapElementSnapshot patch) =>
         Realm.Send(global::Interoper.JsOp.Apply(Handle, w => DemoMapElementSnapshot.WriteMembers(w, patch)));
+
+    public DemoMapElementSnapshot Snapshot(global::Interoper.JsMembers<DemoMapElementSnapshot> members) =>
+        Realm.Snapshot(Handle, members);
 }
