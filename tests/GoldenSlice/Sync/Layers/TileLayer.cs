@@ -19,10 +19,24 @@ public sealed partial class TileLayer : Layer, IRefreshable
     }
 
     /// <summary>
-    /// The tiles' edge in pixels. The setter also takes one per zoom level, a union with a value-type case (R2), which
-    /// isn't mapped: the getter is kept, read-only (§5).
+    /// The tiles' edge in pixels. The setter also takes one per zoom level: <c>number | number[]</c>, a union with a
+    /// value-type case (R2).
     /// </summary>
     public double TileSize => Realm.GetNumber(Handle, "tileSize");
+
+    /// <summary>
+    /// The tiles' edge in pixels. The setter also takes one per zoom level: <c>number | number[]</c>, a union with a
+    /// value-type case (R2).
+    /// </summary>
+    public void SetTileSize(TileLayerTileSizeInput value) =>
+        Realm.Send(global::Interoper.JsOp.Set(Handle, "tileSize", w => global::Interoper.JsJson.WriteValue(w, value)));
+
+    /// <summary>The same tagged intersection as <c>Marker.glow</c>.</summary>
+    public global::Interoper.Opt<global::GoldenSlice.Sync.GlowOptionsGlow> Glow
+    {
+        get => Realm.Call(global::Interoper.JsOp.Get(Handle, "glow"), static (ref r) => global::Interoper.JsJson.ReadOpt(ref r, global::GoldenSlice.Sync.GlowOptionsGlow.Read));
+        set => Realm.Send(global::Interoper.JsOp.Set(Handle, "glow", w => global::Interoper.JsJson.WriteValue(w, value, global::GoldenSlice.Sync.GlowOptionsGlow.Write)));
+    }
 
     /// <summary>The markers drawn on top of the tiles.</summary>
     public global::GoldenSlice.Sync.Marker[] GetEmphasized(global::Interoper.JsScope scope) =>
@@ -57,6 +71,9 @@ public sealed partial class TileLayer : Layer, IRefreshable
     public global::System.IDisposable WatchTileSize(global::Interoper.JsScope scope, global::System.Action<double> handler) =>
         scope.Subscribe(Handle, "watch", "tileSize", global::Interoper.JsJson.ReadNumber, handler, null, null);
 
+    public global::System.IDisposable WatchGlow(global::Interoper.JsScope scope, global::System.Action<global::Interoper.Opt<global::GoldenSlice.Sync.GlowOptionsGlow>> handler) =>
+        scope.Subscribe(Handle, "watch", "glow", static (ref r) => global::Interoper.JsJson.ReadOpt(ref r, global::GoldenSlice.Sync.GlowOptionsGlow.Read), handler, null, null);
+
     public global::System.IDisposable WatchEmphasized(global::Interoper.JsScope scope, global::System.Action<global::GoldenSlice.Sync.Marker[]> handler) =>
         scope.Subscribe(Handle, "watch", "emphasized", (ref r) => global::Interoper.JsJson.ReadArray(ref r, scope.Read<global::GoldenSlice.Sync.Marker>), handler, null, null);
 
@@ -71,4 +88,10 @@ public sealed partial class TileLayer : Layer, IRefreshable
 
     public void Apply(TileLayerSnapshot patch) =>
         Realm.Send(global::Interoper.JsOp.Apply(Handle, w => TileLayerSnapshot.WriteMembers(w, patch)));
+
+    public TileLayerSnapshot Snapshot(global::Interoper.JsMembers<TileLayerSnapshot> members) =>
+        Realm.Snapshot(Handle, members);
+
+    public global::System.IDisposable Watch(global::Interoper.JsScope scope, global::Interoper.JsMembers<TileLayerSnapshot> members, global::System.Action<TileLayerSnapshot> handler) =>
+        scope.Subscribe(Handle, "watch", members, handler);
 }

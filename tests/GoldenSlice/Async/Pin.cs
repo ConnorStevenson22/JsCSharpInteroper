@@ -44,4 +44,13 @@ public sealed partial class Pin : Marker
 
     public global::System.Threading.Tasks.Task ApplyAsync(PinSnapshot patch) =>
         Realm.SendAsync(global::Interoper.JsOp.Apply(Handle, w => PinSnapshot.WriteMembers(w, patch)));
+
+    public global::System.Threading.Tasks.Task<PinSnapshot> SnapshotAsync(global::Interoper.JsMembers<PinSnapshot> members) =>
+        Realm.SnapshotAsync(Handle, members);
+
+    public global::System.Threading.Tasks.Task<global::System.IAsyncDisposable> WatchAsync(global::Interoper.JsScope scope, global::Interoper.JsMembers<PinSnapshot> members, global::System.Action<PinSnapshot> handler) =>
+        scope.SubscribeAsync(Handle, "watch", members, handler);
+
+    public global::System.Collections.Generic.IAsyncEnumerable<PinSnapshot> WatchStreamAsync(global::Interoper.JsScope scope, global::Interoper.JsMembers<PinSnapshot> members, global::System.Threading.CancellationToken cancellationToken = default) =>
+        scope.StreamAsync(Handle, "watch", members, cancellationToken);
 }

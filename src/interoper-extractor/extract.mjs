@@ -388,7 +388,9 @@ export function extract(packageDirs, { eventMap } = {}) {
     stack.delete(type);
     const [call] = shape.callSignatures;
     if (call && shape.callSignatures.length === 1 && !shape.members.length && !shape.indexSignatures.length) return { kind: "function", ...call };
-    return compact({ kind: "object", ...shape });
+    // R11: an intersection's named parts (`Props` in `Props & { type: "poly" }`), which its record is named after.
+    const bases = type.isIntersection() ? type.types.filter(isNamed).map((t) => typeRef(t)) : undefined;
+    return compact({ kind: "object", bases, ...shape });
   }
 
   /**

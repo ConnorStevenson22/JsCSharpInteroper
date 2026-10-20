@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { Line, Point, Polygon, Shape } from "../geometry.js";
-import { describe, distance, perimeter, shapeFrom, simplify } from "../measure.js";
+import { centers, describe, distance, distances, perimeter, shapeFrom, simplify } from "../measure.js";
 import { Marker } from "../Marker.js";
 
 test("Shape is abstract; subclasses carry a type discriminant", () => {
@@ -40,6 +40,13 @@ test("distance accepts instances and plain JSON alike", () => {
   assert.equal(distance(new Point({ x: 0, y: 0 }), { type: "point", x: 3, y: 4 }), 5);
 });
 
+test("distance takes a unit's name or its length in meters", () => {
+  const [a, b] = [new Point({ x: 0, y: 0 }), new Point({ x: 3000, y: 4000 })];
+  assert.equal(distance(a, b, "meters"), 5000);
+  assert.equal(distance(a, b, "kilometers"), 5);
+  assert.equal(distance(a, b, 500), 10);
+});
+
 test("perimeter takes any number of points and closes the path", () => {
   assert.equal(perimeter(new Point({ x: 0, y: 0 }), new Point({ x: 3, y: 0 }), { type: "point", x: 3, y: 4 }), 12);
   assert.equal(perimeter(), 0);
@@ -49,6 +56,12 @@ test("describe takes a value-like shape or an entity", () => {
   assert.equal(describe(new Point()), "point");
   assert.equal(describe(new Polygon()), "polygon");
   assert.equal(describe(new Marker({ label: "m" })), "marker m");
+});
+
+test("distances and centers keep null and undefined elements", () => {
+  const marker = new Marker({ position: [3, 4] });
+  assert.deepEqual(distances(new Point(), [marker, null]), [5, null]);
+  assert.deepEqual(centers([new Line({ path: [[0, 0], [4, 2]] }), null, undefined]), [new Point({ x: 2, y: 1 }), null, undefined]);
 });
 
 test("simplify gives a one-vertex shape as its point, and any other shape as it is", () => {

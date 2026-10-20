@@ -1,6 +1,6 @@
 import { Observable } from "./core.js";
 import { Point } from "./geometry.js";
-import { Style } from "./styles.js";
+import { GlowOptions, Style } from "./styles.js";
 
 /** Called synchronously; its return value becomes the marker's label. */
 export type LabelFormatter = (marker: Marker) => string;
@@ -16,6 +16,8 @@ export class Marker extends Observable {
   set position(value: Point | [number, number]);
   label?: string | null;
   style: Style;
+  /** The same tagged intersection as `TileLayer.glow`, in another module. */
+  glow?: (GlowOptions & { kind: "glow" }) | null;
   /** Overrides `label` when set. */
   labelFormatter?: LabelFormatter | null;
   /** `labelFormatter(this)` if set, otherwise `label`, otherwise "". */

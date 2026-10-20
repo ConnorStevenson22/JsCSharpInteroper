@@ -46,4 +46,10 @@ public sealed partial record PointSnapshot : ShapeSnapshot, global::Interoper.IJ
         X = after.X.IsUndefined || global::Interoper.JsDiff.Same(before.X, after.X) ? default : after.X,
         Y = after.Y.IsUndefined || global::Interoper.JsDiff.Same(before.Y, after.Y) ? default : after.Y,
     };
+
+    public static class Members
+    {
+        public static global::Interoper.JsMembers<PointSnapshot> X => new("x");
+        public static global::Interoper.JsMembers<PointSnapshot> Y => new("y");
+    }
 }

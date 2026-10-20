@@ -27,7 +27,7 @@ internal static class InMemoryDemoMaps
         .Define(new(DemoMaps.CollectionId, "core.Collection", args => new FakeCollection(args.FirstOrDefault() as List<object?> ?? [])))
         .Define(new(DemoMaps.DemoMapElementId, "demo-map.DemoMapElement", _ => new FakeDemoMapElement()) { Members = ["basemap", "zoom", "center"] })
         .Define(new(DemoMaps.LayerId, "layers.Layer", _ => throw new JsException("TypeError", "Layer is abstract", null)) { Members = ["title", "visible"] })
-        .Define(new(DemoMaps.TileLayerId, "layers.TileLayer", args => new FakeTileLayer(Bag(args))) { Members = ["url", "refreshInterval", "title", "visible"] })
+        .Define(new(DemoMaps.TileLayerId, "layers.TileLayer", args => new FakeTileLayer(Bag(args))) { Members = ["url", "tileSize", "refreshInterval", "title", "visible"] })
         .Define(new(DemoMaps.PinId, "pins.Pin", args => new FakePin(Bag(args))) { Members = ["position", "label", "style"] })
         .DefineModule(TransportContract.Measure, new FakeMeasure())
         .DefineModule("@acme/demo-maps/ops/a.js", new FakeExecute((x, options) => x * (double)options.GetValueOrDefault("scale", 1.0)!))
@@ -276,13 +276,25 @@ internal sealed class FakeMapView : FakeEmitter
                 return Task.FromResult<object?>(Undefined.Value);
             case "screenToMap":
                 return ScreenToMap(args);
-            case "markerAt": // the first marker within 10 pixels of the screen offset, or null
-                var point = ScreenToMap(args);
-                var tolerance = 10 / Math.Pow(2, (double)Get("zoom")!);
-                return Task.FromResult(markers.Items.Cast<FakeMarker>().FirstOrDefault(m => Distance((FakePoint)m.Get("position")!, point) <= tolerance) as object);
+            case "reset": // several properties in one call
+                Set("zoom", 1.0);
+                Set("rotation", 0.0);
+                return Undefined.Value;
+            case "markerAt":
+                return Task.FromResult(Nearest(args));
+            case "markersAt":
+                return ((List<object?>)args[0]!).Select(offset => Nearest([offset])).ToList();
             default:
                 return base.Call(name, args);
         }
+    }
+
+    // The first marker within 10 pixels of the screen offset, or null.
+    private object? Nearest(object?[] args)
+    {
+        var point = ScreenToMap(args);
+        var tolerance = 10 / Math.Pow(2, (double)Get("zoom")!);
+        return markers.Items.Cast<FakeMarker>().FirstOrDefault(m => Distance((FakePoint)m.Get("position")!, point) <= tolerance);
     }
 
     // An offset from the center, or an [x, y] pair, in pixels; one pixel is 2^-zoom map units.
@@ -318,7 +330,7 @@ internal sealed class FakeMapView : FakeEmitter
     private static double Distance(FakePoint a, FakePoint b) =>
         Math.Sqrt(Math.Pow((double)a.Get("x")! - (double)b.Get("x")!, 2) + Math.Pow((double)a.Get("y")! - (double)b.Get("y")!, 2));
 
-    private static FakePoint Midpoint(Dictionary<string, object?> b) => new(new()
+    public static FakePoint Midpoint(Dictionary<string, object?> b) => new(new()
     {
         ["x"] = ((double)b["minX"]! + (double)b["maxX"]!) / 2,
         ["y"] = ((double)b["minY"]! + (double)b["maxY"]!) / 2,
@@ -443,6 +455,14 @@ internal sealed class FakeTileLayer : FakeLayer
 
     public override string ClassName => "layers.TileLayer";
 
+    // One size, or one per zoom level, of which the getter gives the first.
+    public override object? Get(string name) => name != "tileSize" ? base.Get(name) : base.Get(name) switch
+    {
+        double size => size,
+        List<object?> sizes => sizes[0],
+        _ => 256.0,
+    };
+
     public override object? Call(string name, object?[] args)
     {
         if (name != "refresh") return base.Call(name, args);
@@ -493,9 +513,12 @@ internal sealed class FakeMeasure : InMemoryObject
 
     public override object? Call(string name, object?[] args) => name switch
     {
-        "distance" => Distance(args[0]!, args[1]!),
+        "distance" => Distance(args[0]!, args[1]!) / (args.Length < 3 ? 1 : args[2] switch { double unit => unit, "kilometers" => 1000, _ => 1 }),
         "perimeter" => args.Select((point, i) => Distance(point!, args[(i + 1) % args.Length]!)).Sum(), // the closed path through `...points`
         "describe" => args[0] is FakeShape shape ? shape.Get("type") : $"marker {((InMemoryObject)args[0]!).Get("displayLabel")}",
+        // `markers.map((marker) => marker && distance(origin, marker.position))`; centers keeps null and undefined the same way
+        "distances" => ((List<object?>)args[1]!).Select(m => m is InMemoryObject marker ? Distance(args[0]!, marker.Get("position")!) : m).ToList(),
+        "centers" => ((List<object?>)args[0]!).Select(s => s is FakeShape shape ? FakeMapView.Midpoint((Dictionary<string, object?>)shape.Get("bounds")!) : s).ToList(),
         _ => base.Call(name, args),
     };
 

@@ -208,6 +208,8 @@ public sealed record IntersectionType(IReadOnlyList<IrType> Types) : IrType;
 
 public sealed record ObjectType : IrType
 {
+    /// <summary>For a resolved intersection, its named parts: <c>Props</c> in <c>Props &amp; { type: "poly" }</c> (R11).</summary>
+    public IReadOnlyList<IrType> Bases { get; init; } = [];
     public IReadOnlyList<Member> Members { get; init; } = [];
     public IReadOnlyList<IndexSignature> IndexSignatures { get; init; } = [];
     public IReadOnlyList<Signature> CallSignatures { get; init; } = [];

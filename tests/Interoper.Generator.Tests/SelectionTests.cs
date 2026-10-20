@@ -19,16 +19,16 @@ public sealed class SelectionTests
             "geometry.js: ShapeType, Bounds, Shape, Point, Line, Polygon, OpenShape, AnyShape",
             "layers/Layer.js: Layer",
             "layers/TileLayer.js: TileLayer",
-            "measure.js: distance, perimeter, Measurable, describe, simplify, shapeFrom",
+            "measure.js: LengthUnit, distance, perimeter, Measurable, describe, distances, centers, simplify, shapeFrom",
             "ops/a.js: Options, execute",
             "ops/b.js: Options, execute",
             "pins.js: PinDragEvent, PinEvents, Pin",
-            "styles.js: Rgba, ColorInput, IconName, FillStyle, StrokeStyle, IconStyle, Style, OutlineStyle, toRgba",
+            "styles.js: Rgba, ColorInput, IconName, FillStyle, StrokeStyle, IconStyle, GlowOptions, Style, OutlineStyle, toRgba",
         ], Modules(selection));
 
-        Assert.Equal(["center", "zoom", "rotation", "basemap", "cursor", "title", "container", "selected", "markers", "layers", "screenToMap", "flyTo", "markerAt"],
+        Assert.Equal(["center", "zoom", "rotation", "basemap", "cursor", "title", "container", "selected", "markers", "layers", "screenToMap", "flyTo", "markerAt", "markersAt", "reset"],
             Members(selection, "MapView")); // R13: the DOM container too
-        Assert.Equal(["position", "label", "style", "labelFormatter", "displayLabel"], Members(selection, "Marker")); // R21: no LabelFormatter type
+        Assert.Equal(["position", "label", "style", "glow", "labelFormatter", "displayLabel"], Members(selection, "Marker")); // R21: no LabelFormatter type
         Assert.Equal(["length", "at", "add", "remove", "find", "forEach", "toArray"], Members(selection, "Collection")); // §2: a generic live class
         Assert.Equal(["change"], Class(selection, "Collection").Events.Select(e => e.Name));
         Assert.Equal(["click"], Class(selection, "MapView").Events.Select(e => e.Name));
@@ -56,9 +56,9 @@ public sealed class SelectionTests
     public void AStarMatchesAnyCharactersSlashesIncluded()
     {
         Assert.Equal(Modules(Selection.Select(Fixture.Ir, Fixture.Profile)), Modules(Select("@acme/*")));
-        Assert.Equal(["core.js: Observable", "geometry.js: ShapeType, Bounds, Shape, Point, Line, Polygon, OpenShape, AnyShape", "measure.js: distance, perimeter, Measurable, describe, simplify, shapeFrom"],
+        Assert.Equal(["core.js: Observable", "geometry.js: ShapeType, Bounds, Shape, Point, Line, Polygon, OpenShape, AnyShape", "measure.js: LengthUnit, distance, perimeter, Measurable, describe, centers, simplify, shapeFrom"],
             Modules(Select("*/measure.js", "*/geometry.js")));
-        Assert.Equal(["core.js: Observable", "layers/Layer.js: Layer", "layers/TileLayer.js: TileLayer"], Modules(Select("@acme/demo-maps/layers/*")));
+        Assert.Equal(["core.js: Observable", "layers/Layer.js: Layer", "layers/TileLayer.js: TileLayer", "styles.js: Rgba, ColorInput"], Modules(Select("@acme/demo-maps/layers/*")));
     }
 
     [Fact]
@@ -66,7 +66,7 @@ public sealed class SelectionTests
     {
         var selection = Select("*/MapView.js");
         // R2: flyTo only writes its FlyToTarget, which drops its Shape case; the generator reports that.
-        Assert.Equal(["zoom", "rotation", "basemap", "cursor", "title", "container", "flyTo"], Members(selection, "MapView"));
+        Assert.Equal(["zoom", "rotation", "basemap", "cursor", "title", "container", "flyTo", "reset"], Members(selection, "MapView"));
         Assert.Equal(
         [
             "IOP2007 FlyToOptions.signal: skipped: uses `AbortSignal`", // R15: an optional member is dropped, a required one skips its record
@@ -78,6 +78,7 @@ public sealed class SelectionTests
             "IOP2007 MapView.layers: skipped: uses class `Collection` outside the selection",
             "IOP2007 MapView.screenToMap: skipped: uses class `Point` outside the selection", // once for its two overloads
             "IOP2007 MapView.markerAt: skipped: uses class `Marker` outside the selection",
+            "IOP2007 MapView.markersAt: skipped: uses class `Marker` outside the selection",
             "IOP2007 Emitter.emit: skipped: uses type parameter `K`",
         ], selection.Diagnostics.Select(d => d.ToString()));
     }
@@ -117,12 +118,15 @@ public sealed class SelectionTests
     /// the interface <c>Holder { t: T }</c>. An ambiguous union is IOP2003 (R19), anything else IOP2007.
     /// </summary>
     [Theory]
-    [InlineData( // R2: a literal next to other types
-        """{ "kind": "alias", "name": "T", "type": { "kind": "union", "types": [{ "kind": "literal", "value": "auto" }, { "kind": "array", "element": { "kind": "primitive", "name": "string" } }] } }""",
-        "IOP2007", "the union `T` of a literal and other types")]
-    [InlineData( // R2: unions don't box
-        """{ "kind": "alias", "name": "T", "type": { "kind": "union", "types": [{ "kind": "primitive", "name": "string" }, { "kind": "primitive", "name": "number" }] } }""",
-        "IOP2007", "the union `T` with the value-type case double (R2)")]
+    [InlineData( // R2: a number literal next to other types (a string literal is an enum case)
+        """{ "kind": "alias", "name": "T", "type": { "kind": "union", "types": [{ "kind": "literal", "value": 1 }, { "kind": "array", "element": { "kind": "primitive", "name": "string" } }] } }""",
+        "IOP2007", "the union `T` of a number or boolean literal and other types")]
+    [InlineData( // R19 step 4: a number and a number enum are both JSON numbers
+        """
+        { "kind": "alias", "name": "T", "type": { "kind": "union", "types": [{ "kind": "primitive", "name": "number" }, { "kind": "ref", "name": "E", "module": "@acme/maps/a.js" }] } },
+        { "kind": "enum", "name": "E", "members": [{ "name": "a", "value": 1 }, { "name": "b", "value": 2 }] }
+        """,
+        "IOP2003", "the ambiguous union `T`: double and E are both JSON Number (R19)")]
     [InlineData( // §2: a TS enum
         """{ "kind": "enum", "name": "T", "members": [{ "name": "a", "value": "a" }, { "name": "b", "value": 1 }] }""",
         "IOP2007", "an enum of strings and numbers")]
@@ -185,9 +189,12 @@ public sealed class SelectionTests
     [InlineData( // R2, R3: a member of nothing but null and undefined
         """{ "kind": "interface", "name": "T", "members": [{ "kind": "property", "name": "x", "type": { "kind": "union", "types": [{ "kind": "primitive", "name": "null" }, { "kind": "primitive", "name": "undefined" }] } }] }""",
         "IOP2007", "only `null` and `undefined`")]
-    [InlineData( // R2, R3: arrays have no Opt elements
-        """{ "kind": "interface", "name": "T", "members": [{ "kind": "property", "name": "xs", "type": { "kind": "array", "element": { "kind": "union", "types": [{ "kind": "primitive", "name": "string" }, { "kind": "primitive", "name": "null" }] } } }] }""",
-        "IOP2007", "a nullable array or tuple element")]
+    [InlineData( // R3, R5: an Opt<string> element and a string element are two C# types
+        """{ "kind": "interface", "name": "T", "members": [{ "kind": "property", "name": "pair", "type": { "kind": "tuple", "elements": [{ "kind": "union", "types": [{ "kind": "primitive", "name": "string" }, { "kind": "primitive", "name": "null" }] }, { "kind": "primitive", "name": "string" }] } }] }""",
+        "IOP2007", "a tuple of different types")]
+    [InlineData( // R2, R3: an element of nothing but null and undefined
+        """{ "kind": "interface", "name": "T", "members": [{ "kind": "property", "name": "xs", "type": { "kind": "array", "element": { "kind": "union", "types": [{ "kind": "primitive", "name": "null" }, { "kind": "primitive", "name": "undefined" }] } } }] }""",
+        "IOP2007", "only `null` and `undefined`")]
     [InlineData( // R5: a tuple is an array of one C# type
         """{ "kind": "interface", "name": "T", "members": [{ "kind": "property", "name": "pair", "type": { "kind": "tuple", "elements": [{ "kind": "primitive", "name": "string" }, { "kind": "primitive", "name": "number" }] } }] }""",
         "IOP2007", "a tuple of different types")]
@@ -228,6 +235,9 @@ public sealed class SelectionTests
         """)]
     [InlineData("""{ "kind": "interface", "name": "T", "members": [{ "kind": "property", "name": "x", "optional": true, "type": { "kind": "union", "types": [{ "kind": "primitive", "name": "string" }, { "kind": "primitive", "name": "null" }] } }] }""")] // R3
     [InlineData("""{ "kind": "interface", "name": "T", "members": [{ "kind": "property", "name": "pair", "type": { "kind": "tuple", "elements": [{ "kind": "primitive", "name": "number" }, { "kind": "primitive", "name": "number" }] } }] }""")] // R5
+    [InlineData("""{ "kind": "interface", "name": "T", "members": [{ "kind": "property", "name": "xs", "type": { "kind": "array", "element": { "kind": "union", "types": [{ "kind": "primitive", "name": "string" }, { "kind": "primitive", "name": "null" }] } } }] }""")] // R3: Opt<string>[]
+    [InlineData( // R3, R5: Opt<double>[]
+        """{ "kind": "interface", "name": "T", "members": [{ "kind": "property", "name": "pair", "type": { "kind": "tuple", "elements": [{ "kind": "union", "types": [{ "kind": "primitive", "name": "number" }, { "kind": "primitive", "name": "undefined" }] }, { "kind": "union", "types": [{ "kind": "primitive", "name": "number" }, { "kind": "primitive", "name": "null" }] }] } }] }""")]
     [InlineData( // R17: an entity in a data record, which is then read with a scope
         """
         { "kind": "interface", "name": "T", "members": [{ "kind": "property", "name": "layer", "type": { "kind": "ref", "name": "Layer", "module": "@acme/maps/a.js" } }] },

@@ -38,11 +38,21 @@ export interface StrokeStyle {
   type: "stroke";
   color?: ColorInput | null;
   width?: number;
+  /** A named pattern, or dash and gap lengths. */
+  dash?: "solid" | "dotted" | number[];
 }
 
 export interface IconStyle {
   type: "icon";
   name: IconName;
+  color?: ColorInput | null;
+  /** Pixels, or a CSS length such as "2em". */
+  size?: number | string;
+}
+
+/** A soft glow under a marker or a layer, tagged where it's used (`GlowOptions & { kind: "glow" }`). */
+export interface GlowOptions {
+  blur?: number;
   color?: ColorInput | null;
 }
 

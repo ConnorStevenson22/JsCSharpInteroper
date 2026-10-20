@@ -39,4 +39,13 @@ public partial class Layer : global::GoldenSlice.Async.Observable
 
     public global::System.Threading.Tasks.Task ApplyAsync(LayerSnapshot patch) =>
         Realm.SendAsync(global::Interoper.JsOp.Apply(Handle, w => LayerSnapshot.WriteMembers(w, patch)));
+
+    public global::System.Threading.Tasks.Task<LayerSnapshot> SnapshotAsync(global::Interoper.JsMembers<LayerSnapshot> members) =>
+        Realm.SnapshotAsync(Handle, members);
+
+    public global::System.Threading.Tasks.Task<global::System.IAsyncDisposable> WatchAsync(global::Interoper.JsScope scope, global::Interoper.JsMembers<LayerSnapshot> members, global::System.Action<LayerSnapshot> handler) =>
+        scope.SubscribeAsync(Handle, "watch", members, handler);
+
+    public global::System.Collections.Generic.IAsyncEnumerable<LayerSnapshot> WatchStreamAsync(global::Interoper.JsScope scope, global::Interoper.JsMembers<LayerSnapshot> members, global::System.Threading.CancellationToken cancellationToken = default) =>
+        scope.StreamAsync(Handle, "watch", members, cancellationToken);
 }

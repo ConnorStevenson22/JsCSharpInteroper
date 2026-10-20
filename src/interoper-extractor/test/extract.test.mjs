@@ -225,7 +225,11 @@ test("R9, R10: literal unions and the open-ended form", () => {
 
 test("R21: function types and module functions", () => {
   assert.deepEqual(decl("Marker", "LabelFormatter").type, { kind: "function", params: [{ name: "marker", type: ref("Marker", "Marker") }], returns: { kind: "primitive", name: "string" } });
-  assert.deepEqual(decl("measure", "distance"), { kind: "function", name: "distance", signatures: [{ params: [{ name: "a", type: ref("geometry", "Point") }, { name: "b", type: ref("geometry", "Point") }], returns: num }] });
+  assert.deepEqual(decl("measure", "distance").signatures[0].params, [
+    { name: "a", type: ref("geometry", "Point") },
+    { name: "b", type: ref("geometry", "Point") },
+    { name: "unit", type: { kind: "union", types: [ref("measure", "LengthUnit"), num] }, optional: true }, // R2: the alias stays a ref
+  ]);
 });
 
 test("R22: a rest parameter's type is its array", () => {
@@ -251,6 +255,7 @@ test("TS enums, and R11: an intersection of object types is resolved", (t) => {
     ["mode", { kind: "ref", name: "Mode", module: "@acme/extra/index.js" }],
     ["type", { kind: "literal", value: "tagged" }],
   ]);
+  assert.deepEqual(tagged.type.bases, [{ kind: "ref", name: "Named", module: "@acme/extra/index.js" }]); // R11: what names its record
 });
 
 test("design §2: custom elements come from the manifest, linked to the typings", () => {
