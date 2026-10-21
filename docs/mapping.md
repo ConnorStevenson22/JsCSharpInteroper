@@ -169,7 +169,7 @@ Chosen members: every snapshot record with members other than constants has a ne
 
 - `SnapshotAsync(members)` reads only those members, in one round trip. The rest are undefined, so the result works with `Diff` and `ApplyAsync`.
 - A class with the profile's watch method also has `WatchAsync(scope, members, handler)`, one subscription for all of them. After each JS turn in which any changed, the handler gets one partial snapshot of those members as they are then, so a burst is one message ([design §3.4](design.md#34-protocol)). `Diff` against the previous one gives the patch. Async mode adds `WatchStreamAsync`.
-- They are overloads, not `new` (R26), so a `Layer` reference to a `FeatureLayer` reads and watches `Layer` members.
+- They are overloads, not `new` (R26), so a `Layer` reference to a `TileLayer` reads and watches `Layer` members.
 - A closed base's members also name its discriminant, which its `Read` needs (R19 step 2).
 - A member named `Members` renames the class `JsMembers` (IOP2006).
 

@@ -384,11 +384,11 @@ public sealed class GeneratorTests
             { "kind": "class", "name": "Layer", "members": [
               { "kind": "property", "name": "opacity", "type": { "kind": "primitive", "name": "number" } },
               { "kind": "method", "name": "watch", "signatures": [{ "params": [], "returns": { "kind": "primitive", "name": "void" } }] }] },
-            { "kind": "class", "name": "Graphic", "members": [
+            { "kind": "class", "name": "Pin", "members": [
               { "kind": "property", "name": "opacity", "type": { "kind": "primitive", "name": "number" } }] }
             """, new Profile { Package = "@acme/maps", Watch = "watch" });
         Assert.Contains("public global::System.IDisposable WatchOpacity(global::Interoper.JsScope scope, global::System.Action<double> handler) =>", File(result, "Layer.cs"));
-        Assert.DoesNotContain("Watch", File(result, "Graphic.cs"));
+        Assert.DoesNotContain("Watch", File(result, "Pin.cs"));
     }
 
     [Theory] // R18, §5: snapshots and watches of chosen members
@@ -401,11 +401,11 @@ public sealed class GeneratorTests
         var result = Generate(new Profile { Package = "@acme/maps", Watch = "watch", ValueClasses = ["Figure", "Tile"] }, api, ("a.js", $$"""
             { "kind": "class", "name": "Layer", "members": [{{Property("opacity")}}, {{Property("loaded", readOnly: true)}},
               { "kind": "method", "name": "watch", "signatures": [{ "params": [], "returns": {{Void}} }] }] },
-            { "kind": "class", "name": "FeatureLayer", "extends": {{Ref("Layer")}}, "members": [{{Property("minScale")}}] },
+            { "kind": "class", "name": "TileLayer", "extends": {{Ref("Layer")}}, "members": [{{Property("minScale")}}] },
             { "kind": "class", "name": "Group", "extends": {{Ref("Layer")}}, "members": [{{Property("members")}}] },
             { "kind": "class", "name": "Status", "members": [{{Property("loaded", readOnly: true)}},
               { "kind": "method", "name": "watch", "signatures": [{ "params": [], "returns": {{Void}} }] }] },
-            { "kind": "class", "name": "Graphic", "members": [{{Property("opacity")}}] },
+            { "kind": "class", "name": "Pin", "members": [{{Property("opacity")}}] },
             { "kind": "class", "name": "Figure", "abstract": true, "members": [{ "kind": "property", "name": "kind", "readonly": true, "type": {{String}} }, {{Property("size")}}] },
             { "kind": "class", "name": "Tile", "extends": {{Ref("Figure")}}, "members": [{ "kind": "property", "name": "kind", "readonly": true, "type": { "kind": "literal", "value": "tile" } }] }
             """));
@@ -422,14 +422,14 @@ public sealed class GeneratorTests
         Assert.Equal(!sync, layer.Contains("public global::System.Collections.Generic.IAsyncEnumerable<LayerSnapshot> WatchStreamAsync(global::Interoper.JsScope scope, global::Interoper.JsMembers<LayerSnapshot> members, global::System.Threading.CancellationToken cancellationToken = default) =>", StringComparison.Ordinal));
 
         // A subclass's are overloads, so a Layer reference reads and watches Layer's members of any layer (R26).
-        var featureLayer = File(result, "FeatureLayer.cs");
-        Assert.Contains($"public {subscription} Watch{m}(global::Interoper.JsScope scope, global::Interoper.JsMembers<FeatureLayerSnapshot> members", featureLayer);
-        Assert.Contains("public static global::Interoper.JsMembers<FeatureLayerSnapshot> MinScale => new(\"minScale\");", File(result, "FeatureLayerSnapshot.cs"));
-        Assert.Contains("public static global::Interoper.JsMembers<FeatureLayerSnapshot> Opacity => new(\"opacity\");", File(result, "FeatureLayerSnapshot.cs"));
+        var tileLayer = File(result, "TileLayer.cs");
+        Assert.Contains($"public {subscription} Watch{m}(global::Interoper.JsScope scope, global::Interoper.JsMembers<TileLayerSnapshot> members", tileLayer);
+        Assert.Contains("public static global::Interoper.JsMembers<TileLayerSnapshot> MinScale => new(\"minScale\");", File(result, "TileLayerSnapshot.cs"));
+        Assert.Contains("public static global::Interoper.JsMembers<TileLayerSnapshot> Opacity => new(\"opacity\");", File(result, "TileLayerSnapshot.cs"));
 
         // Without the watch method only the snapshot; without members, neither.
-        Assert.Contains($"Snapshot{m}(global::Interoper.JsMembers<GraphicSnapshot> members)", File(result, "Graphic.cs"));
-        Assert.DoesNotContain("Watch", File(result, "Graphic.cs"));
+        Assert.Contains($"Snapshot{m}(global::Interoper.JsMembers<PinSnapshot> members)", File(result, "Pin.cs"));
+        Assert.DoesNotContain("Watch", File(result, "Pin.cs"));
         Assert.DoesNotContain("JsMembers", File(result, "StatusSnapshot.cs"));
         Assert.DoesNotContain("JsMembers", File(result, "Status.cs"));
 
