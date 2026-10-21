@@ -20,6 +20,7 @@ public sealed partial record MapViewSnapshot : global::Interoper.IJsRecord<MapVi
     public static void Write(global::System.Text.Json.Utf8JsonWriter writer, MapViewSnapshot value)
     {
         writer.WriteStartObject();
+        writer.WriteNumber("$c"u8, DemoMaps.MapViewId);
         WriteMembers(writer, value);
         writer.WriteEndObject();
     }
@@ -68,4 +69,18 @@ public sealed partial record MapViewSnapshot : global::Interoper.IJsRecord<MapVi
         Cursor = after.Cursor.IsUndefined || global::Interoper.JsDiff.Same(before.Cursor, after.Cursor) ? default : after.Cursor,
         Title = after.Title.IsUndefined || global::Interoper.JsDiff.Same(before.Title, after.Title) ? default : after.Title,
     };
+
+    public static class Members
+    {
+        public static global::Interoper.JsMembers<MapViewSnapshot> Center => new("center");
+        /// <summary>Clamped to 0–20.</summary>
+        public static global::Interoper.JsMembers<MapViewSnapshot> Zoom => new("zoom");
+        /// <summary>Degrees, normalized to 0–360.</summary>
+        public static global::Interoper.JsMembers<MapViewSnapshot> Rotation => new("rotation");
+        /// <remarks>Default: "plain"</remarks>
+        public static global::Interoper.JsMembers<MapViewSnapshot> Basemap => new("basemap");
+        /// <summary>Undefined: the container's own CSS cursor.</summary>
+        public static global::Interoper.JsMembers<MapViewSnapshot> Cursor => new("cursor");
+        public static global::Interoper.JsMembers<MapViewSnapshot> Title => new("title");
+    }
 }

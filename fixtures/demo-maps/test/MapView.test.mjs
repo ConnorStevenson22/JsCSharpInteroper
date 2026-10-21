@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { Line, Point } from "../geometry.js";
 import { MapView } from "../MapView.js";
+import { Collection } from "../core.js";
 import { Marker } from "../Marker.js";
 
 test("defaults and constructor bag", () => {
@@ -26,6 +27,15 @@ test("watch on zoom", () => {
   view.watch("zoom", (zoom, old) => seen.push([zoom, old]));
   view.zoom = 2;
   assert.deepEqual(seen, [[2, 1]]);
+});
+
+test("reset changes zoom and rotation in one call, each watch called synchronously", () => {
+  const view = new MapView({ zoom: 5, rotation: 90 });
+  const seen = [];
+  view.watch("zoom", (zoom) => seen.push(["zoom", zoom]));
+  view.watch("rotation", (rotation) => seen.push(["rotation", rotation]));
+  view.reset();
+  assert.deepEqual(seen, [["zoom", 1], ["rotation", 0]]);
 });
 
 test("screenToMap takes x and y, or an [x, y] pair", () => {
@@ -71,10 +81,31 @@ test("markerAt resolves to the marker under the offset, or null", async () => {
   assert.equal(await view.markerAt(0, 0), null);
 });
 
+test("markersAt has null where no marker is", () => {
+  const view = new MapView({ zoom: 0 });
+  const marker = new Marker({ position: [100, -50] });
+  view.markers.add(marker);
+  assert.deepEqual(view.markersAt([[0, 0], [105, 50]]), [null, marker]);
+});
+
 test("no autocast: a plain snapshot is not turned into a Point", () => {
   // Design §3.4: interoper.js builds instances from `$c`, so the library never has to.
   const view = new MapView({ center: { type: "point", x: 1, y: 2 } });
   assert.equal(view.center instanceof Point, false);
   const marker = new Marker({ position: { type: "point", x: 1, y: 2 } });
   assert.equal(marker.position instanceof Point, false);
+});
+
+test("edit adds and selects marker instances, from an array or a collection, and refuses plain bags", () => {
+  const view = new MapView();
+  const [a, b] = [new Marker({ label: "a" }), new Marker({ label: "b" })];
+  view.edit({ add: [a], select: b });
+  view.edit({ add: new Collection([b]) });
+  assert.deepEqual(view.markers.toArray(), [a, b]);
+  assert.equal(view.selected, b);
+  view.edit({ select: null });
+  assert.equal(view.selected, null);
+  assert.throws(() => view.edit({ add: [{ label: "c" }] }), TypeError);
+  assert.throws(() => view.edit({ select: { label: "c" } }), TypeError);
+  assert.equal(view.markers.length, 2);
 });

@@ -43,6 +43,14 @@ export interface MapViewEvents {
   click: ClickEvent;
 }
 
+/** Only `MapView.edit`'s parameter, so it's only written: its markers may be snapshots, which JS builds (R16, R18). */
+export interface MarkerEdits {
+  /** Added to `markers`, in order: an array or a collection, as a union with entity cases, which is only written (R2). */
+  add?: Marker[] | Collection<Marker>;
+  /** Becomes `selected`. */
+  select?: Marker | null;
+}
+
 export type MapViewOptions = Partial<Pick<MapView, "center" | "zoom" | "rotation" | "basemap" | "cursor" | "title" | "container">>;
 
 export class MapView extends Emitter {
@@ -84,4 +92,10 @@ export class MapView extends Emitter {
    */
   flyTo(target: FlyToTarget, options?: FlyToOptions): Promise<void>;
   markerAt(x: number, y: number): Promise<Marker | null>;
+  /** Adds and selects markers, which must be instances. */
+  edit(edits: MarkerEdits): void;
+  /** The marker at each `[x, y]` screen offset, or `null` where there is none. */
+  markersAt(offsets: [number, number][]): (Marker | null)[];
+  /** Back to zoom 1 and rotation 0: the library changes several properties in one call. */
+  reset(): void;
 }

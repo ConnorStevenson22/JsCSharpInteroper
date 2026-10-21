@@ -37,7 +37,8 @@ class BatchError extends Error {
 // sink(callbackId, argsJson) calls a .NET callback and returns its result as JSON text ("null" for null), null or
 // nothing for undefined, or a Promise of either.
 // An entry with `of` is a variant (mapping §5): its own class id for its runtime class name, and of's entry otherwise.
-// Value-like classes are imported here so `$c` can be built synchronously, in sync mode too. A custom element's module
+// Value-like classes are imported here so `$c` can be built synchronously, in sync mode too; an entity's bag is `$c` too,
+// whose module invoke imports first, and sync mode preloads. A custom element's module
 // is loaded by its component (R28), or by the sync-mode registry's preload list.
 export async function start(metadataSpecifier, sink) {
   meta = (await import(metadataSpecifier)).default;
@@ -94,9 +95,30 @@ export function invokeSync(opJson) {
   return isThenable(response) ? failure(new InteroperError(PROMISE_IN_SYNC)) : response;
 }
 
-// For IJSRuntime.InvokeAsync and Promise-returning ops: never rejects; errors come back as {"e": …}.
+// For IJSRuntime.InvokeAsync and Promise-returning ops: never rejects; errors come back as {"e": …}. An entity's bag
+// (`$c`, R16, R18) may be the first use of its class's module, so that is imported before the op is parsed.
 export async function invoke(opJson) {
+  const unloaded = unloadedClassModules(opJson);
+  if (unloaded.length > 0) {
+    try {
+      await Promise.all(unloaded.map(load));
+    } catch (e) {
+      return failure(e);
+    }
+  }
   return respondWith(false, opJson);
+}
+
+// The modules of the classes the op's `$c` values name that aren't imported yet. In JSON text `"$c":` is always a key:
+// inside a string its quotes would be escaped.
+const classValue = /"\$c":(\d+)/g;
+function unloadedClassModules(opJson) {
+  const unloaded = new Set();
+  for (const [, id] of String(opJson).matchAll(classValue)) {
+    const module = meta.classes[id] && classEntry(id).module;
+    if (module && !modules.has(module)) unloaded.add(module);
+  }
+  return [...unloaded];
 }
 
 // Typed fast paths for [JSImport]: one JS function serves number, string and bool signatures, for members
@@ -181,15 +203,16 @@ const ops = {
     const entry = classEntry(op.t);
     return withModule(entry.module, (m) => toWire(new m[entry.export](...(op.args ?? []))));
   },
-  get: (op) => withTarget(op, (o) => toWire(o[op.name], op.byValue)),
+  get: (op) => withTarget(op, (o) => toWire(o[op.name], op.byValue, op.live)),
   set: (op) => withTarget(op, (o) => { o[op.name] = op.value; }),
-  call: (op) => withTarget(op, (o) => then(o[op.name](...(op.args ?? [])), (r) => toWire(r, op.byValue))),
-  snapshot: (op) => toData(target(op.h)),
+  call: (op) => withTarget(op, (o) => then(o[op.name](...(op.args ?? [])), (r) => toWire(r, op.byValue, op.live))),
+  snapshot: (op) => toData(target(op.h), op.members),
   apply: (op) => { const o = target(op.h); for (const [k, v] of Object.entries(op.value)) o[k] = v; },
   subscribe: (op) => {
-    const listener = op.options ? withOptions(op.callback, op.options) : op.callback;
-    const subscription = target(op.h)[op.method](op.name, listener);
-    if (!disposerOf(subscription)) throw new InteroperError(`${op.method} returned no dispose() or remove()`);
+    const o = target(op.h);
+    const subscription = op.names
+      ? watchMembers(o, op.method, op.names, op.callback)
+      : subscribeTo(o, op.method, op.name, op.options ? withOptions(op.callback, op.options) : op.callback);
     // An object .NET already holds is not a subscription; releasing it must not dispose it.
     if (ids.has(subscription)) throw new InteroperError(`${op.method} returned an object that already has a handle`);
     const id = handleOf(subscription);
@@ -219,6 +242,42 @@ function withOptions(callback, o) {
     if (o.stopPropagation) event?.stopPropagation?.();
     return callback(o.fields ? pick(event, o.fields) : event, ...rest);
   };
+}
+
+function subscribeTo(object, method, name, listener) {
+  const subscription = object[method](name, listener);
+  if (!disposerOf(subscription)) throw new InteroperError(`${method} returned no dispose() or remove()`);
+  return subscription;
+}
+
+// R18: one listener per member, and one call to .NET per turn in which any changed, with the members' snapshot as it
+// is then. A microtask ends the turn: it runs once the code that made the changes returns (a batch op, the library's
+// own method, or on WebAssembly every sync call until .NET yields), so a burst is one message, and it waits for no
+// timer, which would add latency and is throttled in background tabs.
+function watchMembers(object, method, names, callback) {
+  const subscriptions = [];
+  let queued = false;
+  let live = true;
+  const flush = () => {
+    queued = false;
+    if (live) callback(toData(object, names));
+  };
+  const changed = () => {
+    if (queued) return;
+    queued = true;
+    queueMicrotask(flush);
+  };
+  const dispose = () => {
+    live = false;
+    disposeAll(subscriptions.splice(0));
+  };
+  try {
+    for (const name of names) subscriptions.push(subscribeTo(object, method, name, changed));
+  } catch (e) {
+    try { dispose(); } catch { /* the failed subscribe is the error to report */ }
+    throw e;
+  }
+  return { dispose };
 }
 
 // The named top-level members of an object, so nothing else crosses the wire; any other value, an array included, as
@@ -261,15 +320,23 @@ function runBatch(list) {
 
 // Releases every id, even when a subscription's dispose() (or remove()) throws; then reports what failed.
 function releaseAll(list) {
-  const errors = [];
+  const ended = [];
   for (const id of list) {
     const object = handles.get(id);
     if (object === undefined) continue;
     handles.delete(id);
     ids.delete(object);
-    if (!subscriptions.delete(id)) continue;
+    if (subscriptions.delete(id)) ended.push(object);
+  }
+  disposeAll(ended);
+}
+
+// Ends every subscription, even when one's dispose() (or remove()) throws; then reports what failed.
+function disposeAll(list) {
+  const errors = [];
+  for (const subscription of list) {
     try {
-      disposerOf(object).call(object);
+      disposerOf(subscription).call(subscription);
     } catch (e) {
       errors.push(e);
     }
@@ -380,7 +447,7 @@ function revive(_key, value) {
     const { $c, ...bag } = value;
     const entry = classEntry($c);
     const m = modules.get(entry.module);
-    if (!m) throw new InteroperError(`Class ${entry.name} is not loaded; only value-like classes can be sent as $c`);
+    if (!m) throw new InteroperError(`Class ${entry.name} is not loaded, so $c can't build it; send load first`);
     return new m[entry.export](bag);
   }
   return value;
@@ -392,19 +459,26 @@ function callback(id) {
 }
 
 // A JS value in wire form. Plain objects and arrays are copied; other objects become handles, or with
-// byValue, value-like class instances become `$c` data.
-function toWire(value, byValue = false) {
+// byValue, value-like class instances become `$c` data. With live, a plain object with a method is a handle too: a live
+// interface's object (R15), which no class the metadata knows has made. As data (a snapshot's members, R17) nothing
+// becomes a handle: such an object is left out, undefined in an array.
+function toWire(value, byValue = false, live = false, data = false) {
   if (value === null || (typeof value !== "object" && typeof value !== "function")) return value;
-  if (Array.isArray(value)) return Array.from(value, (x) => wireItem(toWire(x, byValue)));
+  if (Array.isArray(value)) return Array.from(value, (x) => wireItem(toWire(x, byValue, live, data)));
   const proto = Object.getPrototypeOf(value);
   if (proto === Object.prototype || proto === null) {
+    const entries = Object.entries(value);
+    if (live && entries.some(([, x]) => typeof x === "function")) return { $h: handleOf(value), $t: 0 };
     const out = {};
-    for (const [k, x] of Object.entries(value)) if (x !== undefined) out[k] = toWire(x, byValue);
+    for (const [k, x] of entries) {
+      const w = toWire(x, byValue, live, data);
+      if (w !== undefined) out[k] = w;
+    }
     return out;
   }
   const classId = classIdOf(value);
   if (byValue && meta.classes[classId]?.value) return toData(value);
-  return { $h: handleOf(value), $t: classId };
+  return data ? undefined : { $h: handleOf(value), $t: classId };
 }
 
 // Array items can't be omitted, so undefined is `$u`.
@@ -412,14 +486,15 @@ function wireItem(value) {
   return value === undefined ? UNDEFINED : value;
 }
 
-// The snapshot members of an object, with value-like members copied deeply and entities as handles (R17).
-function toData(object) {
+// The snapshot members of an object, or the named ones, with value-like members copied deeply and no handles (R17,
+// R18).
+function toData(object, names) {
   const classId = classIdOf(object);
   const entry = classEntry(classId);
   const out = entry.value ? { $c: classId } : {};
-  for (const name of entry.members) {
-    const v = object[name];
-    if (v !== undefined) out[name] = toWire(v, true);
+  for (const name of names ?? entry.members) {
+    const w = toWire(object[name], true, false, true);
+    if (w !== undefined) out[name] = w;
   }
   return out;
 }

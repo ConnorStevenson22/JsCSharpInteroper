@@ -38,6 +38,27 @@ public sealed class RealmTests
         Assert.IsType<Polygon>(await polygon.CloneAsync(scope)); // read through the base: the registry picks Polygon
     }
 
+    [Fact] // R15, R19, design §3.2: a plain object (class id 0) is its declared live interface, and a derived one's once read as that
+    public async Task APlainObjectIsItsDeclaredInterface()
+    {
+        var scope = new JsScope(await StartedRealm());
+        var view = await MapView.CreateAsync(scope, new());
+        var pan = await Tools.CreatePanToolAsync(scope, view);
+        Assert.Equal(typeof(Tool), pan.GetType());
+        Assert.Same(pan, Read<Tool>(pan.Handle, 0, DemoMaps.ToolId));
+        var measure = Read<MeasureTool>(pan.Handle, 0, DemoMaps.MeasureToolId); // re-wrapped as the derived one
+        Assert.Same(measure, Read<Tool>(pan.Handle, 0, DemoMaps.ToolId));
+        Assert.Same(view, Read<JsObject>(view.Handle, DemoMaps.MapViewId, DemoMaps.ToolId)); // an object of a known class is R19's
+        Assert.Throws<JsException>(() => Read<Tool>(view.Handle, DemoMaps.MapViewId, DemoMaps.ToolId));
+
+        T Read<T>(int handle, int classId, int declared) where T : JsObject
+        {
+            var reader = new System.Text.Json.Utf8JsonReader(System.Text.Encoding.UTF8.GetBytes($$"""{"$h":{{handle}},"$t":{{classId}}}"""));
+            reader.Read();
+            return scope.Read<T>(ref reader, declared);
+        }
+    }
+
     [Fact]
     public async Task ACancelledCallStopsWaitingWhileJsFinishesIt() // §5
     {
@@ -242,6 +263,122 @@ public sealed class RealmTests
         await last.DisposeAsync();
         Assert.Single(transport.Ops);
         Assert.Equal(baseline, transport.Census());
+    }
+
+    [Fact]
+    public async Task AnOwnedValueIsTornDownThenReleasedOnce()
+    {
+        var realm = await StartedRealm();
+        var map = new JsScope(realm);
+        var markers = await (await MapView.CreateAsync(map, new())).GetMarkersAsync(map);
+        var baseline = transport.Census();
+        var teardowns = 0;
+        var owned = await map.CreateOwnedAsync(async scope =>
+        {
+            var marker = await Marker.CreateAsync(scope, new());
+            await markers.AddAsync(marker);
+            await marker.WatchLabelAsync(scope, _ => { }); // released with it
+            return marker;
+        }, async marker =>
+        {
+            teardowns++;
+            Assert.True(await markers.RemoveAsync(marker)); // its handle is still live
+        });
+        Assert.Equal(baseline + 2, transport.Census());
+
+        transport.Ops.Clear();
+        await owned.DisposeAsync();
+        Assert.Equal(["call", "release"], transport.Ops.Select(op => (string?)JsonNode.Parse(op)!["op"]));
+        Assert.Equal((0.0, baseline), (await markers.GetLengthAsync(), transport.Census()));
+
+        await owned.DisposeAsync(); // once only, and the map no longer holds it
+        await map.DisposeAsync();
+        Assert.Equal((1, 3), (teardowns, transport.Ops.Count));
+        Assert.Throws<ObjectDisposedException>(() => owned.Scope.Wrap<Marker>(owned.Value.Handle, DemoMaps.MarkerId));
+    }
+
+    [Fact]
+    public async Task DisposingAScopeDisposesItsChildrenFirst()
+    {
+        var realm = await StartedRealm();
+        Func<Action, Task> dispatch = run => Task.Run(run);
+        var map = new JsScope(realm) { Dispatch = dispatch };
+        var view = await MapView.CreateAsync(map, new());
+        var torn = new List<string>();
+        var first = await map.CreateOwnedAsync(scope => Marker.CreateAsync(scope, new()), _ => Task.Run(() => torn.Add("first")));
+        var second = await map.CreateOwnedAsync(scope => Marker.CreateAsync(scope, new()), _ => Task.Run(() => torn.Add("second")));
+        var plain = map.CreateChild();
+        await Marker.CreateAsync(plain, new());
+        Assert.Same(dispatch, plain.Dispatch);
+
+        transport.Ops.Clear();
+        await map.DisposeAsync();
+        Assert.Equal(["second", "first"], torn); // newest first
+        Assert.Equal(4, transport.Ops.Count); // each child's release, then the map's
+        Assert.Contains($"[{view.Handle}]", transport.Ops[^1], StringComparison.Ordinal);
+        Assert.Equal(0, transport.Census());
+        Assert.Throws<ObjectDisposedException>(() => first.Scope.Own(1));
+        Assert.Throws<ObjectDisposedException>(() => second.Scope.Own(1));
+        Assert.Throws<ObjectDisposedException>(map.CreateChild);
+    }
+
+    [Fact]
+    public async Task ATeardownErrorSurfacesAfterEverythingIsReleased()
+    {
+        var realm = await StartedRealm();
+        var map = new JsScope(realm);
+        var failing = await map.CreateOwnedAsync(scope => Marker.CreateAsync(scope, new()),
+            marker => Send(map, $$"""{"op":"call","h":{{marker.Handle}},"name":"destroy"}"""));
+        var other = await map.CreateOwnedAsync(scope => Marker.CreateAsync(scope, new()), _ => throw new InvalidOperationException("second"));
+
+        var e = await Assert.ThrowsAsync<JsException>(failing.DisposeAsync().AsTask);
+        Assert.Equal("TypeError", e.Name);
+        Assert.Equal(1, transport.Census()); // only the other one
+
+        Assert.Equal("second", (await Assert.ThrowsAsync<InvalidOperationException>(map.DisposeAsync().AsTask)).Message);
+        Assert.Equal(0, transport.Census());
+        await other.DisposeAsync(); // already done, no error
+    }
+
+    [Fact]
+    public async Task AFailedFactoryReleasesWhatItMade()
+    {
+        var realm = await StartedRealm();
+        var map = new JsScope(realm);
+        var e = await Assert.ThrowsAsync<InvalidOperationException>(() => map.CreateOwnedAsync<Marker>(async scope =>
+        {
+            await Marker.CreateAsync(scope, new());
+            throw new InvalidOperationException("load failed");
+        }, _ => throw new InvalidOperationException("no teardown without a value")));
+        Assert.Equal("load failed", e.Message);
+        Assert.Equal(0, transport.Census());
+
+        transport.Ops.Clear();
+        await map.DisposeAsync();
+        Assert.Empty(transport.Ops); // the child left the map
+    }
+
+    [Fact]
+    public async Task SyncDisposalRunsSyncTeardownsAndLeavesAsyncOnesForDisposeAsync()
+    {
+        var realm = await StartedRealm(GoldenSlice.Sync.DemoMaps.Classes);
+        var map = new JsScope(realm);
+        var torn = 0;
+        var owned = map.CreateOwned(scope => GoldenSlice.Sync.Marker.Create(scope, new()), marker => torn++);
+        owned.Dispose();
+        owned.Dispose();
+        Assert.Equal((1, 0), (torn, transport.Census()));
+
+        var child = map.CreateChild();
+        var nested = await child.CreateOwnedAsync(scope => Task.FromResult(GoldenSlice.Sync.Marker.Create(scope, new())),
+            _ => Task.FromResult(torn++));
+        var e = Assert.Throws<InvalidOperationException>(map.Dispose);
+        Assert.Equal("A scope with an async teardown must be disposed with DisposeAsync.", e.Message);
+        Assert.Equal((1, 1), (torn, transport.Census())); // nothing was forgotten
+
+        await map.DisposeAsync();
+        Assert.Equal((2, 0), (torn, transport.Census()));
+        Assert.Throws<ObjectDisposedException>(() => nested.Scope.Own(1));
     }
 
     [Fact]

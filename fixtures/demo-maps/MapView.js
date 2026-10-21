@@ -66,10 +66,33 @@ export class MapView extends Emitter {
     }
   }
 
+  // Adds and selects markers. Each must be an instance, as one JS builds from a snapshot ($c) is: a plain bag has no
+  // displayLabel. The module doesn't import Marker, so a bag's class may be in a module nothing has loaded yet.
+  edit({ add = [], select } = {}) {
+    const added = Array.isArray(add) ? add : add.toArray();
+    if ([...added, ...(select ? [select] : [])].some((m) => typeof m?.displayLabel !== "string")) throw new TypeError("edit takes Marker instances");
+    for (const marker of added) this.#markers.add(marker);
+    if (select !== undefined) this.selected = select;
+  }
+
   // The first marker within 10 pixels of the screen offset, or null.
   async markerAt(x, y) {
+    return this.#nearest(x, y);
+  }
+
+  markersAt(offsets) {
+    return offsets.map(([x, y]) => this.#nearest(x, y));
+  }
+
+  #nearest(x, y) {
     const point = this.screenToMap(x, y);
     const tolerance = 10 / 2 ** this.zoom;
     return this.#markers.find((m) => Math.hypot(m.position.x - point.x, m.position.y - point.y) <= tolerance) ?? null;
+  }
+
+  // Each property's watchers are called as it changes, so one call raises several watches in one turn.
+  reset() {
+    this.zoom = 1;
+    this.rotation = 0;
   }
 }

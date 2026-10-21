@@ -32,4 +32,10 @@ public sealed partial class Point : Shape
 
     public void Apply(PointSnapshot patch) =>
         Realm.Send(global::Interoper.JsOp.Apply(Handle, w => PointSnapshot.WriteMembers(w, patch)));
+
+    public PointSnapshot Snapshot(global::Interoper.JsMembers<PointSnapshot> members) =>
+        Realm.Snapshot(Handle, members);
+
+    public global::System.IDisposable Watch(global::Interoper.JsScope scope, global::Interoper.JsMembers<PointSnapshot> members, global::System.Action<PointSnapshot> handler) =>
+        scope.Subscribe(Handle, "watch", members, handler);
 }

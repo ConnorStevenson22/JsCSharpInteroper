@@ -69,25 +69,29 @@ public sealed class Seam
 public static class TransportContract
 {
     // Class ids from the demo-maps metadata (tests/GoldenSlice/wwwroot/demo-maps.meta.js).
-    public const int Shape = 1, Point = 2, MapView = 5, Marker = 6;
-    public const string Measure = "@acme/demo-maps/measure.js";
+    public const int Shape = 1, Point = 2, MapView = 5, Marker = 6, Pin = 13;
+    public const string Measure = "@acme/demo-maps/measure.js", Tools = "@acme/demo-maps/tools.js";
 
     public static readonly IReadOnlyList<(string Name, Func<Seam, Task> Run)> Cases =
     [
         ("create, get, set and release", CreateGetSet),
         ("typed fast paths", FastPaths),
         ("$c value arguments (R16)", ValueArguments),
+        ("$c of an entity: invoke imports its module first (R16, R18)", EntityBag),
         ("Promise calls", Promises),
         ("$f callback with a synchronous return value (R21)", SyncReturnCallback),
         ("$f callback that re-enters the seam (R21)", ReentrantCallback),
         ("$f callback whose handler throws (R21)", ThrowingCallback),
         ("module function call", ModuleCall),
+        ("live: a plain object with a method comes back as a handle with class id 0 (R15)", LivePlainObject),
         ("subscribe and release (R24)", Subscribe),
         ("subscribe with options: JS calls the event's methods, then sends only the fields (R24)", SubscribeWithOptions),
+        ("snapshot of some members, and one watch of them: one call per JS turn (R18)", MemberWatch),
         ("errors become JsException", Errors),
         ("batch op: failures listed by index, the rest applied", BatchOp),
         ("BeginBatch: N writes are one round trip, a read flushes first", BeginBatch),
         ("wrap returns its value in wire form (R13, R28)", Wrap),
+        ("owned values: the teardown goes before the release, which sends a batch's queue first", Owned),
     ];
 
     // A component gets its element's handle this way, from {"$e":id}; any value comes back as a result would.
@@ -151,6 +155,23 @@ public static class TransportContract
         var center = await Value(seam, $$"""{"op":"get","h":{{h}},"name":"center"}""");
         Equal(Point, (int)center!["$t"]!);
         await Release(seam, h, (int)center["$h"]!);
+        Equal(baseline, await seam.Census());
+    }
+
+    // Nothing in the contract loads pins.js, so through invoke the bag is the first use of Pin's module. Sync mode
+    // preloads every class's module instead (design §3.5), and invokeSync can't import one.
+    private static async Task EntityBag(Seam seam)
+    {
+        if (seam.IsSync)
+        {
+            return;
+        }
+        var baseline = await seam.Census();
+        var pin = await Value(seam, """{"op":"wrap","value":{"$c":13,"label":"p"}}""");
+        Equal(Pin, (int)pin!["$t"]!); // JS built a Pin from the bag
+        var h = (int)pin["$h"]!;
+        Equal("\"p\"", await Value(seam, $$"""{"op":"get","h":{{h}},"name":"displayLabel"}"""));
+        await Release(seam, h);
         Equal(baseline, await seam.Census());
     }
 
@@ -229,6 +250,23 @@ public static class TransportContract
         Equal("""{"v":5}""", await seam.Send(distance));
     }
 
+    private static async Task LivePlainObject(Seam seam)
+    {
+        var baseline = await seam.Census();
+        var view = await Create(seam, MapView);
+        var tool = await Value(seam, $$$"""{"op":"call","module":"{{{Tools}}}","name":"createPanTool","args":[{"$h":{{{view}}}}],"live":true}""");
+        Equal(0, (int)tool!["$t"]!);
+        var h = (int)tool["$h"]!;
+        Equal("{}", await seam.Send($$"""{"op":"call","h":{{h}},"name":"activate","args":[]}"""));
+        Equal(true, await seam.GetBoolean(h, "active"));
+        Equal($$"""[{"$h":{{h}},"$t":0}]""", await Value(seam, $$$"""{"op":"call","module":"{{{Tools}}}","name":"toolsOf","args":[{"$h":{{{view}}}}],"live":true}"""));
+        // Without live, it's a copy: data, and its functions as handles (nothing asks for those).
+        var copy = await Value(seam, $$$"""{"op":"call","module":"{{{Tools}}}","name":"toolsOf","args":[{"$h":{{{view}}}}]}""");
+        Equal("pan", (string)copy![0]!["name"]!);
+        await Release(seam, [view, h, .. new[] { "activate", "deactivate" }.Select(f => (int)copy[0]![f]!["$h"]!)]);
+        Equal(baseline, await seam.Census());
+    }
+
     private static async Task Subscribe(Seam seam)
     {
         var baseline = (await seam.Census(), seam.Callbacks.Count);
@@ -290,6 +328,37 @@ public static class TransportContract
         seam.Callbacks.Release(listener);
         seam.Callbacks.Release(preventDefault);
         seam.Callbacks.Release(stopPropagation);
+        Equal(baseline, (await seam.Census(), seam.Callbacks.Count));
+    }
+
+    private static async Task MemberWatch(Seam seam)
+    {
+        var baseline = (await seam.Census(), seam.Callbacks.Count);
+        var h = await Create(seam, MapView, """{"zoom":5}""");
+        Equal("""{"zoom":5,"basemap":"plain"}""", await Value(seam, $$"""{"op":"snapshot","h":{{h}},"members":["zoom","basemap","title"]}""")); // title is undefined
+
+        var calls = new List<string>();
+        var called = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var listener = seam.Callbacks.Register(args =>
+        {
+            lock (calls)
+            {
+                calls.Add(args);
+            }
+            called.TrySetResult();
+            return null;
+        });
+        var subscription = await Value(seam, $$$"""{"op":"subscribe","h":{{{h}}},"method":"watch","names":["zoom","rotation"],"callback":{"$f":{{{listener}}}}}""");
+        string Set(string name, double value) => $$"""{"op":"set","h":{{h}},"name":"{{name}}","value":{{value}}}""";
+        Equal("{}", await seam.Send($$"""{"op":"batch","ops":[{{Set("zoom", 2)}},{{Set("zoom", 3)}},{{Set("rotation", 10)}}]}"""));
+        await called.Task.WaitAsync(TimeSpan.FromSeconds(10));
+
+        await Release(seam, (int)subscription!); // every listener
+        await seam.Send(Set("zoom", 4));
+        await seam.GetNumber(h, "zoom"); // a round trip after the change: a call back would have come first
+        Equal("""[{"zoom":3,"rotation":10}]""", string.Join("\n", calls));
+        await Release(seam, h);
+        seam.Callbacks.Release(listener);
         Equal(baseline, (await seam.Census(), seam.Callbacks.Count));
     }
 
@@ -407,6 +476,47 @@ public static class TransportContract
     // --- Helpers ---
 
     private static readonly JsonRead<JsonNode?> Node = static (ref reader) => JsonNode.Parse(ref reader);
+
+    // design §3.2, §3.3: each marker is owned in a child of the map's scope, and its teardown takes it off the map.
+    private static async Task Owned(Seam seam)
+    {
+        if (seam.AsyncTransport is not { } transport) return;
+        var realm = new JsRealm(() => Task.FromResult(transport), new JsClassRegistry());
+        await realm.StartAsync();
+        var baseline = await seam.Census();
+        var map = new JsScope(realm);
+        async Task<int> Make(JsScope scope, string op)
+        {
+            var h = (int)(await realm.CallAsync(op, Node))!["$h"]!;
+            scope.Own(h);
+            return h;
+        }
+        var view = await Make(map, """{"op":"create","t":5,"args":[{}]}""");
+        var markers = await Make(map, $$"""{"op":"get","h":{{view}},"name":"markers"}""");
+        string Markers(string method, int marker) => $$$"""{"op":"call","h":{{{markers}}},"name":"{{{method}}}","args":[{"$h":{{{marker}}}}]}""";
+        async Task<int> Add(JsScope scope)
+        {
+            var marker = await Make(scope, """{"op":"create","t":6,"args":[{}]}""");
+            await realm.SendAsync(Markers("add", marker));
+            return marker;
+        }
+        Task Remove(int marker) => realm.SendAsync(Markers("remove", marker)); // queued in a batch
+
+        var first = await map.CreateOwnedAsync(Add, Remove);
+        var second = await map.CreateOwnedAsync(Add, Remove);
+        await first.DisposeAsync();
+        Equal((1.0, baseline + 3), (await realm.GetNumberAsync(markers, "length"), await seam.Census()));
+
+        var start = realm.RoundTrips;
+        await using (map.BeginBatch())
+        {
+            await second.DisposeAsync();
+            Equal(start + 2, realm.RoundTrips); // the queued remove, then the release
+        }
+        Equal((0.0, baseline + 2), (await realm.GetNumberAsync(markers, "length"), await seam.Census()));
+        await map.DisposeAsync();
+        Equal(baseline, await seam.Census());
+    }
 
     private static async Task<JsonNode?> Value(Seam seam, string op) => JsEnvelope.Read(await seam.Send(op), Node);
 

@@ -52,6 +52,21 @@ test("an object of a class the metadata doesn't know is its nearest registered a
   release(fast, guarded, source, endless);
 });
 
+test("with live, a plain object with a method is a handle of class id 0, and data stays a copy (R15)", async () => {
+  const before = census();
+  const result = value(await sendAsync({ op: "call", module: faulty, name: "objects", live: true }));
+  assert.deepEqual(result.data, { x: 1 });
+  assert.deepEqual(result.list[0], { y: 2 });
+  assert.deepEqual([Object.keys(result.tool), result.tool.$t, result.list[1].$t], [["$h", "$t"], 0, 0]);
+  assert.equal(call(result.tool, "go"), 7);
+  assert.equal(get(result.tool, "name"), "t");
+  release(result.tool, result.list[1]);
+  const copy = value(await sendAsync({ op: "call", module: faulty, name: "objects" })); // without live, a copy
+  assert.equal(copy.tool.name, "t");
+  release(copy.tool.go, copy.list[1].go);
+  assert.equal(census(), before);
+});
+
 test("a variant has its own class id and its base's entry (§5)", async () => {
   const glow = value(await sendAsync({ op: "call", module: faulty, name: "glowMarker" }));
   assert.equal(glow.$t, ids.GlowMarker);
@@ -107,7 +122,7 @@ test("modules load on first use through invoke; invokeSync never starts an impor
   assert.deepEqual(send(op), { v: 5 });
 });
 
-test("snapshot reads every member: value-like members by value, entities as handles (R17, R18)", () => {
+test("snapshot reads every member as data: value-like members by value, what would be a handle left out (R17, R18)", () => {
   const view = create(ids.MapView, { zoom: 2, center: { $c: ids.Point, type: "point", x: 1, y: 2 } });
   const markers = get(view, "markers");
   assert.deepEqual(value(send({ op: "snapshot", h: view.$h })), {
@@ -115,12 +130,19 @@ test("snapshot reads every member: value-like members by value, entities as hand
     zoom: 2,
     rotation: 0,
     basemap: "plain",
-    selected: null, // title and cursor are undefined, so they are omitted (R2)
-    markers,
+    selected: null, // title and cursor are undefined, so they are omitted (R2); markers is a Collection
   });
   const line = create(ids.Line, { path: [[0, 1], [2, 3]] });
   assert.deepEqual(value(send({ op: "snapshot", h: line.$h })), { $c: ids.Line, type: "line", path: [[0, 1], [2, 3]] });
   release(view, markers, line);
+});
+
+test("snapshot sends an any member as data, without handles (R17)", () => {
+  const other = create(ids.Marker);
+  const point = { $c: ids.Point, type: "point", x: 1, y: 2 };
+  const marker = create(ids.Marker, { data: { n: 1, other, at: point, list: [other, 2] } });
+  assert.deepEqual(value(send({ op: "snapshot", h: marker.$h })).data, { n: 1, at: point, list: [{ $u: 1 }, 2] });
+  release(marker, other);
 });
 
 test("apply sets the patch's members in order (R18)", () => {

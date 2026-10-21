@@ -6,49 +6,82 @@ namespace GoldenSlice.Async;
 [global::System.Text.Json.Serialization.JsonConverter(typeof(global::Interoper.JsRecordConverter<PinSnapshot>))]
 public sealed partial record PinSnapshot : global::Interoper.IJsRecord<PinSnapshot>
 {
+    /// <summary>Anything the app keeps with the pin.</summary>
+    public global::Interoper.Opt<global::Interoper.JsAny> Meta { get; init; }
     /// <summary>Where the marker is; a pair is taken as <c>[x, y]</c>.</summary>
     public global::Interoper.Opt<PointSnapshot> Position { get; init; }
     public global::Interoper.Opt<string> Label { get; init; }
     public Style Style { get; init; }
+    /// <summary>The same tagged intersection as <c>TileLayer.glow</c>, in another module.</summary>
+    public global::Interoper.Opt<GlowOptionsGlow> Glow { get; init; }
+    /// <summary>The app's own data, untyped; it may hold other markers.</summary>
+    public global::Interoper.Opt<global::Interoper.JsAny> Data { get; init; }
 
     public static void Write(global::System.Text.Json.Utf8JsonWriter writer, PinSnapshot value)
     {
         writer.WriteStartObject();
+        writer.WriteNumber("$c"u8, DemoMaps.PinId);
         WriteMembers(writer, value);
         writer.WriteEndObject();
     }
 
     public static void WriteMembers(global::System.Text.Json.Utf8JsonWriter writer, PinSnapshot value)
     {
+        global::Interoper.JsJson.WriteProperty(writer, "meta"u8, value.Meta, global::Interoper.JsAny.Write);
         global::Interoper.JsJson.WriteProperty(writer, "position"u8, value.Position, PointSnapshot.Write);
         global::Interoper.JsJson.WriteProperty(writer, "label"u8, value.Label, global::Interoper.JsJson.WriteString);
         global::Interoper.JsJson.WriteProperty(writer, "style"u8, value.Style);
+        global::Interoper.JsJson.WriteProperty(writer, "glow"u8, value.Glow, GlowOptionsGlow.Write);
+        global::Interoper.JsJson.WriteProperty(writer, "data"u8, value.Data, global::Interoper.JsAny.Write);
     }
 
     public static PinSnapshot Read(ref global::System.Text.Json.Utf8JsonReader reader)
     {
+        global::Interoper.Opt<global::Interoper.JsAny> meta = default;
         global::Interoper.Opt<PointSnapshot> position = default;
         global::Interoper.Opt<string> label = default;
         Style style = default;
+        global::Interoper.Opt<GlowOptionsGlow> glow = default;
+        global::Interoper.Opt<global::Interoper.JsAny> data = default;
         while (reader.Read() && reader.TokenType == global::System.Text.Json.JsonTokenType.PropertyName)
         {
             var property = reader.GetString();
             reader.Read();
             switch (property)
             {
+                case "meta": meta = global::Interoper.JsJson.ReadOpt(ref reader, global::Interoper.JsAny.ReadData); break;
                 case "position": position = global::Interoper.JsJson.ReadOpt(ref reader, PointSnapshot.Read); break;
                 case "label": label = global::Interoper.JsJson.ReadOpt(ref reader, global::Interoper.JsJson.ReadString); break;
                 case "style": style = global::Interoper.JsJson.ReadUnion<Style>(ref reader); break;
+                case "glow": glow = global::Interoper.JsJson.ReadOpt(ref reader, GlowOptionsGlow.Read); break;
+                case "data": data = global::Interoper.JsJson.ReadOpt(ref reader, global::Interoper.JsAny.ReadData); break;
                 default: reader.Skip(); break;
             }
         }
-        return new PinSnapshot { Position = position, Label = label, Style = style };
+        return new PinSnapshot { Meta = meta, Position = position, Label = label, Style = style, Glow = glow, Data = data };
     }
 
     public static PinSnapshot Diff(PinSnapshot before, PinSnapshot after) => new()
     {
+        Meta = after.Meta.IsUndefined || global::Interoper.JsDiff.Same(before.Meta, after.Meta) ? default : after.Meta,
         Position = after.Position.IsUndefined || global::Interoper.JsDiff.Same(before.Position, after.Position) ? default : after.Position,
         Label = after.Label.IsUndefined || global::Interoper.JsDiff.Same(before.Label, after.Label) ? default : after.Label,
         Style = after.Style.IsUndefined || global::Interoper.JsDiff.Same(before.Style, after.Style) ? default : after.Style,
+        Glow = after.Glow.IsUndefined || global::Interoper.JsDiff.Same(before.Glow, after.Glow) ? default : after.Glow,
+        Data = after.Data.IsUndefined || global::Interoper.JsDiff.Same(before.Data, after.Data) ? default : after.Data,
     };
+
+    public static class Members
+    {
+        /// <summary>Anything the app keeps with the pin.</summary>
+        public static global::Interoper.JsMembers<PinSnapshot> Meta => new("meta");
+        /// <summary>Where the marker is; a pair is taken as <c>[x, y]</c>.</summary>
+        public static global::Interoper.JsMembers<PinSnapshot> Position => new("position");
+        public static global::Interoper.JsMembers<PinSnapshot> Label => new("label");
+        public static global::Interoper.JsMembers<PinSnapshot> Style => new("style");
+        /// <summary>The same tagged intersection as <c>TileLayer.glow</c>, in another module.</summary>
+        public static global::Interoper.JsMembers<PinSnapshot> Glow => new("glow");
+        /// <summary>The app's own data, untyped; it may hold other markers.</summary>
+        public static global::Interoper.JsMembers<PinSnapshot> Data => new("data");
+    }
 }

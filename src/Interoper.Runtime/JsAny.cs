@@ -54,6 +54,16 @@ public sealed class JsAny : IEquatable<JsAny>
         return scope.OwnAll(Handles(json)) ? new(json) : throw new ObjectDisposedException(nameof(JsScope));
     }
 
+    /// <summary>
+    /// Reads a value that has no handles, as a snapshot's <c>any</c> members are (mapping R17): the reader for them in
+    /// generated code.
+    /// </summary>
+    public static JsAny ReadData(ref Utf8JsonReader reader)
+    {
+        var json = JsonElement.ParseValue(ref reader);
+        return Handles(json).Any() ? throw new JsonException("A snapshot's value has a handle; read it with a scope.") : new(json);
+    }
+
     private static IEnumerable<int> Handles(JsonElement json) => json.ValueKind switch
     {
         JsonValueKind.Object when json.TryGetProperty("$h", out var handle) && handle.ValueKind == JsonValueKind.Number => [handle.GetInt32()],

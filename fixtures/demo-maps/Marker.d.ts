@@ -1,11 +1,11 @@
 import { Observable } from "./core.js";
 import { Point } from "./geometry.js";
-import { Style } from "./styles.js";
+import { GlowOptions, Style } from "./styles.js";
 
 /** Called synchronously; its return value becomes the marker's label. */
 export type LabelFormatter = (marker: Marker) => string;
 
-export interface MarkerOptions extends Partial<Pick<Marker, "label" | "style" | "labelFormatter">> {
+export interface MarkerOptions extends Partial<Pick<Marker, "label" | "style" | "labelFormatter" | "data">> {
   position?: Point | [number, number];
 }
 
@@ -16,8 +16,12 @@ export class Marker extends Observable {
   set position(value: Point | [number, number]);
   label?: string | null;
   style: Style;
+  /** The same tagged intersection as `TileLayer.glow`, in another module. */
+  glow?: (GlowOptions & { kind: "glow" }) | null;
   /** Overrides `label` when set. */
   labelFormatter?: LabelFormatter | null;
+  /** The app's own data, untyped; it may hold other markers. */
+  data?: any;
   /** `labelFormatter(this)` if set, otherwise `label`, otherwise "". */
   readonly displayLabel: string;
 }

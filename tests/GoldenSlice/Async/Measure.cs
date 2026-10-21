@@ -7,11 +7,13 @@ public static partial class Measure
 {
     private const string Module = "@acme/demo-maps/measure.js";
 
-    public static global::System.Threading.Tasks.Task<double> DistanceAsync(global::Interoper.JsRealm realm, PointSnapshot a, PointSnapshot b, global::System.Threading.CancellationToken cancellationToken = default) =>
+    /// <summary>In <c>unit</c>s: meters by default, or a unit that many meters long.</summary>
+    public static global::System.Threading.Tasks.Task<double> DistanceAsync(global::Interoper.JsRealm realm, PointSnapshot a, PointSnapshot b, MeasureDistanceUnit unit = default, global::System.Threading.CancellationToken cancellationToken = default) =>
         realm.CallAsync(global::Interoper.JsOp.Call(Module, "distance", w =>
         {
             PointSnapshot.Write(w, a);
             PointSnapshot.Write(w, b);
+            if (!unit.IsUndefined) global::Interoper.JsJson.WriteValue(w, unit);
         }), global::Interoper.JsJson.ReadNumber, cancellationToken);
 
     /// <summary>The length of the closed path through the points: the last joins the first.</summary>
@@ -24,4 +26,24 @@ public static partial class Measure
     /// <summary>The shape's <c>type</c>, or "marker" and its label.</summary>
     public static async global::System.Threading.Tasks.Task<string> DescribeAsync(global::Interoper.JsRealm realm, Measurable target, global::System.Threading.CancellationToken cancellationToken = default) =>
         (await realm.CallAsync(global::Interoper.JsOp.Call(Module, "describe", w => global::Interoper.JsJson.WriteValue(w, target)), global::Interoper.JsJson.ReadString, cancellationToken))!;
+
+    /// <summary>The distance from <c>origin</c> to each marker's position, or <c>null</c> for a gap in the list.</summary>
+    public static async global::System.Threading.Tasks.Task<global::Interoper.Opt<double>[]> DistancesAsync(global::Interoper.JsRealm realm, PointSnapshot origin, global::Interoper.Opt<Marker>[] markers, global::System.Threading.CancellationToken cancellationToken = default) =>
+        (await realm.CallAsync(global::Interoper.JsOp.Call(Module, "distances", w =>
+        {
+            PointSnapshot.Write(w, origin);
+            global::Interoper.JsJson.WriteArray(w, markers, static (w1, v1) => global::Interoper.JsJson.WriteValue(w1, v1, Marker.Write));
+        }), static (ref r) => global::Interoper.JsJson.ReadArray(ref r, static (ref r1) => global::Interoper.JsJson.ReadOpt(ref r1, global::Interoper.JsJson.ReadNumber)), cancellationToken))!;
+
+    /// <summary>Each shape's bounds center; <c>null</c> and <c>undefined</c> elements stay as they are.</summary>
+    public static async global::System.Threading.Tasks.Task<global::Interoper.Opt<PointSnapshot>[]> CentersAsync(global::Interoper.JsRealm realm, global::Interoper.Opt<ShapeSnapshot>[] shapes, global::System.Threading.CancellationToken cancellationToken = default) =>
+        (await realm.CallAsync(global::Interoper.JsOp.Call(Module, "centers", w => global::Interoper.JsJson.WriteArray(w, shapes, static (w1, v1) => global::Interoper.JsJson.WriteValue(w1, v1, ShapeSnapshot.Write)), byValue: true), static (ref r) => global::Interoper.JsJson.ReadArray(ref r, static (ref r1) => global::Interoper.JsJson.ReadOpt(ref r1, PointSnapshot.Read)), cancellationToken))!;
+
+    /// <summary>A shape with one vertex as that point; any other shape as it is. The result has no discriminant, only class ids.</summary>
+    public static global::System.Threading.Tasks.Task<MeasureSimplify> SimplifyAsync(global::Interoper.JsRealm realm, AnyShape shape, global::System.Threading.CancellationToken cancellationToken = default) =>
+        realm.CallAsync(global::Interoper.JsOp.Call(Module, "simplify", w => global::Interoper.JsJson.WriteValue(w, shape), byValue: true), global::Interoper.JsJson.ReadUnion<MeasureSimplify>, cancellationToken);
+
+    /// <summary>A shape from its constructor bag tagged with its <c>type</c>, the unions nested as typings write them.</summary>
+    public static global::System.Threading.Tasks.Task<global::Interoper.Opt<ShapeSnapshot>> ShapeFromAsync(global::Interoper.JsRealm realm, MeasureShapeFromOptions options, global::System.Threading.CancellationToken cancellationToken = default) =>
+        realm.CallAsync(global::Interoper.JsOp.Call(Module, "shapeFrom", w => global::Interoper.JsJson.WriteValue(w, options), byValue: true), static (ref r) => global::Interoper.JsJson.ReadOpt(ref r, ShapeSnapshot.Read), cancellationToken);
 }

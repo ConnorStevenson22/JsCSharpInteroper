@@ -76,6 +76,13 @@ public sealed record ClassDeclaration : Declaration
     public IReadOnlyList<Signature> Constructors { get; init; } = [];
     public IReadOnlyList<Member> Members { get; init; } = [];
     public IReadOnlyList<Event> Events { get; init; } = [];
+
+    /// <summary>
+    /// Not in the IR: an interface with methods, which the generator maps as a live class (R15).
+    /// Its objects are plain JS objects, so it has no constructor, runtime class name or snapshot.
+    /// </summary>
+    [JsonIgnore]
+    public bool Interface { get; init; }
 }
 
 public sealed record InterfaceDeclaration : Declaration
@@ -208,6 +215,8 @@ public sealed record IntersectionType(IReadOnlyList<IrType> Types) : IrType;
 
 public sealed record ObjectType : IrType
 {
+    /// <summary>For a resolved intersection, its named parts: <c>Props</c> in <c>Props &amp; { type: "poly" }</c> (R11).</summary>
+    public IReadOnlyList<IrType> Bases { get; init; } = [];
     public IReadOnlyList<Member> Members { get; init; } = [];
     public IReadOnlyList<IndexSignature> IndexSignatures { get; init; } = [];
     public IReadOnlyList<Signature> CallSignatures { get; init; } = [];

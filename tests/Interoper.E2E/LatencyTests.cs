@@ -8,7 +8,8 @@ namespace Interoper.E2E;
 /// <summary>
 /// Server under latency (design §3.3, §6): a second test host whose SignalR filter delays every message from the
 /// browser by <see cref="LatencyHost.Latency"/>, so each round trip costs at least that. The async golden suite and the
-/// transport contract still pass, and a batch of 100 writes is one round trip within three latencies.
+/// transport contract still pass, a batch of 100 writes is one round trip within three latencies, and a burst of
+/// watched changes is one message.
 /// </summary>
 public sealed partial class LatencyTests(BrowserHost browser, LatencyHost host) : IClassFixture<LatencyHost>
 {
@@ -43,6 +44,14 @@ public sealed partial class LatencyTests(BrowserHost browser, LatencyHost host) 
         Assert.InRange(read, LatencyHost.Latency.TotalMilliseconds - 1, double.MaxValue); // the delay is on (less 1 for rounding)
         Assert.InRange(batch, LatencyHost.Latency.TotalMilliseconds - 1, 3 * LatencyHost.Latency.TotalMilliseconds);
         TestContext.Current.TestOutputHelper?.WriteLine(output);
+    }
+
+    // R18: 21 changes of three watched members in one batch, so one JS turn, are one message with the latest values.
+    [Fact]
+    public async Task ABurstOfWatchedChangesIsOneMessage()
+    {
+        var output = await browser.RunPageAsync("server-latency-watch", host.BaseUrl);
+        Assert.Equal("1 call(s): zoom 10, rotation 100, basemap Night", output);
     }
 
     private static double Milliseconds(Match match, string group) => double.Parse(match.Groups[group].Value, CultureInfo.InvariantCulture);

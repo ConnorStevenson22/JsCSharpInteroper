@@ -9,6 +9,7 @@ public sealed partial record ObservableSnapshot : global::Interoper.IJsRecord<Ob
     public static void Write(global::System.Text.Json.Utf8JsonWriter writer, ObservableSnapshot value)
     {
         writer.WriteStartObject();
+        writer.WriteNumber("$c"u8, DemoMaps.ObservableId);
         WriteMembers(writer, value);
         writer.WriteEndObject();
     }

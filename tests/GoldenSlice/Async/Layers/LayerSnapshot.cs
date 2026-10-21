@@ -45,4 +45,10 @@ public sealed partial record LayerSnapshot : global::Interoper.IJsRecord<LayerSn
         Title = after.Title.IsUndefined || global::Interoper.JsDiff.Same(before.Title, after.Title) ? default : after.Title,
         Visible = after.Visible.IsUndefined || global::Interoper.JsDiff.Same(before.Visible, after.Visible) ? default : after.Visible,
     };
+
+    public static class Members
+    {
+        public static global::Interoper.JsMembers<LayerSnapshot> Title => new("title");
+        public static global::Interoper.JsMembers<LayerSnapshot> Visible => new("visible");
+    }
 }

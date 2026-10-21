@@ -29,9 +29,9 @@ const pair = { kind: "tuple", elements: [num, num] };
 test("modules are keyed by specifier, declarations keep source order", () => {
   assert.equal(ir.version, 1);
   assert.deepEqual(ir.package, { name: "@acme/demo-maps", version: "0.0.0" });
-  assert.deepEqual(ir.modules.map((m) => m.specifier.slice("@acme/demo-maps/".length)), ["MapView.js", "Marker.js", "core.js", "demo-map.js", "geometry.js", "layers/Layer.js", "layers/Refreshable.js", "layers/TileLayer.js", "measure.js", "ops/a.js", "ops/b.js", "pins.js", "styles.js"]);
+  assert.deepEqual(ir.modules.map((m) => m.specifier.slice("@acme/demo-maps/".length)), ["MapView.js", "Marker.js", "core.js", "demo-map.js", "geometry.js", "layers/Layer.js", "layers/Refreshable.js", "layers/TileLayer.js", "measure.js", "ops/a.js", "ops/b.js", "pins.js", "styles.js", "tools.js"]);
   assert.deepEqual(ir.modules.find((m) => m.specifier.endsWith("/geometry.js")).declarations.map((d) => `${d.kind} ${d.name}`),
-    ["alias ShapeType", "interface Bounds", "class Shape", "class Point", "class Line", "class Polygon"]);
+    ["alias ShapeType", "interface Bounds", "class Shape", "class Point", "class Line", "class Polygon", "alias OpenShape", "alias AnyShape"]);
 });
 
 test("a default export keeps its declaration's name, and says its export", () => {
@@ -79,6 +79,19 @@ test("R19: a union of intersections with a literal gets its discriminant", (t) =
   assert.deepEqual(grouping.type.types.map((c) => c.kind), ["object", "object"]); // R11: resolved
 });
 
+test("R19: a discriminant is found across nested unions, union aliases and repeated members", () => {
+  assert.deepEqual(decl("geometry", "AnyShape").type, { kind: "union", types: [ref("geometry", "OpenShape"), ref("geometry", "Polygon")], discriminant: "type" });
+  const [{ params: [options] }] = decl("measure", "shapeFrom").signatures; // ((A | B) | C) | null, of intersections
+  assert.equal(options.type.discriminant, "type");
+  assert.deepEqual(options.type.types.map((t) => t.kind), ["union", "primitive"]);
+  assert.deepEqual(decl("styles", "OutlineStyle").type, {
+    kind: "union",
+    types: [ref("styles", "StrokeStyle"), ref("styles", "IconStyle"), ref("styles", "StrokeStyle")],
+    discriminant: "type",
+  });
+  assert.equal(decl("measure", "simplify").signatures[0].returns.discriminant, undefined); // Shape's type isn't one literal
+});
+
 test("R6: unions keep written order and named members", () => {
   assert.deepEqual(decl("MapView", "FlyToTarget").type.types, [ref("geometry", "Shape"), pair, ref("MapView", "Camera")]);
   assert.deepEqual(member("MapView", "MapView", "title"), { kind: "property", name: "title", optional: true, type: { kind: "union", types: [{ kind: "primitive", name: "string" }, { kind: "primitive", name: "null" }] } });
@@ -98,7 +111,7 @@ test("R12, R18: Partial<Pick<…>> constructor bags are resolved by the checker"
   assert.deepEqual(decl("MapView", "MapView").constructors[0].params[0].type, ref("MapView", "MapViewOptions"));
   assert.deepEqual(decl("MapView", "MapViewOptions").type.members.map((m) => m.name), ["center", "zoom", "rotation", "basemap", "cursor", "title", "container"]);
   assert.deepEqual(decl("Marker", "MarkerOptions").members.map((m) => `${m.name}${m.inherited ? " (inherited)" : ""}`),
-    ["position", "label (inherited)", "style (inherited)", "labelFormatter (inherited)"]);
+    ["position", "label (inherited)", "style (inherited)", "labelFormatter (inherited)", "data (inherited)"]);
 });
 
 test("R23: overloads are separate signatures, each with its own JSDoc", () => {
@@ -212,7 +225,11 @@ test("R9, R10: literal unions and the open-ended form", () => {
 
 test("R21: function types and module functions", () => {
   assert.deepEqual(decl("Marker", "LabelFormatter").type, { kind: "function", params: [{ name: "marker", type: ref("Marker", "Marker") }], returns: { kind: "primitive", name: "string" } });
-  assert.deepEqual(decl("measure", "distance"), { kind: "function", name: "distance", signatures: [{ params: [{ name: "a", type: ref("geometry", "Point") }, { name: "b", type: ref("geometry", "Point") }], returns: num }] });
+  assert.deepEqual(decl("measure", "distance").signatures[0].params, [
+    { name: "a", type: ref("geometry", "Point") },
+    { name: "b", type: ref("geometry", "Point") },
+    { name: "unit", type: { kind: "union", types: [ref("measure", "LengthUnit"), num] }, optional: true }, // R2: the alias stays a ref
+  ]);
 });
 
 test("R22: a rest parameter's type is its array", () => {
@@ -238,6 +255,7 @@ test("TS enums, and R11: an intersection of object types is resolved", (t) => {
     ["mode", { kind: "ref", name: "Mode", module: "@acme/extra/index.js" }],
     ["type", { kind: "literal", value: "tagged" }],
   ]);
+  assert.deepEqual(tagged.type.bases, [{ kind: "ref", name: "Named", module: "@acme/extra/index.js" }]); // R11: what names its record
 });
 
 test("design §2: custom elements come from the manifest, linked to the typings", () => {

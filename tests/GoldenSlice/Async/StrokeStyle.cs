@@ -8,6 +8,8 @@ public sealed partial record StrokeStyle : global::Interoper.IJsRecord<StrokeSty
 {
     public ColorInput Color { get; init; }
     public global::Interoper.Opt<double> Width { get; init; }
+    /// <summary>A named pattern, or dash and gap lengths.</summary>
+    public StrokeStyleDash Dash { get; init; }
 
     public static void Write(global::System.Text.Json.Utf8JsonWriter writer, StrokeStyle value)
     {
@@ -15,6 +17,7 @@ public sealed partial record StrokeStyle : global::Interoper.IJsRecord<StrokeSty
         writer.WriteString("type"u8, "stroke"u8);
         global::Interoper.JsJson.WriteProperty(writer, "color"u8, value.Color);
         global::Interoper.JsJson.WriteProperty(writer, "width"u8, value.Width, global::Interoper.JsJson.WriteNumber);
+        global::Interoper.JsJson.WriteProperty(writer, "dash"u8, value.Dash);
         writer.WriteEndObject();
     }
 
@@ -22,6 +25,7 @@ public sealed partial record StrokeStyle : global::Interoper.IJsRecord<StrokeSty
     {
         ColorInput color = default;
         global::Interoper.Opt<double> width = default;
+        StrokeStyleDash dash = default;
         while (reader.Read() && reader.TokenType == global::System.Text.Json.JsonTokenType.PropertyName)
         {
             var property = reader.GetString();
@@ -30,9 +34,10 @@ public sealed partial record StrokeStyle : global::Interoper.IJsRecord<StrokeSty
             {
                 case "color": color = global::Interoper.JsJson.ReadUnion<ColorInput>(ref reader); break;
                 case "width": width = global::Interoper.JsJson.ReadOpt(ref reader, global::Interoper.JsJson.ReadNumber); break;
+                case "dash": dash = global::Interoper.JsJson.ReadUnion<StrokeStyleDash>(ref reader); break;
                 default: reader.Skip(); break;
             }
         }
-        return new StrokeStyle { Color = color, Width = width };
+        return new StrokeStyle { Color = color, Width = width, Dash = dash };
     }
 }

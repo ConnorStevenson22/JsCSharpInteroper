@@ -18,6 +18,14 @@ export class Source {
     return this;
   }
 
+  // Counts its live listeners, and returns nothing disposable for "broken".
+  listening = 0;
+  onCounted(name) {
+    if (name === "broken") return {};
+    this.listening++;
+    return { dispose: () => { this.listening--; } };
+  }
+
   dispose() {}
 }
 
@@ -58,3 +66,6 @@ class GlowMarker extends Marker {
   static className = "GlowMarker";
 }
 export const glowMarker = () => new GlowMarker();
+
+// Plain objects, some with methods, as a factory returns (R15).
+export const objects = () => ({ data: { x: 1 }, list: [{ y: 2 }, { go() { return 7; } }], tool: { name: "t", go() { return 7; } } });

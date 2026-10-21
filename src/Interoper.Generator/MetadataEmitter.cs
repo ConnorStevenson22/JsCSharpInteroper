@@ -9,18 +9,20 @@ namespace Interoper.Generator;
 internal static class MetadataEmitter
 {
     /// <summary>
-    /// The live classes by class id, from 1 (0 is unknown): value-like classes first, then entities, each in IR order.
-    /// That order gives the fixture the ids the transport contract hard-codes (design §2).
+    /// The live classes by class id, from 1 (0 is unknown): value-like classes first, then entities, then live interfaces
+    /// (R15), each in IR order. That order gives the fixture the ids the transport contract hard-codes (design §2).
     /// </summary>
     public static IReadOnlyList<Selected> ClassIds(TypeMap types, Selection selection) =>
-        [.. selection.Declarations.Where(s => s.Declaration is ClassDeclaration).OrderBy(s => !types.IsValueLike((ClassDeclaration)s.Declaration))];
+        [.. selection.Declarations.Where(s => s.Declaration is ClassDeclaration)
+            .OrderBy(s => (ClassDeclaration)s.Declaration switch { var c when types.IsValueLike(c) => 0, { Interface: true } => 2, _ => 1 })];
 
     /// <summary>
-    /// The class id constants and the registry of live types (R19 step 1), an abstract entity class's too; a closed one
-    /// has none (it's read by value, R16), and nor has a generic one, whose readers make it (mapping §2). Sync mode preloads the modules of its classes and module functions
-    /// and custom elements (design §3.5, R28): the modules they're imported from, which for an internal module's
-    /// declarations are the modules that re-export them; one that can't be imported has none. Then the import map's
-    /// entries, the same in both modes.
+    /// The class id constants and the registry of live types (R19 step 1), an abstract entity class's and a live interface's
+    /// (R15) too; a closed one has none (it's read by value, R16), and nor has a generic one, whose readers make it
+    /// (mapping §2). Sync mode preloads the modules of its classes (not its live interfaces), module functions and custom
+    /// elements (design §3.5, R28): the modules they're imported from, which for an internal module's declarations are
+    /// the modules that re-export them; one that can't be imported has none. Then the import map's entries, the same in
+    /// both modes.
     /// </summary>
     /// <remarks>
     /// §5: a variant's class id follows the classes', with no constant: the registry makes it a private subclass of its
@@ -45,7 +47,7 @@ internal static class MetadataEmitter
             var taken = new HashSet<string>(classes.Select(s => types.ClassIdName((ClassDeclaration)s.Declaration))) { types.Registry, "Classes", "ImportMap" };
             var nested = variants.Select(v => (Variant: v, Name: Naming.Unique(taken, Naming.Type(v.Class.Name)))).ToList();
             calls.AddRange(nested.Select((v, i) => $".Add({classes.Count + i + 1}, static (realm, handle) => new {v.Name}(realm, handle))"));
-            var modules = classes.Select(s => s.Declaration).Concat(functions.Select(s => s.Declaration)).Concat(elements.Select(e => e.Class))
+            var modules = classes.Select(s => s.Declaration).Where(d => d is not ClassDeclaration { Interface: true }).Concat(functions.Select(s => s.Declaration)).Concat(elements.Select(e => e.Class))
                 .Select(types.Import).OfType<(string Module, string Export)>().Select(i => i.Module).Distinct().ToList();
             if (options.Api == Api.Sync && modules.Count > 0)
             {
@@ -104,7 +106,8 @@ internal static class MetadataEmitter
     /// Per class id: the module and export that construct it (an omitted export is <c>default</c>), its runtime class name
     /// (with the profile's prefix when it's the first package's), or a custom element's tag instead (R28), since JS finds
     /// an element by its tag, whether it's value-like (R16), and its snapshot members (R18), a value-like one's with its
-    /// constants, when it has any. Then the components' custom events, each with its detail's default projection (R24, R28).
+    /// constants, when it has any; none for a live interface (R15). Then the components' custom events, each with its
+    /// detail's default projection (R24, R28).
     /// </summary>
     /// <remarks>§5: a variant's entry is its runtime class name and the class id whose entry it shares (<c>of</c>).</remarks>
     public static string Module(IrDocument ir, Profile profile, TypeMap types, IReadOnlyList<Selected> classes, IReadOnlyList<SelectedVariant> variants,
@@ -119,7 +122,8 @@ internal static class MetadataEmitter
             lines.Add($"  classNameProperty: {Syntax.Literal(property)},");
         }
         lines.Add("  classes: {");
-        foreach (var (s, id) in classes.Select((s, i) => (s, i + 1)))
+        // R15: JS never names a live interface's class id, so it has no entry.
+        foreach (var (s, id) in classes.Select((s, i) => (s, i + 1)).Where(x => x.s.Declaration is ClassDeclaration { Interface: false }))
         {
             var c = (ClassDeclaration)s.Declaration;
             var members = string.Join(", ", types.WireMembers(c).Select(m => Syntax.Literal(m.Name)));

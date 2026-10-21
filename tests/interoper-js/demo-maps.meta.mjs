@@ -16,7 +16,7 @@ export default {
       module: at("MapView.js"), export: "MapView", name: "MapView",
       members: ["center", "zoom", "rotation", "basemap", "cursor", "title", "selected", "markers"],
     },
-    [ids.Marker]: { module: at("Marker.js"), export: "Marker", name: "Marker", members: ["position", "label", "style"] },
+    [ids.Marker]: { module: at("Marker.js"), export: "Marker", name: "Marker", members: ["position", "label", "style", "data"] },
     [ids.Collection]: { module: at("core.js"), export: "Collection", name: "core.Collection", members: ["length"] },
     [ids.Pin]: { module: at("pins.js"), export: "Pin", name: "pins.Pin", members: ["position", "label", "style"] },
     [ids.GlowMarker]: { name: "GlowMarker", of: ids.Marker },

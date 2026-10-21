@@ -152,6 +152,10 @@ public static class JsJson
     public static string? PeekString(Utf8JsonReader reader, ReadOnlySpan<byte> name) =>
         FindProperty(ref reader, name) && reader.TokenType == JsonTokenType.String ? reader.GetString() : null;
 
+    /// <summary>The class id of a value-like instance, its <c>$c</c> (R16, R19 step 3); 0 when it has none.</summary>
+    public static int PeekClass(Utf8JsonReader reader) =>
+        FindProperty(ref reader, "$c"u8) && reader.TokenType == JsonTokenType.Number && reader.TryGetInt32(out var id) ? id : 0;
+
     // Leaves the reader on the property's value.
     private static bool FindProperty(ref Utf8JsonReader reader, ReadOnlySpan<byte> name)
     {

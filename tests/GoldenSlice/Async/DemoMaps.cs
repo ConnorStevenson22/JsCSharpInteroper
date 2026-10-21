@@ -18,6 +18,9 @@ public static partial class DemoMaps
     public const int LayerId = 11;
     public const int TileLayerId = 12;
     public const int PinId = 13;
+    public const int SubscriptionId = 14;
+    public const int ToolId = 15;
+    public const int MeasureToolId = 16;
 
     public static global::Interoper.JsClassRegistry Classes { get; } = new global::Interoper.JsClassRegistry()
         .Add(PointId, static (realm, handle) => new Point(realm, handle))
@@ -30,7 +33,10 @@ public static partial class DemoMaps
         .Add(DemoMapElementId, static (realm, handle) => new DemoMapElement(realm, handle))
         .Add(LayerId, static (realm, handle) => new global::GoldenSlice.Async.Layers.Layer(realm, handle))
         .Add(TileLayerId, static (realm, handle) => new global::GoldenSlice.Async.Layers.TileLayer(realm, handle))
-        .Add(PinId, static (realm, handle) => new Pin(realm, handle));
+        .Add(PinId, static (realm, handle) => new Pin(realm, handle))
+        .Add(SubscriptionId, static (realm, handle) => new Subscription(realm, handle))
+        .Add(ToolId, static (realm, handle) => new Tool(realm, handle))
+        .Add(MeasureToolId, static (realm, handle) => new MeasureTool(realm, handle));
 
     /// <summary>The import map's entries for the packages' modules; <paramref name="root"/> holds the packages' folders, as <c>node_modules</c> does (<c>"/node_modules/"</c>), and starts with <c>/</c>, <c>./</c> or <c>../</c>, or is a URL.</summary>
     public static global::System.Collections.Generic.IReadOnlyDictionary<string, string> ImportMap(string root)

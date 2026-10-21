@@ -61,8 +61,8 @@ public sealed partial class MapView : Emitter
         Realm.CallAsync(global::Interoper.JsOp.Get(Handle, "selected"), (ref r) => global::Interoper.JsJson.ReadOpt(ref r, scope.Read<Marker>));
 
     /// <summary>The <c>Marker</c> the user picked last, or <c>null</c> when none is.</summary>
-    public global::System.Threading.Tasks.Task SetSelectedAsync(global::Interoper.Opt<Marker> value) =>
-        Realm.SendAsync(global::Interoper.JsOp.Set(Handle, "selected", w => global::Interoper.JsJson.WriteValue(w, value, Marker.Write)));
+    public global::System.Threading.Tasks.Task SetSelectedAsync(MapViewSelectedInput value) =>
+        Realm.SendAsync(global::Interoper.JsOp.Set(Handle, "selected", w => global::Interoper.JsJson.WriteValue(w, value)));
 
     public async global::System.Threading.Tasks.Task<Collection<Marker>> GetMarkersAsync(global::Interoper.JsScope scope) =>
         (await Realm.CallAsync(global::Interoper.JsOp.Get(Handle, "markers"), (ref r) => scope.Read(ref r, static (realm, handle) => new Collection<Marker>(realm, handle))))!;
@@ -106,6 +106,18 @@ public sealed partial class MapView : Emitter
             global::Interoper.JsJson.WriteNumber(w, x);
             global::Interoper.JsJson.WriteNumber(w, y);
         }), (ref r) => global::Interoper.JsJson.ReadOpt(ref r, scope.Read<Marker>), cancellationToken);
+
+    /// <summary>Adds and selects markers, which must be instances.</summary>
+    public global::System.Threading.Tasks.Task EditAsync(MarkerEdits edits, global::System.Threading.CancellationToken cancellationToken = default) =>
+        Realm.SendAsync(global::Interoper.JsOp.Call(Handle, "edit", w => MarkerEdits.Write(w, edits)), cancellationToken);
+
+    /// <summary>The marker at each <c>[x, y]</c> screen offset, or <c>null</c> where there is none.</summary>
+    public async global::System.Threading.Tasks.Task<global::Interoper.Opt<Marker>[]> MarkersAtAsync(global::Interoper.JsScope scope, double[][] offsets, global::System.Threading.CancellationToken cancellationToken = default) =>
+        (await Realm.CallAsync(global::Interoper.JsOp.Call(Handle, "markersAt", w => global::Interoper.JsJson.WriteArray(w, offsets, static (w1, v1) => global::Interoper.JsJson.WriteArray(w1, v1, global::Interoper.JsJson.WriteNumber))), (ref r) => global::Interoper.JsJson.ReadArray(ref r, (ref r1) => global::Interoper.JsJson.ReadOpt(ref r1, scope.Read<Marker>)), cancellationToken))!;
+
+    /// <summary>Back to zoom 1 and rotation 0: the library changes several properties in one call.</summary>
+    public global::System.Threading.Tasks.Task ResetAsync(global::System.Threading.CancellationToken cancellationToken = default) =>
+        Realm.SendAsync(global::Interoper.JsOp.Call(Handle, "reset"), cancellationToken);
 
     /// <summary>A click on the map, after the view has handled it.</summary>
     public global::System.Threading.Tasks.Task<global::System.IAsyncDisposable> OnClickAsync(global::Interoper.JsScope scope, global::System.Action<ClickEvent> handler, global::Interoper.EventOptions? options = null) =>
@@ -174,4 +186,13 @@ public sealed partial class MapView : Emitter
 
     public global::System.Threading.Tasks.Task ApplyAsync(MapViewSnapshot patch) =>
         Realm.SendAsync(global::Interoper.JsOp.Apply(Handle, w => MapViewSnapshot.WriteMembers(w, patch)));
+
+    public global::System.Threading.Tasks.Task<MapViewSnapshot> SnapshotAsync(global::Interoper.JsMembers<MapViewSnapshot> members) =>
+        Realm.SnapshotAsync(Handle, members);
+
+    public global::System.Threading.Tasks.Task<global::System.IAsyncDisposable> WatchAsync(global::Interoper.JsScope scope, global::Interoper.JsMembers<MapViewSnapshot> members, global::System.Action<MapViewSnapshot> handler) =>
+        scope.SubscribeAsync(Handle, "watch", members, handler);
+
+    public global::System.Collections.Generic.IAsyncEnumerable<MapViewSnapshot> WatchStreamAsync(global::Interoper.JsScope scope, global::Interoper.JsMembers<MapViewSnapshot> members, global::System.Threading.CancellationToken cancellationToken = default) =>
+        scope.StreamAsync(Handle, "watch", members, cancellationToken);
 }

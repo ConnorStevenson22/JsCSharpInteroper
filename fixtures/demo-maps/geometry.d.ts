@@ -37,3 +37,9 @@ export class Polygon extends Shape {
   /** The closing edge from the last vertex back to the first is implied. */
   vertices: [number, number][];
 }
+
+/** Shapes without an area. */
+export type OpenShape = Point | Line;
+
+/** A union of a union alias and a class, discriminated by `type` across both. */
+export type AnyShape = OpenShape | Polygon;

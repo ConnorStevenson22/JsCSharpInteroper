@@ -61,6 +61,39 @@ public class ValueModelTests
         Assert.Equal("null", Describe(null));
     }
 
+    private static string DescribeSize(IconStyleSize size) => size switch
+    {
+        double px => $"{px}px",
+        string css => css,
+        Undefined => "undefined",
+        null => "null",
+    };
+
+    [Fact] // R2: a number case is kept unboxed, and switches and compares like any other
+    public void A_number_case_switches_and_compares_like_any_other()
+    {
+        Assert.Equal("12px", DescribeSize(12));
+        Assert.Equal("2em", DescribeSize("2em"));
+        Assert.Equal("undefined", DescribeSize(default));
+        Assert.Equal("null", DescribeSize(null));
+        Assert.Equal<IconStyleSize>(12, 12.0);
+        Assert.NotEqual<IconStyleSize>(12, "12");
+        Assert.NotEqual<IconStyleSize>(0, default); // undefined isn't 0
+        Assert.True(((MeasureDistanceUnit)LengthUnit.Kilometers).TryGetValue(out LengthUnit unit) && unit == LengthUnit.Kilometers);
+        Assert.False(((MeasureDistanceUnit)0).TryGetValue(out LengthUnit _)); // 0.0 is the double case
+    }
+
+    [Fact] // R2, R19 step 4: a number, string or enum case is told apart by its JSON token
+    public void Value_type_cases_are_read_by_their_JSON_token()
+    {
+        Assert.Equal("""{"type":"icon","name":"pin-1","size":12}""", Json.Write(new IconStyle { Name = IconName.Pin1, Size = 12 }, IconStyle.Write));
+        Assert.Equal<IconStyleSize>(12, Json.Read("12", JsJson.ReadUnion<IconStyleSize>));
+        Assert.Equal<IconStyleSize>("2em", Json.Read("\"2em\"", JsJson.ReadUnion<IconStyleSize>));
+        Assert.True(Json.Read("null", JsJson.ReadUnion<IconStyleSize>).IsNull);
+        Assert.Equal<StrokeStyleDash>(StrokeStyleDashLiteral.Dotted, Json.Read("\"dotted\"", JsJson.ReadUnion<StrokeStyleDash>));
+        Assert.Throws<System.Text.Json.JsonException>(() => Json.Read("true", JsJson.ReadUnion<IconStyleSize>));
+    }
+
     private static string Size(Opt<double> size) => size switch
     {
         double d => $"{d}px",

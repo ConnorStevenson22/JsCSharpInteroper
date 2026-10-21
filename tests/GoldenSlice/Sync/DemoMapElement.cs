@@ -37,7 +37,7 @@ public sealed partial class DemoMapElement : global::Interoper.JsObject
     }
 
     /// <summary>Clicks the map at an offset from its center, in pixels.</summary>
-    public void ClickAt(double x, double y, global::Interoper.Opt<DemoMapElementClickAtButton> button = default) =>
+    public void ClickAt(double x, double y, global::Interoper.Opt<ClickEventButton> button = default) =>
         Realm.Send(global::Interoper.JsOp.Call(Handle, "clickAt", w =>
         {
             global::Interoper.JsJson.WriteNumber(w, x);
@@ -50,4 +50,7 @@ public sealed partial class DemoMapElement : global::Interoper.JsObject
 
     public void Apply(DemoMapElementSnapshot patch) =>
         Realm.Send(global::Interoper.JsOp.Apply(Handle, w => DemoMapElementSnapshot.WriteMembers(w, patch)));
+
+    public DemoMapElementSnapshot Snapshot(global::Interoper.JsMembers<DemoMapElementSnapshot> members) =>
+        Realm.Snapshot(Handle, members);
 }

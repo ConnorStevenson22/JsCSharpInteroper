@@ -27,6 +27,12 @@ public sealed record SelectedElement(string Module, Element Element, ClassDeclar
 public sealed record SelectedVariant(string Module, ClassDeclaration Class, ClassDeclaration Base, IReadOnlyList<ClassDeclaration> Mixins);
 
 /// <summary>
+/// R16, R18: an emitted entity class's snapshot record where the class is only written, standing for the instance JS builds
+/// from it as its constructor bag (<c>$c</c>). Selection adds it next to the class; no IR file has one.
+/// </summary>
+internal sealed record BagType(RefType Class) : IrType;
+
+/// <summary>
 /// What to emit for an IR and a profile. The profile's <c>include</c> lists module globs (absent: every module). Every
 /// export of a matching module is emitted, plus the bases of emitted classes and the data types they use.
 /// A member that uses a type that can't be mapped is skipped with IOP2007 (IOP2003 for an ambiguous union), so a
@@ -90,11 +96,21 @@ public sealed class Selection
         var included = Included();
         var roots = all.Where(x => included.Contains(x.Module) && !(x.Declaration is ClassDeclaration c && mixinClasses.Contains(c)))
             .Select(x => x.Declaration).ToHashSet(ReferenceEqualityComparer.Instance);
-        foreach (var c in roots.OfType<ClassDeclaration>().ToList())
+        // The bases of emitted classes, and R15: the live interfaces that their types name, through data types and other
+        // live interfaces, as the data types they use are emitted.
+        var reached = new HashSet<Declaration>(roots.Cast<Declaration>(), ReferenceEqualityComparer.Instance);
+        var pending = new Stack<Declaration>(reached);
+        while (pending.TryPop(out var d))
         {
-            for (var b = Base(c); b is not null; b = Base(b))
+            var next = d is ClassDeclaration c ? MixinsOf(c).Concat(roots.Contains(c) && Base(c) is { } b && roots.Add(b) ? [b] : []) : [];
+            var used = Types(d).SelectMany(Refs).Select(Find).OfType<Declaration>().Where(n => n is not ClassDeclaration { Interface: false });
+            foreach (var n in next.Concat(used).Where(reached.Add))
             {
-                roots.Add(b);
+                if (n is ClassDeclaration { Interface: true })
+                {
+                    roots.Add(n);
+                }
+                pending.Push(n);
             }
         }
         classes.UnionWith(roots.OfType<ClassDeclaration>().Where(c => c.TypeParameters.Count == 0 || profile.Collections.Contains(c.Name)));
@@ -149,6 +165,7 @@ public sealed class Selection
             }
             typeParameters = [];
         }
+        WidenRecords();
         Declarations = [.. all.Where(x => selected.ContainsKey(x.Declaration)).Select(x => selected[x.Declaration])];
         Mixins = [.. all.Where(x => x.Declaration is ClassDeclaration c && mixins.ContainsKey(c)).Select(x => mixins[(ClassDeclaration)x.Declaration])];
         var named = Named();
@@ -251,7 +268,7 @@ public sealed class Selection
     private void AddClass(ClassDeclaration c)
     {
         typeParameters = c.TypeParameters;
-        if (!c.Abstract && !types.Constructible(c))
+        if (!c.Abstract && !c.Interface && !types.Constructible(c))
         {
             Report(new(Diagnostic.NotSupported, $"{c.Name}.constructor", types.Import(c) is not null
                 ? "skipped: its parameter isn't a bag, so there's no Create (R18)"
@@ -302,6 +319,12 @@ public sealed class Selection
                 continue;
             }
             property = TrimInline(subject, property);
+            // R16, R18: what a setter is given is only written, so an entity in it may be a bag.
+            if (!property.Readonly && !types.IsCallback(property) && !types.IsElement(property) &&
+                Widen(property.WriteType ?? property.Type) is var written && !ReferenceEquals(written, property.WriteType ?? property.Type))
+            {
+                property = property with { WriteType = written };
+            }
             foreach (var type in property.WriteType is { } trimmed ? [property.Type, trimmed] : new[] { property.Type })
             {
                 Collect(type);
@@ -322,7 +345,7 @@ public sealed class Selection
                 events.Add(e); // R24: no payload, so a parameterless handler
                 continue;
             }
-            if ((Problem(e.Type) ?? types.Problem(e.Type, Position.Member)) is { } problem)
+            if ((Problem(e.Type) ?? types.Problem(e.Type, Position.Member) ?? types.ByValueProblem(e.Type)) is { } problem)
             {
                 Skip($"{c.Name}.on:{e.Name}", problem);
                 continue;
@@ -381,18 +404,7 @@ public sealed class Selection
     /// </summary>
     private HashSet<ClassDeclaration> Named()
     {
-        static IEnumerable<IrType> Types(Member m) => m switch
-        {
-            PropertyMember p => p.WriteType is { } w ? [p.Type, w] : [p.Type],
-            MethodMember method => method.Signatures.SelectMany(s => s.Params.Select(p => p.Type).Concat(s.Returns is { } r ? [r] : [])),
-            _ => [],
-        };
-        var types = new Stack<IrType>(selected.Values.Concat(mixins.Values).Select(s => s.Declaration).SelectMany(d => d switch
-        {
-            ClassDeclaration c => c.Members.SelectMany(Types).Concat(c.Events.Select(e => e.Type)),
-            FunctionDeclaration f => f.Signatures.SelectMany(s => s.Params.Select(p => p.Type).Concat(s.Returns is { } r ? [r] : [])),
-            _ => Parts(d),
-        }));
+        var types = new Stack<IrType>(selected.Values.Concat(mixins.Values).Select(s => s.Declaration).SelectMany(Types));
         var seen = new HashSet<IrType>();
         var result = new HashSet<ClassDeclaration>(ReferenceEqualityComparer.Instance);
         while (types.TryPop(out var type))
@@ -445,6 +457,162 @@ public sealed class Selection
             .Select(c => new RefType(c.Name, moduleOf[c])).Where(r => read.Contains((r.Module, r.Name)) && !cases.Any(t => t is RefType x && (x.Module, x.Name) == (r.Module, r.Name)))
             .DistinctBy(r => (r.Module, r.Name)).ToList();
         return added.Count == 0 ? p : p with { WriteType = new UnionType([.. write is UnionType u ? u.Types : [write], .. added]) };
+    }
+
+    /// <summary>
+    /// R16, R18: a type that is only written, where an emitted entity class that takes a bag (<see cref="TypeMap.TakesBag"/>)
+    /// also takes its snapshot (<see cref="BagType"/>), and an array of it an array of snapshots, as more union cases; the
+    /// members of an inline record in it do too (R11). Not where it already takes the class's constructor bag (§5), nor
+    /// through a union alias, which is widened where it's declared (<see cref="WidenRecords"/>). The same type when nothing
+    /// changes.
+    /// </summary>
+    private IrType Widen(IrType type)
+    {
+        var inner = WidenInline(type);
+        var bags = Flatten(inner).Select(t => t switch
+        {
+            RefType r when TakesBag(r, type) => (IrType)new BagType(r),
+            ArrayType { Element: RefType r } when TakesBag(r, type) => new ArrayType(new BagType(r)),
+            _ => null,
+        }).OfType<IrType>().DistinctBy(t => t is ArrayType { Element: BagType a } ? (a.Class.Module, a.Class.Name, true) : (((BagType)t).Class.Module, ((BagType)t).Class.Name, false)).ToList();
+        return bags.Count == 0 ? inner : inner is UnionType u ? u with { Types = [.. u.Types, .. bags] } : new UnionType([inner, .. bags]);
+    }
+
+    /// <summary>R11: a type with the members of its inline records widened (<see cref="Widen"/>), in it or as union cases.</summary>
+    private IrType WidenInline(IrType type)
+    {
+        switch (type)
+        {
+            case ObjectType o:
+                var members = WidenMembers(o.Members, all: true);
+                return ReferenceEquals(members, o.Members) ? o : o with { Members = members };
+            case UnionType u:
+                var cases = u.Types.Select(WidenInline).ToList();
+                return cases.SequenceEqual(u.Types, ReferenceEqualityComparer.Instance) ? u : u with { Types = cases };
+            default:
+                return type;
+        }
+    }
+
+    /// <summary>
+    /// A record's members widened (<see cref="Widen"/>): <paramref name="all"/> of them when it's only written, or else only
+    /// those typed with a union, which is only written when it has an entity case (R2); the same list when nothing changes.
+    /// </summary>
+    private IReadOnlyList<Member> WidenMembers(IReadOnlyList<Member> members, bool all)
+    {
+        var widened = members.Select(m => m is PropertyMember { Static: false } p && (all || IsUnion(p.Type)) && Widen(p.Type) is var t && !ReferenceEquals(t, p.Type)
+            ? p with { Type = t } : m).ToList();
+        return widened.SequenceEqual(members, ReferenceEqualityComparer.Instance) ? members : widened;
+    }
+
+    /// <summary>R2: a union that keeps two or more cases after R6, so it's a union struct, not narrowed to one case.</summary>
+    private bool IsUnion(IrType type) => Cases(type).Count(t => !IsNullish(t) && !types.IsDropped(t)) > 1;
+
+    /// <summary>
+    /// R16, R18: an emitted entity class that takes a bag, where <paramref name="whole"/> doesn't already take its
+    /// constructor bag (§5).
+    /// </summary>
+    private bool TakesBag(RefType r, IrType whole) =>
+        r.Module is not null && Find(r) is ClassDeclaration c && classes.Contains(c) && types.TakesBag(c) &&
+        !Cases(whole).Any(t => t is RefType { Module: not null } b && Find(b) is { } bag && constructedFrom.GetValueOrDefault(bag) == c);
+
+    /// <summary>
+    /// R16, R18: the selected data records no read position reaches are only written, so their entities may be bags; any
+    /// record's union members and any union alias are widened too, since a union with an entity case is never read (R2).
+    /// </summary>
+    private void WidenRecords()
+    {
+        var read = ReadRecords();
+        foreach (var (declaration, s) in selected.ToList())
+        {
+            Declaration widened = s.Declaration switch
+            {
+                InterfaceDeclaration i when WidenMembers(i.Members, !read.Contains(declaration)) is var members && !ReferenceEquals(members, i.Members) =>
+                    i with { Members = members },
+                AliasDeclaration { Type: ObjectType o } a when WidenMembers(o.Members, !read.Contains(declaration)) is var members && !ReferenceEquals(members, o.Members) =>
+                    a with { Type = o with { Members = members } },
+                AliasDeclaration { TypeParameters.Count: 0, Type: UnionType u } a when IsUnion(u) && Widen(u) is var type && !ReferenceEquals(type, u) => a with { Type = type },
+                _ => s.Declaration,
+            };
+            if (!ReferenceEquals(widened, s.Declaration))
+            {
+                selected[declaration] = s with { Declaration = widened };
+            }
+        }
+    }
+
+    /// <summary>
+    /// R16, R18: the data records and aliases a read position reaches: a getter, a result, an event's payload or a custom
+    /// event's detail, a callback's argument, and what the records and unions there hold.
+    /// </summary>
+    private HashSet<Declaration> ReadRecords()
+    {
+        var pending = new Stack<IrType>();
+        void Written(IrType type)
+        {
+            var callbacks = Cases(type).Select(t => t is RefType { Module: not null } r && Find(r) is AliasDeclaration { Type: FunctionType f } ? f : t).OfType<FunctionType>();
+            foreach (var p in callbacks.SelectMany(f => f.Params))
+            {
+                pending.Push(p.Type);
+            }
+        }
+        void Signature(Signature signature)
+        {
+            if (signature.Returns is { } returns)
+            {
+                pending.Push(returns);
+            }
+            foreach (var p in signature.Params)
+            {
+                Written(p.Type);
+            }
+        }
+        foreach (var d in selected.Values.Concat(mixins.Values).Select(s => s.Declaration))
+        {
+            foreach (var m in d is ClassDeclaration c ? c.Members : [])
+            {
+                if (m is PropertyMember p && (types.IsCallback(p) || types.IsElement(p)))
+                {
+                    Written(p.WriteType ?? p.Type);
+                }
+                else if (m is PropertyMember getter)
+                {
+                    pending.Push(getter.Type);
+                }
+                foreach (var signature in m is MethodMember method ? method.Signatures : [])
+                {
+                    Signature(signature);
+                }
+            }
+            foreach (var e in d is ClassDeclaration k ? k.Events : [])
+            {
+                pending.Push(e.Type);
+            }
+            foreach (var signature in d is FunctionDeclaration f ? f.Signatures : [])
+            {
+                Signature(signature);
+            }
+        }
+        foreach (var detail in elements.SelectMany(e => e.Element.Events).Select(e => e.Detail).OfType<IrType>())
+        {
+            pending.Push(detail);
+        }
+        var read = new HashSet<Declaration>(ReferenceEqualityComparer.Instance);
+        while (pending.TryPop(out var type))
+        {
+            if (type is RefType { Module: not null } r && Find(r) is { } d and not ClassDeclaration && read.Add(d))
+            {
+                foreach (var part in Parts(selected.TryGetValue(d, out var s) ? s.Declaration : d))
+                {
+                    pending.Push(part);
+                }
+            }
+            foreach (var child in type is FunctionType ? [] : Children(type))
+            {
+                pending.Push(child);
+            }
+        }
+        return read;
     }
 
     /// <summary>
@@ -514,7 +682,7 @@ public sealed class Selection
         {
             var subject = $"<{element.Tag}> on:{e.Name}";
             var detail = e.Detail is { } d && Flatten(d).Any(t => !IsNullish(t) && t is not PrimitiveType { Name: "void" }) ? d : null;
-            if (detail is not null && (Problem(detail) ?? types.Problem(detail, Position.Member)) is { } problem)
+            if (detail is not null && (Problem(detail) ?? types.Problem(detail, Position.Member) ?? types.ByValueProblem(detail)) is { } problem)
             {
                 Skip(subject, problem);
                 continue;
@@ -593,7 +761,8 @@ public sealed class Selection
             }
             var trimmed = signature with
             {
-                Params = [.. kept.Select(p => p with { Type = TrimInline($"{subject}({p.Name})", p.Type) })],
+                // R16, R18: a parameter is only written, so an entity in it may be a bag; a rest parameter stays params T[] (R22).
+                Params = [.. kept.Select(p => p with { Type = TrimInline($"{subject}({p.Name})", p.Type) is var t && !p.Rest ? Widen(t) : t })],
                 Returns = signature.Returns is { } returned ? TrimInline(subject, returned) : null,
             };
             foreach (var type in trimmed.Params.Select(p => p.Type).Append(trimmed.Returns).OfType<IrType>())
@@ -671,7 +840,7 @@ public sealed class Selection
     /// An iterator method (<c>values(): IterableIterator&lt;T&gt;</c>, <c>[Symbol.iterator]()</c>), which iterators aren't
     /// mapped for: it's left out of an interface (IOP2007), so the interface can still be a data record (R15).
     /// </summary>
-    private static bool IsIterator(Member member) =>
+    internal static bool IsIterator(Member member) =>
         member is MethodMember { Signatures.Count: > 0 } method && method.Signatures.All(s => s.Returns is RefType
         {
             Module: null,
@@ -734,15 +903,15 @@ public sealed class Selection
         {
             AddDataType(declaration);
         }
-        foreach (var child in Children(type))
+        // R6: a union alias inside a union is flattened into it, so it's emitted only where it's used on its own, or as the
+        // union's enum case (R2).
+        var union = type is UnionType u && u.Types.Count(t => !IsNullish(t)) > 1;
+        if (union && types.LiteralAlias(type) is { } literals)
         {
-            // R6: a union alias inside a union is flattened into it, so it's emitted only where it's used on its own.
-            if (type is UnionType u && u.Types.Count(t => !IsNullish(t)) > 1 &&
-                FlattenedAlias(child, Find) is { } inner)
-            {
-                Collect(inner);
-                continue;
-            }
+            AddDataType(literals);
+        }
+        foreach (var child in union ? Cases(type) : Children(type))
+        {
             Collect(child);
         }
     }
@@ -942,6 +1111,25 @@ public sealed class Selection
     }
 
     private Declaration? Find(RefType type) => byName.GetValueOrDefault((type.Module!, type.Name));
+
+    /// <summary>The types a declaration's members, events, signatures or parts have.</summary>
+    private static IEnumerable<IrType> Types(Declaration declaration) => declaration switch
+    {
+        ClassDeclaration c => c.Members.SelectMany(m => m switch
+        {
+            PropertyMember p => p.WriteType is { } w ? [p.Type, w] : [p.Type],
+            MethodMember method => method.Signatures.SelectMany(Types),
+            _ => [],
+        }).Concat(c.Events.Select(e => e.Type)),
+        FunctionDeclaration f => f.Signatures.SelectMany(Types),
+        _ => Parts(declaration),
+    };
+
+    private static IEnumerable<IrType> Types(Signature s) => s.Params.Select(p => p.Type).Concat(s.Returns is { } r ? [r] : []);
+
+    /// <summary>The named types a type names, at any depth.</summary>
+    private static IEnumerable<RefType> Refs(IrType type) =>
+        Children(type).SelectMany(Refs).Concat(type is RefType { Module: not null } r ? [r] : []);
 
     /// <summary>The types a data type is made of.</summary>
     private static IEnumerable<IrType> Parts(Declaration declaration) => declaration switch

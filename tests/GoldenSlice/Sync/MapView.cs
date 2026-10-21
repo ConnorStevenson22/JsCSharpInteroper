@@ -60,8 +60,8 @@ public sealed partial class MapView : Emitter
         Realm.Call(global::Interoper.JsOp.Get(Handle, "selected"), (ref r) => global::Interoper.JsJson.ReadOpt(ref r, scope.Read<Marker>));
 
     /// <summary>The <c>Marker</c> the user picked last, or <c>null</c> when none is.</summary>
-    public void SetSelected(global::Interoper.Opt<Marker> value) =>
-        Realm.Send(global::Interoper.JsOp.Set(Handle, "selected", w => global::Interoper.JsJson.WriteValue(w, value, Marker.Write)));
+    public void SetSelected(MapViewSelectedInput value) =>
+        Realm.Send(global::Interoper.JsOp.Set(Handle, "selected", w => global::Interoper.JsJson.WriteValue(w, value)));
 
     public Collection<Marker> GetMarkers(global::Interoper.JsScope scope) =>
         Realm.Call(global::Interoper.JsOp.Get(Handle, "markers"), (ref r) => scope.Read(ref r, static (realm, handle) => new Collection<Marker>(realm, handle)))!;
@@ -106,6 +106,17 @@ public sealed partial class MapView : Emitter
             global::Interoper.JsJson.WriteNumber(w, y);
         }), (ref r) => global::Interoper.JsJson.ReadOpt(ref r, scope.Read<Marker>), cancellationToken);
 
+    /// <summary>Adds and selects markers, which must be instances.</summary>
+    public void Edit(MarkerEdits edits) =>
+        Realm.Send(global::Interoper.JsOp.Call(Handle, "edit", w => MarkerEdits.Write(w, edits)));
+
+    /// <summary>The marker at each <c>[x, y]</c> screen offset, or <c>null</c> where there is none.</summary>
+    public global::Interoper.Opt<Marker>[] MarkersAt(global::Interoper.JsScope scope, double[][] offsets) =>
+        Realm.Call(global::Interoper.JsOp.Call(Handle, "markersAt", w => global::Interoper.JsJson.WriteArray(w, offsets, static (w1, v1) => global::Interoper.JsJson.WriteArray(w1, v1, global::Interoper.JsJson.WriteNumber))), (ref r) => global::Interoper.JsJson.ReadArray(ref r, (ref r1) => global::Interoper.JsJson.ReadOpt(ref r1, scope.Read<Marker>)))!;
+
+    /// <summary>Back to zoom 1 and rotation 0: the library changes several properties in one call.</summary>
+    public void Reset() => Realm.Send(global::Interoper.JsOp.Call(Handle, "reset"));
+
     /// <summary>A click on the map, after the view has handled it.</summary>
     public global::System.IDisposable OnClick(global::Interoper.JsScope scope, global::System.Action<ClickEvent> handler, global::Interoper.EventOptions? options = null) =>
         scope.Subscribe(Handle, "on", "click", ClickEvent.Read, handler, options, ["type", "x", "y", "button", "mapPoint"]);
@@ -141,4 +152,10 @@ public sealed partial class MapView : Emitter
 
     public void Apply(MapViewSnapshot patch) =>
         Realm.Send(global::Interoper.JsOp.Apply(Handle, w => MapViewSnapshot.WriteMembers(w, patch)));
+
+    public MapViewSnapshot Snapshot(global::Interoper.JsMembers<MapViewSnapshot> members) =>
+        Realm.Snapshot(Handle, members);
+
+    public global::System.IDisposable Watch(global::Interoper.JsScope scope, global::Interoper.JsMembers<MapViewSnapshot> members, global::System.Action<MapViewSnapshot> handler) =>
+        scope.Subscribe(Handle, "watch", members, handler);
 }

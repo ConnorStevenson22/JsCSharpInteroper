@@ -14,6 +14,7 @@ public sealed partial record DemoMapElementSnapshot : global::Interoper.IJsRecor
     public static void Write(global::System.Text.Json.Utf8JsonWriter writer, DemoMapElementSnapshot value)
     {
         writer.WriteStartObject();
+        writer.WriteNumber("$c"u8, DemoMaps.DemoMapElementId);
         WriteMembers(writer, value);
         writer.WriteEndObject();
     }
@@ -51,4 +52,12 @@ public sealed partial record DemoMapElementSnapshot : global::Interoper.IJsRecor
         Zoom = after.Zoom.IsUndefined || global::Interoper.JsDiff.Same(before.Zoom, after.Zoom) ? default : after.Zoom,
         Center = after.Center.IsUndefined || global::Interoper.JsDiff.Same(before.Center, after.Center) ? default : after.Center,
     };
+
+    public static class Members
+    {
+        public static global::Interoper.JsMembers<DemoMapElementSnapshot> Basemap => new("basemap");
+        public static global::Interoper.JsMembers<DemoMapElementSnapshot> Zoom => new("zoom");
+        /// <summary>The view's center.</summary>
+        public static global::Interoper.JsMembers<DemoMapElementSnapshot> Center => new("center");
+    }
 }
